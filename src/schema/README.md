@@ -1,0 +1,1 @@
+# src/schema — Stage 1. Owns the data model: cards, ordered sides, review *tracks* (forward / reverse / cloze:n), three-state reverse resolution, materialised tag paths, refcounted content-addressed blobs, and the stage-1 aggregate shape the dashboard and phase-2 insights both read.

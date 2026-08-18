@@ -1,0 +1,1 @@
+# test/fixtures — Small committed slices of the real export (never exports/ itself, which is gitignored at 657 MB) plus golden files for the template engine. Fixtures must be trimmed by script from exports/ so they can be regenerated, not hand-edited.

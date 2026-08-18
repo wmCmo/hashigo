@@ -1,0 +1,1 @@
+# src/import — Stage 1. Owns the .mochi reader: Transit decode, deduped deck walk, review-track mapping, tag normalisation, wiki-link extraction, BCP-47 language codes. Mirrors tools/mochi.py, which is the reference implementation and documents the format traps.

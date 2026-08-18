@@ -1,0 +1,1 @@
+# src/scheduler — Stages 5-6. Owns the backtest harness (SM-2 / FSRS-6 stock / FSRS-6 fitted / fixed-multiplier, scored by log loss and RMSE over the 102,020 replayed reviews) and then the winning scheduler, per track, with per-deck target retention.

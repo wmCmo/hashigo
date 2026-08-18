@@ -1,0 +1,1115 @@
+<title>Hashigo Spec</title>
+
+<style>
+  /* ─── tokens: complete light palette on bare :root ─────────────────── */
+  :root {
+    --ground:  #F6F8FB;
+    --surface: #FFFFFF;
+    --sunken:  #EEF2F8;
+    --ink:     #141D2B;
+    --muted:   #56657A;
+    --faint:   #7C8B9E;
+    --rule:    #DCE3EC;
+    --accent:  #2B4C8C;
+    --accent-soft: #E7EDF8;
+    --alert:   #A8432F;
+    --alert-soft:  #FAECE8;
+    --good:    #2F6B4F;
+
+    --display: ui-sans-serif, -apple-system, "Segoe UI", "Yu Gothic UI",
+               "Hiragino Kaku Gothic ProN", Meiryo, system-ui, sans-serif;
+    --body: Charter, "Iowan Old Style", Georgia, "Yu Mincho",
+            "Hiragino Mincho ProN", "Times New Roman", serif;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas,
+            "Yu Gothic UI", Meiryo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:  #0D141E;
+      --surface: #151E2A;
+      --sunken:  #111A25;
+      --ink:     #E3E9F1;
+      --muted:   #8E9DB1;
+      --faint:   #74839A;
+      --rule:    #253040;
+      --accent:  #86A6E0;
+      --accent-soft: #1B2740;
+      --alert:   #E28A72;
+      --alert-soft:  #2E1D18;
+      --good:    #7DBF9C;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:  #0D141E;
+    --surface: #151E2A;
+    --sunken:  #111A25;
+    --ink:     #E3E9F1;
+    --muted:   #8E9DB1;
+    --faint:   #74839A;
+    --rule:    #253040;
+    --accent:  #86A6E0;
+    --accent-soft: #1B2740;
+    --alert:   #E28A72;
+    --alert-soft:  #2E1D18;
+    --good:    #7DBF9C;
+  }
+
+  /* ─── base ─────────────────────────────────────────────────────────── */
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.62;
+    margin: 0;
+    padding: 0 24px 96px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap { max-width: 820px; margin: 0 auto; }
+  .prose { max-width: 68ch; }
+
+  h1, h2, h3, .eyebrow, .stat-n, th, .pill, .tag {
+    font-family: var(--display);
+  }
+
+  /* ─── masthead ─────────────────────────────────────────────────────── */
+  header.masthead {
+    padding: 64px 0 28px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 40px;
+  }
+  .kicker {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 18px;
+  }
+  h1 {
+    font-size: clamp(38px, 7vw, 60px);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.02;
+    text-wrap: balance;
+    margin: 0 0 6px;
+  }
+  h1 .jp {
+    font-family: var(--display);
+    font-weight: 400;
+    color: var(--faint);
+    letter-spacing: 0;
+    font-size: 0.5em;
+    display: inline-block;
+    margin-left: 0.4em;
+    vertical-align: 0.32em;
+  }
+  .standfirst {
+    font-size: 20px;
+    line-height: 1.5;
+    color: var(--muted);
+    max-width: 60ch;
+    margin: 14px 0 0;
+    text-wrap: pretty;
+  }
+
+  /* ─── sections ─────────────────────────────────────────────────────── */
+  section { margin: 0 0 56px; }
+  .eyebrow {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--faint);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 14px;
+  }
+  .eyebrow::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
+  h2 {
+    font-size: clamp(25px, 3.6vw, 31px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    text-wrap: balance;
+    margin: 0 0 14px;
+  }
+  h3 {
+    font-size: 17.5px;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    margin: 32px 0 8px;
+  }
+  p { margin: 0 0 15px; }
+  .prose > p:last-child { margin-bottom: 0; }
+
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  code, .mono { font-family: var(--mono); font-size: 0.855em; }
+  code:not(pre code) {
+    background: var(--sunken);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.08em 0.34em;
+    white-space: nowrap;
+  }
+  strong { font-weight: 700; }
+
+  /* ─── stat band ────────────────────────────────────────────────────── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    overflow: hidden;
+    margin: 0 0 18px;
+  }
+  .stat { background: var(--surface); padding: 15px 16px 14px; }
+  .stat-n {
+    font-size: 27px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.05;
+    display: block;
+  }
+  .stat-l {
+    font-family: var(--display);
+    font-size: 11.5px;
+    line-height: 1.35;
+    color: var(--muted);
+    margin-top: 5px;
+    display: block;
+  }
+  .stat.flag .stat-n { color: var(--alert); }
+  .caption {
+    font-family: var(--display);
+    font-size: 13px;
+    color: var(--faint);
+    margin: 0;
+  }
+
+  /* ─── tables ───────────────────────────────────────────────────────── */
+  .scroller {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    background: var(--surface);
+    margin: 0 0 14px;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-family: var(--display);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  th, td {
+    text-align: left;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  th {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--sunken);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td .mono, th .mono { font-size: 13px; }
+
+  /* ─── callouts ─────────────────────────────────────────────────────── */
+  .note {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 14px 18px;
+    border-radius: 0 4px 4px 0;
+    margin: 0 0 16px;
+  }
+  .note.diagnosis {
+    border-left-color: var(--alert);
+    background: var(--alert-soft);
+  }
+  .note p { margin: 0 0 9px; }
+  .note p:last-child { margin: 0; }
+  .note-h {
+    font-family: var(--display);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 7px;
+  }
+  .note.diagnosis .note-h { color: var(--alert); }
+
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 0 0 14px;
+    font-size: 13.5px;
+    line-height: 1.58;
+  }
+  pre code { background: none; border: none; padding: 0; white-space: pre; }
+
+  ul, ol { margin: 0 0 15px; padding-left: 1.35em; }
+  li { margin-bottom: 7px; }
+  li:last-child { margin-bottom: 0; }
+
+  .pill {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 8px 3px;
+    border-radius: 20px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .pill.keep  { color: var(--good); }
+  .pill.fix   { color: var(--alert); }
+  .pill.drop  { color: var(--faint); }
+
+  details {
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    background: var(--surface);
+    padding: 0 16px;
+    margin: 0 0 14px;
+  }
+  summary {
+    font-family: var(--display);
+    font-size: 14.5px;
+    font-weight: 700;
+    padding: 12px 0;
+    cursor: pointer;
+  }
+  details[open] summary { border-bottom: 1px solid var(--rule); margin-bottom: 13px; }
+  details > :last-child { margin-bottom: 14px; }
+
+  .mermaid { margin: 0 0 14px; overflow-x: auto; }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 20px;
+    font-family: var(--display);
+    font-size: 13px;
+    color: var(--faint);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+  @media (max-width: 560px) {
+    body { font-size: 16px; padding: 0 16px 64px; }
+    header.masthead { padding-top: 40px; }
+  }
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="kicker">Build specification · draft 3</p>
+  <h1>Hashigo<span class="jp">梯子</span></h1>
+  <p class="standfirst">A local-first replacement for Mochi, scoped to one person's
+  Japanese study workflow — and to the four things Mochi gets wrong. Derived from
+  a real export of 7,716 cards.</p>
+</header>
+
+<section>
+  <p class="eyebrow">The corpus</p>
+  <h2>What the export actually contains</h2>
+  <div class="prose">
+    <p>Every number below is measured from the three <code>.mochi</code> exports, not
+    estimated. This is the data the importer has to round-trip losslessly, and it is
+    also the evidence for most decisions further down.</p>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><span class="stat-n">7,716</span><span class="stat-l">cards across 3 exports</span></div>
+    <div class="stat"><span class="stat-n">102,020</span><span class="stat-l">review records</span></div>
+    <div class="stat"><span class="stat-n">2022</span><span class="stat-l">oldest review (27 June)</span></div>
+    <div class="stat"><span class="stat-n">11</span><span class="stat-l">templates</span></div>
+    <div class="stat"><span class="stat-n">657</span><span class="stat-l">MB of audio</span></div>
+    <div class="stat"><span class="stat-n">636</span><span class="stat-l">hours studied</span></div>
+    <div class="stat flag"><span class="stat-n">96.2%</span><span class="stat-l">retention — target is 90%</span></div>
+    <div class="stat flag"><span class="stat-n">8,958</span><span class="stat-l">orphaned attachments</span></div>
+  </div>
+  <p class="caption">Reviews split 58,937 forward / 43,083 reverse, over 1,317 active
+  study days. Media is 10,887 live files, almost entirely Azure-generated mp3.</p>
+
+  <h3>The headline finding</h3>
+  <div class="prose">
+    <p>Four years of review history is enough to <strong>fit scheduler parameters to you
+    personally</strong> rather than ship population defaults — and, more importantly, to
+    settle which scheduler to ship by measurement instead of assumption. 102,020 graded
+    reviews with their preceding intervals is a large, clean test set.</p>
+    <p>It has already surfaced the single most actionable number in the export:
+    <strong>96.2% observed retention against a 90% target</strong>. See
+    <a href="#scheduling">Scheduling</a>.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Diagnosis</p>
+  <h2>Why your attachments keep breaking</h2>
+
+  <div class="note diagnosis">
+    <p class="note-h">Root cause</p>
+    <p>Mochi keys its generation cache on <strong>the entire concatenated source text
+    plus options</strong>. Any edit — including a one-character typo fix — produces a new
+    cache key, which triggers a fresh Azure call, writes a new mp3, and tombstones the
+    old one as <code>deleted?: true</code>. Nothing reconciles the leftovers.</p>
+  </div>
+
+  <div class="prose">
+    <p>Card <code>913qMiTa</code> in 基本情報 shows it cleanly. Its cache holds five
+    speech entries whose keys are progressively longer prefixes of the same card — you
+    typing it out — plus one more that differs only by a <code>sプリント</code> →
+    <code>スプリント</code> correction. Result: five billed generations, four tombstones,
+    one surviving file.</p>
+    <p>Across the three decks that pattern accounts for <strong>505,304 characters sent
+    to Azure where 231,769 were needed</strong> — a 2.18× overspend, and 8,958 dead
+    attachment records. The worst single card, 領域, was regenerated 33 times.</p>
+    <p>The money is trivial (about $8 lifetime). The <em>churn</em> is not: every
+    regeneration is a chance for a reference to end up pointing at a file that no longer
+    exists, which is exactly the manual re-syncing you have been doing by hand.</p>
+  </div>
+
+  <div class="note">
+    <p class="note-h">Fix</p>
+    <p><strong>Content-addressed, per-field, refcounted.</strong> Three changes, each
+    removing one failure mode:</p>
+    <p><strong>1. Address by hash.</strong> A blob's identity is
+    <code>sha256(normalised_text, voice, lang)</code>. Regenerating identical input is a
+    cache hit, not a new file — so a typo fix that you then undo costs nothing and
+    creates nothing.</p>
+    <p><strong>2. Key per field, not per card.</strong> Mochi hashes the whole card, so
+    editing line 3 invalidates the audio for lines 1–2. Hashing each field's resolved
+    text independently means an edit only invalidates what actually changed.</p>
+    <p><strong>3. Refcount, never tombstone.</strong> Blobs are immutable and shared;
+    deletion happens only when the last reference drops. A reference can never dangle,
+    because the blob it names cannot be mutated or removed while referenced.</p>
+  </div>
+
+  <div class="prose">
+    <p>One correction to something I said earlier: I assumed content-addressing would win
+    on storage through deduplication. Your data says otherwise — only 0.3–0.4% of files
+    are byte-identical, because each clip has unique text. The win is idempotent
+    regeneration and unbreakable references, which is the more valuable half anyway.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Data model</p>
+  <h2>Review tracks, not review lists</h2>
+
+  <div class="prose">
+    <p>The single most important structural finding: <strong>Mochi already tracks reverse
+    review as a fully independent schedule</strong>, in a separate <code>reverse-reviews</code>
+    array with its own intervals and durations. I had guessed it shared the forward
+    schedule; it does not. 3,769 of 5,947 cards in 日本語 carry one, and four decks —
+    文法, 言葉, 漢字, 単語 — have the deck-level reverse flag set.</p>
+    <p>So a card does not have <em>a</em> review log. It has <em>N</em> independent
+    <strong>tracks</strong>, each separately scheduled:</p>
+    <ul>
+      <li><code>forward</code> — always present</li>
+      <li><code>reverse</code> — when the card or its deck enables it</li>
+      <li><code>cloze:{index}</code> — per indexed cloze group</li>
+    </ul>
+    <p>This generalises Mochi's three parallel arrays (<code>reviews</code>,
+    <code>reverse-reviews</code>, <code>cloze/reviews</code>) into one concept, and makes
+    the importer a straight mapping rather than a special case per array.</p>
+    <p>Your indexed clozes are unused — <code>cloze/indexes</code> is empty on every
+    card, so all your clozes reveal together as a single track. Build the track
+    abstraction now because the importer needs it; defer the indexed-cloze
+    <em>authoring UI</em> until you want it.</p>
+  </div>
+
+  <h3>Card fields to carry across</h3>
+  <div class="scroller">
+    <table>
+      <thead>
+        <tr><th>Mochi field</th><th>Observed</th><th>Disposition</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="mono">reviews</span></td><td class="num">58,937</td><td><span class="pill keep">keep</span> → track <span class="mono">forward</span></td></tr>
+        <tr><td><span class="mono">reverse-reviews</span></td><td class="num">43,083</td><td><span class="pill keep">keep</span> → track <span class="mono">reverse</span></td></tr>
+        <tr><td><span class="mono">cloze/reviews</span></td><td>22 cards</td><td><span class="pill keep">keep</span> → track <span class="mono">cloze:n</span></td></tr>
+        <tr><td><span class="mono">fields</span></td><td>id → value</td><td><span class="pill keep">keep</span> verbatim</td></tr>
+        <tr><td><span class="mono">component-cache</span></td><td>56,767 entries</td><td><span class="pill fix">rebuild</span> as content-addressed blobs</td></tr>
+        <tr><td><span class="mono">attachments</span></td><td>10,887 live</td><td><span class="pill fix">rebuild</span> as refcounted blobs</td></tr>
+        <tr><td><span class="mono">archived?</span></td><td class="num">234</td><td><span class="pill keep">keep</span></td></tr>
+        <tr><td><span class="mono">pinned?</span></td><td>flag present, none set</td><td><span class="pill keep">keep</span> — your mining workflow</td></tr>
+        <tr><td><span class="mono">references</span></td><td>card→card links</td><td><span class="pill keep">keep</span></td></tr>
+        <tr><td><span class="mono">tags</span> / <span class="mono">manual-tags</span></td><td>20 distinct, 62 cards</td><td><span class="pill keep">keep</span> — barely used</td></tr>
+        <tr><td><span class="mono">needs-rereview?</span></td><td>1 card, 81 reviews</td><td><span class="pill keep">keep</span> — leech handling</td></tr>
+        <tr><td><span class="mono">pos</span></td><td>lexicographic</td><td><span class="pill keep">keep</span> — sort order</td></tr>
+        <tr><td><span class="mono">new?</span></td><td>boolean</td><td><span class="pill drop">derive</span> from empty track</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption">Also spotted: several mp3 attachments carry
+  <span class="mono">"type": "text/xml"</span> — Azure's SSML content-type leaked into
+  Mochi's attachment metadata. Harmless, but the importer should sniff the real type
+  rather than trust the record.</p>
+</section>
+
+<section>
+  <p class="eyebrow">Sides &amp; direction</p>
+  <h2>Cards have four sides, not two</h2>
+
+  <div class="prose">
+    <p>Both 単語 and 漢字 are four-side templates; 言葉, 文法 and New Vocab are
+    three-side. Only the simplest are the front/back pair you'd assume. So a card is an
+    <strong>ordered list of sides</strong>, and the model has to say what "reverse" means
+    for a list of four.</p>
+    <p><strong>Forward</strong> is the authored order. <strong>Reverse</strong> is a
+    declared permutation, defaulting to the reversed list — which reproduces today's
+    behaviour exactly, and gives any single template an escape hatch without introducing
+    a second concept.</p>
+    <p>This works because the templates were authored symmetrically. Side 4 of 単語 is
+    <code>意味</code> plus the emoji hint plus dictionary links: shown first, it asks you
+    to produce the word from its meaning, which is what reverse review is for. The
+    alternative — separate recognition and production templates, as Anki does with card
+    types — is more machinery for the same outcome, and FSRS already treats the two
+    directions as independent tracks, capturing that production is the harder skill.</p>
+  </div>
+
+  <div class="note diagnosis">
+    <p class="note-h">Answer leak in reverse mode</p>
+    <p>Side 4 carries <code>[Jisho](https://jisho.org/search/&lt;&lt;Kanji&gt;&gt;)</code>.
+    The link text is safe, but <strong>the URL contains the answer</strong>. Any renderer
+    that exposes URLs on hover, long-press, or a status bar leaks the card before you've
+    recalled it. In reverse mode, defer link rendering to the answer side.</p>
+  </div>
+
+  <h3>Reverse-review resolution</h3>
+  <div class="prose">
+    <p>Mochi's <code>review-reverse?</code> is a two-state boolean, so "unset" and
+    "deliberately off" are indistinguishable — which is <em>why</em> the deck setting has
+    to win. There is no way to express an intentional exception. Making the card setting
+    three-state removes the limitation:</p>
+  </div>
+
+  <div class="scroller">
+    <table>
+      <thead><tr><th>Card value</th><th>Resolves to</th></tr></thead>
+      <tbody>
+        <tr><td><span class="mono">inherit</span> — default</td><td>Whatever the deck says, walking up the tree; workspace default off</td></tr>
+        <tr><td><span class="mono">on</span></td><td>Reverse, regardless of deck</td></tr>
+        <tr><td><span class="mono">off</span></td><td>No reverse, <strong>even when the deck says on</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <p>Decks take the same three states, so a subdeck can override its parent. The result:
+    単語's 3,702 cards all reverse by inheritance, and flipping one card to
+    <code>off</code> keeps it off.</p>
+  </div>
+
+  <div class="note">
+    <p class="note-h">Importer rule — do not orphan history</p>
+    <p>Map <code>review-reverse? = true</code> to <code>on</code>, and absent or false to
+    <code>inherit</code>. Then enforce: <strong>any card with a non-empty
+    <code>reverse-reviews</code> array must resolve to <code>on</code></strong>, or 43,083
+    review records lose their track.</p>
+    <p>And permanently: setting a card to <code>off</code> makes its reverse track
+    <strong>dormant, not deleted</strong> — retained, not scheduled. No scheduling toggle
+    should ever destroy four years of history.</p>
+  </div>
+</section>
+
+<section id="scheduling">
+  <p class="eyebrow">Scheduling</p>
+  <h2>Choose the algorithm by measurement</h2>
+
+  <div class="prose">
+    <p>The default move would be "Mochi uses FSRS, so use FSRS." That's an assumption, and
+    there is no need to assume — 102,020 graded reviews, each with the interval that
+    preceded it, is a large and clean test set. Ship the scheduler that wins on your data.</p>
+  </div>
+
+  <h3>Backtest, not A/B</h3>
+  <div class="prose">
+    <p>A/B testing a scheduler doesn't work in practice: each arm needs months, and the
+    signal is confounded by ordinary life — a busy fortnight is indistinguishable from a
+    bad algorithm. Offline backtesting avoids both problems. Replay the real history and
+    score how well each candidate <em>predicted what actually happened</em>, using log
+    loss and RMSE of predicted recall probability against your true grades. This is the
+    methodology FSRS itself was validated with.</p>
+    <p>Candidates: SM-2 (Anki classic), FSRS-6 with stock parameters, FSRS-6 fit to your
+    history, and a naive fixed-multiplier as a sanity floor. If SM-2 wins, ship SM-2.</p>
+  </div>
+
+  <div class="note diagnosis">
+    <p class="note-h">Known limitation — state it, don't hide it</p>
+    <p>The intervals in the log are the ones Mochi chose, so the sample is
+    <strong>selection-biased</strong>: there is no observation of what would have happened
+    at intervals you were never shown. Backtesting discriminates well <em>between</em>
+    algorithms on observed data, but it is not ground truth for a scheduler that would
+    have behaved very differently. Treat the result as strong evidence, not proof.</p>
+  </div>
+
+  <h3>You are over-studying, measurably</h3>
+
+  <div class="scroller">
+    <table>
+      <thead><tr><th>Measure</th><th class="num">Value</th><th>Reading</th></tr></thead>
+      <tbody>
+        <tr><td>Observed retention</td><td class="num">96.24%</td><td>3,832 lapses in 102,020 reviews</td></tr>
+        <tr><td>FSRS default target</td><td class="num">90%</td><td>Six points below where you sit</td></tr>
+        <tr><td>Total study time</td><td class="num">636.1 h</td><td>26.5 days of wall clock</td></tr>
+        <tr><td>Median review</td><td class="num">10 s</td><td>Mean 24.9 s — long tail</td></tr>
+        <tr><td>Reviews / day</td><td class="num">69</td><td>Last 90 days; peak 229</td></tr>
+        <tr><td>Median interval</td><td class="num">24.7 d</td><td>p75 123 d · p90 358 d · max 2,707 d</td></tr>
+        <tr><td>Sub-daily intervals</td><td class="num">7.6%</td><td>7,090 reviews at ≤ 1 day</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <p>Passing 96% of reviews means the intervals are shorter than they need to be — you
+    are paying in daily reviews for retention you already have. Lower target retention
+    lengthens intervals and cuts workload, at the cost of forgetting slightly more; the
+    published optimum for total time-to-remember generally sits below where you are.</p>
+    <p>How much that saves is exactly what the backtest should quantify, per deck, rather
+    than a rule of thumb quoted at you. It is stated here as a question with a method, not
+    an answer.</p>
+    <p><strong>Target retention must be a setting</strong> — per deck, since 漢字 and
+    基本情報 have different stakes — with the backtest producing a recommended default.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Template language</p>
+  <h2>Two syntax surfaces, not one</h2>
+
+  <div class="prose">
+    <p>Draft 1 scanned template bodies only, and that was a mistake — <strong>card content
+    carries a richer construct set than the templates do</strong>, including the single
+    most-used construct in the whole corpus. Both tables below are counted from your data
+    and together form the parser's acceptance criteria.</p>
+  </div>
+
+  <h3>Surface 1 — card content and field values</h3>
+  <div class="scroller">
+    <table>
+      <thead><tr><th>Construct</th><th class="num">Uses</th><th class="num">Cards</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><span class="mono">[[text|card-id]]</span></td><td class="num">8,690</td><td class="num">4,323</td><td>Wiki-link — see below</td></tr>
+        <tr><td><span class="mono">&lt;speech lang="jp"&gt;</span></td><td class="num">287</td><td class="num">—</td><td>Inline TTS; note the non-BCP-47 code</td></tr>
+        <tr><td>Ordered list</td><td class="num">4,314</td><td class="num">1,392</td><td>Your dominant prose structure</td></tr>
+        <tr><td><span class="mono">---</span></td><td class="num">1,694</td><td class="num">1,140</td><td>Template-less cards defining their own sides</td></tr>
+        <tr><td><span class="mono">{{…}}</span></td><td class="num">1,087</td><td class="num">550</td><td>Cloze, always unindexed</td></tr>
+        <tr><td><span class="mono">&lt;ai&gt;</span></td><td class="num">125</td><td class="num">—</td><td>Inline generation, written straight into cards</td></tr>
+        <tr><td><span class="mono">&lt;translate from to&gt;</span></td><td class="num">106</td><td class="num">—</td><td>Inline translation</td></tr>
+        <tr><td><span class="mono">**bold**</span></td><td class="num">315</td><td class="num">292</td><td></td></tr>
+        <tr><td><span class="mono">`code`</span></td><td class="num">294</td><td class="num">228</td><td></td></tr>
+        <tr><td><span class="mono">___</span></td><td class="num">255</td><td class="num">249</td><td>Horizontal rule</td></tr>
+        <tr><td><span class="mono">&lt;furigana&gt;</span></td><td class="num">19</td><td class="num">19</td><td></td></tr>
+        <tr><td>Blockquote, headings, bullets</td><td class="num">76</td><td class="num">—</td><td></td></tr>
+        <tr><td><span class="mono">$…$</span> / <span class="mono">$$…$$</span></td><td class="num">29</td><td class="num">19</td><td>LaTeX — 基本情報 maths cards</td></tr>
+        <tr><td><span class="mono">&lt;image&gt;</span></td><td class="num">8</td><td class="num">—</td><td>Image search</td></tr>
+        <tr><td>Images, tables, <span class="mono">&lt;draw&gt;</span>, italic</td><td class="num">14</td><td class="num">—</td><td>Long tail</td></tr>
+        <tr><td><span class="mono">&lt;span style&gt;</span></td><td class="num">—</td><td class="num">2</td><td>Raw inline CSS — needs a sanitiser policy</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note diagnosis">
+    <p class="note-h">Wiki-links are 56% of your corpus</p>
+    <p>Draft 1 called <code>references</code> unused, based on a bad sample. In fact
+    <strong>4,323 cards carry 8,690 wiki-links</strong> in the form
+    <code>[[display|card-id]]</code> — and the pattern is morphological decomposition:
+    <code>~に越したことはない</code> links to <code>越す</code>;
+    <code>～に引き換え</code> links to both <code>引く</code> and <code>換える</code>.
+    Two links per card is the commonest case, because a two-kanji compound points at both
+    components.</p>
+    <p>This is load-bearing. A parser that misses it renders over half your cards with
+    broken links. Mochi also stores it the rename-safe way — stable ID plus cached display
+    text — so that design is inherited, not invented. 7,763 of 7,771 resolve inside these
+    three exports; the remaining 8 point at decks you didn't export, so unresolved links
+    must render as plain text rather than being dropped.</p>
+  </div>
+
+  <h3>Surface 2 — template bodies</h3>
+
+  <div class="scroller">
+    <table>
+      <thead>
+        <tr><th>Construct</th><th class="num">Uses</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="mono">&lt;&lt;Field&gt;&gt;</span></td><td class="num">73</td><td>Interpolate a field value</td></tr>
+        <tr><td><span class="mono">---</span></td><td class="num">19</td><td>Side separator (front / back / …)</td></tr>
+        <tr><td><span class="mono">[text](url)</span></td><td class="num">11</td><td>Markdown link, often with a field in the URL</td></tr>
+        <tr><td><span class="mono">{{…}}</span></td><td class="num">8</td><td>Cloze — hidden until clicked</td></tr>
+        <tr><td><span class="mono">&gt;</span></td><td class="num">6</td><td>Blockquote</td></tr>
+        <tr><td><span class="mono">&lt;ai&gt;…&lt;/ai&gt;</span></td><td class="num">5</td><td>Inline generated text</td></tr>
+        <tr><td><span class="mono">#### </span></td><td class="num">5</td><td>Heading</td></tr>
+        <tr><td><span class="mono">___</span></td><td class="num">4</td><td>Horizontal rule <em>within</em> a side — not a separator</td></tr>
+        <tr><td><span class="mono">&lt;&lt;/Field&gt;&gt;</span></td><td class="num">4</td><td>Section close</td></tr>
+        <tr><td><span class="mono">&lt;furigana&gt;</span></td><td class="num">3</td><td>Ruby annotation over Japanese</td></tr>
+        <tr><td><span class="mono">&lt;&lt;#Field&gt;&gt;</span></td><td class="num">2</td><td>Show if field is truthy</td></tr>
+        <tr><td><span class="mono">&lt;&lt;^Field&gt;&gt;</span></td><td class="num">2</td><td>Show if field is empty</td></tr>
+        <tr><td><span class="mono">&lt;draw /&gt;</span></td><td class="num">1</td><td>Kanji drawing canvas (漢字 deck)</td></tr>
+        <tr><td><span class="mono">&lt;input&gt;</span></td><td class="num">1</td><td>Typed answer box (数字 deck)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Three parser traps</h3>
+  <div class="prose">
+    <p><strong>1. <code>---</code> and <code>___</code> are different.</strong> The first
+    separates card sides; the second is a horizontal rule inside a side. Conflating them
+    silently restructures your cards.</p>
+    <p><strong>2. Constructs nest, and resolve inside-out.</strong> Your 単語 template
+    contains <code>{{&lt;furigana&gt;&lt;&lt; 単語 &gt;&gt;&lt;/furigana&gt;}}</code> —
+    a cloze wrapping a ruby tag wrapping a field. Order is fixed: resolve fields, then
+    tags, then cloze.</p>
+    <p><strong>3. Fields appear inside unquoted HTML attributes.</strong> Your 数字
+    template has <code>&lt;input value=&lt;&lt;NoComma&gt;&gt;&gt;</code>. A naive HTML
+    parser will mis-tokenise that. Interpolate before parsing markup, not after.</p>
+  </div>
+
+  <details>
+    <summary>Verbatim: the 漢字 template, including the drawing canvas</summary>
+<pre><code>&lt;&lt;Kanji&gt;&gt;
+---
+&lt;draw height="400px" brushColor="#FF0000" brushRadius="4"/&gt;
+---
+&lt;&lt;Reading&gt;&gt;
+---
+&lt;&lt;Meaning&gt;&gt;
+#### &lt;ai&gt;Describe &lt;&lt;Kanji&gt;&gt; using emojis. Answer using only emojis&lt;/ai&gt;
+🐊[Wanikani](https://www.wanikani.com/kanji/&lt;&lt; Kanji &gt;&gt;)
+🔗[Words with Kanji](https://jisho.org/search/\*&lt;&lt; Kanji &gt;&gt;\*)
+📗[Jisho](https://jisho.org/search/&lt;&lt; Kanji &gt;&gt;%20%23kanji)
+🟦[Kakimashou](https://www.kakimashou.com/dictionary/character/&lt;&lt; Kanji &gt;&gt;)</code></pre>
+    <p class="caption"><code>&lt;draw&gt;</code> takes attributes — height, brush colour,
+    brush radius — so the canvas element must accept configuration, not just exist. Note
+    also the escaped <code>\*</code> wildcards inside a link URL.</p>
+  </details>
+</section>
+
+<section>
+  <p class="eyebrow">Generation</p>
+  <h2>Fields form a dependency graph</h2>
+
+  <div class="prose">
+    <p>Generated fields point at other fields as input, so generation is a DAG that must
+    be resolved in topological order. Your 単語 template is the most involved case:</p>
+  </div>
+
+<pre class="mermaid">
+graph LR
+  N["単語 · plain<br/>(the word)"] --> S["Speech · tts"]
+  N -. "named in prompt" .-> E["例文 · ai"]
+  E --> A["Audio · tts"]
+  E --> T["Translate · translate"]
+  R["Reading · boolean"] -.-> C{"gates<br/>&lt;&lt;#Reading&gt;&gt;"}
+  F["Reference · plain"] --> C
+</pre>
+
+  <div class="note diagnosis">
+    <p class="note-h">There are two generation surfaces, and draft 1 only had one</p>
+    <p>The DAG above covers <strong>typed fields</strong> — declared on the template, with
+    a <code>source</code> pointer and an options object. But generators are also written
+    <strong>inline in card content</strong>, 545 times:
+    <code>&lt;speech lang="jp"&gt;</code> (287), <code>&lt;ai&gt;</code> (125),
+    <code>&lt;translate from="ja" to="en"&gt;</code> (106),
+    <code>&lt;furigana&gt;</code> (19), <code>&lt;image&gt;</code> (8).</p>
+    <p>Both surfaces must feed the same content-addressed cache, keyed on inner text plus
+    attributes. That is in fact why Mochi's <code>component-cache</code> is keyed by text
+    rather than by field id — one cache, two callers.</p>
+    <p>Normalise language codes on import: inline tags use <code>lang="jp"</code> while
+    field options use <code>ja-JP</code>. Same language, two spellings, one of them not
+    valid BCP-47.</p>
+  </div>
+
+  <div class="note">
+    <p class="note-h">The trap Mochi documents as a gotcha</p>
+    <p>In Mochi, a dynamic field only generates if it <em>appears in the template
+    markdown</em> — so a field that exists purely as an input to another field silently
+    never resolves. That is a leaked implementation detail, not a real constraint.
+    Hashigo resolves the DAG from the field definitions themselves; template presence
+    controls display only.</p>
+  </div>
+
+  <div class="prose">
+    <p>One subtlety the schema hides: <code>例文</code> is an AI field whose
+    <code>source</code> is <code>null</code>, because its dependency is written inside the
+    prompt text — <code>"Example sentence using &lt;&lt;単語&gt;&gt; in Japanese"</code>.
+    The resolver therefore has to extract <code>&lt;&lt;field&gt;&gt;</code> references
+    from prompt strings too, or it will build an incomplete graph and generate in the
+    wrong order.</p>
+  </div>
+
+  <h3>Field types to support</h3>
+  <div class="scroller">
+    <table>
+      <thead><tr><th>Type</th><th>Backend</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><span class="mono">plain</span> / <span class="mono">text</span></td><td>—</td><td>Hand-authored</td></tr>
+        <tr><td><span class="mono">boolean</span></td><td>—</td><td>Checkbox; drives <span class="mono">&lt;&lt;#Field&gt;&gt;</span> sections</td></tr>
+        <tr><td><span class="mono">number</span></td><td>—</td><td>Used once, in 数字</td></tr>
+        <tr><td><span class="mono">speech</span></td><td>Azure Neural TTS</td><td>19,710 lifetime generations</td></tr>
+        <tr><td><span class="mono">ai</span></td><td>LLM, custom prompt</td><td>19,710 generations; prompts carry field refs</td></tr>
+        <tr><td><span class="mono">translate</span></td><td>Translation API</td><td>272,383 chars, ja→en</td></tr>
+        <tr><td><span class="mono">furigana</span></td><td>Local morphology</td><td>3,255 generations — go offline, see below</td></tr>
+        <tr><td><span class="mono">dictionary</span></td><td>JMdict, local</td><td>10 uses</td></tr>
+        <tr><td><span class="mono">image-search</span></td><td>Search API</td><td>18 uses — lowest priority</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Services</p>
+  <h2>Azure, settled by your own data</h2>
+
+  <div class="prose">
+    <p>The exports name the voices outright: <code>ja-JP-NanamiNeural</code>,
+    <code>ja-JP-DaichiNeural</code>, <code>en-US-AIGenerate1Neural</code>. Those are Azure
+    Neural TTS voice IDs — so Mochi is an Azure customer, and using the same voices
+    reproduces the audio quality you already have <strong>exactly</strong>. No listening
+    test needed; I'd suggested one, and your data made it unnecessary.</p>
+    <p>Better: at your real rate — about 58,000 characters a year once regeneration churn
+    is eliminated — <strong>Azure's free tier of 500,000 characters per month covers you
+    roughly a hundred times over</strong>. Speech synthesis is, in practice, free.</p>
+    <p>Furigana should move off the API entirely. A local morphological analyser
+    (kuromoji, MeCab + UniDic) plus JMdict gives you offline readings you can
+    <em>correct yourself</em> when they're wrong — strictly better than a remote call you
+    cannot fix, and it removes a network dependency from card creation.</p>
+  </div>
+
+  <div class="scroller">
+    <table>
+      <thead><tr><th>Service</th><th>Rate</th><th>Your annual use</th><th class="num">Cost</th></tr></thead>
+      <tbody>
+        <tr><td>Azure Neural TTS</td><td>$16 / 1M chars, 500K/mo free</td><td>~58K chars</td><td class="num">$0.00</td></tr>
+        <tr><td>LLM for <span class="mono">&lt;ai&gt;</span> fields</td><td>$0.20–$1.00 / 1M in</td><td>~5,000 short calls</td><td class="num">&lt; $0.50</td></tr>
+        <tr><td>Translation</td><td>$10 / 1M chars, 2M/mo free</td><td>~68K chars</td><td class="num">$0.00</td></tr>
+        <tr><td>Furigana + dictionary</td><td>local</td><td>—</td><td class="num">$0.00</td></tr>
+        <tr><td>Sync (Workers + D1 + R2)</td><td>free tier</td><td>657 MB, one user</td><td class="num">$0.00</td></tr>
+        <tr><td><strong>Total</strong></td><td></td><td></td><td class="num"><strong>&lt; $1 / yr</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption">Against $60/yr for Mochi. The subscription is not paying for
+  inference — at this volume inference is rounding error.</p>
+</section>
+
+<section id="requests">
+  <p class="eyebrow">Feature requests</p>
+  <h2>Six additions, and where they land</h2>
+
+  <div class="prose">
+    <p>Only one of these is a big build. The rest are small — <em>provided</em> their
+    schema half lands in stage 1. A feature whose storage is retrofitted later means a
+    migration over 7,716 cards and 102,020 reviews; a feature whose storage is right from
+    the start is just UI work whenever you want it.</p>
+  </div>
+
+  <div class="scroller">
+    <table>
+      <thead><tr><th>Request</th><th>Schema decision</th><th>Build</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Review timestamps</strong></td>
+          <td>Stage 1 — <strong>mandatory</strong></td>
+          <td>Stage 1</td>
+        </tr>
+        <tr>
+          <td><strong>Hierarchical tags</strong></td>
+          <td>Stage 1 — path type + normalisation</td>
+          <td>Stage 7 · sidebar tree</td>
+        </tr>
+        <tr>
+          <td><strong>@ card reference</strong></td>
+          <td>Stage 1 — already 56% of your data</td>
+          <td>Stage 7 · picker + create-if-missing</td>
+        </tr>
+        <tr>
+          <td><strong>Ctrl+K search</strong></td>
+          <td>Stage 1 — FTS tables + tokeniser</td>
+          <td>Stage 6</td>
+        </tr>
+        <tr>
+          <td><strong>Dashboard</strong></td>
+          <td>none</td>
+          <td><strong>Stage 2</strong> — moved early, see below</td>
+        </tr>
+        <tr>
+          <td><strong>Live analytics + insights</strong></td>
+          <td>Stage 1 — aggregate shape</td>
+          <td>Phase 2</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Review timestamps — the one that cannot wait</h3>
+
+  <div class="note diagnosis">
+    <p class="note-h">Every review you have ever done shares one clock time</p>
+    <p>All 102,020 review records carry the timestamp <code>15:00:00Z</code> — exactly
+    midnight JST. Mochi truncates to the date and stores JST midnight. There is not one
+    single genuine time-of-day value in four years of history.</p>
+    <p>This is <strong>unrecoverable</strong>. Unlike everything else in this spec, it
+    cannot be reconstructed later from the export, because the information was never
+    written down. Every day that passes without full timestamps is a day of data you
+    cannot get back — which is why it belongs in stage 1 rather than with the analytics
+    work that will consume it.</p>
+  </div>
+
+  <div class="prose">
+    <p>Store each review's <code>reviewed_at</code> as a full instant with timezone
+    offset — the offset matters, since a 23:00 review in Tokyo and a 23:00 review abroad
+    are different facts about your day. <code>duration</code> already exists on 92,089
+    reviews and is kept as-is.</p>
+    <p>Imported history must be flagged <strong>time-unknown</strong>, not silently
+    assigned midnight. Otherwise every chart grows a false spike at 00:00 and the
+    time-of-day analysis is poisoned by its own migration.</p>
+    <p>What this unlocks, none of which is possible today: retention by hour of day,
+    session detection by clustering reviews into sittings, honest reviews-per-hour
+    throughput, and whether your accuracy actually drops late at night.</p>
+  </div>
+
+  <h3>Dashboard — move it to stage 2</h3>
+  <div class="prose">
+    <p>This one is worth building far earlier than it looks, because it is
+    <strong>read-only over already-imported data and doubles as the import's
+    verification</strong>. Mochi's own dashboard gives you known-good figures; if
+    Hashigo's review counts, retention and study hours match them, the importer is
+    correct. That is a far better test than any assertion I could write.</p>
+    <p>Every tile in your screenshot is computable straight from the review log —
+    活動 heatmap, 学習カード数, 累計, 復習数, 定着率, 復習時間, デッキの進捗 — with one
+    exception: <strong>復習予測</strong>, the forecast, needs the scheduler. Build the
+    dashboard at stage 2 without that tile, and add it after the scheduler lands.</p>
+    <p>Two things worth adding that Mochi's version lacks: retention plotted
+    <em>against interval length</em>, which is where over-studying becomes visible rather
+    than merely true; and per-deck retention, since 96.2% overall hides real variation
+    between 漢字 and 基本情報.</p>
+  </div>
+
+  <h3>Hierarchical tags</h3>
+  <div class="prose">
+    <p>You already use the convention — <code>Dialect/Kansai</code> is in the data. So tags
+    are <strong>materialised paths</strong>: store the full string, index each prefix, and
+    the sidebar tree plus arbitrary nesting depth both fall out of that with no schema
+    change. <code>Dialect/Kansai/Osaka</code> works the day you type it.</p>
+  </div>
+
+  <div class="note diagnosis">
+    <p class="note-h">Your tag list is quietly corrupted</p>
+    <p>Five tags carry a leading zero-width space (U+200B), which is invisible in any UI
+    and splits four tags into indistinguishable pairs:</p>
+    <p><code>Mathematics</code> (8 cards) vs <code>␣Mathematics</code> (1) ·
+    <code>Computing</code> (2) vs <code>␣Computing</code> (1) ·
+    <code>Finance</code> (1) vs <code>␣Finance</code> (1) ·
+    <code>Logic</code> (1) vs <code>␣Logic</code> (1) — plus
+    <code>␣Buddhism</code> (11), which has no clean counterpart at all.</p>
+    <p>Almost certainly pasted in from a web page. If you have ever wondered why a tag
+    appears twice in the sidebar, this is why. The importer should NFKC-normalise, strip
+    zero-width and format characters, trim, then merge the collisions — turning 23 tags
+    into 19 real ones.</p>
+  </div>
+
+  <h3>Ctrl+K search</h3>
+  <div class="prose">
+    <p>The schema half is an FTS index over field values, card names, and tag paths. The
+    real decision is the tokeniser, and it is a Japanese-specific trap:
+    <strong>SQLite FTS5's default tokeniser splits on whitespace</strong>, so it cannot
+    index Japanese at all. Use the <code>trigram</code> tokeniser, which handles CJK
+    substring matching, or pre-segment with the same morphological analyser used for
+    furigana. Either way it is a stage-1 choice, because it determines the table
+    definitions.</p>
+    <p>Search should cover field values rather than rendered output — you want to find
+    a word by its reading even when the card displays only kanji.</p>
+  </div>
+
+  <h3>@ reference, and create-if-missing</h3>
+  <div class="prose">
+    <p>Half of this already exists: 8,690 links across 4,323 cards, stored as
+    <code>[[display|card-id]]</code>. What's missing is only the authoring affordance — an
+    <code>@</code> picker that searches as you type and, on no match,
+    <strong>creates the card and links it in one action</strong>.</p>
+    <p>That is precisely the mining workflow you described doing by hand: spotting a word
+    inside an example sentence, pinning the card, and coming back later to make a 単語 card
+    from it. With create-if-missing, the pin-and-return loop collapses into a single
+    keystroke — and the new card arrives already linked to the sentence it came from,
+    which is context you currently lose.</p>
+    <p>Reuse the search index from Ctrl+K rather than building a second one, and let the
+    picker also create <em>into a chosen deck and template</em>, so a word mined on the
+    train lands in 単語 with its generators queued.</p>
+  </div>
+
+  <h3>Live analytics with insights</h3>
+  <div class="prose">
+    <p>Feasible, and phase 2 is the right home. The mechanism is simpler than it sounds:
+    the app already holds every review in local SQLite, so it computes the aggregates
+    itself and sends <strong>only the summary</strong> — retention by interval bucket, by
+    deck, by hour once timestamps exist, lapse distributions, forecast load — to a model
+    for interpretation.</p>
+    <p>The design rule is: <strong>send aggregates, never the raw log</strong>. A summary
+    of 102,020 reviews is a few kilobytes, which keeps the cost at effectively nothing and
+    means your entire study history never leaves the device. Shipping raw rows would be
+    both expensive and needless.</p>
+    <p>The stage-1 obligation is small but real: settle the shape of that aggregate now, so
+    the queries feeding it are stable and the dashboard and the insight panel read the same
+    numbers.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Architecture</p>
+  <h2>Decisions locked</h2>
+
+  <div class="scroller">
+    <table>
+      <thead><tr><th>Decision</th><th>Choice</th><th>Because</th></tr></thead>
+      <tbody>
+        <tr><td>Platform</td><td>Local-first PWA, one TypeScript codebase</td><td>You edit on the phone, so it needs the full editor; and two PCs makes zero-install deploys a daily win</td></tr>
+        <tr><td>Local store</td><td>SQLite via OPFS</td><td>Real queries over 7,716 cards and 102,020 reviews; a JSON blob won't hold</td></tr>
+        <tr><td>Sync</td><td>Bidirectional, field-level last-write-wins</td><td>One user, never concurrent — no CRDT needed</td></tr>
+        <tr><td>Review log</td><td>Append-only per track</td><td>Merges by set union; can never conflict</td></tr>
+        <tr><td>Attachments</td><td>Content-addressed + refcounted</td><td>Kills the regeneration churn above</td></tr>
+        <tr><td>Server</td><td>Workers + D1 + R2</td><td>Two PCs need a rendezvous; free tier, nothing to maintain</td></tr>
+        <tr><td>Scheduler</td><td>Chosen by backtest, then fit to your history</td><td>102,020 graded reviews decides it; no need to assume FSRS</td></tr>
+        <tr><td>Review direction</td><td>Ordered sides; reverse = declared permutation</td><td>Templates run to four sides, so "reverse" needs defining</td></tr>
+        <tr><td>Reverse toggle</td><td>Three-state <span class="mono">inherit / on / off</span>, card over deck</td><td>Two-state booleans can't express a deliberate exception</td></tr>
+        <tr><td>Battery</td><td>No polling, no sockets, precomputed renders</td><td>Mostly a matter of <em>not</em> doing things</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <p class="note-h">Explicitly not building</p>
+    <p>Deck sharing and the marketplace, collaborative editing, diagram cards, saved
+    custom views, cramming mode, Anki and PDF importers, and multi-user accounts. Each is
+    real work in Mochi that you have never mentioned using. If one turns out to matter,
+    it can be added — but none of it belongs in v1.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Build order</p>
+  <h2>Sequenced by what unblocks what</h2>
+
+  <div class="prose">
+    <p>This order is genuinely dependent — each stage needs the one before it, and the
+    importer comes early because it turns your real data into the test fixture for
+    everything after.</p>
+    <ol>
+      <li><strong>Schema + importer.</strong> Read <code>.mochi</code>, land all 7,716
+      cards and 102,020 reviews, round-trip losslessly. Carries the schema half of every
+      request in the previous section: full review timestamps, tag paths with
+      normalisation, wiki-links, FTS tables, and the aggregate shape.</li>
+      <li><strong>Dashboard, read-only.</strong> Reproduce Mochi's figures from the
+      imported data. This is the import's acceptance test — matching numbers means the
+      import is right — and it's the first thing you can actually use. Forecast tile
+      deferred to after the scheduler.</li>
+      <li><strong>Template engine.</strong> All fourteen constructs, with the three traps
+      handled. Golden-file tested against your 11 real templates.</li>
+      <li><strong>Renderer.</strong> Markdown plus the whitelisted elements —
+      <code>furigana</code>, <code>draw</code>, <code>input</code>, cloze reveal.</li>
+      <li><strong>Scheduler backtest.</strong> Replay the imported history against the
+      candidates, pick a winner, fit its parameters, and recommend a target retention per
+      deck. Runs offline against stage 1's output — no UI needed, and it settles a
+      decision everything after depends on.</li>
+      <li><strong>Scheduler.</strong> The winning algorithm, over tracks.</li>
+      <li><strong>Review UI.</strong> The screen you'll spend all your time in. Forecast
+      tile joins the dashboard here.</li>
+      <li><strong>Search.</strong> Ctrl+K over the stage-1 index — earns its place before
+      the editor, since the <code>@</code> picker reuses it.</li>
+      <li><strong>Generation pipeline.</strong> DAG resolver for typed fields, inline-tag
+      resolver for card content, content-addressed cache, Azure and LLM backends.</li>
+      <li><strong>Editor.</strong> Card and template authoring on phone and desktop, the
+      <code>@</code> picker with create-if-missing, and the tag sidebar.</li>
+      <li><strong>Sync.</strong> Last, because everything before it is verifiable on one
+      device — and this is the piece that breaks Mochi on Android.</li>
+    </ol>
+    <p><strong>Phase 2:</strong> the live analytics board with generated insights, reading
+    the aggregates defined in stage 1.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Settled</p>
+  <h2>Resolved since draft 1</h2>
+  <div class="prose">
+    <ul>
+      <li><strong>Reverse review keeps the whole-card flip.</strong> The templates were
+      authored symmetrically, so reversal already produces real production practice.
+      Modelled as an ordered side list with a default-reversed permutation, so a single
+      template can deviate later without a second concept.</li>
+      <li><strong>The six empty leaf decks are dropped</strong> — 副詞, 名詞, 形容動詞,
+      一段動詞, 形容詞, 五段動詞. The <code>English</code> and <code>基本情報</code> roots
+      hold no direct cards but are populated parents; they stay. If part-of-speech becomes
+      worth filtering on, it belongs as a tag or field — a card can be both 動詞 and 敬語,
+      but it lives in only one deck.</li>
+      <li><strong>Reverse toggle is three-state, card beats deck.</strong> Preserves
+      today's deck-wide behaviour by inheritance while allowing per-card exceptions, which
+      Mochi's boolean cannot express.</li>
+      <li><strong>The scheduler is chosen by backtest, not assumed.</strong> Target
+      retention becomes a per-deck setting.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Open</p>
+  <h2>Still to decide</h2>
+  <div class="prose">
+    <ul>
+      <li><strong>Leech policy.</strong> <code>needs-rereview?</code> exists and 81
+      reviews carry <code>rereview?</code>, but the behaviour is undocumented. Only one
+      card currently carries the flag, so there is nothing to preserve — design a rule
+      rather than reverse-engineering Mochi's.</li>
+      <li><strong>LLM choice for <code>&lt;ai&gt;</code> fields.</strong> Cost is noise at
+      this volume, so pick on output quality. Same shape as the audio question, and worth
+      resolving the same way: run the real emoji-gloss prompt over twenty words you already
+      have generated output for, and compare against what Mochi produced.</li>
+      <li><strong>Sub-daily intervals.</strong> 7.6% of reviews come due within a day,
+      which implies learning steps this spec hasn't defined. The backtest will show whether
+      they earn their place.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  Derived from 日本語, English and 基本情報 exports · Mochi format version 2 ·
+  7,716 cards · 102,020 reviews · 8,690 wiki-links · 636 hours · analysed 18–19 August 2026
+</footer>
+
+</div>

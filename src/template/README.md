@@ -1,0 +1,1 @@
+# src/template — Stage 3. Owns the template/content parser and its two syntax surfaces: <<Field>> interpolation before markup, `---` sides vs `___` rules, inside-out nesting (fields → tags → cloze), and the inline generator tags. Golden-file tested against the 11 real templates.

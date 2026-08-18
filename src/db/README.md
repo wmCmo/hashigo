@@ -1,0 +1,1 @@
+# src/db — Stage 1. Owns SQLite access and migrations: better-sqlite3 on Node (import, backtest, tests) and OPFS in the browser, behind one interface, including the FTS5 trigram tables for Japanese search.

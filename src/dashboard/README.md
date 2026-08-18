@@ -1,0 +1,1 @@
+# src/dashboard — Stage 2. Owns the read-only tiles computed from the imported review log (活動, 学習カード数, 累計, 復習数, 定着率, 復習時間, デッキの進捗) plus retention-vs-interval. Doubles as the importer acceptance test; 復習予測 waits for the scheduler.
