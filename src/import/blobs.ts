@@ -17,13 +17,17 @@
  * schema.sql's header suggests hashing the identity tuple (kind, source_text,
  * voice, lang, options).  The corpus rules that out, twice over:
  *
- *   * 12 normalised generation keys resolve to live files whose BYTES DIFFER.
- *     Azure is not bit-reproducible: the same text and voice, generated twice,
- *     returns two different mp3s.  Tuple-addressing would force discarding 12
- *     real, still-referenced files.
- *   * 30 live files have no cache provenance at all (5 images plus 25 mp3s whose
- *     cache entry is gone).  Their tuple is (kind, NULL, NULL, NULL, '{}') --
- *     one address for all 30.
+ *   * 12 normalised generation keys resolve to live files whose BYTES DIFFER
+ *     (11 keys reach two files, one reaches three).  Azure is not
+ *     bit-reproducible: the same text and voice, generated twice, returns two
+ *     different mp3s.  Tuple-addressing would force discarding 14 real,
+ *     still-referenced files.
+ *   * 30 live files have no cache provenance at all -- 28 mp3s whose cache entry
+ *     is gone, plus one jpeg and one png.  Their tuple would be
+ *     (kind, NULL, NULL, NULL, '{}'): one address for all 30.  After byte
+ *     dedup 13 of the 30 share an address with a file that DOES have
+ *     provenance, so 17 blobs end up with no identity tuple -- the number
+ *     `blobsWithoutProvenance` reports.
  *
  * So `blobs.hash = sha256(payload bytes)`.  That is a real content address: it is
  * verifiable by rehashing, it cannot collide across unrelated payloads, and it
@@ -37,10 +41,10 @@
  * regenerating identical input free.
  *
  * KNOWN COST OF HAVING NO CACHE TABLE.  The key -> blob relation is genuinely
- * many-to-many (10,834 keys, 10,848 edges, 10,816 blobs; 12 keys reach two
- * blobs, 39 blobs are reached by two or more keys) but a blob row holds exactly
- * one tuple.  49 of 10,848 edges are therefore unrepresentable and are dropped,
- * deterministically keeping the lexicographically smallest key per blob.  Effect
+ * many-to-many (10,834 keys, 10,848 edges, 10,816 blobs; 12 keys reach two or
+ * more blobs, 40 blobs are reached by two or more keys) but a blob row holds
+ * exactly one tuple.  49 of 10,848 edges are therefore unrepresentable and are
+ * dropped, keeping the lexicographically smallest key per blob deterministically.  Effect
  * in production: 0.45% of cached inputs would miss and re-bill.  A
  * `generation_cache(key TEXT PRIMARY KEY, blob_hash)` table would remove that
  * entirely.  Nothing here modifies the schema.
