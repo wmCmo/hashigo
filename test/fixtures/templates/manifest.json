@@ -1,0 +1,578 @@
+{
+  "generatedFrom": [
+    "日本語",
+    "English",
+    "基本情報"
+  ],
+  "rows": 11,
+  "distinctIds": 10,
+  "templates": [
+    {
+      "export": "日本語",
+      "id": "itmYDz2N",
+      "name": "言葉",
+      "pos": "8",
+      "sides": 3,
+      "content": "{{<< 言葉 >>}}\n___\n<< Speech >>\n---\n><< Example >>\n<< Translate >>\n<< Audio >>\n---\n<< 意味 >>\n#### {{<ai>Describe a word << 言葉 >> using emojis only</ai>}}\n🀄[TAKOBOTO](https://takoboto.jp/?q=<< 言葉 >>)\n🎬[IMD](https://www.immersionkit.com/dictionary?keyword=<< 言葉 >>)",
+      "fields": [
+        {
+          "id": "name",
+          "name": "言葉",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "a"
+        },
+        {
+          "id": "vVc1BRUW",
+          "name": "意味",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "m"
+        },
+        {
+          "id": "ZI0mCDc1",
+          "name": "Example",
+          "type": "ai",
+          "source": null,
+          "options": {
+            "ai-task": "custom",
+            "ai-custom-prompt": "Example sentence using <<言葉>> in Japanese (Don't translate)"
+          },
+          "pos": "s"
+        },
+        {
+          "id": "3LLHggvz",
+          "name": "Audio",
+          "type": "speech",
+          "source": "ZI0mCDc1",
+          "options": {
+            "lang": "ja-JP",
+            "voice": "ja-JP-NanamiNeural"
+          },
+          "pos": "v"
+        },
+        {
+          "id": "66JzPQNO",
+          "name": "Translate",
+          "type": "translate",
+          "source": "ZI0mCDc1",
+          "options": null,
+          "pos": "x"
+        },
+        {
+          "id": "HUcOewrv",
+          "name": "Speech",
+          "type": "speech",
+          "source": "name",
+          "options": {
+            "lang": "ja-JP",
+            "voice": "ja-JP-NanamiNeural"
+          },
+          "pos": "y"
+        }
+      ]
+    },
+    {
+      "export": "日本語",
+      "id": "HxKQLDx7",
+      "name": "文法",
+      "pos": "yz",
+      "sides": 3,
+      "content": "<< Hide >>\n---\n<< Output >>\n---\n<< Translate >>",
+      "fields": [
+        {
+          "id": "name",
+          "name": "Hide",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "a"
+        },
+        {
+          "id": "kKQLXllK",
+          "name": "Speech",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "m"
+        },
+        {
+          "id": "iFecZZTG",
+          "name": "Output",
+          "type": "speech",
+          "source": "kKQLXllK",
+          "options": {
+            "lang": "ja-JP",
+            "voice": "ja-JP-DaichiNeural"
+          },
+          "pos": "s"
+        },
+        {
+          "id": "giE3rAix",
+          "name": "Translate",
+          "type": "translate",
+          "source": "kKQLXllK",
+          "options": {
+            "from": "ja",
+            "to": "en"
+          },
+          "pos": "v"
+        }
+      ]
+    },
+    {
+      "export": "日本語",
+      "id": "oiaISYb2",
+      "name": "単語",
+      "pos": "2",
+      "sides": 4,
+      "content": "<< #Reading>>\n<< Reference >>\n<< /Reading >>\n---\n<< ^Reading >>\n{{<< Reference >>}}\n<< /Reading>>\n{{<furigana><< 単語 >></furigana>}}\n<< Speech >>\n---\n><< 例文 >>\n<< Translate >>\n<< Audio >>\n---\n<< 意味 >>\n#### {{<ai>Describe a word << 単語 >> using emojis only</ai>}}\n🀄[JPDB](https://jpdb.io/search?q=<< 単語 >>)\n🎬[IKD](https://www.immersionkit.com/dictionary?keyword=<< 単語 >>)",
+      "fields": [
+        {
+          "id": "name",
+          "name": "単語",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "a"
+        },
+        {
+          "id": "yPvQCIRC",
+          "name": "Reference",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "m"
+        },
+        {
+          "id": "RRps0xEY",
+          "name": "意味",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "s"
+        },
+        {
+          "id": "1SNMVvMK",
+          "name": "例文",
+          "type": "ai",
+          "source": null,
+          "options": {
+            "ai-task": "custom",
+            "ai-custom-prompt": "Example sentence using <<単語>> in Japanese (Don't translate)",
+            "randomize": false
+          },
+          "pos": "u"
+        },
+        {
+          "id": "4Oge7w2M",
+          "name": "Reading",
+          "type": "boolean",
+          "source": null,
+          "options": {
+            "boolean-default": false
+          },
+          "pos": "z"
+        },
+        {
+          "id": "efJTAfzT",
+          "name": "Audio",
+          "type": "speech",
+          "source": "1SNMVvMK",
+          "options": {
+            "lang": "ja-JP",
+            "voice": "ja-JP-NanamiNeural"
+          },
+          "pos": "zj"
+        },
+        {
+          "id": "6ov2HLxA",
+          "name": "Speech",
+          "type": "speech",
+          "source": "name",
+          "options": {
+            "lang": "ja-JP",
+            "voice": "ja-JP-NanamiNeural"
+          },
+          "pos": "zr"
+        },
+        {
+          "id": "A2jzI2Kg",
+          "name": "Translate",
+          "type": "translate",
+          "source": "1SNMVvMK",
+          "options": {
+            "to": "en",
+            "from": "ja"
+          },
+          "pos": "zU"
+        }
+      ]
+    },
+    {
+      "export": "日本語",
+      "id": "Dq5TYgr9",
+      "name": "漢字",
+      "pos": "5",
+      "sides": 4,
+      "content": "<<Kanji>>\n---\n<draw height=\"400px\" brushColor=\"#FF0000\" brushRadius=\"4\"/>\n---\n<<Reading>>\n---\n<<Meaning>>\n#### <ai>Describe <<Kanji>> using emojis. Answer using only emojis</ai>\n🐊[Wanikani](https://www.wanikani.com/kanji/<< Kanji >>)\n🔗[Words with Kanji](https://jisho.org/search/\\*<< Kanji >>\\*)\n📗[Jisho](https://jisho.org/search/<< Kanji >>%20%23kanji)\n🟦[Kakimashou](https://www.kakimashou.com/dictionary/character/<< Kanji >>)",
+      "fields": [
+        {
+          "id": "name",
+          "name": "Kanji",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "a"
+        },
+        {
+          "id": "atw8SiGn",
+          "name": "Reading",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "m"
+        },
+        {
+          "id": "GroakJaf",
+          "name": "Meaning",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "s"
+        }
+      ]
+    },
+    {
+      "export": "日本語",
+      "id": "NvtutXUt",
+      "name": "Polysemy",
+      "pos": "v",
+      "sides": 2,
+      "content": "What is << Meaning >>?\n---\n<< 言葉 >>\n<speech lang=\"jp\"><< 言葉 >></speech>\n><< Example >>\n<< Translate >>  \n<< Example-sound >>",
+      "fields": [
+        {
+          "id": "name",
+          "name": "言葉",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "a"
+        },
+        {
+          "id": "MDJaDV9I",
+          "name": "Meaning",
+          "type": "translate",
+          "source": "name",
+          "options": null,
+          "pos": "m"
+        },
+        {
+          "id": "xVmQEmBb",
+          "name": "Example",
+          "type": "ai",
+          "source": null,
+          "options": {
+            "ai-task": "custom",
+            "ai-custom-prompt": "Funny or weird sentence using << 言葉 >> in Japanese (Don't translate)"
+          },
+          "pos": "s"
+        },
+        {
+          "id": "EVMO2vqW",
+          "name": "Example-sound",
+          "type": "speech",
+          "source": "xVmQEmBb",
+          "options": null,
+          "pos": "v"
+        },
+        {
+          "id": "5N0Qv1ri",
+          "name": "Translate",
+          "type": "translate",
+          "source": "xVmQEmBb",
+          "options": null,
+          "pos": "x"
+        }
+      ]
+    },
+    {
+      "export": "日本語",
+      "id": "ypBVG0UL",
+      "name": "敬語",
+      "pos": "9",
+      "sides": 2,
+      "content": "<< 言葉 >>\n___\n<speech lang=\"jp\"><< 言葉 >></speech>\n---\n<furigana><< 丁寧語 >></furigana>",
+      "fields": [
+        {
+          "id": "name",
+          "name": "言葉",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "a"
+        },
+        {
+          "id": "LFnlAwfX",
+          "name": "丁寧語",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "m"
+        },
+        {
+          "id": "gDoy82gb",
+          "name": "Kanji",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "s"
+        }
+      ]
+    },
+    {
+      "export": "日本語",
+      "id": "ibeOPZ1V",
+      "name": "数字",
+      "pos": "x",
+      "sides": 2,
+      "content": "<< Voice >>\n<input value=<<NoComma>>>\n---\n<< Number >>",
+      "fields": [
+        {
+          "id": "name",
+          "name": "Number",
+          "type": "text",
+          "source": null,
+          "options": null,
+          "pos": "a"
+        },
+        {
+          "id": "Y1dQeuFl",
+          "name": "Voice",
+          "type": "speech",
+          "source": "name",
+          "options": {
+            "lang": "ja-JP",
+            "gender": "female"
+          },
+          "pos": "m"
+        },
+        {
+          "id": "8T6pdCKh",
+          "name": "NoComma",
+          "type": "number",
+          "source": null,
+          "options": null,
+          "pos": "s"
+        }
+      ]
+    },
+    {
+      "export": "English",
+      "id": "Q37a0W3E",
+      "name": "New Vocab",
+      "pos": "1",
+      "sides": 3,
+      "content": "<<Vocab>>\n___\n<<Pronunciation>>\n---\n><<Example Sentence>>\n><< Example >>\n#### Hint: <ai>Describe <<Vocab>> using emojis</ai>\n---\n<<Meaning>>\n🎬[YouGlish](https://youglish.com/pronounce/<< Vocab >>/english)",
+      "fields": [
+        {
+          "id": "name",
+          "name": "Vocab",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "a"
+        },
+        {
+          "id": "ixENyvSH",
+          "name": "Meaning",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "m"
+        },
+        {
+          "id": "HgZKuNXJ",
+          "name": "Example Sentence",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "s"
+        },
+        {
+          "id": "KVfc8fnc",
+          "name": "Pronunciation",
+          "type": "speech",
+          "source": "name",
+          "options": {
+            "lang": "en-US",
+            "gender": null,
+            "voice": "en-US-AIGenerate1Neural"
+          },
+          "pos": "t"
+        },
+        {
+          "id": "voFs0qJ5",
+          "name": "Example",
+          "type": "speech",
+          "source": "HgZKuNXJ",
+          "options": {
+            "lang": "en-US",
+            "gender": "male",
+            "voice": "en-US-AIGenerate1Neural"
+          },
+          "pos": "v"
+        }
+      ]
+    },
+    {
+      "export": "English",
+      "id": "8JhEkkMC",
+      "name": "Synonym",
+      "pos": "s",
+      "sides": 1,
+      "content": "<< Word >>\n___\n<< Synonyms >>",
+      "fields": [
+        {
+          "id": "name",
+          "name": "Word",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "a"
+        },
+        {
+          "id": "pbrIFkdn",
+          "name": "Synonyms",
+          "type": "ai",
+          "source": null,
+          "options": {
+            "ai-task": "custom",
+            "ai-custom-prompt": "Tell me words that are synonyms for <<Word>>",
+            "randomize": true
+          },
+          "pos": "m"
+        }
+      ]
+    },
+    {
+      "export": "基本情報",
+      "id": "ycFF12Ld",
+      "name": "基本情報",
+      "pos": "zr",
+      "sides": 2,
+      "content": "<< Cue >>\n---\n<< Audio >>",
+      "fields": [
+        {
+          "id": "name",
+          "name": "Cue",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "a"
+        },
+        {
+          "id": "MPLL4HRd",
+          "name": "Audio",
+          "type": "speech",
+          "source": "name",
+          "options": {
+            "lang": "ja-JP"
+          },
+          "pos": "m"
+        }
+      ]
+    },
+    {
+      "export": "基本情報",
+      "id": "oiaISYb2",
+      "name": "単語",
+      "pos": "2",
+      "sides": 4,
+      "content": "<< #Reading>>\n<< Reference >>\n<< /Reading >>\n---\n<< ^Reading >>\n{{<< Reference >>}}\n<< /Reading>>\n{{<furigana><< 単語 >></furigana>}}\n<< Speech >>\n---\n><< 例文 >>\n<< Translate >>\n<< Audio >>\n---\n<< 意味 >>\n#### {{<ai>Describe a word << 単語 >> using emojis only</ai>}}\n🀄[JPDB](https://jpdb.io/search?q=<< 単語 >>)\n🎬[IKD](https://www.immersionkit.com/dictionary?keyword=<< 単語 >>)",
+      "fields": [
+        {
+          "id": "name",
+          "name": "単語",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "a"
+        },
+        {
+          "id": "yPvQCIRC",
+          "name": "Reference",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "m"
+        },
+        {
+          "id": "RRps0xEY",
+          "name": "意味",
+          "type": null,
+          "source": null,
+          "options": null,
+          "pos": "s"
+        },
+        {
+          "id": "1SNMVvMK",
+          "name": "例文",
+          "type": "ai",
+          "source": null,
+          "options": {
+            "ai-task": "custom",
+            "ai-custom-prompt": "Example sentence using <<単語>> in Japanese (Don't translate)",
+            "randomize": false
+          },
+          "pos": "u"
+        },
+        {
+          "id": "4Oge7w2M",
+          "name": "Reading",
+          "type": "boolean",
+          "source": null,
+          "options": {
+            "boolean-default": false
+          },
+          "pos": "z"
+        },
+        {
+          "id": "efJTAfzT",
+          "name": "Audio",
+          "type": "speech",
+          "source": "1SNMVvMK",
+          "options": {
+            "lang": "ja-JP",
+            "voice": "ja-JP-NanamiNeural"
+          },
+          "pos": "zj"
+        },
+        {
+          "id": "6ov2HLxA",
+          "name": "Speech",
+          "type": "speech",
+          "source": "name",
+          "options": {
+            "lang": "ja-JP",
+            "voice": "ja-JP-NanamiNeural"
+          },
+          "pos": "zr"
+        },
+        {
+          "id": "A2jzI2Kg",
+          "name": "Translate",
+          "type": "translate",
+          "source": "1SNMVvMK",
+          "options": {
+            "to": "en",
+            "from": "ja"
+          },
+          "pos": "zU"
+        }
+      ]
+    }
+  ]
+}

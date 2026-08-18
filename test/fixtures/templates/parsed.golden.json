@@ -1,0 +1,1083 @@
+{
+  "itmYDz2N 言葉": [
+    {
+      "index": 0,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "cloze",
+              "index": null,
+              "children": [
+                {
+                  "kind": "field",
+                  "name": "言葉"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "hrule",
+          "marker": "___"
+        },
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Speech"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "blocks": [
+        {
+          "kind": "blockquote",
+          "children": [
+            {
+              "kind": "paragraph",
+              "children": [
+                {
+                  "kind": "field",
+                  "name": "Example"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Translate"
+            },
+            {
+              "kind": "lineBreak",
+              "hard": false
+            },
+            {
+              "kind": "field",
+              "name": "Audio"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "意味"
+            }
+          ]
+        },
+        {
+          "kind": "heading",
+          "level": 4,
+          "children": [
+            {
+              "kind": "cloze",
+              "index": null,
+              "children": [
+                {
+                  "kind": "element",
+                  "name": "ai",
+                  "role": "generator",
+                  "attributes": [],
+                  "children": [
+                    {
+                      "kind": "text",
+                      "text": "Describe a word "
+                    },
+                    {
+                      "kind": "field",
+                      "name": "言葉"
+                    },
+                    {
+                      "kind": "text",
+                      "text": " using emojis only"
+                    }
+                  ],
+                  "selfClosing": false
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "text",
+              "text": "🀄"
+            },
+            {
+              "kind": "link",
+              "href": [
+                {
+                  "kind": "text",
+                  "text": "https://takoboto.jp/?q="
+                },
+                {
+                  "kind": "field",
+                  "name": "言葉"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "TAKOBOTO"
+                }
+              ]
+            },
+            {
+              "kind": "lineBreak",
+              "hard": false
+            },
+            {
+              "kind": "text",
+              "text": "🎬"
+            },
+            {
+              "kind": "link",
+              "href": [
+                {
+                  "kind": "text",
+                  "text": "https://www.immersionkit.com/dictionary?keyword="
+                },
+                {
+                  "kind": "field",
+                  "name": "言葉"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "IMD"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "HxKQLDx7 文法": [
+    {
+      "index": 0,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Hide"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Output"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Translate"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "oiaISYb2 単語": [
+    {
+      "index": 0,
+      "blocks": [
+        {
+          "kind": "section",
+          "name": "Reading",
+          "inverted": false,
+          "children": [
+            {
+              "kind": "paragraph",
+              "children": [
+                {
+                  "kind": "field",
+                  "name": "Reference"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "blocks": [
+        {
+          "kind": "section",
+          "name": "Reading",
+          "inverted": true,
+          "children": [
+            {
+              "kind": "paragraph",
+              "children": [
+                {
+                  "kind": "cloze",
+                  "index": null,
+                  "children": [
+                    {
+                      "kind": "field",
+                      "name": "Reference"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "cloze",
+              "index": null,
+              "children": [
+                {
+                  "kind": "element",
+                  "name": "furigana",
+                  "role": "generator",
+                  "attributes": [],
+                  "children": [
+                    {
+                      "kind": "field",
+                      "name": "単語"
+                    }
+                  ],
+                  "selfClosing": false
+                }
+              ]
+            },
+            {
+              "kind": "lineBreak",
+              "hard": false
+            },
+            {
+              "kind": "field",
+              "name": "Speech"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "blocks": [
+        {
+          "kind": "blockquote",
+          "children": [
+            {
+              "kind": "paragraph",
+              "children": [
+                {
+                  "kind": "field",
+                  "name": "例文"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Translate"
+            },
+            {
+              "kind": "lineBreak",
+              "hard": false
+            },
+            {
+              "kind": "field",
+              "name": "Audio"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "意味"
+            }
+          ]
+        },
+        {
+          "kind": "heading",
+          "level": 4,
+          "children": [
+            {
+              "kind": "cloze",
+              "index": null,
+              "children": [
+                {
+                  "kind": "element",
+                  "name": "ai",
+                  "role": "generator",
+                  "attributes": [],
+                  "children": [
+                    {
+                      "kind": "text",
+                      "text": "Describe a word "
+                    },
+                    {
+                      "kind": "field",
+                      "name": "単語"
+                    },
+                    {
+                      "kind": "text",
+                      "text": " using emojis only"
+                    }
+                  ],
+                  "selfClosing": false
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "text",
+              "text": "🀄"
+            },
+            {
+              "kind": "link",
+              "href": [
+                {
+                  "kind": "text",
+                  "text": "https://jpdb.io/search?q="
+                },
+                {
+                  "kind": "field",
+                  "name": "単語"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "JPDB"
+                }
+              ]
+            },
+            {
+              "kind": "lineBreak",
+              "hard": false
+            },
+            {
+              "kind": "text",
+              "text": "🎬"
+            },
+            {
+              "kind": "link",
+              "href": [
+                {
+                  "kind": "text",
+                  "text": "https://www.immersionkit.com/dictionary?keyword="
+                },
+                {
+                  "kind": "field",
+                  "name": "単語"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "IKD"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "Dq5TYgr9 漢字": [
+    {
+      "index": 0,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Kanji"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "element",
+              "name": "draw",
+              "role": "widget",
+              "attributes": [
+                {
+                  "name": "height",
+                  "value": [
+                    {
+                      "kind": "text",
+                      "text": "400px"
+                    }
+                  ]
+                },
+                {
+                  "name": "brushColor",
+                  "value": [
+                    {
+                      "kind": "text",
+                      "text": "#FF0000"
+                    }
+                  ]
+                },
+                {
+                  "name": "brushRadius",
+                  "value": [
+                    {
+                      "kind": "text",
+                      "text": "4"
+                    }
+                  ]
+                }
+              ],
+              "children": [],
+              "selfClosing": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Reading"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Meaning"
+            }
+          ]
+        },
+        {
+          "kind": "heading",
+          "level": 4,
+          "children": [
+            {
+              "kind": "element",
+              "name": "ai",
+              "role": "generator",
+              "attributes": [],
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Describe "
+                },
+                {
+                  "kind": "field",
+                  "name": "Kanji"
+                },
+                {
+                  "kind": "text",
+                  "text": " using emojis. Answer using only emojis"
+                }
+              ],
+              "selfClosing": false
+            }
+          ]
+        },
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "text",
+              "text": "🐊"
+            },
+            {
+              "kind": "link",
+              "href": [
+                {
+                  "kind": "text",
+                  "text": "https://www.wanikani.com/kanji/"
+                },
+                {
+                  "kind": "field",
+                  "name": "Kanji"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Wanikani"
+                }
+              ]
+            },
+            {
+              "kind": "lineBreak",
+              "hard": false
+            },
+            {
+              "kind": "text",
+              "text": "🔗"
+            },
+            {
+              "kind": "link",
+              "href": [
+                {
+                  "kind": "text",
+                  "text": "https://jisho.org/search/*"
+                },
+                {
+                  "kind": "field",
+                  "name": "Kanji"
+                },
+                {
+                  "kind": "text",
+                  "text": "*"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Words with Kanji"
+                }
+              ]
+            },
+            {
+              "kind": "lineBreak",
+              "hard": false
+            },
+            {
+              "kind": "text",
+              "text": "📗"
+            },
+            {
+              "kind": "link",
+              "href": [
+                {
+                  "kind": "text",
+                  "text": "https://jisho.org/search/"
+                },
+                {
+                  "kind": "field",
+                  "name": "Kanji"
+                },
+                {
+                  "kind": "text",
+                  "text": "%20%23kanji"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Jisho"
+                }
+              ]
+            },
+            {
+              "kind": "lineBreak",
+              "hard": false
+            },
+            {
+              "kind": "text",
+              "text": "🟦"
+            },
+            {
+              "kind": "link",
+              "href": [
+                {
+                  "kind": "text",
+                  "text": "https://www.kakimashou.com/dictionary/character/"
+                },
+                {
+                  "kind": "field",
+                  "name": "Kanji"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Kakimashou"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "NvtutXUt Polysemy": [
+    {
+      "index": 0,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "text",
+              "text": "What is "
+            },
+            {
+              "kind": "field",
+              "name": "Meaning"
+            },
+            {
+              "kind": "text",
+              "text": "?"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "言葉"
+            },
+            {
+              "kind": "lineBreak",
+              "hard": false
+            },
+            {
+              "kind": "element",
+              "name": "speech",
+              "role": "generator",
+              "attributes": [
+                {
+                  "name": "lang",
+                  "value": [
+                    {
+                      "kind": "text",
+                      "text": "jp"
+                    }
+                  ]
+                }
+              ],
+              "children": [
+                {
+                  "kind": "field",
+                  "name": "言葉"
+                }
+              ],
+              "selfClosing": false
+            }
+          ]
+        },
+        {
+          "kind": "blockquote",
+          "children": [
+            {
+              "kind": "paragraph",
+              "children": [
+                {
+                  "kind": "field",
+                  "name": "Example"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Translate"
+            },
+            {
+              "kind": "lineBreak",
+              "hard": true
+            },
+            {
+              "kind": "field",
+              "name": "Example-sound"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "ypBVG0UL 敬語": [
+    {
+      "index": 0,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "言葉"
+            }
+          ]
+        },
+        {
+          "kind": "hrule",
+          "marker": "___"
+        },
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "element",
+              "name": "speech",
+              "role": "generator",
+              "attributes": [
+                {
+                  "name": "lang",
+                  "value": [
+                    {
+                      "kind": "text",
+                      "text": "jp"
+                    }
+                  ]
+                }
+              ],
+              "children": [
+                {
+                  "kind": "field",
+                  "name": "言葉"
+                }
+              ],
+              "selfClosing": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "element",
+              "name": "furigana",
+              "role": "generator",
+              "attributes": [],
+              "children": [
+                {
+                  "kind": "field",
+                  "name": "丁寧語"
+                }
+              ],
+              "selfClosing": false
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "ibeOPZ1V 数字": [
+    {
+      "index": 0,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Voice"
+            },
+            {
+              "kind": "lineBreak",
+              "hard": false
+            },
+            {
+              "kind": "element",
+              "name": "input",
+              "role": "widget",
+              "attributes": [
+                {
+                  "name": "value",
+                  "value": [
+                    {
+                      "kind": "field",
+                      "name": "NoComma"
+                    }
+                  ]
+                }
+              ],
+              "children": [],
+              "selfClosing": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Number"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "Q37a0W3E New Vocab": [
+    {
+      "index": 0,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Vocab"
+            }
+          ]
+        },
+        {
+          "kind": "hrule",
+          "marker": "___"
+        },
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Pronunciation"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "blocks": [
+        {
+          "kind": "blockquote",
+          "children": [
+            {
+              "kind": "paragraph",
+              "children": [
+                {
+                  "kind": "field",
+                  "name": "Example Sentence"
+                },
+                {
+                  "kind": "lineBreak",
+                  "hard": false
+                },
+                {
+                  "kind": "field",
+                  "name": "Example"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "heading",
+          "level": 4,
+          "children": [
+            {
+              "kind": "text",
+              "text": "Hint: "
+            },
+            {
+              "kind": "element",
+              "name": "ai",
+              "role": "generator",
+              "attributes": [],
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Describe "
+                },
+                {
+                  "kind": "field",
+                  "name": "Vocab"
+                },
+                {
+                  "kind": "text",
+                  "text": " using emojis"
+                }
+              ],
+              "selfClosing": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Meaning"
+            },
+            {
+              "kind": "lineBreak",
+              "hard": false
+            },
+            {
+              "kind": "text",
+              "text": "🎬"
+            },
+            {
+              "kind": "link",
+              "href": [
+                {
+                  "kind": "text",
+                  "text": "https://youglish.com/pronounce/"
+                },
+                {
+                  "kind": "field",
+                  "name": "Vocab"
+                },
+                {
+                  "kind": "text",
+                  "text": "/english"
+                }
+              ],
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "YouGlish"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "8JhEkkMC Synonym": [
+    {
+      "index": 0,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Word"
+            }
+          ]
+        },
+        {
+          "kind": "hrule",
+          "marker": "___"
+        },
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Synonyms"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "ycFF12Ld 基本情報": [
+    {
+      "index": 0,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Cue"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "blocks": [
+        {
+          "kind": "paragraph",
+          "children": [
+            {
+              "kind": "field",
+              "name": "Audio"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
