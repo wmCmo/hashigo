@@ -45,7 +45,7 @@ function schemaVersionFromNode(): number {
   if (match?.[1] === undefined) {
     throw new Error(
       "vite.config.ts could not find `export const SCHEMA_VERSION = <n>` in " +
-        "src/schema/index.ts. Fix the parse rather than guessing the version.",
+      "src/schema/index.ts. Fix the parse rather than guessing the version.",
     );
   }
   return Number(match[1]);
@@ -58,7 +58,7 @@ function schemaVersionFromNode(): number {
  */
 function serveBootstrapDatabase(): Plugin {
   const handler = (
-    request: { url?: string | undefined },
+    request: { url?: string | undefined; },
     response: {
       statusCode: number;
       setHeader(name: string, value: string | number): void;
@@ -113,6 +113,7 @@ export default defineConfig({
     format: "es",
   },
   server: {
+    allowedHosts: ["acids-viewed-sound-royal.trycloudflare.com"],
     port: 5273,
     strictPort: true,
     fs: {

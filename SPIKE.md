@@ -1,7 +1,12 @@
 # Browser spike — what it settled
 
-**The browser layer works. The single biggest remaining risk is that not one
-measurement in this document came from a phone.**
+**The browser layer works, and it works on Zach's actual phone.** Updated 2026-08-20:
+the persistence findings below were desktop-only when written; they have now been
+re-run on a Samsung Galaxy over a real HTTPS origin, installed to the home screen.
+**`persist()` was GRANTED** and the quota is 133.96 GiB, not the 10 GiB constant
+desktop reported. See `notes/persistence.md` -> "Measured on the real device". The
+remaining gap is narrow: phone write throughput for ~700 MB is still unmeasured,
+because that scenario failed on a harness step-ordering fault.
 
 Written 2026-08-19 by the integrator, after the workflow's own integrator and
 completeness critic were both lost to API capacity errors. Every number below either
@@ -95,11 +100,17 @@ button.
 Three traps found in its place:
 
 1. **`navigator.storage.persist` does not exist in a Worker** — and the worker is
-   where the database lives. It must be called from the page and the result passed
-   in. `persisted()` came back `false`, and Chrome reports the permission state as
-   `"prompt"`, not `"denied"` — so it is worth re-asking every launch. The browser
-   never tells the user; the app must.
-2. **`navigator.storage.estimate()` cannot warn about anything.** `quota - usage` is
+   where the database lives. (Confirmed verbatim on the real device: `undefined` in
+   the Worker, `StorageManager.prototype has "persist": false`, and `persisted()`
+   there returns true — observable but not requestable. This one generalises.) It
+   must be called from the page and the result passed in. On desktop `persisted()`
+   came back `false` and Chrome reported the permission state as `"prompt"` rather
+   than `"denied"`, so it is worth re-asking every launch — **but on the real
+   installed PWA it came back `true`.** The browser never tells the user either way;
+   the app must.
+2. **`navigator.storage.estimate()` cannot warn about anything — on desktop.**
+   (His Android device reports a real 133.96 GiB instead, so this is NOT universal;
+   do not design a storage indicator assuming either behaviour.) `quota - usage` is
    a hard constant — exactly `10,737,418,240` bytes, five times out of five, on a
    disk with 181 GB free. Any "storage filling up" indicator built on `usage / quota`
    reads 7% forever and then writes start failing. When they fail it is
@@ -114,28 +125,36 @@ Three traps found in its place:
 
 ## Everything that needs your physical phone
 
-**Every measurement in this document is desktop Chrome 151 on Windows 11.** No agent
-touched an Android device. `PHONE-TEST.md` is the handoff — a checklist written for
-you, not for an agent.
+Every measurement in the sections above is desktop Chrome 151 on Windows 11 — no
+agent could touch an Android device. **Zach has since run `PHONE-TEST.md` himself**,
+and the results are in `notes/persistence.md` → "Measured on the real device".
 
-Specifically unverified:
+**Now answered on the device** (Samsung Internet 30.0 / Chromium 143, real HTTPS
+origin via a cloudflared tunnel, installed to the home screen):
 
-- **A real `persist()` grant** from Chrome's own heuristic. It was forced via CDP,
-  which proves our plumbing and nothing about Android. Installed PWAs are usually
-  granted, so "add to home screen" is part of the test.
-- **A real PWA install**, and whether an insecure-origin-treated-as-secure is
-  installable at all.
+- **A real `persist()` grant** — **GRANTED.** Desktop denied it and could only prove
+  the plumbing via a CDP override. The heuristic said yes to an installed PWA.
+- **A real PWA install** — works; `display-mode: standalone`.
+- **Quota** — 133.96 GiB, not desktop's 10 GiB constant. Space is a non-issue.
+- **sqlite-wasm 3.53.0 + the schema load in Samsung Internet**, not only Chrome.
+
+**Still unverified:**
+
+- **Phone write throughput.** The ~700 MB scenario failed twice with `Error: open the
+  card database first` — a harness step-ordering fault, not a storage finding. This
+  is the one number still missing, and quota makes it a comfort question rather than
+  a feasibility one.
 - **A real eviction under real disk pressure** — simulated with a quota override, so
-  we cannot say what Chrome evicts first or whether it warns.
-- **Phone write throughput.** Desktop spread is already 2.4× run to run; a phone will
-  be slower than the slow end, and `reclaim()` at 35–54 s on desktop could be
-  minutes.
+  we still cannot say what gets evicted first or whether anything warns.
 - **iOS, Safari, Firefox** — nothing at all. WebKit deletes script-writable storage
   after 7 days without interaction unless the app is on the Home Screen.
 
-A LAN address will not work for this test: on `http://192.168.x.x`,
-`navigator.storage` is **absent outright**, not merely restricted. `PHONE-TEST.md`
-uses USB port-forwarding so the phone sees the PC as `localhost`.
+Two routing lessons paid for the hard way. A LAN address will not work: on
+`http://192.168.x.x`, `navigator.storage` is **absent outright**, not merely
+restricted. And USB port-forwarding stalls if the phone never shows the RSA
+authorisation prompt — **a cloudflared HTTPS tunnel proved far easier**, and it is
+also the more faithful test, since a genuine HTTPS origin is how Hashigo will really
+be served. `PHONE-TEST.md` should lead with the tunnel.
 
 ---
 

@@ -10,7 +10,9 @@ we were looking for:
 
 1. **`persisted()` is false and stays false**, and the browser never says so.
    The app has to say so. §1.
-2. **`navigator.storage.estimate()` cannot warn you about anything.** On this
+2. **`navigator.storage.estimate()` cannot warn you about anything — ON DESKTOP.**
+   (Superseded in part: his Android device reports a real 133.96 GiB quota. See
+   "Measured on the real device" at the end of this file.) On this
    machine `quota - usage` is a hard constant — exactly 10 GiB, three times
    over, on a disk with 181 GB free. A "storage is filling up" UI built on
    `usage / quota` will read 7% forever and then the writes will start failing.
@@ -298,7 +300,7 @@ The blobs-in-SQLite decision is unaffected: against 322.1 s for 10,816 individua
 OPFS files, BLOB rows still win by 13–40x on write depending on the run. The
 decision is confirmed; the multiplier published in support of it was optimistic.
 
-### 2.2 `estimate()` cannot warn you — `quota - usage` is a constant
+### 2.2 `estimate()` cannot warn you — `quota - usage` is a constant (DESKTOP ONLY — see the device section at the end)
 
 This is the finding I did not expect and it invalidates the obvious UI.
 
@@ -1096,3 +1098,65 @@ Every claim above that is a measurement is mine. These informed what to measure:
 * [FileSystemFileHandle.createSyncAccessHandle() — MDN](https://developer.mozilla.org/en-US/docs/Web/API/FileSystemFileHandle/createSyncAccessHandle)
 * `node_modules/@sqlite.org/sqlite-wasm/dist/index.mjs`, read directly — §3.4
   and ORPHAN 3 cite line numbers in the installed 3.53.0-build1.
+
+---
+
+## Measured on the real device, 2026-08-20
+
+Everything above is desktop Chrome 151 on Windows. This section is Zach's actual
+phone, over a genuine HTTPS origin (a cloudflared tunnel), installed to the home
+screen. **It contradicts the desktop findings in two places, and both are good news.**
+
+```
+Samsung Internet 30.0 / Chromium 143, Android
+origin  https://<random>.trycloudflare.com     installed: standalone
+
+persisted() before asking : false
+persist() returned        : true      <- GRANTED
+persisted() after asking  : true
+quota                     : 133.96 GiB
+OPFS usage                : 0.0 MiB
+isSecureContext           : true
+crossOriginIsolated       : false
+sqlite 3.53.0, schema version 2
+```
+
+**1. Persistence IS granted on an installed PWA.** Desktop Chrome denied it and the
+note above could only prove the plumbing via a CDP override. On a real installed PWA
+the browser's own heuristic said yes. The eviction risk that drove this whole
+investigation does not apply to how he will actually use the app — though the app must
+still call `persist()`, check `persisted()`, and say so when it is false, because that
+is a heuristic and not a guarantee.
+
+**2. `estimate()` DOES report a meaningful quota here — §2.2 is desktop-specific.**
+Desktop returned exactly `10,737,418,240` bytes of headroom five times out of five
+regardless of usage. This device reports **133.96 GiB**, which tracks real free space.
+So a "storage filling up" indicator built on `usage / quota` is useless on desktop
+Chrome but may be meaningful on Android. Do not build one on the assumption that
+either behaviour is universal — read the number, and treat a suspiciously round
+constant as a sign the browser is refusing to tell you anything.
+
+**3. The Worker restriction generalises.** Confirmed verbatim on device:
+`navigator.storage.persist` is `undefined` in the Worker,
+`StorageManager.prototype has "persist": false`, calling it throws
+`TypeError: navigator.storage.persist is not a function`, and `persisted()` in the
+Worker returns `true` — **observable, but not requestable**. The
+request-from-page-pass-into-worker plumbing is required, exactly as designed.
+
+**4. sqlite-wasm 3.53.0 and the schema load in Samsung Internet.** Not just Chrome.
+That is a portability result nobody had.
+
+### Not yet measured on device
+
+The ~700 MB fill failed twice with `Error: open the card database first` — a harness
+step-ordering fault, not a storage finding: scenario C depends on a card database that
+the page opens in an earlier step. **Phone write throughput and whether ~700 MB is
+comfortable in practice remain unmeasured.** Quota at 133.96 GiB makes space itself a
+non-issue.
+
+### One consequence for stage 11
+
+**OPFS is per-browser.** A PWA installed from Samsung Internet keeps its data inside
+Samsung Internet; installing from Chrome later creates a second, empty copy — 700 MB
+twice and two independent databases that would both need syncing. Pick one browser per
+device and record which.

@@ -369,3 +369,42 @@ changing anything else.
 
 Step 5's numbers are what should decide it. If 627 MiB writes in ten seconds and
 you have the space, take the simple option.
+
+---
+
+## Result, 2026-08-20 — Zach ran this
+
+Samsung Internet 30.0 / Chromium 143, Android, over a cloudflared HTTPS tunnel,
+installed to the home screen (`display-mode: standalone`).
+
+```
+persisted() before asking : false
+persist() returned        : true      <- GRANTED
+persisted() after asking  : true
+quota                     : 133.96 GiB
+OPFS usage                : 0.0 MiB
+isSecureContext           : true
+crossOriginIsolated       : false
+sqlite 3.53.0, schema version 2
+worker can request persistence: NO - persist is Window-only
+```
+
+**Persistence is granted and the quota is huge.** Full analysis, including the two
+places this contradicts the desktop findings, is in `notes/persistence.md` under
+"Measured on the real device".
+
+**Route correction for next time.** Route A (USB port forwarding) stalled on the RSA
+authorisation prompt never appearing, and Route B (LAN IP) cannot work at all because
+`navigator.storage` is absent on a plain-HTTP LAN origin. What worked in minutes was
+neither: `cloudflared tunnel --url http://127.0.0.1:5273` gives a real HTTPS origin,
+needs no USB, no firewall rule and no `chrome://flags`, and is the more faithful test
+because it is how the app will actually be served. **Lead with the tunnel.**
+
+Two traps worth keeping: the dev server must be bound to IPv4
+(`npm run spike:dev -- --host 127.0.0.1`) or a forward to `127.0.0.1` is refused
+while `localhost` appears to work; and the URL needs its **trailing slash** —
+`/persist` silently serves the stage-0.5 page instead.
+
+**Still outstanding:** the ~700 MB fill failed with `Error: open the card database
+first` (scenario C depends on an earlier step), so phone write throughput is still
+unmeasured.
