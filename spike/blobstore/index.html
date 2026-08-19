@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hashigo blob store — 624.6 MiB of real mp3 as BLOB rows in OPFS</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fbfbfa;
+        --fg: #1a1a19;
+        --dim: #6b6b66;
+        --good: #0a6b3c;
+        --bad: #a11616;
+        --step: #1d4ed8;
+        --rule: #d9d9d4;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14140f;
+          --fg: #ecece6;
+          --dim: #9b9b93;
+          --good: #4ade80;
+          --bad: #f87171;
+          --step: #93b4ff;
+          --rule: #2e2e26;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 1.5rem clamp(0.75rem, 3vw, 2.5rem) 4rem;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.5 ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+      }
+      h1 { font-size: 1.15rem; margin: 0 0 0.25rem; }
+      .sub { color: var(--dim); margin: 0 0 1.25rem; max-width: 68ch; }
+      .throwaway {
+        border: 1px solid var(--bad);
+        color: var(--bad);
+        padding: 0.4rem 0.6rem;
+        border-radius: 4px;
+        display: inline-block;
+        font-weight: 600;
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+        margin-bottom: 1rem;
+      }
+      button {
+        font: inherit;
+        padding: 0.4rem 0.8rem;
+        border: 1px solid var(--rule);
+        border-radius: 4px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      button:hover { border-color: var(--fg); }
+      .bar { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+      label { font-size: 0.85rem; color: var(--dim); }
+      pre {
+        font: 12.5px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        padding: 0.75rem;
+        margin: 0 0 1rem;
+        max-height: 70vh;
+        overflow: auto;
+      }
+      .log-step { color: var(--step); font-weight: 600; }
+      .log-good { color: var(--good); }
+      .log-bad { color: var(--bad); font-weight: 600; }
+      dl.facts {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 0.15rem 1rem;
+        font: 12.5px/1.5 ui-monospace, Consolas, monospace;
+        margin: 0 0 1.25rem;
+      }
+      dl.facts dt { color: var(--dim); }
+      dl.facts dd { margin: 0; word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <span class="throwaway">THROWAWAY — spike/ is disposable harness, not app code</span>
+    <h1>Hashigo blob store — 624.6 MiB of real mp3 as BLOB rows in OPFS</h1>
+    <p class="sub">
+      Runs <code>SqliteBlobStore</code> from <code>src/blobs/sqlite.ts</code> — the same
+      class <code>test/blobs.test.ts</code> runs in Node — over
+      <code>opfs-sahpool</code> in a dedicated Worker. It writes the whole real corpus,
+      rehashes every payload with <code>src/blobs/sha256.ts</code>, and audits the
+      payload store against the real card database. The main thread holds no database
+      handle and no store.
+    </p>
+    <dl class="facts" id="facts"></dl>
+    <div class="bar">
+      <button id="run">Run (reuse what OPFS holds)</button>
+      <button id="fresh">Run FRESH (wipe /blobs.db and rewrite 625 MiB)</button>
+      <button id="pack">Check the pack only</button>
+      <label><input type="checkbox" id="vacuum" /> also VACUUM the ~660 MB file</label>
+    </div>
+    <pre id="log"></pre>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

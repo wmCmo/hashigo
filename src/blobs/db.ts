@@ -22,7 +22,7 @@
  * only at zero. There is no deleted flag anywhere.
  */
 
-import type { Db } from "../db/index.js";
+import type { SqliteHandle } from "../db/browser.js";
 
 import { assertAddress } from "./address.js";
 import { BlobMissingError, type BlobStore } from "./store.js";
@@ -73,7 +73,7 @@ function shape(row: RawRow): BlobRow {
 }
 
 /** The row, without its payload. Null when the address is unknown. */
-export function blobRow(db: Db, hash: string): BlobRow | null {
+export function blobRow(db: SqliteHandle, hash: string): BlobRow | null {
   const row = db.prepare(`${SELECT_ROW} WHERE hash = ?`).get(assertAddress(hash)) as
     | RawRow
     | undefined;
@@ -84,10 +84,14 @@ export function blobRow(db: Db, hash: string): BlobRow | null {
  * The payload. Inline bytes if the row carries them, otherwise the store's copy
  * — which is looked up by hash, so it does not matter where the store is today.
  */
-export function readBlob(db: Db, hash: string, store: BlobStore | null = null): Uint8Array {
+export function readBlob(
+  db: SqliteHandle,
+  hash: string,
+  store: BlobStore | null = null,
+): Uint8Array {
   assertAddress(hash);
   const inline = db.prepare("SELECT bytes FROM blobs WHERE hash = ?").pluck().get(hash) as
-    | Buffer
+    | Uint8Array
     | null
     | undefined;
   if (inline === undefined) throw new BlobMissingError(hash, "the database");
@@ -127,7 +131,7 @@ export interface StoreAudit {
  * on the corpus and is what the acceptance test does once.
  */
 export function auditBlobStore(
-  db: Db,
+  db: SqliteHandle,
   store: BlobStore,
   options: { readonly verify?: boolean; readonly sampleLimit?: number } = {},
 ): StoreAudit {
@@ -200,7 +204,7 @@ export interface SweepResult {
  * the failure mode is wasted disk, never a dangling reference.
  */
 export function sweepUnreferenced(
-  db: Db,
+  db: SqliteHandle,
   store: BlobStore | null = null,
   options: { readonly dryRun?: boolean } = {},
 ): SweepResult {
@@ -224,13 +228,20 @@ export function sweepUnreferenced(
   let payloadsRemoved = 0;
   let bytesReclaimed = 0;
   if (store !== null) {
-    for (const row of doomed) {
-      if (row.inline === 1) continue;
-      if (store.remove(row.hash)) {
-        payloadsRemoved += 1;
-        bytesReclaimed += row.byte_size;
+    // Batched when the store offers it: a sweep of the whole store would
+    // otherwise be one transaction per payload. `?? removals()` keeps this
+    // working for a store that has no batch (a directory, a Map).
+    const removals = (): void => {
+      for (const row of doomed) {
+        if (row.inline === 1) continue;
+        if (store.remove(row.hash)) {
+          payloadsRemoved += 1;
+          bytesReclaimed += row.byte_size;
+        }
       }
-    }
+    };
+    if (store.batch === undefined) removals();
+    else store.batch(removals);
   }
   return { rowsDeleted, payloadsRemoved, bytesReclaimed };
 }
@@ -294,6 +305,27 @@ export interface LocationSweep {
   readonly offenders: readonly string[];
   readonly columns: number;
   readonly tables: number;
+  /** `table.column: n row(s)` for each EXCLUDED column, so nothing is hidden. */
+  readonly excluded: readonly string[];
+}
+
+export interface FindLocationsOptions {
+  /**
+   * `table.column` names to scan but not count as offenders.
+   *
+   * There is exactly one legitimate use and it is measured. The blob store's
+   * `blob_payloads.bytes` is 625 MB of mp3, and 560 of the corpus's 10,816
+   * payloads have a byte sequence in their first `LOCATION_SCAN_BYTES` that
+   * decodes as something `LOCATION_PATTERN` matches — `C:/`-shaped pairs and
+   * `//`-shaped runs occur constantly in compressed audio. Scanning a payload
+   * column for a location is therefore not a check, it is a coin toss: the
+   * payload IS bytes, and "these bytes are not a path" is not a property bytes
+   * can have. Excluded columns are still scanned and still REPORTED, in
+   * `excluded`, so the decision is visible rather than a silent hole. Every
+   * other column, including the card database's 26,947 inline TEXT payloads in
+   * `blobs.bytes`, stays in the check and comes back clean.
+   */
+  readonly exclude?: readonly string[];
 }
 
 /**
@@ -309,14 +341,24 @@ export interface LocationSweep {
  * swept directly, and their internal columns hold tokeniser state rather than
  * text.
  */
-export function findLocations(db: Db): LocationSweep {
+export function findLocations(
+  db: SqliteHandle,
+  options: FindLocationsOptions = {},
+): LocationSweep {
+  const exclude = new Set(options.exclude ?? []);
   db.function("hashigo_is_location", { deterministic: true }, (value: unknown) => {
     if (value === null || value === undefined) return 0;
     const text =
       typeof value === "string"
         ? value
-        : Buffer.isBuffer(value)
-          ? value.subarray(0, LOCATION_SCAN_BYTES).toString("utf8")
+        : value instanceof Uint8Array
+          ? // TextDecoder, not Buffer#toString: this module is imported by the
+            // browser build, where there is no Buffer. `fatal: false` is the
+            // point — a truncated mp3 prefix is not valid UTF-8 and must decode
+            // to replacement characters rather than throw and skip the column.
+            new TextDecoder("utf-8", { fatal: false }).decode(
+              value.subarray(0, LOCATION_SCAN_BYTES),
+            )
           : String(value);
     return LOCATION_PATTERN.test(text) ? 1 : 0;
   });
@@ -332,6 +374,7 @@ export function findLocations(db: Db): LocationSweep {
   ).filter((name) => !name.includes("_fts"));
 
   const offenders: string[] = [];
+  const excluded: string[] = [];
   let columns = 0;
   for (const table of tables) {
     const cols = db.prepare(`PRAGMA table_info(${JSON.stringify(table)})`).all() as {
@@ -351,8 +394,11 @@ export function findLocations(db: Db): LocationSweep {
         )
         .pluck()
         .get() as number;
-      if (hits > 0) offenders.push(`${table}.${column.name}: ${hits} row(s)`);
+      if (hits === 0) continue;
+      const where = `${table}.${column.name}`;
+      if (exclude.has(where)) excluded.push(`${where}: ${hits} row(s)`);
+      else offenders.push(`${where}: ${hits} row(s)`);
     }
   }
-  return { offenders, columns, tables: tables.length };
+  return { offenders, columns, tables: tables.length, excluded };
 }

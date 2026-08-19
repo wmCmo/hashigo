@@ -87,6 +87,17 @@
  * provenance and NOTHING about location; `blobs.path` is never written by this
  * module, and the INSERT does not even name the column.
  *
+ * As of the blob-store backing swap that store is `<database>.blobs.db`: BLOB
+ * rows in a SEPARATE SQLite database, not 10,816 files in a directory.
+ * `notes/browser-feasibility.md` §4 measured the identical 624.6 MiB both ways in
+ * a real browser -- 322.1 s and 10.60 ms per random read as files, 4.9 s and
+ * 0.54 ms as rows -- and the phone is the target.  (Those seconds are one run on
+ * one machine; re-measurements span 2.5-24.8 s for the row insert.  The ordering
+ * has reproduced everywhere, the numbers have not: `src/blobs/sqlite.ts`.)
+ * Nothing in this file changed to make that swap except which store it opens by
+ * default: the address is still the bytes, the row still records no location, and
+ * `--store-dir` still opens the old directory store for export or interop.
+ *
  * This replaces the mode that shipped by accident.  `store: "path"` was the
  * default, and it wrote `C:\DEV\WEB\hashigo\exports\日本語\c7EiABp0.mp3`
  * into 10,816 rows: an absolute path, on one machine, into a gitignored
@@ -112,7 +123,12 @@ import { join } from "node:path";
 
 import type { Statement } from "better-sqlite3";
 
-import { defaultStoreRoot, openBlobStore, type BlobStore } from "../blobs/index.js";
+import {
+  defaultStoreDatabase,
+  openBlobStore,
+  openBlobStoreDatabase,
+  type BlobStore,
+} from "../blobs/index.js";
 import type { Db } from "../db/index.js";
 import type { BlobKind } from "../schema/index.js";
 
@@ -206,13 +222,32 @@ function canonicaliseTag(code: string): string {
 }
 
 /**
+ * Strip combining marks so a stray one cannot hide a tag from the alias table.
+ *
+ * The corpus contains `lang="่jp"` on exactly one inline generator — U+0E48 THAI
+ * CHARACTER MAI EK, a nonspacing mark, in front of `jp`. It is a typo of Zach's,
+ * counted from the raw export with codepoints, and it defeated the lookup: the
+ * key was `"่jp"`, not `"jp"`, so the tag fell through unchanged. That is latent
+ * today because inline generators are not materialised until stage 9 — every
+ * `blobs.lang` in the database is well formed — and it costs two things the day
+ * it fires: one TTS request for a locale no provider knows, and a permanent
+ * cache miss, because the malformed tag is part of the address.
+ *
+ * NFKD first so a precomposed mark decomposes into one this can see. Nothing in
+ * a legitimate BCP-47 tag is a mark, so no valid input changes.
+ */
+function stripMarks(code: string): string {
+  return code.normalize("NFKD").replace(/\p{M}/gu, "");
+}
+
+/**
  * Normalise a language code. `locale: true` for a TTS locale (region-qualified,
  * jp -> ja-JP); `false` for a translation parameter (jp -> ja).
  */
 export function normaliseLanguageTag(code: string, locale: boolean): string {
-  const key = code.trim().toLowerCase();
+  const cleaned = stripMarks(code.trim());
   const table = locale ? LOCALE_ALIASES : LANGUAGE_ALIASES;
-  return table[key] ?? canonicaliseTag(code);
+  return table[cleaned.toLowerCase()] ?? canonicaliseTag(cleaned);
 }
 
 /**
@@ -592,10 +627,10 @@ export interface MochiMediaSource {
 /**
  * Where a media payload ends up.
  *
- *   `content-addressed`  copied into the blob store, addressed by its sha256.
+ *   `content-addressed`  written into the blob store, addressed by its sha256.
  *                        THE DEFAULT, and the only mode that survives the repo
- *                        moving. 657 MB for this corpus; idempotent, so a
- *                        second run copies nothing.
+ *                        moving. 657 MB for this corpus, into `<db>.blobs.db`;
+ *                        idempotent, so a second run writes nothing.
  *   `inline`             the bytes go in the row. Correct for small payloads
  *                        and for the text generations, which always take this
  *                        path; a 657 MB database for the media is not.
@@ -618,12 +653,19 @@ export type LegacyPayloadStore = BlobPayloadStore | "path";
 export interface ImportBlobsOptions {
   /** Media payload destination. Default `content-addressed`. */
   readonly store?: LegacyPayloadStore;
-  /** An open store to copy media into. Wins over `storeRoot`. */
+  /** An open store to copy media into. Wins over everything below. */
   readonly blobStore?: BlobStore;
   /**
-   * Directory to open a store in. Default: `defaultStoreRoot(db.name)`, i.e.
-   * `<database>.blobs` beside the database file. An in-memory database has no
+   * Blob-store DATABASE to open. Default: `defaultStoreDatabase(db.name)`, i.e.
+   * `<database>.blobs.db` beside the card database. An in-memory database has no
    * file to derive from, so it falls back to `address-only`.
+   */
+  readonly storeDatabase?: string;
+  /**
+   * Directory to open the LEGACY one-file-per-payload store in. Opt-in only —
+   * see the header, and `src/blobs/node.ts` for what it is still good for. Wins
+   * over `storeDatabase` when both are given, because naming a directory can
+   * only be deliberate.
    */
   readonly storeRoot?: string;
   /** Injected so the OPFS build can supply bytes without a filesystem. */
@@ -642,8 +684,9 @@ export interface BlobImportReport {
   /** Which mode actually ran, after option resolution and any fallback. */
   readonly payloadStore: BlobPayloadStore;
   /**
-   * Where the store is RIGHT NOW, for the operator's benefit. Reported, logged,
-   * and never written to the database — that is the whole point of this module.
+   * Where the store is RIGHT NOW — `sqlite:<file>` for the default store, a
+   * directory for the legacy one — for the operator's benefit. Reported, logged,
+   * and never written to the database; that is the whole point of this module.
    */
   readonly storeRoot: string | null;
   /** Payloads copied into the store on this run. */
@@ -783,6 +826,14 @@ interface ResolvedStore {
   /** Diagnostic only. Never reaches a column. */
   readonly storeRoot: string | null;
   readonly storeWarnings: readonly string[];
+  /**
+   * Release a handle THIS FUNCTION opened, and nothing else. The default store
+   * is a SQLite database, so somebody has to close it — and on Windows an
+   * unclosed handle keeps a lock, which is how a passing test leaves an
+   * undeletable temp directory behind. A store the caller handed in is the
+   * caller's to close.
+   */
+  readonly close: () => void;
 }
 
 /**
@@ -810,8 +861,16 @@ function resolvePayloadStore(db: Db, options: ImportBlobsOptions): ResolvedStore
     requested = options.store ?? "content-addressed";
   }
 
+  const noop = (): void => {};
+
   if (requested !== "content-addressed") {
-    return { store: requested, blobStore: null, storeRoot: null, storeWarnings: warnings };
+    return {
+      store: requested,
+      blobStore: null,
+      storeRoot: null,
+      storeWarnings: warnings,
+      close: noop,
+    };
   }
 
   if (options.blobStore !== undefined) {
@@ -820,28 +879,59 @@ function resolvePayloadStore(db: Db, options: ImportBlobsOptions): ResolvedStore
       blobStore: options.blobStore,
       storeRoot: options.blobStore.describe,
       storeWarnings: warnings,
+      close: noop,
     };
   }
 
-  const root = options.storeRoot ?? derivedStoreRoot(db);
-  if (root === null) {
+  // Naming a directory can only be deliberate, so it wins over the default.
+  if (options.storeRoot !== undefined) {
+    const opened = openBlobStore(options.storeRoot);
+    warnings.push(
+      `storeRoot opens the legacy one-file-per-payload store. The default is a ` +
+        `SQLite blob database, which measured tens of times faster to write on ` +
+        `OPFS (32x-65x across the runs that measured both); see ` +
+        `notes/browser-feasibility.md §4 and spike/blobstore/README.md.`,
+    );
+    return {
+      store: requested,
+      blobStore: opened,
+      storeRoot: opened.root,
+      storeWarnings: warnings,
+      close: noop,
+    };
+  }
+
+  const file = options.storeDatabase ?? derivedStoreDatabase(db);
+  if (file === null) {
     warnings.push(
       "no blob store: this database is in memory, so there is nowhere durable to " +
         "put 657 MB of payloads. Addresses, sizes, types and provenance are still " +
-        "recorded; pass storeRoot or blobStore to keep the bytes.",
+        "recorded; pass storeDatabase or blobStore to keep the bytes.",
     );
-    return { store: "address-only", blobStore: null, storeRoot: null, storeWarnings: warnings };
+    return {
+      store: "address-only",
+      blobStore: null,
+      storeRoot: null,
+      storeWarnings: warnings,
+      close: noop,
+    };
   }
-  const opened = openBlobStore(root);
-  return { store: requested, blobStore: opened, storeRoot: opened.root, storeWarnings: warnings };
+  const opened = openBlobStoreDatabase(file);
+  return {
+    store: requested,
+    blobStore: opened.store,
+    storeRoot: opened.store.describe,
+    storeWarnings: warnings,
+    close: opened.close,
+  };
 }
 
-/** `<database>.blobs`, or null when the database has no file behind it. */
-function derivedStoreRoot(db: Db): string | null {
+/** `<database>.blobs.db`, or null when the database has no file behind it. */
+function derivedStoreDatabase(db: Db): string | null {
   const file = (db as { name?: unknown }).name;
   if (typeof file !== "string" || file === "" || file === ":memory:") return null;
   if (file.startsWith("file::memory:") || (db as { memory?: unknown }).memory === true) return null;
-  return defaultStoreRoot(file);
+  return defaultStoreDatabase(file);
 }
 
 /**
@@ -859,7 +949,13 @@ export function importBlobs(
 ): BlobImportReport {
   const readMedia = options.readMedia ?? defaultReadMedia;
   const includeText = options.includeTextGenerations !== false;
-  const { store, blobStore, storeRoot, storeWarnings } = resolvePayloadStore(db, options);
+  const {
+    store,
+    blobStore,
+    storeRoot,
+    storeWarnings,
+    close: closeStore,
+  } = resolvePayloadStore(db, options);
 
   // ── phase 1: scan the records. No I/O, no writes.
   const live: LiveAttachment[] = [];
@@ -968,8 +1064,10 @@ export function importBlobs(
     }
   }
 
-  // ── phase 2: hash the bytes, once per live file. Outside any transaction:
-  // 657 MB of reads should not hold a write lock.
+  // ── phase 2: hash the bytes, once per live file, and write them to the store.
+  // Outside any transaction ON THE CARD DATABASE: 657 MB of reads must not hold
+  // its write lock. The store is a different database and does hold a
+  // transaction of its own -- see hashAndCopy below.
   const hashed = new Map<string, HashedFile>();
   const sniffedMimes = new Map<string, number>();
   let filesMissing = 0;
@@ -981,49 +1079,64 @@ export function importBlobs(
   let storeBytesWritten = 0;
   const storeStarted = Date.now();
 
-  for (const attachment of live) {
-    const slot = slotOf(attachment.mediaDir, attachment.fileName);
-    let entry = hashed.get(slot);
-    if (entry === undefined) {
-      const bytes = readMedia(attachment.mediaDir, attachment.fileName);
-      if (bytes === null) {
-        filesMissing += 1;
-        continue;
-      }
-      bytesHashed += bytes.length;
-      if (bytes.length === 0) emptyFiles += 1;
-      entry = {
-        hash: contentAddress(bytes),
-        mime: sniffMime(bytes),
-        size: bytes.length,
-        mediaDir: attachment.mediaDir,
-        fileName: attachment.fileName,
-      };
-      hashed.set(slot, entry);
-      // Copy in the same pass that hashed: the bytes are already here, and
-      // reading 657 MB twice to save nothing would be the wrong trade. The
-      // write is idempotent, so an interrupted import resumes by re-reading
-      // and re-hashing but copying only what is genuinely absent -- and a
-      // second full run copies zero bytes.
-      if (blobStore !== null && store === "content-addressed") {
-        const written = blobStore.write(entry.hash, bytes);
-        if (written.written) {
-          storeFilesWritten += 1;
-          storeBytesWritten += written.bytes;
-        } else {
-          storeFilesPresent += 1;
+  const hashAndCopy = (): void => {
+    for (const attachment of live) {
+      const slot = slotOf(attachment.mediaDir, attachment.fileName);
+      let entry = hashed.get(slot);
+      if (entry === undefined) {
+        const bytes = readMedia(attachment.mediaDir, attachment.fileName);
+        if (bytes === null) {
+          filesMissing += 1;
+          continue;
         }
-        options.onMediaProgress?.(
-          storeFilesWritten + storeFilesPresent,
-          live.length,
-          storeBytesWritten,
-        );
+        bytesHashed += bytes.length;
+        if (bytes.length === 0) emptyFiles += 1;
+        entry = {
+          hash: contentAddress(bytes),
+          mime: sniffMime(bytes),
+          size: bytes.length,
+          mediaDir: attachment.mediaDir,
+          fileName: attachment.fileName,
+        };
+        hashed.set(slot, entry);
+        // Copy in the same pass that hashed: the bytes are already here, and
+        // reading 657 MB twice to save nothing would be the wrong trade. The
+        // write is idempotent, so an interrupted import resumes by re-reading
+        // and re-hashing but copying only what is genuinely absent -- and a
+        // second full run copies zero bytes.
+        if (blobStore !== null && store === "content-addressed") {
+          const written = blobStore.write(entry.hash, bytes);
+          if (written.written) {
+            storeFilesWritten += 1;
+            storeBytesWritten += written.bytes;
+          } else {
+            storeFilesPresent += 1;
+          }
+          options.onMediaProgress?.(
+            storeFilesWritten + storeFilesPresent,
+            live.length,
+            storeBytesWritten,
+          );
+        }
       }
+      bump(sniffedMimes, entry.mime);
+      if (entry.mime !== attachment.declaredType) mimeCorrected += 1;
     }
-    bump(sniffedMimes, entry.mime);
-    if (entry.mime !== attachment.declaredType) mimeCorrected += 1;
+  };
+
+  let storeSeconds = 0;
+  try {
+    // BATCHED, when the store can batch. `SqliteBlobStore` commits every 64 MiB
+    // instead of once per payload, which is the whole difference between the
+    // note's 4.9 s and 10,816 transactions. A store that cannot batch (the
+    // directory one, a Map) runs the identical loop unwrapped.
+    if (blobStore !== null && blobStore.batch !== undefined) blobStore.batch(hashAndCopy);
+    else hashAndCopy();
+    storeSeconds = (Date.now() - storeStarted) / 1000;
+  } finally {
+    // Only ever closes a handle resolvePayloadStore opened itself.
+    closeStore();
   }
-  const storeSeconds = (Date.now() - storeStarted) / 1000;
 
   // ── phase 3: decide one identity per blob. The key -> blob relation is
   // many-to-many and a blob row holds one tuple, so keep the lexicographically

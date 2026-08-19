@@ -1,0 +1,4 @@
+# THROWAWAY generated inputs, never committed.
+# `npx vite-node spike/audio/make-audio-db.ts` rebuilds both from the real export.
+*.db
+*.db-journal

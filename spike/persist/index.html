@@ -1,0 +1,215 @@
+<!doctype html>
+<!--
+  THROWAWAY (spike harness) — spike/persist/index.html
+
+  Deliberately styled for a PHONE held in one hand, not for a desktop: 44 px
+  minimum tap targets, 17 px body text, one column, and the verdict in a banner
+  you cannot scroll past. Zach runs this himself; no agent in this run can.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#181c24" />
+    <title>Hashigo — will the browser keep my data?</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon-192.png" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #181c24;
+        --panel: #212734;
+        --edge: #333c4d;
+        --ink: #e8ecf3;
+        --dim: #93a0b4;
+        --good: #6ee7a8;
+        --bad: #ff8a8a;
+        --warn: #f5d06a;
+        --step: #8ec5ff;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 0 0 3rem;
+        background: var(--bg);
+        color: var(--ink);
+        font: 17px/1.5 system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", sans-serif;
+        -webkit-text-size-adjust: 100%;
+      }
+      header { padding: 1rem 1rem 0; }
+      h1 { font-size: 1.35rem; margin: 0 0 .25rem; }
+      .sub { color: var(--dim); font-size: .95rem; margin: 0 0 .75rem; }
+      .banner {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        margin: 0 0 1rem;
+        padding: .9rem 1rem;
+        font-weight: 700;
+        font-size: 1.02rem;
+        border-bottom: 2px solid var(--edge);
+      }
+      .banner-ok   { background: #10331f; color: var(--good); border-color: var(--good); }
+      .banner-risk { background: #3a1c1c; color: var(--bad);  border-color: var(--bad); }
+      main { padding: 0 1rem; }
+      section { margin-bottom: 1.25rem; }
+      h2 {
+        font-size: .8rem;
+        text-transform: uppercase;
+        letter-spacing: .09em;
+        color: var(--dim);
+        margin: 0 0 .5rem;
+      }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: .5rem; }
+      button {
+        min-height: 46px;
+        padding: .6rem .7rem;
+        font: inherit;
+        font-weight: 600;
+        color: var(--ink);
+        background: var(--panel);
+        border: 1px solid var(--edge);
+        border-radius: 10px;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+      button:active { background: #2c3444; }
+      button.warn { border-color: var(--warn); color: var(--warn); }
+      button.bad  { border-color: var(--bad);  color: var(--bad); }
+      dl#stats {
+        display: grid;
+        grid-template-columns: minmax(8rem, auto) 1fr;
+        gap: .15rem .75rem;
+        margin: 0;
+        background: var(--panel);
+        border: 1px solid var(--edge);
+        border-radius: 10px;
+        padding: .75rem;
+        font-size: .95rem;
+      }
+      dl#stats dt { color: var(--dim); }
+      dl#stats dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+      .stat-good { color: var(--good); }
+      .stat-bad  { color: var(--bad); }
+      .stat-warn { color: var(--warn); }
+      #tabs {
+        font-size: .85rem;
+        color: var(--warn);
+        background: var(--panel);
+        border: 1px solid var(--edge);
+        border-radius: 10px;
+        padding: .5rem .75rem;
+        word-break: break-all;
+      }
+      pre#log {
+        margin: 0;
+        padding: .75rem;
+        max-height: 60vh;
+        overflow: auto;
+        background: #10141b;
+        border: 1px solid var(--edge);
+        border-radius: 10px;
+        font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .log-step { color: var(--step); font-weight: 700; }
+      .log-good { color: var(--good); }
+      .log-bad  { color: var(--bad); }
+      .log-warn { color: var(--warn); }
+      .note { color: var(--dim); font-size: .85rem; margin: .4rem 0 0; }
+    </style>
+  </head>
+  <body>
+    <div id="banner" class="banner">measuring…</div>
+    <header>
+      <h1>Will the browser keep Hashigo's data?</h1>
+      <p class="sub">
+        Throwaway test page. It asks for storage persistence, opens the real
+        7,716-card database in OPFS, and can fill ~700&nbsp;MB to see what the
+        quota does.
+      </p>
+    </header>
+    <main>
+      <section>
+        <h2>What this device says</h2>
+        <dl id="stats"></dl>
+      </section>
+
+      <section>
+        <h2>1 · persistence and the database</h2>
+        <div class="grid">
+          <button id="env">re-ask for persistence</button>
+          <button id="open">open the database</button>
+          <button id="reimport">re-import (69 MB)</button>
+          <button id="reload">reload the page</button>
+        </div>
+        <p class="note">
+          After a reload the database should still be there. That is the test for
+          "does it survive closing the app".
+        </p>
+      </section>
+
+      <section>
+        <h2>2 · ~700 MB of audio</h2>
+        <div class="grid">
+          <button id="fill" class="warn">fill ~700 MB, then delete it</button>
+        </div>
+        <p class="note">
+          Writes one row per real audio file, at the real sizes, then removes it
+          again. Read the “quota” and “% of quota used” numbers above.
+        </p>
+      </section>
+
+      <section>
+        <h2>3 · two tabs at once</h2>
+        <div id="tabs"></div>
+        <div class="grid">
+          <button id="newtab">open a second tab</button>
+          <button id="hold">hold the database</button>
+          <button id="unhold">close the database</button>
+          <button id="force" class="bad">force open anyway</button>
+          <button id="pause">pause (release OPFS)</button>
+          <button id="unpause">unpause (take it back)</button>
+          <button id="release">release the tab lock</button>
+        </div>
+        <p class="note">
+          In the second tab, tap “force open anyway”. A clear error is the good
+          outcome; anything else is the bad one.
+        </p>
+      </section>
+
+      <section>
+        <h2>4 · losing everything, and getting it back</h2>
+        <div class="grid">
+          <button id="evict" class="bad">delete ALL storage (simulate eviction)</button>
+          <button id="recover">recover from nothing</button>
+        </div>
+        <p class="note">
+          “Delete ALL storage” does what an eviction does. Safe: everything here
+          rebuilds from the export on the PC.
+        </p>
+      </section>
+
+      <section>
+        <h2>Transcript</h2>
+        <div class="grid">
+          <button id="copy">copy all of this</button>
+        </div>
+        <pre id="log">starting…</pre>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+    <script type="module">
+      // Registered here rather than in main.ts so it is obvious that the only
+      // reason a service worker exists is installability. It caches nothing.
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker
+          .register("./sw.js", { scope: "./" })
+          .then((r) => console.log("sw registered, scope", r.scope))
+          .catch((e) => console.warn("sw registration failed", e));
+      }
+    </script>
+  </body>
+</html>

@@ -7,13 +7,22 @@
  *   * foreign keys are OFF by default in SQLite, and this schema leans on them
  *     hard — the tag tree's every-prefix-exists guarantee and the "a referenced
  *     blob cannot be deleted" guarantee are both foreign keys.
- *   * WAL keeps a long import from blocking readers, and is the mode the
- *     OPFS build will use too.
+ *   * WAL keeps a long import from blocking readers. It is a NODE-ONLY choice:
+ *     an earlier version of this comment claimed WAL "is the mode the OPFS build
+ *     will use too", and that is wrong. Measured 2026-08-19 in Chromium on the
+ *     `opfs-sahpool` VFS: `PRAGMA journal_mode = WAL` reports `delete` and the
+ *     mode does not change, because WAL needs a `-shm` shared-memory file and
+ *     that VFS implements no shared memory. `importDb()` even rewrites the
+ *     header of an imported file to force WAL off. So the browser half runs on
+ *     the rollback journal, and anything that hands a prebuilt `.db` to the
+ *     browser must checkpoint it first — the `-wal` sidecar cannot be imported,
+ *     and an uncheckpointed commit would be lost silently. See
+ *     `src/db/browser.ts` and `spike/README.md`.
  *   * the schema is applied inside a transaction, so a half-created database is
  *     not a state this code can produce.
  *
  * Node only (better-sqlite3): the importer, the backtest and the tests. The
- * browser/OPFS half of src/db is a later stage and is not attempted here.
+ * browser/OPFS half is `src/db/browser.ts`, over the same surface.
  */
 
 import { mkdirSync } from "node:fs";

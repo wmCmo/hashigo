@@ -1,0 +1,23 @@
+{
+  "//": "THROWAWAY (spike harness). The repo's tsconfig.json includes only src/, test/, scripts/ and *.config.ts, so nothing typechecks spike/. Run: npx tsc -p spike/persist",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["vite/client"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["env.d.ts", "protocol.ts", "main.ts", "db.worker.ts"]
+}

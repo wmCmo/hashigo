@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hashigo audio spike — a real corpus mp3 out of a blob store, decoded</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fbfbfa;
+        --fg: #1a1a19;
+        --dim: #6b6b66;
+        --good: #0a6b3c;
+        --bad: #a11616;
+        --step: #1d4ed8;
+        --rule: #d9d9d4;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14140f;
+          --fg: #ecece6;
+          --dim: #9b9b93;
+          --good: #4ade80;
+          --bad: #f87171;
+          --step: #93b4ff;
+          --rule: #2e2e26;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 1.5rem clamp(0.75rem, 3vw, 2.5rem) 4rem;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.5 ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+      }
+      h1 { font-size: 1.15rem; margin: 0 0 0.25rem; }
+      .sub { color: var(--dim); margin: 0 0 1.25rem; max-width: 68ch; }
+      .throwaway {
+        border: 1px solid var(--bad);
+        color: var(--bad);
+        padding: 0.4rem 0.6rem;
+        border-radius: 4px;
+        display: inline-block;
+        font-weight: 600;
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+        margin-bottom: 1rem;
+      }
+      button {
+        font: inherit;
+        padding: 0.4rem 0.8rem;
+        border: 1px solid var(--rule);
+        border-radius: 4px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      button:hover:enabled { border-color: var(--fg); }
+      button:disabled { opacity: 0.45; cursor: default; }
+      .bar { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+      pre {
+        font: 12.5px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        padding: 0.75rem;
+        margin: 0 0 1rem;
+        max-height: 60vh;
+        overflow: auto;
+      }
+      .log-step { color: var(--step); font-weight: 600; }
+      .log-good { color: var(--good); }
+      .log-bad { color: var(--bad); font-weight: 600; }
+      dl.facts {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 0.15rem 1rem;
+        font: 12.5px/1.5 ui-monospace, Consolas, monospace;
+        margin: 0 0 1.25rem;
+      }
+      dl.facts dt { color: var(--dim); }
+      dl.facts dd { margin: 0; word-break: break-all; }
+      #players { display: grid; gap: 0.35rem; }
+      .player {
+        display: grid;
+        grid-template-columns: minmax(12rem, 46ch) 1fr;
+        gap: 0.5rem;
+        align-items: center;
+        font: 12px/1.4 ui-monospace, Consolas, monospace;
+        color: var(--dim);
+      }
+      .player audio { width: 100%; max-width: 22rem; height: 32px; }
+      img.shot { max-width: 12rem; border: 1px solid var(--rule); border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <script>
+      /*
+        THROWAWAY, and only with ?nohmr=1. The dev server full-reloads this page
+        whenever anything it imports from src/ is saved, and a 15-second run of
+        real audio cannot survive another agent hitting save. This classic script
+        runs before Vite's deferred module client, so it can hand the HMR client a
+        dead socket. Nothing about the audio path is affected — it only stops
+        `location.reload()` from arriving mid-clip.
+      */
+      if (new URLSearchParams(location.search).get("nohmr") === "1") {
+        const RealWebSocket = window.WebSocket;
+        window.WebSocket = function (url, protocols) {
+          if (String(url).includes("token=") || String(protocols).includes("vite-hmr")) {
+            return {
+              readyState: 3,
+              addEventListener() {},
+              removeEventListener() {},
+              send() {},
+              close() {},
+            };
+          }
+          return new RealWebSocket(url, protocols);
+        };
+      }
+    </script>
+    <span class="throwaway">THROWAWAY — spike/audio/ is disposable harness, not app code</span>
+    <h1>A real mp3 from the corpus, out of a SQLite blob store in OPFS, decoded by a real browser</h1>
+    <p class="sub">
+      The worker owns both databases: a card-shaped <code>blobs</code> table with no
+      payloads and no locations, and a <code>SqliteBlobStore</code> holding the real
+      Azure TTS mp3s as BLOB rows. Bytes reach this page by transfer and become
+      playable through <code>src/blobs/url.ts</code> — the only production file on
+      trial here. A clip counts as proven when its duration is finite, its clock
+      advances and its events fire, not when an element merely has a <code>src</code>.
+    </p>
+    <dl class="facts" id="facts"></dl>
+    <div class="bar">
+      <button id="run">Run the suite (needs a real click — autoplay policy)</button>
+      <button id="reimport">Re-import both databases into OPFS</button>
+    </div>
+    <pre id="log"></pre>
+    <div id="players"></div>
+    <script type="module" src="/audio/main.ts"></script>
+  </body>
+</html>
