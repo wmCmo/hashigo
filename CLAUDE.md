@@ -8,8 +8,36 @@ user's Japanese study. Built because Mochi's developer stopped fixing reported b
 `exports/`, not estimated. Published copy:
 <https://claude.ai/code/artifact/c8416a42-779a-49da-81c1-54459067d94b>
 
-Nothing is implemented yet. Stage 1 of the build order in SPEC.html is next:
-schema + importer.
+Stages 0, 1, 2, 3 and 5 exist and are tested against the real export: schema,
+importer, dashboard, template engine, scheduler backtest, plus the
+content-addressed blob store and `src/text`. There is still **no browser shell
+and no renderer** — see `OVERNIGHT.md` for what is missing and
+`notes/browser-feasibility.md` for the OPFS measurements.
+
+```bash
+npm test                # 10 files, 306 passed, 1 skipped (the FSRS refit, gated)
+npm run typecheck       # exit 0
+npm run build           # refuses to exit 0 unless dist/ actually imports
+npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
+npm run dashboard -- --db build/hashigo.db --out dashboard.html
+npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 1 on any location
+```
+
+## Decisions that are settled — do not relitigate these
+
+1. **FSRS-6**, max interval **365 days**, target retention **0.95**.
+   `src/scheduler/policy.ts` holds them; `BACKTEST.md` holds the measurements.
+2. **Binary grades only** — remembered / forgot. Anki's four-button scale was
+   considered and rejected, so there is no `grade` column and FSRS `w[15]`/`w[16]`
+   are frozen, not fitted.
+3. The six empty leaf decks **are dropped** by default: 45 decks become 39.
+4. Blobs are **content-addressed**. No absolute path is ever stored in the
+   database — the `paths` command above is the acceptance check.
+5. Stale pre-template `content` (3,159 cards, 79,175 chars) is **discarded** on
+   import and **reported** so it stays recoverable from the export.
+6. Both intervals are tracked and named: `reviews.elapsed_days` (measured) and
+   `reviews.scheduled_days` (planned). Anything plotted against an interval must
+   say which basis it used.
 
 ## The four problems this exists to solve
 
@@ -52,8 +80,9 @@ to find — Transit's two different timestamp encodings, the double-counting dec
 walker, `content` being empty on templated cards, zero-width spaces in tags. Read it
 before writing anything that parses the export.
 
-`exports/` should not be committed — 657 MB of generated audio. Add it to
-`.gitignore` when the repo is initialised.
+`exports/` is gitignored — 657 MB of generated audio — along with the blob store
+(`*.blobs/`), every media extension, and `*.db`. `.gitattributes` pins LF so
+`schema.sql` cannot land in the repo with two different hashes.
 
 ## Environment
 
