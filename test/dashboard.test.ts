@@ -6,7 +6,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 import {
   ALL_TIME,
+  BEYOND_YEAR_LABEL,
   INTERVAL_BUCKETS,
+  MOCHI_INTERVAL_CAP_DAYS,
   activityByDay,
   activityByMonth,
   activityByYear,
@@ -14,6 +16,7 @@ import {
   collect,
   deckProgress,
   heatThresholds,
+  beyondYear,
   longIntervalOutlook,
   renderDashboard,
   retentionByDeck,
@@ -23,6 +26,8 @@ import {
   type DayActivity,
 } from "../src/dashboard/index.js";
 import { importExports, readSource, type ImportSource } from "../src/import/index.js";
+import { INTERVAL_BASES } from "../src/schema/index.js";
+import { TARGET_RETENTION } from "../src/scheduler/policy.js";
 
 /**
  * Stage 2 acceptance. The dashboard is the IMPORTER's acceptance test, so this
@@ -93,6 +98,13 @@ function day(reviews: number): DayActivity {
 
 let db: Db;
 let data: DashboardData;
+/**
+ * longIntervalOutlook walks card_tracks with a correlated subquery per track and
+ * costs ~1.1 s on the real corpus. Four tests read it; computing it once keeps
+ * this file from adding four seconds of CPU to a suite that runs its files in
+ * parallel.
+ */
+let outlook: ReturnType<typeof longIntervalOutlook>;
 
 describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
   beforeAll(() => {
@@ -101,6 +113,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     // Blobs are 657 MB of mp3 and contribute nothing to any figure here.
     importExports(db, sources, { blobs: false });
     data = collect(db, { source: "test (in memory)", generatedAt: "2026-08-18T00:00:00.000Z" });
+    outlook = longIntervalOutlook(db);
   }, 600_000);
 
   afterAll(() => {
@@ -312,56 +325,145 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
 
   // ── 4. retention vs interval — the tile Mochi lacks ────────────────────────
 
-  it("keeps its bucket labels identical to views.sql's own", () => {
-    // The boundaries live in review_log_bucketed; INTERVAL_BUCKETS only names
-    // them. If someone edits one and not the other, this fails.
-    const fromView = db
-      .prepare(
-        `SELECT DISTINCT interval_bucket AS bucket, interval_bucket_label AS label
-           FROM review_log_bucketed ORDER BY interval_bucket`,
-      )
-      .all() as { bucket: number; label: string }[];
-    for (const row of fromView) {
-      expect(INTERVAL_BUCKETS[row.bucket]?.label).toBe(row.label);
+  it("keeps its bucket labels identical to views.sql's own, on BOTH bases", () => {
+    // The boundaries live in review_log_bucketed and are applied twice there,
+    // once per basis. INTERVAL_BUCKETS only names them. If someone edits one of
+    // the three and not the others, this fails.
+    for (const basis of INTERVAL_BASES) {
+      const fromView = db
+        .prepare(
+          `SELECT DISTINCT ${basis}_bucket AS bucket, ${basis}_bucket_label AS label
+             FROM review_log_bucketed ORDER BY bucket`,
+        )
+        .all() as { bucket: number; label: string }[];
+      expect(fromView.length).toBeGreaterThan(0);
+      for (const row of fromView) {
+        expect(INTERVAL_BUCKETS[row.bucket]?.label).toBe(row.label);
+      }
     }
     expect(INTERVAL_BUCKETS.map((b) => b.bucket)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
   });
 
-  it("shows over-studying: every observed interval band beats the 90% target", () => {
-    const buckets = data.primary.intervals;
-    expect(buckets).toHaveLength(9);
-    expect(buckets.reduce((sum, b) => sum + b.reviews, 0)).toBe(102_020);
-    expect(buckets.reduce((sum, b) => sum + b.lapses, 0)).toBe(3_832);
+  it("refuses to bucket by an unnamed basis, because that was the whole bug", () => {
+    // retentionByInterval has no default argument on purpose: every caller has
+    // to say which of the two numbers it wants.
+    expect(() =>
+      retentionByInterval(db, ALL_TIME, "whatever" as unknown as "elapsed"),
+    ).toThrow(/unknown interval basis/);
+  });
 
-    const unknown = buckets[0];
-    expect(unknown?.label).toBe("unknown");
-    expect(unknown?.reviews).toBe(17_960);
+  it("partitions all 102,020 reviews under EITHER basis, and only the split differs", () => {
+    const { elapsed, scheduled } = data.primary.intervals;
+    for (const buckets of [elapsed, scheduled]) {
+      expect(buckets).toHaveLength(9);
+      expect(buckets.reduce((sum, b) => sum + b.reviews, 0)).toBe(102_020);
+      expect(buckets.reduce((sum, b) => sum + b.lapses, 0)).toBe(3_832);
+    }
+    // Every row carries its own basis, so a number can never be quoted without
+    // one.
+    expect(elapsed.every((b) => b.basis === "elapsed")).toBe(true);
+    expect(scheduled.every((b) => b.basis === "scheduled")).toBe(true);
 
-    for (const bucket of buckets) {
+    // The `unknown` rows are where the two definitions differ most: a track's
+    // first review has no elapsed gap (9,026 of them), while a review whose
+    // predecessor carried no plan has no scheduled interval (17,960).
+    expect(elapsed[0]?.label).toBe("unknown");
+    expect(elapsed[0]?.reviews).toBe(9_026);
+    expect(scheduled[0]?.reviews).toBe(17_960);
+  });
+
+  it("shows over-studying, and names the bands that miss the 0.95 target", () => {
+    const { elapsed } = data.primary.intervals;
+
+    // At FSRS's 0.90 default every observed band clears the target -- which is
+    // what the page used to say. At Zach's settled 0.95 three of them do not,
+    // and that is the more useful reading, so the page prints it.
+    for (const bucket of elapsed) {
       if (bucket.retention === null) continue;
       expect(bucket.retention).toBeGreaterThan(0.9);
     }
+    const below = elapsed
+      .filter((b) => b.retention !== null && b.retention < TARGET_RETENTION)
+      .map((b) => b.label);
+    expect(TARGET_RETENTION).toBe(0.95);
+    expect(below).toEqual(["21-60d", "60-180d", "180-365d"]);
 
     // Longer intervals do cost retention, which is what makes the tile useful:
     // the worst band sits below the corpus average, not above it.
-    const long = buckets.find((b) => b.label === "60-180d");
-    expect(long?.reviews).toBe(14_070);
+    const long = elapsed.find((b) => b.label === "60-180d");
+    expect(long?.reviews).toBe(14_424);
     expect((long?.retention ?? 1) < (data.primary.totals.retention ?? 0)).toBe(true);
-    expect(((long?.retention ?? 0) * 100).toFixed(2)).toBe("93.24");
+    expect(((long?.retention ?? 0) * 100).toFixed(2)).toBe("93.34");
   });
 
-  it("leaves the > 365d bucket empty rather than zero, and says why", () => {
-    const beyondYear = data.primary.intervals.find((b) => b.label === "> 365d");
-    expect(beyondYear?.reviews).toBe(0);
-    // null, not 0 — "no observations" is a different fact from "never recalled".
-    expect(beyondYear?.retention).toBeNull();
+  // This test was deliberately written as a CANARY against the old, wrong
+  // reading: it used to assert `> 365d` was empty, which was true only because
+  // the tile bucketed by the planned interval. Fixing the basis was supposed to
+  // break it. It did. This is the corrected form.
+  it("finds 3,009 observations past a year, where the planned basis finds none", () => {
+    const { elapsed, scheduled } = data.primary.intervals;
 
-    const outlook = longIntervalOutlook(db);
-    expect(outlook.observed).toBe(0);
-    expect(outlook.maxObservedIntervalDays).toBe(365);
-    expect(outlook.scheduled).toBe(1_356);
+    const measured = beyondYear(elapsed);
+    expect(measured.reviews).toBe(3_009);
+    expect(measured.lapses).toBe(94);
+    expect(((measured.retention ?? 0) * 100).toFixed(2)).toBe("96.88");
+
+    const planned = beyondYear(scheduled);
+    expect(planned.reviews).toBe(0);
+    // null, not 0 -- "no observations" is a different fact from "never recalled".
+    expect(planned.retention).toBeNull();
+  });
+
+  it("explains the zero rather than reporting it: the plans exist, none is due", () => {
+    expect(outlook.observedBeyondYear).toBe(3_009);
+    expect(((outlook.observedRetention ?? 0) * 100).toFixed(2)).toBe("96.88");
+    // The ceiling on extrapolation, and it comes from the OBSERVED side: no gap
+    // longer than this has ever actually happened, cap or no cap.
+    expect(outlook.maxObservedElapsedDays).toBe(454);
+
+    // Mochi planned past a year 1,356 times; not one of those reviews has been
+    // taken, which is exactly why the planned basis shows zero.
+    expect(outlook.plannedBeyondYear).toBe(1_356);
+    expect(outlook.maxPlannedDays).toBe(2_707);
+    // 1,348 of those 1,356 are on a LIVE track; the other 8 sit on archived
+    // cards, which the track-level figures exclude and the review-level ones do
+    // not. Both populations are named rather than blended.
+    expect(outlook.tracksBeyondYear).toBe(1_348);
     expect(outlook.firstDueAt?.slice(0, 10)).toBe("2027-03-17");
     expect(outlook.lastDueAt?.slice(0, 10)).toBe("2033-10-17");
+  });
+
+  it("dates the cap lift on the LOCAL calendar, not UTC", () => {
+    // 2026-02-22 JST, which is 2026-02-21 UTC. Both dates are in circulation in
+    // this repo's notes; only one of them is on the calendar the rest of the
+    // dashboard uses, and this is where that gets pinned.
+    expect(outlook.capLiftedOn).toBe("2026-02-22");
+    const utc = db
+      .prepare(`SELECT min(date(reviewed_at)) FROM reviews WHERE next_scheduled_days > 365`)
+      .pluck()
+      .get() as string;
+    expect(utc).toBe("2026-02-21");
+
+    const before = db
+      .prepare(
+        `SELECT count(*) FROM review_log WHERE next_scheduled_days > ? AND local_date < ?`,
+      )
+      .pluck()
+      .get(MOCHI_INTERVAL_CAP_DAYS, outlook.capLiftedOn) as number;
+    expect(before).toBe(0);
+  });
+
+  it("counts the tracks the lifted cap actually left behind", () => {
+    // The headline share, which is real but is NOT a live constraint any more.
+    expect(outlook.tracksAtCap).toBe(3_874);
+    expect(outlook.tracksWithPlan).toBe(8_956);
+    expect(((outlook.tracksAtCap / outlook.tracksWithPlan) * 100).toFixed(2)).toBe("43.26");
+
+    // The narrower thing that IS still true: parked on a stale 365-day plan
+    // because their last review predates the lift.
+    expect(outlook.tracksOnStaleCap).toBe(3_796);
+    expect(outlook.tracksOnStaleCap).toBeLessThan(outlook.tracksAtCap);
+    expect(outlook.tracksAtCap - outlook.tracksOnStaleCap).toBe(78);
   });
 
   // ── 5. per-deck retention — the other tile Mochi lacks ─────────────────────
@@ -422,7 +524,10 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
       );
       expect(deck.tracks).toBeGreaterThanOrEqual(deck.directTracks);
     }
-    expect(deckProgress(db)).toHaveLength(45);
+    // 39, not 45: the six empty leaf decks (副詞, 名詞, 形容動詞, 一段動詞,
+    // 形容詞, 五段動詞) are dropped on import by default, which is SPEC's
+    // settled answer and now the importer's.
+    expect(deckProgress(db)).toHaveLength(39);
   });
 
   // ── 7. empty windows and edges ─────────────────────────────────────────────
@@ -441,9 +546,12 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     expect(activityByDay(db, empty)).toEqual([]);
     expect(retentionByDeck(db, empty)).toEqual([]);
     // Every bucket still gets a row, all of them empty.
-    const buckets = retentionByInterval(db, empty);
-    expect(buckets).toHaveLength(9);
-    expect(buckets.every((b) => b.reviews === 0 && b.retention === null)).toBe(true);
+    for (const basis of INTERVAL_BASES) {
+      const buckets = retentionByInterval(db, empty, basis);
+      expect(buckets).toHaveLength(9);
+      expect(buckets.every((b) => b.reviews === 0 && b.retention === null)).toBe(true);
+      expect(buckets.every((b) => b.basis === basis)).toBe(true);
+    }
   });
 
   // ── 8. the rendered page ───────────────────────────────────────────────────
@@ -540,6 +648,91 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     expect(renderDashboard(data)).toBe(renderDashboard(data));
     expect(renderDashboard(data)).toContain("2026-08-18T00:00:00.000Z");
   });
+
+  // ── 10. THE TWO ARTEFACTS AGREE ─────────────────────────────────────────────
+//
+// The pass condition for this piece of work, asserted against the two COMMITTED
+// files rather than against the code that produced them.
+//
+// What went wrong: dashboard.html rendered "> 365d 観測なし" while BACKTEST.md
+// reported thousands of observations past a year. Neither was lying — the page
+// bucketed by the PLANNED interval and the backtest scored ELAPSED time — but a
+// reader holding both had no way to know that, and the page was the one on
+// screen. Now both name their basis, both use the schema's column names, and
+// this test fails if they ever disagree on the number again.
+
+const BACKTEST_DOC = resolve(import.meta.dirname, "..", "BACKTEST.md");
+
+/** Pull "| > 365d | 3,009 | ..." out of a markdown table. */
+function markdownBeyondYearCounts(markdown: string): number[] {
+  const counts: number[] = [];
+  for (const line of markdown.split(/\r?\n/)) {
+    const cells = line.split("|").map((cell) => cell.trim());
+    if (cells.length < 3) continue;
+    if (cells[1] !== BEYOND_YEAR_LABEL) continue;
+    const n = Number((cells[2] ?? "").replace(/,/g, ""));
+    if (Number.isFinite(n)) counts.push(n);
+  }
+  return counts;
+}
+
+describe.skipIf(!existsSync(PAGE) || !existsSync(BACKTEST_DOC))(
+  "dashboard.html and BACKTEST.md, as committed",
+  () => {
+    it("report the SAME count for the > 365d bucket", () => {
+      const html = readFileSync(PAGE, "utf8");
+      const markdown = readFileSync(BACKTEST_DOC, "utf8");
+
+      // The database's own answer, which both artefacts are supposed to carry.
+      const measured = beyondYear(retentionByInterval(db, ALL_TIME, "elapsed"));
+      expect(measured.reviews).toBe(3_009);
+
+      // BACKTEST.md: the whole-corpus forgetting-curve table. There is also a
+      // held-out-window table whose > 365d row is a SUBSET (2,926 of these
+      // 3,009), so this asserts the whole-corpus figure is present and that
+      // every > 365d count in the document is either it or a subset of it --
+      // never something larger, which would mean a different population.
+      const fromDoc = markdownBeyondYearCounts(markdown);
+      expect(fromDoc.length).toBeGreaterThan(0);
+      expect(fromDoc).toContain(measured.reviews);
+      for (const n of fromDoc) expect(n).toBeLessThanOrEqual(measured.reviews);
+
+      // dashboard.html: the number is rendered in the > 365d row of the
+      // per-bucket table and in the prose beneath the chart.
+      expect(html).toContain("3,009");
+      expect(html).not.toContain("観測なし</text>");
+
+      // And the page says which basis produced it, so the next reader does not
+      // have to reverse-engineer it from a git log.
+      expect(html).toContain("elapsed_days");
+      expect(html).toContain("scheduled_days");
+    });
+
+    it("agree on the retention at that interval too, not just the count", () => {
+      const markdown = readFileSync(BACKTEST_DOC, "utf8");
+      const html = readFileSync(PAGE, "utf8");
+      const measured = beyondYear(retentionByInterval(db, ALL_TIME, "elapsed"));
+      const percent = `${((measured.retention ?? 0) * 100).toFixed(2)}%`;
+
+      expect(percent).toBe("96.88%");
+      expect(markdown).toContain(percent);
+      expect(html).toContain(percent);
+    });
+
+    it("agree on the cap, its lift date, and what the lift left behind", () => {
+      const markdown = readFileSync(BACKTEST_DOC, "utf8");
+      const html = readFileSync(PAGE, "utf8");
+        for (const doc of [markdown, html]) {
+        expect(doc).toContain(outlook.capLiftedOn as string);
+        expect(doc).toContain("2,707");
+        expect(doc).toContain("1,356");
+        expect(doc).toContain("3,796");
+      }
+      // The stale claim this replaced. If it comes back, so does the bug.
+      expect(markdown).not.toMatch(/binding constraint[^.]*365-day interval\s*\n?\s*cap/i);
+    });
+  },
+);
 });
 
 // ── 9. the committed artefact ────────────────────────────────────────────────
@@ -556,5 +749,26 @@ describe.skipIf(!existsSync(PAGE))("dashboard.html as committed", () => {
     expect(html).not.toMatch(/<script/i);
     expect(html).not.toMatch(/https?:\/\//i);
     expect(html).not.toContain("NaN");
+  });
+
+  it("stays one self-contained file that is readable in either theme", () => {
+    const html = readFileSync(PAGE, "utf8");
+    // No external requests of any kind: no script, no link rel=stylesheet, no
+    // img src, no @import, no url() pointing anywhere but a data: URI.
+    expect(html).not.toMatch(/<script/i);
+    expect(html).not.toMatch(/<link\b/i);
+    expect(html).not.toMatch(/<img\b/i);
+    expect(html).not.toMatch(/@import/i);
+    expect(html).not.toMatch(/url\((?!['"]?data:)/i);
+
+    // Tokens on bare :root, redefined under BOTH dark spellings, so the page
+    // follows an explicit toggle in either direction and the system default.
+    expect(html).toMatch(/:root\s*\{/);
+    expect(html).toContain('@media (prefers-color-scheme: dark)');
+    expect(html).toContain(':root:not([data-theme="light"])');
+    expect(html).toContain(':root[data-theme="dark"]');
+    // An explicit background on body: the host paints its own ground behind the
+    // page, so a transparent body borrows the wrong theme.
+    expect(html).toMatch(/body\s*\{[^}]*background/);
   });
 });

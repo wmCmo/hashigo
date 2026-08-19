@@ -35,9 +35,41 @@ Three qualifications, each measured rather than hedged:
    grades.
 3. **The workload question is not settled by this backtest and I am not going to
    pretend otherwise.** See [Target retention](#target-retention-and-daily-load).
-   The binding constraint on this user's schedule is Mochi's **365-day interval
-   cap**, which 43.26% of live tracks are sitting on exactly — not the target
-   retention setting.
+   An earlier draft of this line said the binding constraint was Mochi's
+   365-day cap. **That was stale and it is corrected below**: the cap was
+   *lifted* on **2026-02-22**, 1,356 reviews have planned beyond a year since,
+   and the longest plan in the corpus is 2,707 days falling due in 2033. What is
+   actually true is narrower — **3,796 of the 3,874 live tracks sitting on
+   exactly 365 days were last reviewed BEFORE the lift**, so they are parked on
+   a stale plan rather than held down by a live ceiling. The limit on what this
+   backtest can conclude comes from the *observed* side and is unchanged: no gap
+   longer than **454 days** has ever actually elapsed.
+
+### One number, and both artefacts now agree on it
+
+`dashboard.html` used to render `> 365d 観測なし` while this document reported
+thousands of observations past a year. Neither was wrong; neither named its
+basis. The dashboard bucketed by the interval Mochi **planned**, this backtest
+scores the time that actually **elapsed**, and the two disagree completely in
+exactly that bucket. Both now use the schema's own column names —
+`reviews.elapsed_days` and `reviews.scheduled_days` — and report:
+
+| Basis | `> 365d` reviews | Retention |
+|---|--:|--:|
+| **elapsed** (measured, what this backtest scores) | **3,009** | **96.88%** |
+| **scheduled** (planned, what the dashboard used to plot) | 0 | — |
+
+The zero is a censoring artefact, not a fact about memory: `scheduled_days` is
+the *preceding* review's plan, so a plan only appears there once the review it
+scheduled has been taken, and not one of the 1,356 post-lift plans is due before
+2027-03-17.
+
+Two counts of that bucket appear in this document and they are not in conflict:
+**3,009** is the whole corpus, **2,926** is the held-out window (`local_date >=
+2024-12-29`) that the per-candidate tables are scored over. 3,009 − 2,926 = 83
+reviews, all before the cutoff. `test/dashboard.test.ts` asserts that the
+`> 365d` figure in `dashboard.html` and the one in this file are the same
+number, and that no count in this file exceeds the whole-corpus one.
 
 ---
 
@@ -51,7 +83,7 @@ Three qualifications, each measured rather than hedged:
 | Reviews with a predecessor | 92,994 |
 | Same-day (elapsed 0, scored separately) | 6,996 of which 256 lapses |
 | Scored set | 85,998 at 95.94% observed retention |
-| No planned interval in the export | 8,934 |
+| No `scheduled_days` in the export | 8,934 |
 | Training window | 2022-06-28 to 2024-12-29 — 60,163 reviews |
 | Held-out window | 2024-12-29 to 2026-08-18 — 25,835 reviews |
 | Training-window base rate | 96.47% |
@@ -59,16 +91,27 @@ Three qualifications, each measured rather than hedged:
 
 ### Four scoring decisions, and why
 
-**Elapsed time, not Mochi's planned interval.** `reviews.interval_days` is what
-Mochi *intended*; the gap between consecutive review dates is what actually
-happened. Of the 84,060 reviews where both are known, 61,594 agree to within
+**Elapsed, not scheduled — and both are named columns now.**
+`reviews.scheduled_days` is what the scheduler *intended*; `reviews.elapsed_days`
+is the gap between consecutive review dates, which is what actually happened.
+There used to be one column called `interval_days` that the importer wrote as
+planned, this backtest read as elapsed and the dashboard bucketed as planned;
+that name no longer exists in the schema, so a query that assumes the wrong one
+now fails instead of returning a plausible wrong number. Of the 84,060 reviews where both are known, 61,594 agree to within
 1.5 days, **22,226 were taken more than 1.5 days late** and 240 early. Forgetting
 depends on time that passed, so elapsed is the independent variable. It also
-covers 8,934 rows the planned interval leaves NULL, and — the part that matters
+covers 8,934 rows that `scheduled_days` leaves NULL, and — the part that matters
 for the caveats below — under the elapsed definition the corpus contains **3,009
-observations at intervals over a year**, where the planned definition contains
-exactly zero. The whole comparison was re-run under the planned definition as a
+observations at intervals over a year**, where the scheduled basis contains
+exactly zero. The whole comparison was re-run under the scheduled basis as a
 sensitivity check; the ranking does not change.
+
+The bucket boundaries are the same ones `review_log_bucketed` applies in
+`views.sql`, as inclusive ceilings (`<= 365` is `180-365d`, anything more is
+`> 365d`), so this table and the dashboard's are provably the same partition
+rather than two that happen to agree. This table splits `same day` from `1d`
+where the view merges them into `<= 1d`; that is the only difference, and
+decision 3 below is why it exists.
 
 **A track's first review is never scored.** It creates the memory rather than
 testing it. 9,026 of 102,020.
@@ -79,10 +122,20 @@ date-only, so "same day" means an elapsed time of somewhere between a minute and
 time measures the harness. All 6,996 still update state — they happened — and get
 their own table below.
 
-**Grades are binary.** `reviews.grade` is NULL on all 102,020 rows; remembered
-maps to Good, forgotten to Again. Four of FSRS-6's 21 parameters (w1, w3, w15,
-w16) are only reachable through Hard or Easy and are frozen at their published
-values.
+**Grades are binary, BY DESIGN — this is a decision, not a data limitation.**
+Anki's four-button Again/Hard/Good/Easy was considered and **rejected**. There is
+no `grade` column in the schema and there never will be; `remembered` maps to
+Good (3) and forgotten to Again (1), and ratings 2 and 4 cannot occur in this
+corpus or in any future one. Four of FSRS-6's 21 parameters (w1, w3, **w15**,
+**w16**) are reachable only through Hard or Easy and are therefore **unreachable
+by design**, frozen permanently at their published values rather than fitted. No
+number in this document depends on them, and no amount of additional history
+will ever inform them — nothing here is waiting for data.
+
+The upside is worth stating rather than filing this under caveats: **the
+scheduler is fitted on exactly the signal it receives in production**, so there
+is no train/serve distribution shift. A model fitted on four-button history and
+then fed binary grades would have one.
 
 ---
 
@@ -144,7 +197,7 @@ have added a constant to five candidates and left the ranking unchanged while
 making every number meaningless. This is the strongest single argument in the
 whole exercise for SPEC's insistence that real timestamps land in stage 1.
 
-### Sensitivity: Mochi's planned interval instead of elapsed
+### Sensitivity: the `scheduled` basis instead of `elapsed`
 
 | Candidate | Reviews | Log loss | RMSE | Calib. RMSE | AUC | Mean predicted | Observed |
 |---|--:|--:|--:|--:|--:|--:|--:|
@@ -155,9 +208,12 @@ whole exercise for SPEC's insistence that real timestamps land in stage 1.
 | Fixed ×2.5 | 84,060 | 0.3598 | 0.2743 | 0.1928 | 0.613 | 90.15% | 95.89% |
 | SM-2 | 84,060 | 0.4307 | 0.2835 | 0.2054 | 0.633 | 90.50% | 95.89% |
 
-Same order, slightly lower losses, 1,938 fewer rows. The interval definition was
-an open question left over from stage 1; it is now closed, and it does not change
-the answer.
+Same order, slightly lower losses, 1,938 fewer rows. The interval basis was an
+open question left over from stage 1. It is now closed twice over: the schema
+carries `elapsed_days` and `scheduled_days` as separate named columns, and every
+consumer states which it used. Scoring is on `elapsed`, and the choice does not
+change the ranking — only the `> 365d` bucket, where it is the difference between
+3,009 observations and none.
 
 ---
 
@@ -365,28 +421,47 @@ long buckets are a filtered population, not a longer delay. Any model fitted to
 this curve learns "forgetting is slow at long intervals" when the truth is "easy
 cards get long intervals".
 
-### 2. 43% of the corpus is sitting on a censoring boundary
+### 2. 43% of the corpus is parked on a cap that no longer applies
 
 | Quantity | Value |
 |---|--:|
-| Live tracks with a Mochi interval | 8,956 |
-| Median of Mochi's own last interval | 365.0d |
-| Mean of Mochi's own last interval | 493.5d |
-| **Mochi's maximum-interval cap** | 365d |
-| Live tracks pinned to exactly that cap | 3,874 of 8,956 = 43.26% |
-| Reviews scheduled to exactly the cap | 7,407 |
+| Live tracks with a Mochi plan | 8,956 |
+| Median of Mochi's own last plan | 365.0d |
+| Mean of Mochi's own last plan | 493.5d |
+| Mochi's maximum-interval cap, while it applied | 365d |
+| **The date it was lifted** | **2026-02-22** |
+| Live tracks whose plan is exactly 365d | 3,874 of 8,956 = 43.26% |
+| …of which last reviewed BEFORE the lift (**stale**) | **3,796** |
+| …of which re-scheduled to 365d since the lift | 78 |
+| Reviews scheduled to exactly 365d | 7,407 |
 | Reviews ever scheduled beyond it | 1,356 |
+| Longest interval ever planned | **2,707d**, due 2033-10-17 |
+| **Longest interval ever actually elapsed** | **454d** |
 
-This was found, not assumed: 365 is the modal value of `card_tracks.interval_days`
+This was found, not assumed: 365 is the modal value of `card_tracks.scheduled_days`
 by a factor of 88 over the next most common (3,874 tracks at 365 days, 44 at 362).
-For 43.26% of live tracks the data says only *"at least a year is fine"* — the true
-stability is censored. Every one of the 1,356 reviews that ever scheduled past the
-cap did so between **2026-02-22 and 2026-08-18**, measured: the cap was lifted six
-months before the export and essentially nothing scheduled under the new ceiling
-has come due yet.
 
-Consequence: every projected interval past 365 days in the next section is
-extrapolation off the end of the observed support, for nearly half the corpus.
+**But the cap is not operating any more, and an earlier draft of this section
+implied it was.** Measured on local (JST) dates: not one review planned beyond
+365 days before 2026-02-22, and 1,356 have since, ranging up to 2,707 days and
+falling due between 2027-03-17 and 2033-10-17. (Bucket those same rows by UTC
+and the lift reads 2026-02-21 — every timestamp carries `+09:00`, so `date()`
+normalises a day early. The rest of this project counts local dates, so
+2026-02-22 is the one to quote.)
+
+So the honest version of the censoring claim is narrower and more specific:
+**3,796 live tracks are sitting on a 365-day plan chosen by the old, capped
+scheduler and have not been reviewed since it was lifted.** For those the data
+still says only *"at least a year is fine"* and the true stability is censored.
+The other 78 tracks at 365 days were scheduled there after the lift, by a
+scheduler free to choose more — for them 365 is a measurement, not a ceiling.
+
+Consequence, and it is unchanged by the lift because it comes from the observed
+side rather than the planned one: **no gap longer than 454 days has ever
+elapsed**, so every projected interval past that is extrapolation off the end of
+the support, whatever Mochi has been planning since February. Hashigo's own
+maximum interval is set to 365 days (see [Recommendation](#recommendation)),
+which keeps every interval the app issues inside the observed range.
 
 ### 3. The scored population is not the schedulable population
 
@@ -469,19 +544,26 @@ only one of the three that lands inside the range the data covers, and it is
 approximately what Mochi already does.
 
 **And the more useful finding, which is not about target retention at all:** this
-user's 96.24% retention against a nominal 90% target is substantially explained by
-the **365-day cap**, not by the target being wrong. 43.26% of live tracks are
-pinned to an interval shorter than the scheduler's own model wants. Raising the
-maximum interval is a larger, better-evidenced lever than lowering the target,
-and it is the one whose effect the existing data can actually check as it lands.
+user's 96.24% realised retention is substantially explained by the intervals he
+was actually given, not by the target setting being wrong. 3,796 live tracks are
+still sitting on the old 365-day plan, shorter than the scheduler's own model
+wants for them. Working through that backlog is a larger, better-evidenced lever
+than moving the target, and it is the one whose effect the incoming data can
+check as it lands.
+
+Note what the settled 0.95 target means here: the 0.95 row is the **only one of
+the three that lands inside the observed range** (median 355–416 days against a
+454-day ceiling on anything ever observed), and it is approximately what the
+existing schedule already does. It is the conservative choice of the three, and
+it is the one this document can actually support.
 
 Per-deck target retention (SPEC asks for a recommendation): **no.** Observed
 retention does differ by deck — 97.00% 単語, 94.65% 漢字, 93.19% English/Vocabulary
 — but that is a difference in *difficulty*, which the scheduler already handles
 through stability. Nothing in this backtest identifies a deck where a different
 *target* is better, because target retention determines intervals that were never
-scheduled. Ship the per-deck setting SPEC asks for, default it to 0.90 everywhere,
-and leave it alone until there is data from more than one target.
+scheduled. Ship the per-deck setting SPEC asks for, default it to the global
+0.95, and leave it alone until there is data from more than one target.
 
 ---
 
@@ -500,7 +582,9 @@ and leave it alone until there is data from more than one target.
    of many and should be refitted once real grades exist.
 4. **Nothing beyond 454 days is measured, at all.** The 3,009 observations past a
    year are all late reviews of cards capped at 365 days, spanning 366 to 454 days.
-   Not one scheduled long interval exists in four years of history.
+   Not one *deliberately* scheduled long interval has come due: the 1,356 plans
+   written since the cap lifted on 2026-02-22 all fall due from 2027-03-17
+   onward. Hashigo's 365-day maximum keeps the app inside this range on purpose.
 5. **Sub-daily intervals remain unresolved.** SPEC lists them as open. 6,996
    same-day reviews exist but their elapsed time was never recorded, so this
    backtest cannot say whether learning steps earn their place. It can only say
@@ -514,33 +598,67 @@ and leave it alone until there is data from more than one target.
    stability 53.62691 / difficulty 6.3574867 and the short-term-frozen 53.335106,
    to within 7e-6 and 4.2e-5 against upstream's own f32 tolerance of 1e-4. That
    pins init stability, init difficulty, linear damping, mean reversion and both
-   stability branches at once. What remains unpinned is w15 and w16, reachable
-   only from Hard and Easy, which neither the fixture nor this corpus contains —
-   and they are frozen throughout, so no number above depends on them. The
-   one-user, one-corpus limit is unchanged and is the real one.
+   stability branches at once. w15 and w16 are not pinned and never will be —
+   they are reachable only from Hard and Easy, which this application does not
+   have and will not add, so they are **unreachable by design** rather than
+   untested. They are frozen throughout and no number above depends on them; this
+   is a closed question, not an open one. The one-user, one-corpus limit is
+   unchanged and is the real one.
 
 ---
 
 ## Recommendation
 
+**These are settled — Zach has decided them, and `src/scheduler/policy.ts` is
+where the code reads them from.** The measurement below is what each one has to
+live with.
+
+| Setting | Value | Where |
+|---|---|---|
+| Algorithm | **FSRS-6**, fitted to this user | `SCHEDULER_ALGORITHM` |
+| Maximum interval | **365 days** | `MAX_INTERVAL_DAYS` |
+| Target retention | **0.95** | `TARGET_RETENTION` |
+| Grades | **binary only** — remembered / forgot, mapped Again=1 / Good=3 | `BINARY_GRADE` |
+| w15, w16 | **frozen, unreachable by design** | `UNREACHABLE_BY_DESIGN` |
+
 1. **Ship FSRS-6.** It wins on the held-out window on log loss, RMSE,
    calibration and AUC, in every deck large enough to rank, on both track kinds,
-   and under both interval definitions.
+   and under both interval bases. Ship it knowing the size of the win: **0.1905
+   against a constant-base-rate model's 0.2111, about 10%** — not the factor of
+   four the raw SM-2 row suggests, because 91% of SM-2's gap is its exponential
+   forgetting curve rather than its interval logic. On RMSE, stock FSRS-6 is
+   *worse* than that no-input baseline. Nobody should expect the change from
+   Mochi to feel like a better scheduler.
 2. **Ship it with the fitted parameters**, marked provisional, and refit
    automatically once there is a year of reviews carrying real timestamps and
    real grades. The fitter is 30 seconds of arithmetic on the user's own machine;
    there is no reason to ship population defaults permanently.
-3. **Keep the maximum interval configurable and raise it deliberately, in steps.**
-   It is the binding constraint today and the only lever whose effect the incoming
-   data can verify. Do not let a model schedule 1,000 days on the strength of a
-   curve fitted to censored data — cap at something like 730 days until
-   observations past a year exist.
-4. **Target retention: per-deck setting, default 0.90, do not tune it yet.**
-5. **Record what would make the next backtest better**, which is the same list as
-   SPEC's stage-1 obligations: real timestamps (turns 6,996 unscorable rows into
-   the sub-daily answer), a real grade scale (turns 4 dead FSRS parameters into
-   live ones and makes the fit identifiable), and the interval actually shown to
-   the user rather than only the one planned.
+3. **Maximum interval: 365 days. SETTLED.** Keep it configurable, and raise it
+   deliberately in steps if ever — but the shipping value is one year. The reason
+   is the observed support, not Mochi's old cap: the longest gap ever actually
+   elapsed is 454 days, so 365 keeps every interval the app issues inside the
+   range the fit was measured on. Do not let a model schedule 1,000 days on the
+   strength of a curve fitted to a population filtered for being easy.
+
+   Separately, this leaves **3,796 tracks parked on a 365-day plan set before
+   Mochi's cap was lifted**. They are not a scheduling problem — they are simply
+   due when they are due — but they are the reason the corpus has no long-interval
+   observations, and working through them is what will eventually produce some.
+4. **Target retention: 0.95, per-deck override available. SETTLED.** It is the
+   only one of the three modelled targets that lands inside the observed range,
+   and it is close to the 96.24% all-time / 95.10% 2026 working point the existing
+   schedule already reaches, so it is not a large behavioural change. Note that
+   `settings.target_retention.default` in `schema.sql` still seeds `0.90`, FSRS's
+   own default — that row belongs to the schema and has not been changed here.
+5. **Record what would make the next backtest better.** Two of the three items
+   this list used to carry are still live: **real timestamps** (turns 6,996
+   unscorable rows into the sub-daily answer) and **both intervals recorded at
+   review time** (`elapsed_days` and `scheduled_days` are now separate columns,
+   so this one is already done going forward). The third — "a real grade scale,
+   which would turn 4 dead FSRS parameters into live ones" — is **struck**: a
+   four-button scale was considered and rejected, so w1/w3/w15/w16 stay
+   unreachable permanently and that is the intended end state, not a gap. The
+   compensation is that the fit and production see identical signal.
 
 ---
 
@@ -553,7 +671,8 @@ and leave it alone until there is data from more than one target.
 | `src/scheduler/algorithms/fsrs6.ts` | FSRS-6 port, published defaults, clamps, fitted vector, coordinate-descent fitter |
 | `src/scheduler/algorithms/sm2.ts` | SM-2 with the published quality formula, both curve options |
 | `src/scheduler/algorithms/baseline.ts` | Fixed multiplier and the constant base rate |
-| `test/backtest.test.ts` | 36 tests: closed-form arithmetic, the upstream FSRS-6 fixture, then the real corpus; prints every table above |
+| `src/scheduler/policy.ts` | The settled decisions: FSRS-6, max interval 365d, target retention 0.95, binary grades, w15/w16 frozen |
+| `test/backtest.test.ts` | 38 tests: closed-form arithmetic, the upstream FSRS-6 fixture, then the real corpus; prints every table above, and asserts this document agrees with `dashboard.html` bucket for bucket |
 
 FSRS-6's formulas and defaults were transcribed on 2026-08-19 from
 `open-spaced-repetition/fsrs-rs` (`src/model.rs`, `src/inference.rs`,
@@ -572,13 +691,13 @@ the grouping Map and the markdown cell byte-identically, emoji subdecks
 ```
 $ npx vitest run test/backtest.test.ts
  Test Files  1 passed (1)
-      Tests  35 passed | 1 skipped (36)
-   Duration  12.34s
+      Tests  37 passed | 1 skipped (38)
+   Duration  13.40s
 
 $ HASHIGO_FSRS_FIT=1 npx vitest run test/backtest.test.ts
 train rows 60163 · loss 0.150633 -> 0.143209 · 12 sweeps · 4081 evaluations · 32.5s
 held-out log loss  refitted 0.190474 · stock 0.203801 over 25835 reviews
-      Tests  36 passed (36)
+      Tests  38 passed (38)
    Duration  41.77s
 ```
 

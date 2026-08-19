@@ -24,7 +24,10 @@ import {
 } from "../src/scheduler/algorithms/fsrs6.js";
 import { erase, type ReviewObservation } from "../src/scheduler/algorithms/index.js";
 import { sm2 } from "../src/scheduler/algorithms/sm2.js";
+import { ALL_TIME, beyondYear, retentionByInterval } from "../src/dashboard/index.js";
 import {
+  BEYOND_YEAR_LABEL,
+  VIEW_BUCKET_LABEL,
   auc,
   chooseCutoff,
   formatBacktestTables,
@@ -321,7 +324,7 @@ describe("metrics", () => {
       reviewedAt: `2025-01-0${index + 1}T00:00:00+09:00`,
       localDate: `2025-01-0${index + 1}`,
       measuredElapsedDays: index === 0 ? null : review.elapsedDays,
-      plannedIntervalDays: index === 0 ? null : review.elapsedDays,
+      scheduledDays: index === 0 ? null : review.elapsedDays,
       intervalKnown: index > 0,
       durationMs: null,
     })) as readonly HistoryReview[],
@@ -526,13 +529,13 @@ describeCorpus("the 102,020-review backtest", () => {
         const measured = review.measuredElapsedDays;
         if (measured !== null && measured > longestElapsed) longestElapsed = measured;
         if (measured !== null && measured > 365) beyondAYear += 1;
-        if (review.plannedIntervalDays === null) {
+        if (review.scheduledDays === null) {
           plannedMissing += 1;
           continue;
         }
         if (measured === null) continue;
         bothKnown += 1;
-        const difference = measured - review.plannedIntervalDays;
+        const difference = measured - review.scheduledDays;
         if (Math.abs(difference) <= 1.5) agree += 1;
         else if (difference > 0) late += 1;
         else early += 1;
@@ -554,7 +557,7 @@ describeCorpus("the 102,020-review backtest", () => {
     // interval past that is extrapolation with zero observations behind it. This is
     // the number that keeps the target-retention section in BACKTEST.md hedged.
     expect(longestElapsed).toBe(454);
-    const plannedIntervals = loadHistory(db, { intervalSource: "planned" });
+    const plannedIntervals = loadHistory(db, { intervalSource: "scheduled" });
     const beyondAYearPlanned = plannedIntervals
       .flatMap((track) => track.reviews)
       .filter((review) => isScorable(review) && review.elapsedDays > 365).length;
@@ -773,6 +776,66 @@ describeCorpus("the 102,020-review backtest", () => {
     expect(exponential?.p01Predicted ?? 1).toBeLessThan(1e-5);
   });
 
+  // ── THE DASHBOARD AND THIS BACKTEST REPORT THE SAME NUMBERS ──────────────
+  //
+  // They are computed two completely different ways: the dashboard aggregates
+  // in SQL through review_log_bucketed, this file replays every track in
+  // TypeScript. They used to disagree spectacularly at `> 365d` -- 0 against
+  // 3,009 -- because the dashboard bucketed the PLANNED interval and this file
+  // scores ELAPSED time. Same basis and same boundaries now, so they must agree
+  // everywhere, and this asserts everywhere rather than only the one bucket.
+
+  it("agrees with the dashboard on the > 365d bucket — the number that was wrong", () => {
+    const fromSql = beyondYear(retentionByInterval(db, ALL_TIME, "elapsed"));
+    const fromReplay = result.forgetting.find((row) => row.bucket === BEYOND_YEAR_LABEL);
+
+    expect(fromReplay?.reviews).toBe(3_009);
+    expect(fromSql.reviews).toBe(3_009);
+    expect(fromSql.reviews).toBe(fromReplay?.reviews);
+    expect(fromSql.lapses).toBe(fromReplay?.lapses);
+    expect((fromSql.retention ?? 0).toFixed(6)).toBe(
+      (fromReplay?.observedRetention ?? 0).toFixed(6),
+    );
+
+    // And the other basis, which is where the contradiction came from: zero.
+    expect(beyondYear(retentionByInterval(db, ALL_TIME, "scheduled")).reviews).toBe(0);
+  });
+
+  it("agrees with the dashboard on EVERY bucket, not only the contested one", () => {
+    // Fold this file's finer table onto views.sql's labels. The only difference
+    // between the two partitions is that the view merges `same day` and `1d`
+    // into `<= 1d`; VIEW_BUCKET_LABEL is that mapping and this proves it is the
+    // whole of the difference.
+    const folded = new Map<string, { reviews: number; lapses: number }>();
+    for (const row of result.forgetting) {
+      const label = VIEW_BUCKET_LABEL[row.bucket] as string;
+      const acc = folded.get(label) ?? { reviews: 0, lapses: 0 };
+      acc.reviews += row.reviews;
+      acc.lapses += row.lapses;
+      folded.set(label, acc);
+    }
+
+    const sql = retentionByInterval(db, ALL_TIME, "elapsed");
+    for (const bucket of sql) {
+      if (bucket.label === "unknown") {
+        // The view's `unknown` is exactly the rows this file never scores: a
+        // track's first review, which has no predecessor and so no elapsed gap.
+        expect(bucket.reviews).toBe(9_026);
+        expect(folded.has("unknown")).toBe(false);
+        continue;
+      }
+      expect(folded.get(bucket.label)?.reviews, `reviews in ${bucket.label}`).toBe(bucket.reviews);
+      expect(folded.get(bucket.label)?.lapses, `lapses in ${bucket.label}`).toBe(bucket.lapses);
+    }
+
+    // Nothing lost either way: 92,994 scored + 9,026 first reviews = 102,020.
+    const replayTotal = result.forgetting.reduce((sum, row) => sum + row.reviews, 0);
+    const sqlTotal = sql.reduce((sum, b) => sum + b.reviews, 0);
+    expect(replayTotal).toBe(92_994);
+    expect(sqlTotal).toBe(102_020);
+    expect(replayTotal + 9_026).toBe(sqlTotal);
+  });
+
   it("measures the forgetting curve, and it is not monotone", () => {
     const rows = new Map(result.forgetting.map((row) => [row.bucket, row]));
     expect(rows.get("same day")?.reviews).toBe(6_996);
@@ -820,7 +883,7 @@ describeCorpus("the 102,020-review backtest", () => {
     expect(measureRelearningCost(tracks)).toBeCloseTo(result.relearningCost, 12);
   });
 
-  it("finds Mochi's 365-day cap, which is what limits every projection", () => {
+  it("finds Mochi's 365-day cap, AND the date it stopped applying", () => {
     // Not assumed — the modal interval of the live corpus. 43% of tracks sitting
     // on one exact value is a ceiling the scheduler imposed, so for those tracks
     // the data says only "at least a year is fine". Every projected interval past
@@ -836,6 +899,16 @@ describeCorpus("the 102,020-review backtest", () => {
     // setting in 2026-02, per the note in schema.sql — so it is a real ceiling for
     // almost all of the history and a recently lifted one at the very end.
     expect(cap.reviewsScheduledAbove).toBe(1_356);
+
+    // The correction. An earlier draft of BACKTEST.md called the cap "the
+    // binding constraint", which stopped being true in February.
+    expect(cap.liftedOn).toBe("2026-02-22");
+    expect(cap.maxPlannedDays).toBe(2_707);
+    // What actually survives the lift: tracks parked on a stale 365-day plan
+    // because they have not been reviewed since. 3,796 of the 3,874, so 78 were
+    // deliberately re-scheduled to 365 by an uncapped scheduler.
+    expect(cap.tracksOnStaleCap).toBe(3_796);
+    expect(cap.tracksAtCap - cap.tracksOnStaleCap).toBe(78);
     // The measured anchor: the steady-state arithmetic applied to Mochi's own
     // intervals gives 54.4 reviews a day where the user actually does 69.2, so the
     // model is a LOWER bound by about a quarter. Stated, not corrected.

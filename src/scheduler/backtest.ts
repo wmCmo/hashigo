@@ -10,17 +10,24 @@
  * FIVE DECISIONS THIS HARNESS MAKES, all of them visible in the numbers and all
  * of them argued in BACKTEST.md rather than buried here:
  *
- * 1. ELAPSED TIME, NOT MOCHI'S PLANNED INTERVAL. `reviews.interval_days` is the
- *    interval Mochi PLANNED before this review; the interval that actually
- *    elapsed is the gap between consecutive review dates, and the two differ.
- *    Measured over this corpus: of 84,060 reviews where both are known, 49,050
- *    agree to within half a day, 22,226 were taken MORE than 1.5 days late and
- *    240 early. Forgetting depends on the time that passed, not on the time that
- *    was intended, so elapsed is the independent variable. It also covers 8,934
- *    reviews whose planned interval is NULL, and it is the definition under
- *    which the corpus contains 3,009 observations at intervals over a year —
- *    where the planned-interval definition contains none. `intervalSource:
- *    "planned"` reproduces the other choice for comparison.
+ * 1. ELAPSED, NOT SCHEDULED — and both are now named columns rather than one
+ *    word meaning two things. `reviews.scheduled_days` is what the scheduler
+ *    PLANNED for the gap before this review; `reviews.elapsed_days` is what
+ *    actually elapsed, backfilled from the timestamps themselves by
+ *    `review_log_elapsed`. Measured over this corpus: of 84,060 reviews where
+ *    both are known, 49,050 agree to within half a day, 22,226 were taken MORE
+ *    than 1.5 days late and 240 early. Forgetting depends on the time that
+ *    passed, not on the time that was intended, so elapsed is the independent
+ *    variable. It also covers the 8,934 reviews whose planned interval is NULL,
+ *    and it is the basis under which the corpus contains 3,009 observations at
+ *    intervals over a year — where the scheduled basis contains none, because a
+ *    plan only becomes a `scheduled_days` once the review it scheduled has been
+ *    taken and none of the 1,356 post-cap plans has come due. `intervalSource:
+ *    "scheduled"` reproduces the other choice for comparison.
+ *
+ *    THE DASHBOARD USES THE SAME BASIS AND THE SAME BOUNDARIES. `> 365d` holds
+ *    3,009 reviews here and 3,009 in dashboard.html, and test/backtest.test.ts
+ *    asserts the two agree rather than leaving a reader to notice they do not.
  *
  * 2. A TRACK'S FIRST REVIEW IS NOT SCORED. It is the review that creates the
  *    memory, not one that tests it; there is no prior state and no elapsed time.
@@ -36,9 +43,14 @@
  *    same-day failures. Those 6,996 reviews still update state, because they
  *    really happened; they are scored in their own separate table.
  *
- * 4. GRADES ARE BINARY. `reviews.grade` is NULL on all 102,020 rows; remembered
- *    maps to Good and forgotten to Again. Four of FSRS-6's 21 parameters are
- *    unreachable as a result and the fitter freezes them.
+ * 4. GRADES ARE BINARY, BY DESIGN. There is no `grade` column at all: Anki's
+ *    four-button Again/Hard/Good/Easy was considered and REJECTED, so
+ *    `remembered` maps to Good (3) and forgotten to Again (1) and ratings 2 and
+ *    4 can never occur — not here, and not in any future history. Four of
+ *    FSRS-6's 21 parameters are therefore unreachable BY DESIGN and are frozen,
+ *    not fitted; see src/scheduler/policy.ts. The upside is worth stating: the
+ *    scheduler is fitted on exactly the signal it receives in production, so
+ *    there is no train/serve distribution shift.
  *
  * 5. THE FIT NEVER SEES THE EVALUATION WINDOW. Parameters are fitted on reviews
  *    before a cutoff date and scored on reviews on or after it. State for an
@@ -48,6 +60,7 @@
  */
 
 import type { Db } from "../db/index.js";
+import type { IntervalBasis } from "../schema/index.js";
 import { constantRate, fixedMultiplier } from "./algorithms/baseline.js";
 import {
   FSRS6_DEFAULT_PARAMETERS,
@@ -75,8 +88,8 @@ export interface HistoryReview extends ReviewObservation {
   readonly localDate: string;
   /** Days actually elapsed since the previous review of this track. */
   readonly measuredElapsedDays: number | null;
-  /** Mochi's planned interval for this review — the previous record's own. */
-  readonly plannedIntervalDays: number | null;
+  /** What was PLANNED for the gap before this review: `reviews.scheduled_days`. */
+  readonly scheduledDays: number | null;
   /** False when `elapsedDays` is a fallback rather than the chosen source. */
   readonly intervalKnown: boolean;
   readonly durationMs: number | null;
@@ -94,14 +107,20 @@ export interface TrackHistory {
   readonly reviews: readonly HistoryReview[];
 }
 
-export type IntervalSource = "elapsed" | "planned";
+/**
+ * Which of the two named intervals the candidates are shown. The names are the
+ * schema's (`reviews.elapsed_days` / `reviews.scheduled_days`), deliberately,
+ * so that a reader of a backtest table and a reader of the dashboard are
+ * looking at the same word for the same number.
+ */
+export type IntervalSource = IntervalBasis;
 
 export interface LoadOptions {
   /**
-   * Which interval the candidates are shown. `"elapsed"` (default) is the gap
-   * between review dates; `"planned"` is Mochi's own `interval_days`, with the
-   * measured gap as a fallback where it is NULL and `intervalKnown` false on
-   * those rows so they can be excluded from scoring.
+   * `"elapsed"` (default) is the measured gap between review dates;
+   * `"scheduled"` is `reviews.scheduled_days`, with the measured gap as a
+   * fallback where it is NULL and `intervalKnown` false on those rows so they
+   * can be excluded from scoring.
    */
   readonly intervalSource?: IntervalSource;
 }
@@ -118,7 +137,7 @@ SELECT r.id                 AS review_id,
        coalesce(dp.root_id, c.deck_id)    AS root_deck_id,
        r.reviewed_at        AS reviewed_at,
        r.remembered         AS remembered,
-       r.interval_days      AS planned_interval_days,
+       r.scheduled_days     AS scheduled_days,
        r.duration_ms        AS duration_ms
   FROM reviews r
   JOIN card_tracks t ON t.id = r.track_id
@@ -138,7 +157,7 @@ interface HistoryRow {
   readonly root_deck_id: string;
   readonly reviewed_at: string;
   readonly remembered: number;
-  readonly planned_interval_days: number | null;
+  readonly scheduled_days: number | null;
   readonly duration_ms: number | null;
 }
 
@@ -167,8 +186,8 @@ export function loadHistory(db: Db, options: LoadOptions = {}): readonly TrackHi
       const row = current[i] as HistoryRow;
       const millis = Date.parse(row.reviewed_at);
       const measured = previousMillis === null ? null : (millis - previousMillis) / MS_PER_DAY;
-      const planned = row.planned_interval_days;
-      const chosen = source === "planned" ? planned : measured;
+      const scheduled = row.scheduled_days;
+      const chosen = source === "scheduled" ? scheduled : measured;
       const remembered: 0 | 1 = row.remembered === 1 ? 1 : 0;
       reviews.push({
         reviewId: row.review_id,
@@ -176,7 +195,7 @@ export function loadHistory(db: Db, options: LoadOptions = {}): readonly TrackHi
         reviewedAt: row.reviewed_at,
         localDate: row.reviewed_at.slice(0, 10),
         measuredElapsedDays: measured,
-        plannedIntervalDays: planned,
+        scheduledDays: scheduled,
         // The first review of a track has no elapsed time at all; 0 keeps the
         // arithmetic total and it is never scored.
         elapsedDays: chosen ?? measured ?? 0,
@@ -396,28 +415,64 @@ export function auc(predicted: readonly number[], outcomes: readonly number[]): 
 // ─── scoring ─────────────────────────────────────────────────────────────────
 
 /**
- * Half-open buckets, `[low, ceiling)`, labelled to read exactly on the integral
- * elapsed times this corpus has. The boundaries matter more than they look:
- * 1,109 reviews sit at exactly 365 days, so an edge written "<= 365" rather than
- * "< 366" moves a thousand rows between the last two rows of every table.
+ * Buckets as INCLUSIVE ceilings, `(previous, ceiling]`, which is character for
+ * character the rule `review_log_bucketed` applies in views.sql —
+ * `WHEN elapsed_days <= 365 THEN '180-365d' ELSE '> 365d'`. It used to be
+ * written as the half-open `[low, 366)`, which agrees with the view on every
+ * integral gap and disagrees on a fractional one; every elapsed gap in this
+ * corpus is integral (measured: 0 of 92,994 are not, because every imported
+ * timestamp is date-only), so adopting the view's rule moves nothing here and
+ * makes the two tables provably the same partition rather than accidentally
+ * the same one.
+ *
+ * The boundaries matter more than they look: 1,109 reviews sit at exactly 365
+ * days, and an edge in the wrong place moves a thousand rows between the last
+ * two rows of every table below.
+ *
+ * This list is FINER than the view's at the short end only: the view merges
+ * same-day and 1-day into a single `<= 1d`, because a dashboard reader does not
+ * care and a forgetting curve does — decision 3 above turns entirely on the
+ * same-day rows being separable. VIEW_BUCKET_LABEL is that mapping, and
+ * test/backtest.test.ts folds this table onto the view's through it and checks
+ * every row.
  */
 export const INTERVAL_BUCKETS: readonly (readonly [string, number])[] = [
-  ["same day", 1],
-  ["1d", 2],
-  ["2-3d", 4],
-  ["4-7d", 8],
-  ["8-21d", 22],
-  ["22-60d", 61],
-  ["61-180d", 181],
-  ["181-365d", 366],
+  ["same day", 0],
+  ["1d", 1],
+  ["2-3d", 3],
+  ["4-7d", 7],
+  ["8-21d", 21],
+  ["22-60d", 60],
+  ["61-180d", 180],
+  ["181-365d", 365],
   ["> 365d", Number.POSITIVE_INFINITY],
 ];
 
+/**
+ * This table's label -> the label views.sql gives the same reviews. Two rows
+ * map onto `<= 1d`; the rest are one to one, and `> 365d` is `> 365d` in both,
+ * which is the row the dashboard and this backtest are required to agree on.
+ */
+export const VIEW_BUCKET_LABEL: Readonly<Record<string, string>> = {
+  "same day": "<= 1d",
+  "1d": "<= 1d",
+  "2-3d": "1-3d",
+  "4-7d": "3-7d",
+  "8-21d": "7-21d",
+  "22-60d": "21-60d",
+  "61-180d": "60-180d",
+  "181-365d": "180-365d",
+  "> 365d": "> 365d",
+};
+
+/** The row every long-interval argument turns on, named once. */
+export const BEYOND_YEAR_LABEL = "> 365d";
+
 export function intervalBucket(elapsedDays: number): string {
   for (const [label, ceiling] of INTERVAL_BUCKETS) {
-    if (elapsedDays < ceiling) return label;
+    if (elapsedDays <= ceiling) return label;
   }
-  return "> 365d";
+  return BEYOND_YEAR_LABEL;
 }
 
 export interface GroupedMetrics {
@@ -673,8 +728,8 @@ export function measureLossConcentration(
 }
 
 /**
- * Mochi's OWN current schedule, measured from `card_tracks.interval_days` — the
- * last interval Mochi chose for each live track. This is the anchor that makes
+ * Mochi's OWN current schedule, measured from `card_tracks.scheduled_days` —
+ * the last interval Mochi chose for each live track. This is the anchor that makes
  * the modelled workload below auditable: run the same steady-state arithmetic
  * over Mochi's real intervals and compare its answer with the review rate the
  * user actually sustains.
@@ -690,12 +745,12 @@ export interface ScheduleSummary {
 export function measureMochiSchedule(db: Db): ScheduleSummary {
   const intervals = db
     .prepare(
-      `SELECT t.interval_days AS interval_days
+      `SELECT t.scheduled_days AS scheduled_days
          FROM card_tracks t
          JOIN cards c ON c.id = t.card_id
         WHERE t.dormant = 0 AND c.archived = 0 AND t.reps > 0
-          AND t.interval_days IS NOT NULL AND t.interval_days > 0
-        ORDER BY t.interval_days`,
+          AND t.scheduled_days IS NOT NULL AND t.scheduled_days > 0
+        ORDER BY t.scheduled_days`,
     )
     .pluck()
     .all() as number[];
@@ -712,60 +767,124 @@ export function measureMochiSchedule(db: Db): ScheduleSummary {
 }
 
 export interface ScheduleCap {
-  /** The modal interval among live tracks, which is where the cap sits. */
+  /** The modal plan among live tracks, which is where the cap sits. */
   readonly intervalDays: number;
   readonly tracksAtCap: number;
   readonly liveTracks: number;
   readonly shareAtCap: number;
   readonly reviewsScheduledAtCap: number;
   readonly reviewsScheduledAbove: number;
+  /**
+   * The first local date on which any review planned beyond the cap, or null if
+   * the cap was never lifted. THIS IS THE FIELD THAT KEEPS THE CLAIM HONEST:
+   * without it, "43% of tracks sit on the cap" reads as a constraint that is
+   * still operating, and it is not.
+   */
+  readonly liftedOn: string | null;
+  /** The longest interval ever planned, which is what the lift made reachable. */
+  readonly maxPlannedDays: number | null;
+  /**
+   * Tracks sitting on exactly the cap whose LAST REVIEW predates the lift —
+   * parked on a stale plan the post-lift scheduler would not have chosen. This
+   * is the part of the censoring claim that survives the lift, and it is
+   * narrower than the headline share.
+   */
+  readonly tracksOnStaleCap: number;
 }
 
 /**
  * Mochi's maximum-interval cap, found rather than assumed: the modal value of
- * `card_tracks.interval_days` over live tracks.
+ * `card_tracks.scheduled_days` over live tracks, PLUS the date it stopped
+ * applying.
  *
  * This is the single most important limit on what the backtest can conclude. If
  * a large share of tracks sit on one exact value, that value is a ceiling the
  * scheduler imposed and not a memory measurement — the data says "at least this
- * long is fine" and nothing more. Every projected interval beyond it is
- * extrapolation off the end of the observed support.
+ * long is fine" and nothing more.
+ *
+ * BUT THE CAP WAS LIFTED, and a report that omits that is wrong in the
+ * direction that matters. Measured: no review planned beyond 365 days before
+ * `liftedOn`, 1,356 have since, and the longest plan in the corpus is 2,707
+ * days falling due in 2033. What survives the lift is narrower and is
+ * `tracksOnStaleCap`: the tracks whose last review predates it and which are
+ * therefore still parked on a 365-day plan nobody would choose today.
+ *
+ * What does NOT change is the limit on extrapolation, because it comes from the
+ * OBSERVED side rather than the planned one: the longest gap ever actually
+ * elapsed is 454 days, so every projection past that is off the end of the
+ * support no matter what Mochi has been planning since February.
  */
 export function measureScheduleCap(db: Db): ScheduleCap {
   const rows = db
     .prepare(
-      `SELECT t.interval_days AS interval_days, count(*) AS tracks
+      `SELECT t.scheduled_days AS scheduled_days, count(*) AS tracks
          FROM card_tracks t
          JOIN cards c ON c.id = t.card_id
-        WHERE t.dormant = 0 AND c.archived = 0 AND t.reps > 0 AND t.interval_days IS NOT NULL
-        GROUP BY t.interval_days
-        ORDER BY tracks DESC, t.interval_days DESC
+        WHERE t.dormant = 0 AND c.archived = 0 AND t.reps > 0 AND t.scheduled_days IS NOT NULL
+        GROUP BY t.scheduled_days
+        ORDER BY tracks DESC, t.scheduled_days DESC
         LIMIT 1`,
     )
-    .all() as { interval_days: number; tracks: number }[];
-  const top = rows[0] ?? { interval_days: Number.NaN, tracks: 0 };
+    .all() as { scheduled_days: number; tracks: number }[];
+  const top = rows[0] ?? { scheduled_days: Number.NaN, tracks: 0 };
   const live = db
     .prepare(
       `SELECT count(*) FROM card_tracks t JOIN cards c ON c.id = t.card_id
-        WHERE t.dormant = 0 AND c.archived = 0 AND t.reps > 0 AND t.interval_days IS NOT NULL`,
+        WHERE t.dormant = 0 AND c.archived = 0 AND t.reps > 0 AND t.scheduled_days IS NOT NULL`,
     )
     .pluck()
     .get() as number;
   const atCap = db
-    .prepare(`SELECT count(*) FROM reviews WHERE next_interval_days = ?`)
+    .prepare(`SELECT count(*) FROM reviews WHERE next_scheduled_days = ?`)
     .pluck()
-    .get(top.interval_days) as number;
+    .get(top.scheduled_days) as number;
   const above = db
-    .prepare(`SELECT count(*) FROM reviews WHERE next_interval_days > ?`)
+    .prepare(`SELECT count(*) FROM reviews WHERE next_scheduled_days > ?`)
     .pluck()
-    .get(top.interval_days) as number;
+    .get(top.scheduled_days) as number;
+  // The LOCAL date, from review_log, not date(reviewed_at): every timestamp
+  // carries +09:00, so date() would normalise to UTC and report the lift a day
+  // early. That one-day slip is the difference between 2026-02-21 and
+  // 2026-02-22, and both numbers are already in circulation.
+  const liftedOn = db
+    .prepare(`SELECT min(local_date) FROM review_log WHERE next_scheduled_days > ?`)
+    .pluck()
+    .get(top.scheduled_days) as string | null;
+  const maxPlanned = db
+    .prepare(`SELECT max(next_scheduled_days) FROM reviews`)
+    .pluck()
+    .get() as number | null;
+  const stale =
+    liftedOn === null
+      ? 0
+      : (db
+          .prepare(
+            // The SAME live population the share above is quoted over, and the
+            // same one src/dashboard/metrics.ts counts: not dormant, not on an
+            // archived card, with history and a plan. Without the join this
+            // returns 3,827 against the dashboard's 3,796, which is exactly the
+            // sort of "both defensible, neither stated" split that produced the
+            // > 365d contradiction in the first place.
+            `SELECT count(*) FROM card_tracks t
+               JOIN cards c ON c.id = t.card_id
+              WHERE t.dormant = 0 AND c.archived = 0 AND t.reps > 0
+                AND t.scheduled_days = ?
+                AND (SELECT rl.local_date FROM review_log rl
+                      WHERE rl.track_id = t.id
+                      ORDER BY rl.reviewed_at DESC, rl.review_id DESC LIMIT 1) < ?`,
+          )
+          .pluck()
+          .get(top.scheduled_days, liftedOn) as number);
   return {
-    intervalDays: top.interval_days,
+    intervalDays: top.scheduled_days,
     tracksAtCap: top.tracks,
     liveTracks: live,
     shareAtCap: live === 0 ? Number.NaN : top.tracks / live,
     reviewsScheduledAtCap: atCap,
     reviewsScheduledAbove: above,
+    liftedOn,
+    maxPlannedDays: maxPlanned,
+    tracksOnStaleCap: stale,
   };
 }
 
@@ -972,7 +1091,7 @@ export function runBacktest(db: Db, options: BacktestOptions = {}): BacktestResu
         continue;
       }
       withPredecessor += 1;
-      if (review.plannedIntervalDays === null) plannedMissing += 1;
+      if (review.scheduledDays === null) plannedMissing += 1;
       if (review.elapsedDays < 1) {
         sameDay += 1;
         if (review.remembered === 0) sameDayLapses += 1;
@@ -1008,7 +1127,7 @@ export function runBacktest(db: Db, options: BacktestOptions = {}): BacktestResu
 
   let planned: readonly CandidateScore[] = [];
   if (options.includePlanned !== false) {
-    const plannedTracks = loadHistory(db, { intervalSource: "planned" });
+    const plannedTracks = loadHistory(db, { intervalSource: "scheduled" });
     planned = scoreCandidates(plannedTracks, specs);
   }
 

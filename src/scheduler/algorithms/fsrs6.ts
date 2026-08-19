@@ -21,15 +21,27 @@
  * fixture". The earlier draft of this file had no such check and said so; the
  * check exists now and the transcription was correct.
  *
- * WHAT IS STILL NOT VERIFIED: w[15] (hard penalty) and w[16] (easy bonus) are
- * reachable only from ratings 2 and 4, which neither the upstream fixture nor
- * this corpus contains. They are two of the four FSRS6_UNIDENTIFIABLE and are
- * frozen throughout, so nothing in BACKTEST.md depends on them.
+ * w[15] AND w[16] ARE UNREACHABLE BY DESIGN, NOT UNVERIFIED. w[15] is the Hard
+ * penalty and applies only at rating 2; w[16] is the Easy bonus and applies
+ * only at rating 4. Hashigo's grades are BINARY — Anki's four-button
+ * Again/Hard/Good/Easy was considered and rejected, so ratings 2 and 4 cannot
+ * occur, in this corpus or in any future one. This is a settled design
+ * decision, and it does not become false when more history accumulates: no
+ * amount of new data will ever reach these two weights. They are frozen at
+ * their published defaults permanently, and no number in BACKTEST.md depends on
+ * them. Nothing here is waiting for data.
  *
- * BINARY GRADES. Mochi stored only `remembered?`, so ratings are Again (1) or
- * Good (3) and four of the 21 parameters are unreachable — see
- * FSRS6_UNIDENTIFIABLE. The fitter freezes them at their published values
- * rather than letting the optimiser wander in a direction the data cannot see.
+ * The upside is worth stating rather than filing this under limitations: the
+ * scheduler is fitted on exactly the signal it receives in production, so there
+ * is no train/serve distribution shift.
+ *
+ * BINARY GRADES. `remembered` maps to Good (3) and forgotten to Again (1) —
+ * see BINARY_GRADE in src/schema/index.ts, which is the single definition of
+ * that mapping. Four of the 21 parameters are unreachable as a result; see
+ * FSRS6_UNIDENTIFIABLE. The fitter freezes them rather than letting the
+ * optimiser wander in a direction the data cannot see, which it otherwise
+ * would: an unconstrained parameter that no observation touches drifts to a
+ * clamp boundary and then gets read as a finding.
  */
 
 import type { ReviewObservation, Scheduler } from "./index.js";
@@ -50,16 +62,38 @@ export const FSRS6_DEFAULT_PARAMETERS: Fsrs6Parameters = [
 ];
 
 /**
- * Parameters that a binary-graded corpus cannot identify, so the fitter freezes
- * them:
- *   w[1]  initial stability for Hard  — rating 2 never occurs
- *   w[3]  initial stability for Easy  — rating 4 never occurs
- *   w[15] hard penalty               — applied only when rating == 2
- *   w[16] easy bonus                 — applied only when rating == 4
+ * Parameters BINARY GRADING MAKES UNREACHABLE BY DESIGN, so the fitter freezes
+ * them at their published defaults:
+ *   w[1]  initial stability for Hard  — rating 2 cannot occur
+ *   w[3]  initial stability for Easy  — rating 4 cannot occur
+ *   w[15] hard penalty                — applied only when rating == 2
+ *   w[16] easy bonus                  — applied only when rating == 4
+ *
+ * "Unreachable", not "unidentified": these are not four parameters awaiting a
+ * bigger sample. Hashigo will never emit a Hard or an Easy rating, so the
+ * gradient with respect to each of these is exactly zero for every observation
+ * the application can ever record. Freezing them is the correct permanent
+ * treatment, not a placeholder. See src/scheduler/policy.ts.
+ *
  * The remaining 17 are all reachable from ratings 1 and 3 alone. w[19] is
- * reachable only through same-day reviews, of which the corpus has 6,996.
+ * reachable only through same-day reviews, of which the corpus has 6,996 — that
+ * one IS a data question, and it is the only one in this list that could change.
  */
 export const FSRS6_UNIDENTIFIABLE: readonly number[] = [1, 3, 15, 16];
+
+/**
+ * The two the schema calls out by name, as a runtime assertion target: any
+ * fitted vector must leave these byte-identical to the defaults.
+ */
+export const FSRS6_UNREACHABLE_BY_DESIGN: readonly number[] = [15, 16];
+
+/** True when `w` leaves every unreachable weight at its published default. */
+export function respectsFrozenWeights(
+  w: Fsrs6Parameters,
+  frozen: readonly number[] = FSRS6_UNIDENTIFIABLE,
+): boolean {
+  return frozen.every((i) => w[i] === FSRS6_DEFAULT_PARAMETERS[i]);
+}
 
 const S_MIN = 0.001;
 const S_MAX = 36_500;

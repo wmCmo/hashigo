@@ -45,6 +45,7 @@
  */
 
 import type { Db } from "../db/index.js";
+import { INTERVAL_BASES, type IntervalBasis } from "../schema/index.js";
 
 // ─── windows ────────────────────────────────────────────────────────────────
 
@@ -447,15 +448,19 @@ export function heatThresholds(days: readonly DayActivity[]): readonly [number, 
   return [t1, t2, t3];
 }
 
-// ─── 定着率 × 復習間隔 — the tile Mochi lacks ───────────────────────────────
+// --- BUCKETS -------------------------------------------------------------
 
 /**
  * The bucket boundaries live in views.sql (review_log_bucketed) so they are
- * defined exactly once. This list only names them, in order, so that a bucket
- * with NO reviews still gets a row — which is the point: nothing in four years
- * ever followed an interval longer than 365 days, and an absent row would hide
- * that. test/dashboard.test.ts asserts these labels against the view's own
- * output, so the two cannot drift apart silently.
+ * defined exactly once, and views.sql applies them TWICE -- once per basis.
+ * This list only names them, in order, so that a bucket with NO reviews still
+ * gets a row.  That empty row is the whole point of the tile: under the
+ * `scheduled` basis nothing in four years was ever PLANNED past a year, and
+ * under `elapsed` 3,009 reviews actually HAPPENED past one.  An absent row
+ * would hide whichever fact you were not looking for.
+ *
+ * test/dashboard.test.ts asserts these labels against the view's own output,
+ * for BOTH bases, so the three cannot drift apart silently.
  */
 export const INTERVAL_BUCKETS: readonly { readonly bucket: number; readonly label: string }[] = [
   { bucket: 0, label: "unknown" },
@@ -469,7 +474,12 @@ export const INTERVAL_BUCKETS: readonly { readonly bucket: number; readonly labe
   { bucket: 8, label: "> 365d" },
 ];
 
+/** The label of the bucket every long-interval argument turns on. */
+export const BEYOND_YEAR_LABEL = "> 365d";
+
 export interface IntervalBucket {
+  /** Which definition of "interval" produced this row.  Never implicit. */
+  readonly basis: IntervalBasis;
   readonly bucket: number;
   readonly label: string;
   readonly reviews: number;
@@ -480,19 +490,32 @@ export interface IntervalBucket {
   readonly hours: number;
 }
 
-const INTERVALS_SQL = `
-SELECT interval_bucket                            AS bucket,
-       interval_bucket_label                      AS label,
+/**
+ * One query per basis, built from one piece of text so the two can never
+ * diverge in anything but the column prefix.  `basis` is a closed union and is
+ * checked against it before interpolation.
+ */
+function intervalsSql(basis: IntervalBasis): string {
+  if (!INTERVAL_BASES.includes(basis)) throw new RangeError(`unknown interval basis: ${basis}`);
+  return `
+SELECT ${basis}_bucket                            AS bucket,
+       ${basis}_bucket_label                      AS label,
        count(*)                                   AS reviews,
        sum(1 - remembered)                        AS lapses,
        1.0 * sum(remembered) / count(*)           AS retention,
-       avg(interval_days)                         AS mean_interval_days,
+       avg(${basis}_days)                         AS mean_interval_days,
        COALESCE(sum(duration_ms), 0) / 3600000.0  AS hours
   FROM review_log_bucketed
  WHERE local_date BETWEEN @from AND @to
- GROUP BY interval_bucket, interval_bucket_label
- ORDER BY interval_bucket
+ GROUP BY bucket, label
+ ORDER BY bucket
 `;
+}
+
+const INTERVALS_SQL: Readonly<Record<IntervalBasis, string>> = {
+  elapsed: intervalsSql("elapsed"),
+  scheduled: intervalsSql("scheduled"),
+};
 
 interface IntervalRow {
   bucket: number;
@@ -504,10 +527,26 @@ interface IntervalRow {
   hours: number;
 }
 
-export function retentionByInterval(db: Db, window: DateWindow): IntervalBucket[] {
+/**
+ * Retention by interval, on ONE named basis.  There is no default: the two
+ * answers differ in every bucket and disagree completely in the last one, and
+ * a caller that never said which it meant is the exact bug this signature
+ * exists to prevent.
+ */
+export function retentionByInterval(
+  db: Db,
+  window: DateWindow,
+  basis: IntervalBasis,
+): IntervalBucket[] {
+  // Checked here and not only where the SQL is built: the two statements are
+  // prepared once at module load, so an unknown basis would otherwise reach
+  // better-sqlite3 as `undefined` and fail with a message about arguments
+  // rather than about the mistake.
+  if (!INTERVAL_BASES.includes(basis)) throw new RangeError(`unknown interval basis: ${basis}`);
   const found = new Map<number, IntervalBucket>();
-  for (const r of all<IntervalRow>(db, INTERVALS_SQL, scope(window))) {
+  for (const r of all<IntervalRow>(db, INTERVALS_SQL[basis], scope(window))) {
     found.set(r.bucket, {
+      basis,
       bucket: r.bucket,
       label: r.label,
       reviews: r.reviews,
@@ -520,6 +559,7 @@ export function retentionByInterval(db: Db, window: DateWindow): IntervalBucket[
   return INTERVAL_BUCKETS.map(
     (b) =>
       found.get(b.bucket) ?? {
+        basis,
         bucket: b.bucket,
         label: b.label,
         reviews: 0,
@@ -531,44 +571,159 @@ export function retentionByInterval(db: Db, window: DateWindow): IntervalBucket[
   );
 }
 
+/** Both bases at once, which is the only honest way to render the tile. */
+export interface IntervalsByBasis {
+  readonly elapsed: readonly IntervalBucket[];
+  readonly scheduled: readonly IntervalBucket[];
+}
+
+export function retentionByIntervalBothBases(db: Db, window: DateWindow): IntervalsByBasis {
+  return {
+    elapsed: retentionByInterval(db, window, "elapsed"),
+    scheduled: retentionByInterval(db, window, "scheduled"),
+  };
+}
+
+/** The `> 365d` row of a bucket list, which several callers want by name. */
+export function beyondYear(buckets: readonly IntervalBucket[]): IntervalBucket {
+  const row = buckets.find((b) => b.label === BEYOND_YEAR_LABEL);
+  if (row === undefined) throw new Error(`no ${BEYOND_YEAR_LABEL} bucket in the list`);
+  return row;
+}
+
+// --- THE YEAR BOUNDARY ---------------------------------------------------
+
 /**
- * Why the `> 365d` bucket is empty rather than zero, measured rather than
- * assumed. An empty bucket has two very different readings — "you never pass a
- * review at that interval" and "no such review has come due yet" — and only the
- * second is true here.
+ * Everything the page needs to say about intervals longer than a year, and the
+ * reason the two bases disagree completely there.
+ *
+ * WHY THE PLANNED BASIS SHOWS ZERO PAST A YEAR, measured rather than asserted.
+ * It is not that Mochi never planned past a year -- it did so 1,356 times.  It
+ * is that `reviews.scheduled_days` is the PRECEDING review's
+ * `next_scheduled_days`, so a plan only becomes a `scheduled_days` once the
+ * review it scheduled has actually been taken.  Every one of those 1,356 plans
+ * is the last review of its track and not one has come due (the earliest falls
+ * 2027-03-16), so the planned basis structurally cannot see them yet.  That is
+ * a censoring artefact, not a fact about memory, and it is why this page
+ * reports the ELAPSED basis as the observation.
+ *
+ * THE CAP, WITH ITS DATE.  A 365-day ceiling was in force from the first review
+ * until it was lifted; `capLiftedOn` is the first local date on which any
+ * review planned beyond a year -- found, not assumed.  "Mochi caps at 365"
+ * without that date implies a constraint that has stopped operating.
  */
 export interface LongIntervalOutlook {
-  /** Reviews whose preceding interval exceeded a year. */
-  readonly observed: number;
-  /** Longest interval any review was actually taken at, in days. */
-  readonly maxObservedIntervalDays: number | null;
-  /** Tracks currently scheduled at more than a year. */
-  readonly scheduled: number;
+  /** Reviews whose MEASURED gap exceeded a year. */
+  readonly observedBeyondYear: number;
+  readonly observedRetention: number | null;
+  /** Longest gap any review was actually taken at, in days. */
+  readonly maxObservedElapsedDays: number | null;
+  /** Reviews that PLANNED beyond a year.  None of them has come due. */
+  readonly plannedBeyondYear: number;
+  /** Longest interval ever planned, in days. */
+  readonly maxPlannedDays: number | null;
+  /** First local date on which a review planned beyond a year, or null. */
+  readonly capLiftedOn: string | null;
+  /** LIVE tracks whose current plan is beyond a year. */
+  readonly tracksBeyondYear: number;
+  /** LIVE tracks whose current plan is exactly the old cap. */
+  readonly tracksAtCap: number;
+  /**
+   * The denominator for `tracksAtCap`, and it is the LIVE population -- not
+   * dormant, not on an archived card, with at least one review and a plan.
+   * This is character for character the population `measureScheduleCap` in
+   * src/scheduler/backtest.ts counts, so that the page and BACKTEST.md quote
+   * the same 3,874 of 8,956 rather than two defensible different numbers.
+   */
+  readonly tracksWithPlan: number;
+  /**
+   * Tracks sitting on exactly the old cap whose LAST REVIEW predates the lift:
+   * parked on a stale plan that post-lift Mochi would not have chosen.  This is
+   * the constraint that is still real, and it is narrower than the headline
+   * "43% of tracks are capped", which includes tracks re-scheduled since.
+   */
+  readonly tracksOnStaleCap: number;
   readonly firstDueAt: string | null;
   readonly lastDueAt: string | null;
 }
 
+/** The old ceiling, named once rather than as a literal in six queries. */
+export const MOCHI_INTERVAL_CAP_DAYS = 365;
+
+/**
+ * REVIEW-level figures count every review, so they reconcile with the bucket
+ * table above (3,009 here is the same 3,009 as the `> 365d` row).  TRACK-level
+ * figures count the LIVE population only -- the same filter
+ * `measureScheduleCap` applies in the backtest -- so the two artefacts quote
+ * one denominator between them.
+ */
+const LIVE_TRACKS = `
+    FROM card_tracks t
+    JOIN cards c ON c.id = t.card_id
+   WHERE t.dormant = 0 AND c.archived = 0 AND t.reps > 0
+     AND t.scheduled_days IS NOT NULL`;
+
 const LONG_INTERVAL_SQL = `
-SELECT (SELECT count(*) FROM review_log WHERE interval_days > 365)      AS observed,
-       (SELECT max(interval_days) FROM review_log)                      AS max_observed,
-       (SELECT count(*) FROM card_tracks WHERE interval_days > 365)      AS scheduled,
-       (SELECT min(due_at) FROM card_tracks WHERE interval_days > 365)   AS first_due_at,
-       (SELECT max(due_at) FROM card_tracks WHERE interval_days > 365)   AS last_due_at
+WITH observed AS (
+  SELECT count(*)                         AS reviews,
+         1.0 * sum(remembered) / count(*) AS retention
+    FROM review_log_elapsed
+   WHERE elapsed_days > @cap
+),
+lift AS (
+  SELECT min(local_date) AS lifted_on
+    FROM review_log
+   WHERE next_scheduled_days > @cap
+),
+capped AS (
+  SELECT (SELECT rl.local_date FROM review_log rl
+           WHERE rl.track_id = t.id
+           ORDER BY rl.reviewed_at DESC, rl.review_id DESC LIMIT 1) AS last_local_date
+  ${LIVE_TRACKS} AND t.scheduled_days = @cap
+)
+SELECT (SELECT reviews   FROM observed)                                  AS observed_beyond_year,
+       (SELECT retention FROM observed)                                  AS observed_retention,
+       (SELECT max(elapsed_days) FROM review_log_elapsed)                AS max_observed_elapsed,
+       (SELECT count(*) FROM review_log WHERE next_scheduled_days > @cap)
+                                                                         AS planned_beyond_year,
+       (SELECT max(next_scheduled_days) FROM review_log)                 AS max_planned,
+       (SELECT lifted_on FROM lift)                                      AS cap_lifted_on,
+       (SELECT count(*) ${LIVE_TRACKS} AND t.scheduled_days > @cap)      AS tracks_beyond_year,
+       (SELECT count(*) ${LIVE_TRACKS} AND t.scheduled_days = @cap)      AS tracks_at_cap,
+       (SELECT count(*) ${LIVE_TRACKS})                                  AS tracks_with_plan,
+       (SELECT count(*) FROM capped
+         WHERE last_local_date < (SELECT lifted_on FROM lift))           AS tracks_on_stale_cap,
+       (SELECT min(t.due_at) ${LIVE_TRACKS} AND t.scheduled_days > @cap) AS first_due_at,
+       (SELECT max(t.due_at) ${LIVE_TRACKS} AND t.scheduled_days > @cap) AS last_due_at
 `;
 
 export function longIntervalOutlook(db: Db): LongIntervalOutlook {
   const row = one<{
-    observed: number;
-    max_observed: number | null;
-    scheduled: number;
+    observed_beyond_year: number;
+    observed_retention: number | null;
+    max_observed_elapsed: number | null;
+    planned_beyond_year: number;
+    max_planned: number | null;
+    cap_lifted_on: string | null;
+    tracks_beyond_year: number;
+    tracks_at_cap: number;
+    tracks_with_plan: number;
+    tracks_on_stale_cap: number;
     first_due_at: string | null;
     last_due_at: string | null;
-  }>(db, LONG_INTERVAL_SQL);
+  }>(db, LONG_INTERVAL_SQL, { cap: MOCHI_INTERVAL_CAP_DAYS });
   if (!row) throw new Error("long-interval query returned no row");
   return {
-    observed: row.observed,
-    maxObservedIntervalDays: row.max_observed,
-    scheduled: row.scheduled,
+    observedBeyondYear: row.observed_beyond_year,
+    observedRetention: row.observed_retention,
+    maxObservedElapsedDays: row.max_observed_elapsed,
+    plannedBeyondYear: row.planned_beyond_year,
+    maxPlannedDays: row.max_planned,
+    capLiftedOn: row.cap_lifted_on,
+    tracksBeyondYear: row.tracks_beyond_year,
+    tracksAtCap: row.tracks_at_cap,
+    tracksWithPlan: row.tracks_with_plan,
+    tracksOnStaleCap: row.tracks_on_stale_cap,
     firstDueAt: row.first_due_at,
     lastDueAt: row.last_due_at,
   };
@@ -846,7 +1001,12 @@ export interface WindowReport {
   readonly totals: Totals;
   readonly days: readonly DayActivity[];
   readonly months: readonly MonthActivity[];
-  readonly intervals: readonly IntervalBucket[];
+  /**
+   * Both interval bases, never one.  `elapsed` is what happened and is what the
+   * page plots; `scheduled` is what Mochi planned and is kept beside it because
+   * the difference between them is the finding, not a footnote.
+   */
+  readonly intervals: IntervalsByBasis;
   readonly decks: readonly DeckRetention[];
 }
 
@@ -881,7 +1041,7 @@ function windowReport(db: Db, window: DateWindow, options: TotalsOptions): Windo
     totals: totals(db, window, options),
     days: activityByDay(db, window),
     months: activityByMonth(db, window),
-    intervals: retentionByInterval(db, window),
+    intervals: retentionByIntervalBothBases(db, window),
     decks: retentionByDeck(db, window),
   };
 }

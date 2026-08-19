@@ -31,8 +31,12 @@
  * Do not restate this as "no value is hover-only"; that is not true.
  */
 
+import { TARGET_RETENTION as TARGET_RETENTION_SETTING } from "../scheduler/policy.js";
 import {
+  BEYOND_YEAR_LABEL,
   FORECAST_UNAVAILABLE,
+  MOCHI_INTERVAL_CAP_DAYS,
+  beyondYear,
   type DashboardData,
   type DayActivity,
   type DeckProgress,
@@ -336,9 +340,36 @@ function monthlyCardsChart(months: readonly MonthActivity[]): string {
 
 // ─── 定着率 × 復習間隔 ───────────────────────────────────────────────────────
 
-const TARGET_RETENTION = 0.9;
+/**
+ * SETTLED by Zach: 0.95, not FSRS's 0.90 default.  Imported rather than written
+ * here so the page and the scheduler cannot disagree about what the app is
+ * aiming at -- see src/scheduler/policy.ts.
+ *
+ * Moving this line from 90 to 95 changes what the page SAYS, correctly: three
+ * of the nine elapsed bands (21-60d, 60-180d, 180-365d) sit below 95% and above
+ * 90%, so the old copy's "every band beats the target" is true at 0.90 and
+ * false at 0.95.  The text below reads the data rather than repeating a slogan.
+ */
+const TARGET_RETENTION = TARGET_RETENTION_SETTING;
 
-function intervalRetentionChart(buckets: readonly IntervalBucket[]): string {
+/** e.g. "95%" -- one place, so no label can drift from the line it names. */
+const TARGET_LABEL = `${Math.round(TARGET_RETENTION * 100)}%`;
+
+/**
+ * Retention against interval, BOTH BASES on one pair of axes.
+ *
+ * The elapsed series is drawn solid because it is what happened; the scheduled
+ * series is drawn hollow and dashed because it is what was intended.  Drawing
+ * only one of them is what produced the contradiction this chart exists to
+ * close: the page used to bucket by the PLANNED interval and print "観測なし"
+ * over `> 365d`, while BACKTEST.md scored the same corpus by ELAPSED time and
+ * reported 3,009 observations there at 96.88%.  Both were reading real columns.
+ * Neither said which.
+ */
+function intervalRetentionChart(
+  buckets: readonly IntervalBucket[],
+  scheduled: readonly IntervalBucket[],
+): string {
   const W = 720;
   const H = 210;
   const L = 46;
@@ -346,7 +377,11 @@ function intervalRetentionChart(buckets: readonly IntervalBucket[]): string {
   const T = 16;
   const B = 30;
   const observed = buckets.filter((b) => b.retention !== null);
-  const lowest = Math.min(TARGET_RETENTION, ...observed.map((b) => b.retention ?? 1));
+  const lowest = Math.min(
+    TARGET_RETENTION,
+    ...observed.map((b) => b.retention ?? 1),
+    ...scheduled.filter((b) => b.retention !== null).map((b) => b.retention ?? 1),
+  );
   const d0 = Math.min(88, Math.floor(lowest * 100) - 1);
   const y = linear(d0, 100, H - B, T);
   const pitch = (W - L - R) / buckets.length;
@@ -361,11 +396,9 @@ function intervalRetentionChart(buckets: readonly IntervalBucket[]): string {
   }
 
   const targetY = round(y(TARGET_RETENTION * 100));
-  // Below the line: nothing in the corpus falls under 90%, so that band is free,
-  // and it keeps this label clear of the "観測なし" note above the line.
   const target =
     `<line class="axis-line" x1="${L}" y1="${targetY}" x2="${W - R}" y2="${targetY}"/>` +
-    `<text class="ax" x="${W - R}" y="${targetY + 13}" text-anchor="end">目標 90%</text>`;
+    `<text class="ax" x="${W - R}" y="${targetY + 13}" text-anchor="end">目標 ${TARGET_LABEL}</text>`;
 
   let best = observed[0];
   let worst = observed[0];
@@ -373,6 +406,21 @@ function intervalRetentionChart(buckets: readonly IntervalBucket[]): string {
     if (best && (b.retention ?? 0) > (best.retention ?? 0)) best = b;
     if (worst && (b.retention ?? 1) < (worst.retention ?? 1)) worst = b;
   }
+
+  // The planned series first, so the measured one draws on top of it.
+  const planned: string[] = [];
+  scheduled.forEach((b, i) => {
+    if (b.retention === null) return;
+    const cx = L + pitch * (i + 0.5) + 7;
+    const cy = y(b.retention * 100);
+    planned.push(
+      `<circle cx="${round(cx)}" cy="${round(cy)}" r="4" fill="none" ` +
+        `stroke="var(--series-2)" stroke-width="2" stroke-dasharray="2 2">` +
+        `<title>${esc(
+          `${b.label}（予定 scheduled）· 定着率 ${pct(b.retention)} · ${int(b.reviews)}回`,
+        )}</title></circle>`,
+    );
+  });
 
   const marks: string[] = [];
   buckets.forEach((b, i) => {
@@ -405,12 +453,15 @@ function intervalRetentionChart(buckets: readonly IntervalBucket[]): string {
 
   return (
     `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(
-      "直前の復習間隔ごとの定着率。目標 90% の線からの高さが余剰。",
-    )}">${ticks.join("")}${target}${marks.join("")}</svg>`
+      `直前の復習間隔ごとの定着率。実測(elapsed)と予定(scheduled)の2系列。目標 ${TARGET_LABEL} の線からの高さが余剰。`,
+    )}">${ticks.join("")}${target}${planned.join("")}${marks.join("")}</svg>`
   );
 }
 
-function intervalVolumeChart(buckets: readonly IntervalBucket[]): string {
+function intervalVolumeChart(
+  buckets: readonly IntervalBucket[],
+  scheduled: readonly IntervalBucket[],
+): string {
   const W = 720;
   const H = 110;
   const L = 46;
@@ -418,8 +469,10 @@ function intervalVolumeChart(buckets: readonly IntervalBucket[]): string {
   const T = 12;
   const B = 22;
   const pitch = (W - L - R) / buckets.length;
-  const barW = Math.min(48, pitch - 10);
-  const top = niceCeil(Math.max(...buckets.map((b) => b.reviews)));
+  const barW = Math.min(22, (pitch - 12) / 2);
+  const top = niceCeil(
+    Math.max(...buckets.map((b) => b.reviews), ...scheduled.map((b) => b.reviews)),
+  );
   const y = linear(0, top, H - B, T);
   let peak = buckets[0] as IntervalBucket;
   for (const b of buckets) if (b.reviews > peak.reviews) peak = b;
@@ -432,18 +485,42 @@ function intervalVolumeChart(buckets: readonly IntervalBucket[]): string {
     );
   });
 
-  const bars = buckets.map((b, i) => {
-    const cx = L + pitch * (i + 0.5);
-    const h = H - B - y(b.reviews);
-    if (b.reviews === 0) {
-      return (
-        `<text class="ax" x="${round(cx)}" y="${H - B - 6}" text-anchor="middle">0</text>`
-      );
+  const bar = (
+    cx: number,
+    value: number,
+    token: string,
+    opacity: string,
+    title: string,
+  ): string => {
+    const h = H - B - y(value);
+    if (value === 0) {
+      return `<text class="ax" x="${round(cx)}" y="${H - B - 6}" text-anchor="middle">0</text>`;
     }
     return (
       `<rect x="${round(cx - barW / 2)}" y="${round(H - B - h)}" width="${round(barW)}" ` +
-      `height="${round(h)}" rx="3" fill="var(--series-1)" fill-opacity="0.55">` +
-      `<title>${esc(`${b.label} · ${int(b.reviews)}回`)}</title></rect>`
+      `height="${round(h)}" rx="3" fill="var(--${token})" fill-opacity="${opacity}">` +
+      `<title>${esc(title)}</title></rect>`
+    );
+  };
+
+  const bars = buckets.map((b, i) => {
+    const cx = L + pitch * (i + 0.5);
+    const other = scheduled[i] as IntervalBucket | undefined;
+    return (
+      bar(
+        cx - barW / 2 - 1,
+        b.reviews,
+        "series-1",
+        "0.55",
+        `${b.label}（実測 elapsed）· ${int(b.reviews)}回`,
+      ) +
+      bar(
+        cx + barW / 2 + 1,
+        other?.reviews ?? 0,
+        "series-2",
+        "0.35",
+        `${b.label}（予定 scheduled）· ${int(other?.reviews ?? 0)}回`,
+      )
     );
   });
 
@@ -576,7 +653,7 @@ function deckRetentionChart(decks: readonly DeckRetention[]): string {
 
   return (
     `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(
-      "デッキごとの順方向・逆方向の定着率。90% の線が目標。最高と最低に値を表示。",
+      `デッキごとの順方向・逆方向の定着率。${TARGET_LABEL} の線が目標。最高と最低に値を表示。`,
     )}">${ticks.join("")}${parts.join("")}</svg>`
   );
 }
@@ -678,8 +755,8 @@ function tilesFor(totals: Totals, cardsTotal: number, activeSpan: number): strin
       key: "定着率",
       latin: "retention",
       value: pct(totals.retention),
-      sub: `合格 ${int(totals.passed)} / 失敗 ${int(totals.lapses)} · 目標 90% に対して ${signed(
-        (totals.retention ?? 0) * 100 - 90,
+      sub: `合格 ${int(totals.passed)} / 失敗 ${int(totals.lapses)} · 目標 ${TARGET_LABEL} に対して ${signed(
+        (totals.retention ?? 0) * 100 - TARGET_RETENTION * 100,
         2,
       )} ポイント`,
     },
@@ -752,7 +829,9 @@ const STYLE = `
   --surface: #fcfcfb;
   --ink: #0b0b0b;
   --ink-2: #52514e;
-  --ink-muted: #898781;
+  /* 5.03:1 on --surface. The dark themes below keep #898781, which is 4.85:1
+     on their own surface; one shared grey cannot clear AA on both. */
+  --ink-muted: #6f6d68;
   --grid: #e1e0d9;
   --axis: #c3c2b7;
   --border: rgba(11, 11, 11, 0.10);
@@ -959,8 +1038,9 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
       )}件は所要時間を持たないため時間には寄与しない。</p>`,
     tilesFor(totalsAll, cardsTotal, totalsAll.daysElapsed),
     `<p class="read">読み: <b>96% を超える定着率は、間隔が必要より短いという意味</b>。` +
-      `FSRS の既定目標は 90% で、いまの位置はそれより ${signed(
-        (totalsAll.retention ?? 0) * 100 - 90,
+      `設定した目標は ${TARGET_LABEL}（FSRS 既定の 90% ではなく、Zach が決めた値）で、` +
+      `いまの位置はそれより ${signed(
+        (totalsAll.retention ?? 0) * 100 - TARGET_RETENTION * 100,
         2,
       )} ポイント上にある。すでに持っている定着率のために毎日の復習を払っている、` +
       `というのが SPEC の指摘で、下の「定着率 × 復習間隔」がその payment を可視化する。</p>`,
@@ -1047,47 +1127,91 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     `</section>`,
   );
 
-  // ── retention x interval — the tile Mochi lacks
-  const longest = [...primary.intervals].reverse().find((b) => b.retention !== null);
-  const worst = primary.intervals.reduce<IntervalBucket | null>(
+  // ── retention x interval — the tile Mochi lacks, and the one that was wrong
+  //
+  // THIS TILE USED TO CONTRADICT BACKTEST.md.  It bucketed by the PLANNED
+  // interval, found nothing past a year, and printed "> 365d 観測なし" — while
+  // the backtest bucketed the same 102,020 reviews by ELAPSED time and reported
+  // 3,009 observations there at 96.88%.  Both numbers were real; neither
+  // artefact named its basis.  Now both name it, both use the schema's own
+  // column names, and test/dashboard.test.ts asserts that the number rendered
+  // here is the number written in BACKTEST.md.
+  const elapsed = primary.intervals.elapsed;
+  const scheduled = primary.intervals.scheduled;
+  const longest = [...elapsed].reverse().find((b) => b.retention !== null);
+  const worst = elapsed.reduce<IntervalBucket | null>(
     (acc, b) => (b.retention === null ? acc : acc === null || b.retention < (acc.retention ?? 1) ? b : acc),
     null,
   );
+  const below = elapsed.filter((b) => b.retention !== null && b.retention < TARGET_RETENTION);
+  const elapsedYear = beyondYear(elapsed);
+  const scheduledYear = beyondYear(scheduled);
+  const lift = data.longIntervals;
   out.push(
     `<section class="card"><h2>定着率 × 復習間隔 ` +
       `<span class="latin">retention vs interval — Mochi にはないタイル</span></h2>`,
-    `<p class="def">横軸は<strong>直前の</strong>復習間隔（その復習が何日ぶりだったか）。` +
-      `境界は views.sql の review_log_bucketed で一度だけ定義され、ここでは名前を並べるだけ。` +
-      `unknown はトラックの初回など直前間隔が存在しない復習。線は FSRS 既定の目標 90% で、` +
-      `棒の高さが「目標より余分に覚えている量」＝過剰学習の量になる。</p>`,
-    intervalRetentionChart(primary.intervals),
-    `<h3>各バケットの復習回数</h3>`,
-    intervalVolumeChart(primary.intervals),
-    `<p class="read">観測のあるすべてのバケットが目標 90% を上回っている。最も悪い` +
-      `${worst ? ` <b>${esc(worst.label)} でも ${pct(worst.retention, 2)}</b>` : ""}、` +
-      `最長の観測帯 ${longest ? esc(longest.label) : DASH} でも ${pct(
-        longest?.retention ?? null,
-        2,
-      )}。これが「間隔を伸ばす余地がある」という主張の実データで、` +
-      `どれだけ伸ばせるかは Stage 5 のバックテストが答える仕事。</p>`,
-    `<p class="def">&gt; 365d が空なのは0%だからではなく、観測が1件もないから。` +
-      `実測した最長間隔は ${int(data.longIntervals.maxObservedIntervalDays)}日、` +
-      `1年を超える間隔で予定されているトラックは ${int(data.longIntervals.scheduled)}件あるが、` +
-      `期日は ${esc((data.longIntervals.firstDueAt ?? DASH).slice(0, 10))} 〜 ${esc(
-        (data.longIntervals.lastDueAt ?? DASH).slice(0, 10),
-      )}でまだ来ていない。1年より先の記憶については、バックテストは何も観測を持たない。</p>`,
+    `<p class="def">横軸は<strong>直前の</strong>復習間隔。境界は views.sql の ` +
+      `review_log_bucketed で一度だけ定義され、ここでは名前を並べるだけ。` +
+      `<strong>「間隔」には2つの定義があり、この図は両方を描く</strong>：` +
+      `<b>実測 elapsed</b>（<code>reviews.elapsed_days</code>＝実際に空いた日数、塗りつぶし）と、` +
+      `<b>予定 scheduled</b>（<code>reviews.scheduled_days</code>＝スケジューラが空けるつもりだった日数、破線の中抜き）。` +
+      `unknown はその定義での直前間隔が存在しない復習。線は目標 ${TARGET_LABEL}。</p>`,
+    intervalRetentionChart(elapsed, scheduled),
+    `<h3>各バケットの復習回数（実測 / 予定）</h3>`,
+    intervalVolumeChart(elapsed, scheduled),
+    `<div class="legend"><span><i style="background:var(--series-1)"></i>実測 elapsed（実際に空いた日数）</span>` +
+      `<span><i style="background:var(--series-2)"></i>予定 scheduled（予定していた日数）</span>` +
+      `<span>横の実線 = 目標 ${TARGET_LABEL}</span></div>`,
+    `<p class="read">読み: 目標 ${TARGET_LABEL} を下回るのは実測で` +
+      `${below.length === 0 ? "どのバケットでもない" : `<b>${below.map((b) => esc(b.label)).join("・")}</b> の${int(below.length)}帯だけ`}` +
+      `、最も悪い${worst ? ` <b>${esc(worst.label)} で ${pct(worst.retention, 2)}</b>` : ""}。` +
+      `それ以外の帯は目標より上、すなわち<b>必要より短い間隔で復習している</b>。` +
+      `最長の観測帯 ${longest ? esc(longest.label) : DASH} でも ${pct(longest?.retention ?? null, 2)} で、` +
+      `これが「間隔を伸ばす余地がある」という主張の実データ。</p>`,
+    `<p class="def"><b>2つの定義が ${esc(BEYOND_YEAR_LABEL)} で完全に食い違う理由</b>。` +
+      `実測では ${int(elapsedYear.reviews)}回 / 定着率 ${pct(elapsedYear.retention, 2)}、` +
+      `予定では ${int(scheduledYear.reviews)}回。予定が0なのは Mochi が1年より先を予定しなかったからではなく` +
+      `（${int(lift.plannedBeyondYear)}回予定しており、最長 ${int(lift.maxPlannedDays)}日）、` +
+      `<code>scheduled_days</code> は「直前の復習が予定した間隔」なので、` +
+      `<strong>その予定に対応する復習がまだ行われていない</strong>ぶんは集計に現れないため。` +
+      `${int(lift.tracksBeyondYear)}件のトラックが1年超で予定されているが、期日は ` +
+      `${esc((lift.firstDueAt ?? DASH).slice(0, 10))} 〜 ${esc((lift.lastDueAt ?? DASH).slice(0, 10))} で1件も来ていない。` +
+      `だからこのページは<strong>実測を観測値として読む</strong>。BACKTEST.md も同じ基準で採点しており、` +
+      `${esc(BEYOND_YEAR_LABEL)} の件数は両方で ${int(elapsedYear.reviews)} で一致する。</p>`,
+    `<p class="def"><b>365日の上限は${lift.capLiftedOn === null ? "解除されていない" : `${esc(lift.capLiftedOn)} に解除された`}</b>。` +
+      `${lift.capLiftedOn === null ? "" : `それ以前に1年超を予定した復習は0件、以後は ${int(lift.plannedBeyondYear)}件（最長 ${int(lift.maxPlannedDays)}日）。`}` +
+      `いま上限ちょうど（${int(MOCHI_INTERVAL_CAP_DAYS)}日）に止まっているトラックは ` +
+      `${int(lift.tracksAtCap)} / ${int(lift.tracksWithPlan)}件 = ${pct(lift.tracksAtCap / Math.max(1, lift.tracksWithPlan), 2)}。` +
+      `${lift.capLiftedOn === null ? "" : `うち <b>${int(lift.tracksOnStaleCap)}件</b>は最後の復習が解除より前で、` +
+        `解除後の Mochi なら選ばなかったはずの古い予定のまま止まっている — これが実際に残っている制約。`}` +
+      `ただし実際に経過した最長間隔は ${int(lift.maxObservedElapsedDays)}日なので、` +
+      `そこから先はどちらにせよ観測の外側（外挿）になる。</p>`,
     details(
-      "バケットごとの数字を表で見る",
+      "バケットごとの数字を表で見る（実測と予定を並べて）",
       table(
-        ["直前の間隔", "復習数", "失敗", "定着率", "平均間隔（日）", "時間"],
-        primary.intervals.map((b) => [
-          esc(b.label),
-          int(b.reviews),
-          int(b.lapses),
-          pct(b.retention),
-          b.meanIntervalDays === null ? DASH : dec(b.meanIntervalDays, 1),
-          dec(b.hours, 1),
-        ]),
+        [
+          "直前の間隔",
+          "実測 復習数",
+          "実測 失敗",
+          "実測 定着率",
+          "実測 平均日数",
+          "予定 復習数",
+          "予定 定着率",
+          "予定 平均日数",
+        ],
+        elapsed.map((b, i) => {
+          const other = scheduled[i] as IntervalBucket | undefined;
+          return [
+            esc(b.label),
+            int(b.reviews),
+            int(b.lapses),
+            pct(b.retention),
+            b.meanIntervalDays === null ? DASH : dec(b.meanIntervalDays, 1),
+            int(other?.reviews ?? 0),
+            pct(other?.retention ?? null),
+            other?.meanIntervalDays == null ? DASH : dec(other.meanIntervalDays, 1),
+          ];
+        }),
       ),
     ),
     `</section>`,
@@ -1117,7 +1241,7 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
       `（同じ行に2つの分母を混ぜないため）。2点を結ぶ細線がその差。</p>`,
     `<div class="legend"><span><i style="background:var(--series-1)"></i>順方向 forward</span>` +
       `<span><i style="background:var(--series-2)"></i>逆方向 reverse</span>` +
-      `<span>縦の実線 = 目標 90%</span>` +
+      `<span>縦の実線 = 目標 ${TARGET_LABEL}</span>` +
       `<span>中抜きの点 = ${int(SMALL_SAMPLE)}回未満（標本が小さい）</span></div>`,
     deckRetentionChart(chartDecks),
     highest && lowest && highest !== lowest
