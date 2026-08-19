@@ -336,7 +336,7 @@
 <div class="wrap">
 
 <header class="masthead">
-  <p class="kicker">Build specification · draft 3</p>
+  <p class="kicker">Build specification · draft 4</p>
   <h1>Hashigo<span class="jp">梯子</span></h1>
   <p class="standfirst">A local-first replacement for Mochi, scoped to one person's
   Japanese study workflow — and to the four things Mochi gets wrong. Derived from
@@ -356,10 +356,10 @@
     <div class="stat"><span class="stat-n">7,716</span><span class="stat-l">cards across 3 exports</span></div>
     <div class="stat"><span class="stat-n">102,020</span><span class="stat-l">review records</span></div>
     <div class="stat"><span class="stat-n">2022</span><span class="stat-l">oldest review (27 June)</span></div>
-    <div class="stat"><span class="stat-n">11</span><span class="stat-l">templates</span></div>
+    <div class="stat"><span class="stat-n">10</span><span class="stat-l">templates (11 rows, one shared)</span></div>
     <div class="stat"><span class="stat-n">657</span><span class="stat-l">MB of audio</span></div>
     <div class="stat"><span class="stat-n">636</span><span class="stat-l">hours studied</span></div>
-    <div class="stat flag"><span class="stat-n">96.2%</span><span class="stat-l">retention — target is 90%</span></div>
+    <div class="stat"><span class="stat-n">96.2%</span><span class="stat-l">retention — target settled at 95%</span></div>
     <div class="stat flag"><span class="stat-n">8,958</span><span class="stat-l">orphaned attachments</span></div>
   </div>
   <p class="caption">Reviews split 58,937 forward / 43,083 reverse, over 1,317 active
@@ -372,8 +372,8 @@
     settle which scheduler to ship by measurement instead of assumption. 102,020 graded
     reviews with their preceding intervals is a large, clean test set.</p>
     <p>It has already surfaced the single most actionable number in the export:
-    <strong>96.2% observed retention against a 90% target</strong>. See
-    <a href="#scheduling">Scheduling</a>.</p>
+    <strong>96.24% observed retention</strong> — which is what settled the target at 0.95
+    rather than FSRS's default 0.90. See <a href="#scheduling">Scheduling</a>.</p>
   </div>
 </section>
 
@@ -417,6 +417,12 @@
     <p><strong>3. Refcount, never tombstone.</strong> Blobs are immutable and shared;
     deletion happens only when the last reference drops. A reference can never dangle,
     because the blob it names cannot be mutated or removed while referenced.</p>
+    <p><strong>4. Store the hash, never a path.</strong> No absolute path is ever written
+    to the database. A row naming <code>C:\DEV\WEB\hashigo\exports\…</code> welds your
+    library to one directory on one machine and breaks the moment anything moves — and
+    <code>exports/</code> is reference data, not source. This one is checkable
+    mechanically rather than by convention: sweep every text column in every table and
+    fail on any hit.</p>
   </div>
 
   <div class="prose">
@@ -447,10 +453,14 @@
     <p>This generalises Mochi's three parallel arrays (<code>reviews</code>,
     <code>reverse-reviews</code>, <code>cloze/reviews</code>) into one concept, and makes
     the importer a straight mapping rather than a special case per array.</p>
-    <p>Your indexed clozes are unused — <code>cloze/indexes</code> is empty on every
-    card, so all your clozes reveal together as a single track. Build the track
-    abstraction now because the importer needs it; defer the indexed-cloze
-    <em>authoring UI</em> until you want it.</p>
+    <p>Your clozes are unused as a <em>track</em>, and more completely than draft 3
+    said. <code>cloze/indexes</code> is empty on all 7,716 cards, so every cloze reveals
+    together — and <code>cloze/reviews</code> is present on 24 cards and
+    <strong>empty on all 24</strong>. Draft 3 read that key's presence as 22 graded
+    cards. It is not: there are <strong>zero cloze reviews in four years of
+    history</strong>. Build the track abstraction now, because the importer needs it and
+    it costs nothing — but know there is no observation anywhere in the corpus to test it
+    against, and defer the indexed-cloze <em>authoring UI</em> until you want it.</p>
   </div>
 
   <h3>Card fields to carry across</h3>
@@ -462,24 +472,30 @@
       <tbody>
         <tr><td><span class="mono">reviews</span></td><td class="num">58,937</td><td><span class="pill keep">keep</span> → track <span class="mono">forward</span></td></tr>
         <tr><td><span class="mono">reverse-reviews</span></td><td class="num">43,083</td><td><span class="pill keep">keep</span> → track <span class="mono">reverse</span></td></tr>
-        <tr><td><span class="mono">cloze/reviews</span></td><td>22 cards</td><td><span class="pill keep">keep</span> → track <span class="mono">cloze:n</span></td></tr>
+        <tr><td><span class="mono">cloze/reviews</span></td><td>key on 24 cards · <strong>0 reviews</strong></td><td><span class="pill keep">keep</span> → track <span class="mono">cloze:n</span> — nothing to import</td></tr>
         <tr><td><span class="mono">fields</span></td><td>id → value</td><td><span class="pill keep">keep</span> verbatim</td></tr>
         <tr><td><span class="mono">component-cache</span></td><td>56,767 entries</td><td><span class="pill fix">rebuild</span> as content-addressed blobs</td></tr>
         <tr><td><span class="mono">attachments</span></td><td>10,887 live</td><td><span class="pill fix">rebuild</span> as refcounted blobs</td></tr>
         <tr><td><span class="mono">archived?</span></td><td class="num">234</td><td><span class="pill keep">keep</span></td></tr>
         <tr><td><span class="mono">pinned?</span></td><td>flag present, none set</td><td><span class="pill keep">keep</span> — your mining workflow</td></tr>
         <tr><td><span class="mono">references</span></td><td>card→card links</td><td><span class="pill keep">keep</span></td></tr>
-        <tr><td><span class="mono">tags</span> / <span class="mono">manual-tags</span></td><td>20 distinct, 62 cards</td><td><span class="pill keep">keep</span> — barely used</td></tr>
-        <tr><td><span class="mono">needs-rereview?</span></td><td>1 card, 81 reviews</td><td><span class="pill keep">keep</span> — leech handling</td></tr>
+        <tr><td><span class="mono">tags</span> / <span class="mono">manual-tags</span></td><td>23 raw → 19 normalised, 62 cards</td><td><span class="pill keep">keep</span> — barely used</td></tr>
+        <tr><td><span class="mono">needs-rereview?</span></td><td>17 cards, 337 reviews</td><td><span class="pill keep">keep</span> — <em>per track</em>; leech handling</td></tr>
         <tr><td><span class="mono">pos</span></td><td>lexicographic</td><td><span class="pill keep">keep</span> — sort order</td></tr>
         <tr><td><span class="mono">new?</span></td><td>boolean</td><td><span class="pill drop">derive</span> from empty track</td></tr>
       </tbody>
     </table>
   </div>
-  <p class="caption">Also spotted: several mp3 attachments carry
-  <span class="mono">"type": "text/xml"</span> — Azure's SSML content-type leaked into
-  Mochi's attachment metadata. Harmless, but the importer should sniff the real type
-  rather than trust the record.</p>
+  <p class="caption">Draft 3 called the attachment MIME types a harmless curiosity, and
+  that was wrong by three orders of magnitude. Of the 10,887 live attachments,
+  <strong>36 carry a correct type and 10,851 do not</strong>:
+  <span class="mono">application/octet-stream</span> 4,979 ·
+  <span class="mono">text/xml</span> 3,443 — Azure's SSML content-type leaking into
+  Mochi's attachment metadata — and 2,424 with the field empty. A browser handed
+  <span class="mono">text/xml</span> in an <span class="mono">&lt;audio&gt;</span> element
+  will not play it, so this breaks playback outright rather than looking untidy. It was
+  invisible only because Mochi's own player ignores the field. The importer must sniff
+  the bytes, and never trust the record.</p>
 </section>
 
 <section>
@@ -556,6 +572,47 @@
     <p>The default move would be "Mochi uses FSRS, so use FSRS." That's an assumption, and
     there is no need to assume — 102,020 graded reviews, each with the interval that
     preceded it, is a large and clean test set. Ship the scheduler that wins on your data.</p>
+    <p>That backtest has now been run. The two boxes below are what it settled; the rest
+    of this section is the method, and the one thing it declined to settle.</p>
+  </div>
+
+  <div class="note">
+    <p class="note-h">Settled — FSRS-6, capped at 365 days, target retention 0.95</p>
+    <p><strong>Algorithm: FSRS-6</strong>, fitted to your own history rather than shipped
+    with population defaults.</p>
+    <p><strong>Maximum interval: 365 days.</strong> A policy ceiling, not a data limit,
+    and it happens to sit exactly where the evidence stops being evidence: the longest gap
+    ever actually <em>observed</em> in this corpus is 454 days, so any schedule beyond
+    that is extrapolation off the end of the support the fit was measured on. Raise it
+    deliberately later if you want longer intervals — do not let a model fitted on
+    censored data pick 1,000 days on its own.</p>
+    <p><strong>Target retention: 0.95</strong>, and this needs saying plainly rather than
+    being sold: it roughly <em>ratifies</em> what you already do. Your realised retention
+    is 96.24% all-time and 95.10% across 2026, so 0.95 sits about a point below where you
+    are and <strong>will not meaningfully reduce your ~69 reviews a day</strong>. If you
+    ever do want that reduction, target retention is the lever — it stays a per-deck
+    setting, and lowering it is the one change that lengthens intervals.</p>
+  </div>
+
+  <div class="note diagnosis">
+    <p class="note-h">Binary grades — a design decision, not a data limitation</p>
+    <p>Hashigo records <strong>remembered / forgot</strong> and nothing else. Anki's
+    four-button Again / Hard / Good / Easy was considered and rejected, and Mochi's own
+    founder reached the same conclusion. Binary maps onto FSRS as
+    <span class="mono">Again = 1</span> and <span class="mono">Good = 3</span>; there is
+    no <span class="mono">grade</span> column to widen later.</p>
+    <p>The consequence is structural and belongs in writing before someone tries to fix
+    it. FSRS-6's <span class="mono">w[15]</span> (Hard penalty) and
+    <span class="mono">w[16]</span> (Easy bonus) apply only at ratings 2 and 4, so they
+    are <strong>unreachable — in this corpus and in any future one</strong>. They are
+    frozen at their published defaults, permanently, and no measured number depends on
+    them; <span class="mono">w[1]</span> and <span class="mono">w[3]</span>, the initial
+    stabilities for Hard and Easy, are frozen alongside them for the same reason. This is
+    not "unfitted for want of data". More history will never reach them.</p>
+    <p>The upside deserves stating rather than being treated as a limitation:
+    <strong>the scheduler is fitted on exactly the signal it receives in
+    production</strong>, so there is no train/serve distribution shift. A four-button
+    model fitted on four-button history and then fed binary grades would have one.</p>
   </div>
 
   <h3>Backtest, not A/B</h3>
@@ -579,33 +636,53 @@
     have behaved very differently. Treat the result as strong evidence, not proof.</p>
   </div>
 
-  <h3>You are over-studying, measurably</h3>
+  <h3>Above target by one point, not six</h3>
 
   <div class="scroller">
     <table>
       <thead><tr><th>Measure</th><th class="num">Value</th><th>Reading</th></tr></thead>
       <tbody>
         <tr><td>Observed retention</td><td class="num">96.24%</td><td>3,832 lapses in 102,020 reviews</td></tr>
-        <tr><td>FSRS default target</td><td class="num">90%</td><td>Six points below where you sit</td></tr>
+        <tr><td>Target retention — settled</td><td class="num">95%</td><td>FSRS's own default is 90%; this deliberately is not it</td></tr>
         <tr><td>Total study time</td><td class="num">636.1 h</td><td>26.5 days of wall clock</td></tr>
         <tr><td>Median review</td><td class="num">10 s</td><td>Mean 24.9 s — long tail</td></tr>
         <tr><td>Reviews / day</td><td class="num">69</td><td>Last 90 days; peak 229</td></tr>
-        <tr><td>Median interval</td><td class="num">24.7 d</td><td>p75 123 d · p90 358 d · max 2,707 d</td></tr>
-        <tr><td>Sub-daily intervals</td><td class="num">7.6%</td><td>7,090 reviews at ≤ 1 day</td></tr>
+        <tr><td>Median interval — planned</td><td class="num">24.7 d</td><td>p75 123 d · p90 358 d · max 2,707 d</td></tr>
+        <tr><td>Sub-daily intervals — planned</td><td class="num">7.6%</td><td>7,090 of the 93,076 reviews that carry one</td></tr>
       </tbody>
     </table>
   </div>
+
+  <p class="caption">Every interval figure in that table is a <strong>planned</strong>
+  interval — the value Mochi chose <em>after</em> each review — not the
+  <strong>elapsed</strong> time between reviews, and the two distributions look nothing
+  alike. Both are now tracked separately, and anything plotted against "the interval" has
+  to name which basis it used. Note too that the 365-day ceiling visible in this data is
+  Mochi's, and it was <strong>lifted on 2026-02-22 JST</strong>
+  (<span class="mono">2026-02-21T15:00Z</span>): 7,407 reviews sit at exactly 365 days,
+  and all 1,356 records beyond a year were written on or after that date, out to a maximum
+  planned interval of 2,707 days. None of them has come due yet. "Mochi caps at 365" was
+  true for three and a half years and is not true now.</p>
 
   <div class="prose">
     <p>Passing 96% of reviews means the intervals are shorter than they need to be — you
     are paying in daily reviews for retention you already have. Lower target retention
     lengthens intervals and cuts workload, at the cost of forgetting slightly more; the
     published optimum for total time-to-remember generally sits below where you are.</p>
-    <p>How much that saves is exactly what the backtest should quantify, per deck, rather
-    than a rule of thumb quoted at you. It is stated here as a question with a method, not
-    an answer.</p>
-    <p><strong>Target retention must be a setting</strong> — per deck, since 漢字 and
-    基本情報 have different stakes — with the backtest producing a recommended default.</p>
+    <p>Draft 3 asked the backtest to quantify that saving and name a recommended default.
+    It ran, and it <em>declined</em> to name one: 5 of its 17 free parameters land on
+    clamp boundaries and wildly different weight vectors score within 0.0006 of each
+    other, so a "recommended default" would have been an artefact of the fit rather than a
+    finding. The number was chosen instead, and 0.95 is a deliberate ratification of how
+    you already study rather than a workload cut. <strong>The saving draft 3 anticipated
+    is still available — but only if you ask for it, by lowering the target.</strong></p>
+    <p>Calibrate expectations on the algorithm too: fitted FSRS-6 scores 0.1905 held-out
+    log loss against a constant-base-rate model's 0.2111, which is roughly a 10%
+    improvement over a model with no inputs at all. <strong>Nobody should expect leaving
+    Mochi to feel like a better scheduler.</strong> The wins in this project are the four
+    problems at the top of it.</p>
+    <p><strong>Target retention stays a setting</strong> — per deck, since 漢字 and
+    基本情報 have different stakes — defaulting to the 0.95 above.</p>
   </div>
 </section>
 
@@ -625,9 +702,9 @@
     <table>
       <thead><tr><th>Construct</th><th class="num">Uses</th><th class="num">Cards</th><th>Notes</th></tr></thead>
       <tbody>
-        <tr><td><span class="mono">[[text|card-id]]</span></td><td class="num">8,690</td><td class="num">4,323</td><td>Wiki-link — see below</td></tr>
+        <tr><td><span class="mono">[[text|card-id]]</span></td><td class="num">8,744</td><td class="num">4,335</td><td>Wiki-link — <strong>three syntactic forms</strong>, see below</td></tr>
         <tr><td><span class="mono">&lt;speech lang="jp"&gt;</span></td><td class="num">287</td><td class="num">—</td><td>Inline TTS; note the non-BCP-47 code</td></tr>
-        <tr><td>Ordered list</td><td class="num">4,314</td><td class="num">1,392</td><td>Your dominant prose structure</td></tr>
+        <tr><td>Ordered list</td><td class="num">4,314</td><td class="num">1,392</td><td>Your dominant prose structure. Counted as <span class="mono">^\d+\.</span> over raw text — state the rule, because it moves the number: 4,318 if a bare <span class="mono">\r</span> counts as a line ending, 4,538 if indented items do</td></tr>
         <tr><td><span class="mono">---</span></td><td class="num">1,694</td><td class="num">1,140</td><td>Template-less cards defining their own sides</td></tr>
         <tr><td><span class="mono">{{…}}</span></td><td class="num">1,087</td><td class="num">550</td><td>Cloze, always unindexed</td></tr>
         <tr><td><span class="mono">&lt;ai&gt;</span></td><td class="num">125</td><td class="num">—</td><td>Inline generation, written straight into cards</td></tr>
@@ -637,10 +714,10 @@
         <tr><td><span class="mono">___</span></td><td class="num">255</td><td class="num">249</td><td>Horizontal rule</td></tr>
         <tr><td><span class="mono">&lt;furigana&gt;</span></td><td class="num">19</td><td class="num">19</td><td></td></tr>
         <tr><td>Blockquote, headings, bullets</td><td class="num">76</td><td class="num">—</td><td></td></tr>
-        <tr><td><span class="mono">$…$</span> / <span class="mono">$$…$$</span></td><td class="num">29</td><td class="num">19</td><td>LaTeX — 基本情報 maths cards</td></tr>
+        <tr><td><span class="mono">$…$</span> / <span class="mono">$$…$$</span></td><td class="num">29</td><td class="num">18</td><td>LaTeX — 基本情報 maths cards</td></tr>
         <tr><td><span class="mono">&lt;image&gt;</span></td><td class="num">8</td><td class="num">—</td><td>Image search</td></tr>
         <tr><td>Images, tables, <span class="mono">&lt;draw&gt;</span>, italic</td><td class="num">14</td><td class="num">—</td><td>Long tail</td></tr>
-        <tr><td><span class="mono">&lt;span style&gt;</span></td><td class="num">—</td><td class="num">2</td><td>Raw inline CSS — needs a sanitiser policy</td></tr>
+        <tr><td><span class="mono">&lt;span style&gt;</span></td><td class="num">1</td><td class="num">1</td><td>Raw inline CSS, one element on one card — draft 3's "2" was the open and close tag. Still needs a sanitiser policy</td></tr>
       </tbody>
     </table>
   </div>
@@ -648,7 +725,7 @@
   <div class="note diagnosis">
     <p class="note-h">Wiki-links are 56% of your corpus</p>
     <p>Draft 1 called <code>references</code> unused, based on a bad sample. In fact
-    <strong>4,323 cards carry 8,690 wiki-links</strong> in the form
+    <strong>4,335 cards carry 8,744 wiki-links</strong>, mostly in the form
     <code>[[display|card-id]]</code> — and the pattern is morphological decomposition:
     <code>~に越したことはない</code> links to <code>越す</code>;
     <code>～に引き換え</code> links to both <code>引く</code> and <code>換える</code>.
@@ -656,9 +733,57 @@
     components.</p>
     <p>This is load-bearing. A parser that misses it renders over half your cards with
     broken links. Mochi also stores it the rename-safe way — stable ID plus cached display
-    text — so that design is inherited, not invented. 7,763 of 7,771 resolve inside these
-    three exports; the remaining 8 point at decks you didn't export, so unresolved links
-    must render as plain text rather than being dropped.</p>
+    text — so that design is inherited, not invented.</p>
+    <p><strong>The syntax has three forms, and draft 3 counted only the first:</strong>
+    <span class="mono">[[display|card-id]]</span> — 8,690 ·
+    <span class="mono">[[card-id]]</span> — 46 ·
+    <span class="mono">[[|card-id]]</span> — 8. That is <strong>8,744 links across 4,335
+    cards</strong>, and all 54 of the extra ones resolve to real cards. A matcher written
+    for the piped form alone silently drops 54 real edges, which the <code>@</code> picker
+    and every backlink view would then be missing.</p>
+  </div>
+
+  <div class="note">
+    <p class="note-h">Two different sets of numbers, which draft 3 read as one</p>
+    <p>Links exist twice in the export: as syntax inside the text, and as a
+    <code>references</code> array on the card. The two do not agree, and draft 3 put
+    "8,690 wiki-links" and "7,763 of 7,771 resolve" in the same paragraph as though they
+    described one measurement.</p>
+    <p><strong>Parsed links in text:</strong> 8,744 occurrences, of which
+    <strong>18 are unresolved</strong>, pointing at 15 distinct missing targets.</p>
+    <p><strong>The <code>references</code> array:</strong> 7,771 entries, of which
+    <strong>8 are unresolved</strong>, pointing at 7 distinct missing targets. The 7,763
+    figure belongs to this set and to nothing else.</p>
+    <p>And one of those 8 is not a deck you failed to export. Card <code>gN7K9IpR</code>
+    writes <code>[[**enactment**|zeeUDLTL]]</code>, and Mochi's own reference extractor
+    mis-parsed the bold markers and stored the literal string <code>enactment</code> as a
+    card id. Seven genuine unexported targets, one Mochi bug — worth knowing because
+    Hashigo must not reproduce it. The rule stands either way:
+    <strong>an unresolved link renders as plain text and is never dropped</strong>.</p>
+  </div>
+
+  <h3>The invisible character that is not corruption</h3>
+
+  <div class="note diagnosis">
+    <p class="note-h">3,016 LEFT-TO-RIGHT MARKs, every one of them deliberate</p>
+    <p>Mochi could not parse two wiki-links written immediately next to each other, so
+    you worked around it by wedging an invisible
+    <span class="mono">U+200E LEFT-TO-RIGHT MARK</span> between them. That is how a
+    multi-kanji compound points at each of its components — written out, with the mark
+    shown as <span class="mono">‹lrm›</span>, it is
+    <code>[[引く|…]]‹lrm›[[換える|…]]</code>.</p>
+    <p>Measured: <strong>3,016 marks across 2,504 cards</strong>, of which
+    <strong>2,911 sit exactly between two adjacent links</strong> — the
+    <span class="mono">]]‹lrm›[[</span> shape. This is recorded here because to anyone
+    reading the data cold it is indistinguishable from the zero-width spaces in your tag
+    list, which <em>are</em> corruption. These are not. Stripping them as a cleanup would
+    destroy 2,911 deliberate separators.</p>
+    <p>Hashigo parses adjacent links natively, so <strong>the mark is no longer
+    necessary</strong> on new cards. Existing marks are <strong>preserved verbatim</strong>
+    in stored values regardless — it is your text, and removing it is a separate,
+    deliberate migration rather than something the importer does on the way past. The one
+    place invisible characters are dropped is the search index, which is a read-time
+    projection and never the stored value.</p>
   </div>
 
   <h3>Surface 2 — template bodies</h3>
@@ -782,7 +907,7 @@ graph LR
         <tr><td><span class="mono">plain</span> / <span class="mono">text</span></td><td>—</td><td>Hand-authored</td></tr>
         <tr><td><span class="mono">boolean</span></td><td>—</td><td>Checkbox; drives <span class="mono">&lt;&lt;#Field&gt;&gt;</span> sections</td></tr>
         <tr><td><span class="mono">number</span></td><td>—</td><td>Used once, in 数字</td></tr>
-        <tr><td><span class="mono">speech</span></td><td>Azure Neural TTS</td><td>19,710 lifetime generations</td></tr>
+        <tr><td><span class="mono">speech</span></td><td>Azure Neural TTS</td><td><strong>24,558</strong> lifetime generations</td></tr>
         <tr><td><span class="mono">ai</span></td><td>LLM, custom prompt</td><td>19,710 generations; prompts carry field refs</td></tr>
         <tr><td><span class="mono">translate</span></td><td>Translation API</td><td>272,383 chars, ja→en</td></tr>
         <tr><td><span class="mono">furigana</span></td><td>Local morphology</td><td>3,255 generations — go offline, see below</td></tr>
@@ -791,6 +916,14 @@ graph LR
       </tbody>
     </table>
   </div>
+  <p class="caption">Draft 3 printed 19,710 on both the <span class="mono">speech</span>
+  and the <span class="mono">ai</span> row — the AI figure copy-pasted onto speech. The
+  56,767 <span class="mono">component-cache</span> entries break down as
+  <span class="mono">ai</span> 19,710 · <span class="mono">speech</span> 24,558 ·
+  <span class="mono">translate</span> 9,216 · <span class="mono">furigana</span> 3,255 ·
+  <span class="mono">image-search</span> 18 · <span class="mono">dictionary</span> 10.
+  Treat that cache as a 56,767-entry labelled test set, and seed from it on import rather
+  than paying to regenerate any of it.</p>
 </section>
 
 <section>
@@ -954,13 +1087,27 @@ graph LR
     substring matching, or pre-segment with the same morphological analyser used for
     furigana. Either way it is a stage-1 choice, because it determines the table
     definitions.</p>
-    <p>Search should cover field values rather than rendered output — you want to find
-    a word by its reading even when the card displays only kanji.</p>
+    <p><strong>Index the rendered display text, not the raw source.</strong> Searching
+    the stored value makes <code>[[意味|abc123]]</code> match on
+    <span class="mono">abc123</span> and miss the word itself; searching the render finds
+    what you can actually see. The stored value keeps its markup verbatim — the index is a
+    read-time projection, and search and display have to share one projection or the two
+    will disagree about what a card says.</p>
+    <p>One more Japanese-specific trap on top of the tokeniser: <strong>trigram has a
+    floor of three characters, and the commonest search unit in Japanese is two</strong> —
+    意味, 勉強, 漢字, 日本. Measured against ground truth over the imported corpus,
+    <span class="mono">意味</span> occurs on 3 cards, <span class="mono">する</span> on 228
+    and <span class="mono">ない</span> on 74, and the trigram index returns
+    <em>nothing at all</em> for any of them. So a 1–2 character query falls back to a
+    <span class="mono">LIKE</span> scan over body, name and tag paths. A leading wildcard
+    could not use an index anyway, and 7,716 rows is a scan of no consequence — but it
+    must cover bodies, not just names, because all three <span class="mono">意味</span>
+    hits are in bodies.</p>
   </div>
 
   <h3>@ reference, and create-if-missing</h3>
   <div class="prose">
-    <p>Half of this already exists: 8,690 links across 4,323 cards, stored as
+    <p>Half of this already exists: 8,744 links across 4,335 cards, stored as
     <code>[[display|card-id]]</code>. What's missing is only the authoring affordance — an
     <code>@</code> picker that searches as you type and, on no match,
     <strong>creates the card and links it in one action</strong>.</p>
@@ -1003,9 +1150,11 @@ graph LR
         <tr><td>Local store</td><td>SQLite via OPFS</td><td>Real queries over 7,716 cards and 102,020 reviews; a JSON blob won't hold</td></tr>
         <tr><td>Sync</td><td>Bidirectional, field-level last-write-wins</td><td>One user, never concurrent — no CRDT needed</td></tr>
         <tr><td>Review log</td><td>Append-only per track</td><td>Merges by set union; can never conflict</td></tr>
-        <tr><td>Attachments</td><td>Content-addressed + refcounted</td><td>Kills the regeneration churn above</td></tr>
+        <tr><td>Attachments</td><td>Content-addressed + refcounted, <strong>never a stored path</strong></td><td>Kills the regeneration churn above; an absolute path welds the library to one directory on one machine</td></tr>
         <tr><td>Server</td><td>Workers + D1 + R2</td><td>Two PCs need a rendezvous; free tier, nothing to maintain</td></tr>
-        <tr><td>Scheduler</td><td>Chosen by backtest, then fit to your history</td><td>102,020 graded reviews decides it; no need to assume FSRS</td></tr>
+        <tr><td>Scheduler</td><td><strong>FSRS-6</strong>, fitted · max interval 365 d · target retention 0.95</td><td>Chosen by backtest over 102,020 graded reviews rather than assumed, and the cap sits where the observed support stops</td></tr>
+        <tr><td>Grades</td><td><strong>Binary</strong> — remembered / forgot</td><td>Anki's four-button scale was considered and rejected. <span class="mono">w[15]</span>/<span class="mono">w[16]</span> are unreachable and frozen; the payoff is no train/serve distribution shift</td></tr>
+        <tr><td>Import</td><td>Lossless, except stale pre-template <span class="mono">content</span></td><td>3,159 cards carry 79,175 characters the template replaced; discarded so the render has one source of truth, and reported so it stays recoverable</td></tr>
         <tr><td>Review direction</td><td>Ordered sides; reverse = declared permutation</td><td>Templates run to four sides, so "reverse" needs defining</td></tr>
         <tr><td>Reverse toggle</td><td>Three-state <span class="mono">inherit / on / off</span>, card over deck</td><td>Two-state booleans can't express a deliberate exception</td></tr>
         <tr><td>Battery</td><td>No polling, no sockets, precomputed renders</td><td>Mostly a matter of <em>not</em> doing things</td></tr>
@@ -1040,7 +1189,9 @@ graph LR
       import is right — and it's the first thing you can actually use. Forecast tile
       deferred to after the scheduler.</li>
       <li><strong>Template engine.</strong> All fourteen constructs, with the three traps
-      handled. Golden-file tested against your 11 real templates.</li>
+      handled. Golden-file tested against your <strong>10</strong> real templates — 11 rows
+      across the three exports, because <span class="mono">oiaISYb2</span> (単語) is defined
+      identically in both 日本語 and 基本情報, so the importer upserts by id.</li>
       <li><strong>Renderer.</strong> Markdown plus the whitelisted elements —
       <code>furigana</code>, <code>draw</code>, <code>input</code>, cloze reveal.</li>
       <li><strong>Scheduler backtest.</strong> Replay the imported history against the
@@ -1073,16 +1224,33 @@ graph LR
       authored symmetrically, so reversal already produces real production practice.
       Modelled as an ordered side list with a default-reversed permutation, so a single
       template can deviate later without a second concept.</li>
-      <li><strong>The six empty leaf decks are dropped</strong> — 副詞, 名詞, 形容動詞,
-      一段動詞, 形容詞, 五段動詞. The <code>English</code> and <code>基本情報</code> roots
-      hold no direct cards but are populated parents; they stay. If part-of-speech becomes
+      <li><strong>The six empty leaf decks are dropped by default</strong> — 副詞, 名詞,
+      形容動詞, 一段動詞, 形容詞, 五段動詞 — taking <strong>45 decks to 39</strong>. This is
+      the default rather than a flag you have to remember to pass. The <code>English</code>
+      and <code>基本情報</code> roots hold no direct cards but are populated parents; they
+      stay. If part-of-speech becomes
       worth filtering on, it belongs as a tag or field — a card can be both 動詞 and 敬語,
       but it lives in only one deck.</li>
       <li><strong>Reverse toggle is three-state, card beats deck.</strong> Preserves
       today's deck-wide behaviour by inheritance while allowing per-card exceptions, which
       Mochi's boolean cannot express.</li>
-      <li><strong>The scheduler is chosen by backtest, not assumed.</strong> Target
-      retention becomes a per-deck setting.</li>
+      <li><strong>The scheduler is FSRS-6</strong> — chosen by backtest rather than
+      assumed, fitted to your own history, capped at 365 days, targeting 0.95 retention.
+      Target retention stays a per-deck setting; 0.95 is its default.</li>
+      <li><strong>Grades are binary: remembered / forgot.</strong> Anki's four-button
+      Again / Hard / Good / Easy was considered and rejected. FSRS's
+      <span class="mono">w[15]</span> and <span class="mono">w[16]</span> are therefore
+      unreachable <em>by design</em> and are frozen rather than fitted — and in exchange
+      the scheduler is trained on exactly the signal it is given in production.</li>
+      <li><strong>Blobs are content-addressed and refcounted, and no absolute path is ever
+      stored.</strong> Tombstoning is what left 8,958 dead attachment records in Mochi;
+      refcounting cannot produce a dangling reference. The path rule is an acceptance
+      check, not a convention.</li>
+      <li><strong>Stale pre-template <code>content</code> is discarded on import — and
+      reported.</strong> 3,159 templated cards carry 79,175 characters of hand-written
+      text that predates their template, none of which matches what the template renders.
+      It is dropped so the render has a single source of truth, and listed so it stays
+      recoverable from the export.</li>
     </ul>
   </div>
 </section>
@@ -1092,14 +1260,17 @@ graph LR
   <h2>Still to decide</h2>
   <div class="prose">
     <ul>
-      <li><strong>Leech policy.</strong> <code>needs-rereview?</code> exists and 81
-      reviews carry <code>rereview?</code>, but the behaviour is undocumented. Only one
-      card currently carries the flag, so there is nothing to preserve — design a rule
-      rather than reverse-engineering Mochi's.</li>
+      <li><strong>Leech policy.</strong> <code>needs-rereview?</code> exists but its
+      behaviour is undocumented, so the rule has to be designed rather than
+      reverse-engineered from Mochi. Draft 3 said "one card, 81 reviews, nothing to
+      preserve"; the flag is <em>per track</em>, and the real figures are
+      <strong>17 cards and 337 reviews</strong> — 1 forward, 16 reverse. Four times the
+      sample, and still a design question rather than a migration one.</li>
       <li><strong>LLM choice for <code>&lt;ai&gt;</code> fields.</strong> Cost is noise at
       this volume, so pick on output quality. Same shape as the audio question, and worth
       resolving the same way: run the real emoji-gloss prompt over twenty words you already
-      have generated output for, and compare against what Mochi produced.</li>
+      have generated output for, and compare against what Mochi produced. There are
+      <strong>19,710</strong> such examples to draw the twenty from.</li>
       <li><strong>Sub-daily intervals.</strong> 7.6% of reviews come due within a day,
       which implies learning steps this spec hasn't defined. The backtest will show whether
       they earn their place.</li>
@@ -1109,7 +1280,8 @@ graph LR
 
 <footer>
   Derived from 日本語, English and 基本情報 exports · Mochi format version 2 ·
-  7,716 cards · 102,020 reviews · 8,690 wiki-links · 636 hours · analysed 18–19 August 2026
+  7,716 cards · 102,020 reviews · 8,744 wiki-links · 636 hours ·
+  draft 4, revised 19 August 2026
 </footer>
 
 </div>
