@@ -336,7 +336,7 @@
 <div class="wrap">
 
 <header class="masthead">
-  <p class="kicker">Build specification · draft 5</p>
+  <p class="kicker">Build specification · draft 6</p>
   <h1>Hashigo<span class="jp">梯子</span></h1>
   <p class="standfirst">A local-first replacement for Mochi, scoped to one person's
   Japanese study workflow — and to the four things Mochi gets wrong. Derived from
@@ -490,14 +490,37 @@
   </div>
   <p class="caption">Draft 3 called the attachment MIME types a harmless curiosity, and
   that was wrong by three orders of magnitude. Of the 10,887 live attachments,
-  <strong>36 carry a correct type and 10,851 do not</strong>:
+  <strong>41 carry a correct type and 10,846 do not</strong>
+  (36 <span class="mono">audio/mpeg</span>, 4 <span class="mono">image/jpeg</span>,
+  1 <span class="mono">image/png</span>; draft 4 said 36 and 10,851, counting only
+  the audio):
   <span class="mono">application/octet-stream</span> 4,979 ·
   <span class="mono">text/xml</span> 3,443 — Azure's SSML content-type leaking into
-  Mochi's attachment metadata — and 2,424 with the field empty. A browser handed
-  <span class="mono">text/xml</span> in an <span class="mono">&lt;audio&gt;</span> element
-  will not play it, so this breaks playback outright rather than looking untidy. It was
+  Mochi's attachment metadata — and 2,424 with the field empty. The bytes are
+  10,867 mp3, 9 jpeg, 1 png and <strong>10 empty</strong>. It was
   invisible only because Mochi's own player ignores the field. The importer must sniff
   the bytes, and never trust the record.</p>
+  <p class="caption"><strong>Correction, measured 2026-08-19.</strong> Draft 4 said
+  &ldquo;a browser handed <span class="mono">text/xml</span> in an
+  <span class="mono">&lt;audio&gt;</span> element will not play it, so this breaks
+  playback outright&rdquo;. <em>That is false.</em> One real corpus mp3 was handed to
+  <span class="mono">&lt;audio src=blob:&hellip;&gt;</span> in Chromium 151 under five
+  different labels &mdash; <span class="mono">audio/mpeg</span>,
+  <span class="mono">text/xml</span>, <span class="mono">application/octet-stream</span>,
+  the empty string, and <span class="mono">audio/mpeg; codecs="mp3"</span> &mdash; and
+  <strong>all five reached <span class="mono">canplay</span>, reported the same
+  1.560&nbsp;s duration and advanced the clock</strong>. Chromium sniffs the bytes and
+  ignores the <span class="mono">Blob</span> type. There <em>is</em> one shape where the
+  wrong type is fatal, and it is the shape to avoid:
+  <span class="mono">&lt;source type="text/xml"&gt;</span> is filtered by
+  <span class="mono">canPlayType</span> before any byte is read &mdash; the source errors,
+  <span class="mono">networkState</span> is 3, <span class="mono">duration</span> is
+  <span class="mono">NaN</span>, and <span class="mono">element.error</span> stays
+  <span class="mono">null</span>, so nothing even reports the failure. So sniffing is
+  still mandatory &mdash; the mime decides which element to build, the correct extension,
+  and every download name &mdash; but the reason is data hygiene, not a silent playback
+  outage. Set <span class="mono">src</span>, never
+  <span class="mono">&lt;source type&gt;</span>.</p>
 </section>
 
 <section>
@@ -1269,6 +1292,22 @@ graph LR
       stored.</strong> Tombstoning is what left 8,958 dead attachment records in Mochi;
       refcounting cannot produce a dangling reference. The path rule is an acceptance
       check, not a convention.</li>
+      <li><strong>The payloads live in BLOB rows inside a second SQLite database, not in
+      one file per payload.</strong> Settled on measurement, in a real browser, over the
+      whole 624.6&nbsp;MiB of real audio: 10,816 individual OPFS files took
+      <strong>322.1&nbsp;s</strong> to write and 10.60&nbsp;ms per random read, while the
+      same bytes as BLOB rows in one OPFS-backed file took <strong>4.9&nbsp;s</strong> and
+      0.54&nbsp;ms. Re-measured since on a second machine — 19.30&nbsp;ms against
+      0.52&ndash;0.60&nbsp;ms per payload written, 14.31&nbsp;ms against
+      0.15&ndash;0.25&nbsp;ms per read — so the multipliers move (32&times;&ndash;65&times;
+      write, 20&times;&ndash;95&times; read) and the ordering never does. Minutes of
+      uninterruptible writing on first run versus seconds is the difference between an app
+      that works on a phone and one that looks broken on it. The store is
+      <code>&lt;database&gt;.blobs.db</code>, kept separate so the ~70&nbsp;MB card
+      database stays small, quick to sync and quick to rebuild; the directory store is
+      kept for export and interop. Because <code>blobs.hash</code> means &ldquo;ask the
+      store&rdquo; and never &ldquo;look here&rdquo;, the swap changed no row of any
+      table.</li>
       <li><strong>Stale pre-template <code>content</code> is discarded on import — and
       reported.</strong> 3,159 templated cards carry 79,175 characters of hand-written
       text that predates their template, none of which matches what the template renders.
@@ -1304,7 +1343,7 @@ graph LR
 <footer>
   Derived from 日本語, English and 基本情報 exports · Mochi format version 2 ·
   7,716 cards · 102,020 reviews · 8,744 wiki-links · 636 hours ·
-  draft 5, revised 19 August 2026
+  draft 6, revised 19 August 2026
 </footer>
 
 </div>
