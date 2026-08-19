@@ -28,11 +28,29 @@
  *     `"~:cloze/reviews":{}` on all 22 cards in 日本語 that carry the key. So the
  *     decoded value is an object, `.map` throws and `.length` is undefined.
  *   * `interval` is Mochi's NEXT interval, not the preceding one: it equals
- *     due - date. It goes to reviews.next_interval_days, and interval_days —
- *     the interval that PRECEDED this review, which is what the backtest scores
- *     against — is the PREVIOUS record's `interval`. See the note on that
- *     column in schema.sql; reading Mochi's value as the preceding interval
- *     shifts the whole backtest by one review.
+ *     due - date. It goes to `reviews.next_scheduled_days`. Reading Mochi's
+ *     value as the preceding interval shifts the whole backtest by one review,
+ *     which is the trap the column names below close.
+ *
+ * THE TWO INTERVALS, both written here, both describing the gap BEFORE a review
+ * (schema.sql names them, and the word "interval" is no longer a column):
+ *
+ *   `elapsed_days`    MEASURED. The time between this review and the previous
+ *                     review of the same track, computed from the timestamps
+ *                     and nothing else. NULL only on a track's first review.
+ *                     This is ground truth and it is what the backtest scores
+ *                     against. Crucially it does NOT depend on Mochi having
+ *                     recorded an interval, so the 8,934 rows carrying no
+ *                     planned interval are still scorable.
+ *   `scheduled_days`  PLANNED. What Mochi had asked for over that same gap:
+ *                     the PRECEDING record's `interval`. NULL on a track's
+ *                     first review and wherever the predecessor carried no
+ *                     `interval`.
+ *
+ * The two disagree constantly — 22,226 reviews were taken more than 1.5 days
+ * late and 240 early — so neither substitutes for the other and every consumer
+ * must name which one it bucketed by. `review_interval_audit` re-derives both
+ * from the raw rows and must return no rows after an import.
  *   * every `date` and `due` is a whole second, and every `date` in the corpus
  *     is 15:00:00Z. See the timestamp rule below.
  *
@@ -134,13 +152,24 @@ export interface PlannedReview {
   readonly reviewedAt: string;
   readonly tzOffsetMinutes: number;
   readonly timeUnknown: 0 | 1;
+  /**
+   * The WHOLE recall signal. Grades are binary by design, not because Mochi
+   * happened to record only a boolean: Anki's four-button Again/Hard/Good/Easy
+   * was considered and rejected, so there is no `grade` here and no column for
+   * one in `reviews`. `gradeFor()` in src/schema/index.ts maps this to the only
+   * two FSRS ratings the application can ever produce.
+   */
   readonly remembered: 0 | 1;
-  /** Always null: Mochi records only the boolean, which is all of history. */
-  readonly grade: null;
-  /** The interval that PRECEDED this review: the previous record's `interval`. */
-  readonly intervalDays: number | null;
-  /** Mochi's own `interval` == due - date. */
-  readonly nextIntervalDays: number | null;
+  /**
+   * MEASURED days since the previous review of this track, from the timestamps
+   * alone. NULL only on a track's first review — never on account of Mochi
+   * having omitted an `interval`.
+   */
+  readonly elapsedDays: number | null;
+  /** PLANNED days for that same gap: the PRECEDING record's `interval`. */
+  readonly scheduledDays: number | null;
+  /** Mochi's own `interval` == due - date: what THIS review scheduled next. */
+  readonly nextScheduledDays: number | null;
   readonly dueAt: string | null;
   readonly durationMs: number | null;
   readonly rereview: 0 | 1;
@@ -155,7 +184,8 @@ export interface PlannedTrack {
   readonly needsRereview: 0 | 1;
   /** Mochi's schedule, carried as-is until stage 5 picks an algorithm. */
   readonly dueAt: string | null;
-  readonly intervalDays: number | null;
+  /** `card_tracks.scheduled_days`: the interval the schedule currently PLANS. */
+  readonly scheduledDays: number | null;
   readonly reps: number;
   readonly lapses: number;
   readonly lastReviewedAt: string | null;
@@ -219,7 +249,20 @@ export interface ImportReviewsResult {
   readonly reverseEnabled: number;
   /** Card ids whose reverse was forced on to keep their history. */
   readonly reverseForced: readonly string[];
-  readonly reviewsWithoutInterval: number;
+  /** Rows with no PLANNED interval: a track's first review, plus every review
+   *  whose predecessor carried no Mochi `interval`. */
+  readonly reviewsWithoutScheduled: number;
+  /** Rows with no MEASURED interval. Exactly the tracks' first reviews — there
+   *  is no other way to lack a predecessor. */
+  readonly reviewsWithoutElapsed: number;
+  /**
+   * The rows the two-column split rescues: no planned interval, but a measured
+   * one derived from the timestamps. Under the old single `interval_days` these
+   * were NULL and therefore unscorable and unbucketable; they are the reason
+   * the `> 365d` retention bucket is empty under `scheduled` and holds 3,009
+   * observations under `elapsed`.
+   */
+  readonly reviewsElapsedOnly: number;
   readonly reviewsWithoutDuration: number;
   readonly reviewsTimeUnknown: number;
   readonly firstReviewedAt: string | null;
@@ -251,6 +294,13 @@ function reviewRecords(value: unknown): readonly MochiReviewRecord[] {
 }
 
 // ─── instants ────────────────────────────────────────────────────────────────
+
+/**
+ * Milliseconds in a day. `elapsed_days` is a REAL count of days, and dividing
+ * by this is exactly what `julianday(a) - julianday(b)` computes in views.sql —
+ * so the stored column and the view that audits it cannot drift apart.
+ */
+const MS_PER_DAY = 86_400_000;
 
 function epochMs(value: MochiInstant): number {
   if (value instanceof Date) return value.getTime();
@@ -438,6 +488,7 @@ export function planCardTracks(
 
     const reviews: PlannedReview[] = [];
     let previousNextInterval: number | null = null;
+    let previousInstantMs: number | null = null;
     let lapses = 0;
 
     for (const { record, index } of indexed) {
@@ -448,8 +499,20 @@ export function planCardTracks(
       }
       const remembered: 0 | 1 = record["remembered?"] === true ? 1 : 0;
       if (remembered === 0) lapses += 1;
-      const nextIntervalDays = finiteOrNull(record.interval);
+      const nextScheduledDays = finiteOrNull(record.interval);
       const durationSeconds = finiteOrNull(record.duration);
+
+      // MEASURED. Derived from the two timestamps and nothing else, which is
+      // what makes it available on the 8,934 rows Mochi left without a planned
+      // interval. `indexed` is already sorted ascending, so this is never
+      // negative; an exact tie yields 0, the honest answer for the 6,996
+      // same-day reviews rather than NULL or a guess. The same subtraction is
+      // recomputed by review_gaps/review_interval_audit as julianday deltas
+      // over the stored rows, so the stored copy is checkable rather than
+      // trusted.
+      const instantMs = epochMs(record.date);
+      const elapsedDays =
+        previousInstantMs === null ? null : (instantMs - previousInstantMs) / MS_PER_DAY;
 
       reviews.push({
         importKey: `mochi:${card.id}:${kind}:${index}`,
@@ -457,19 +520,22 @@ export function planCardTracks(
         tzOffsetMinutes: offset,
         timeUnknown,
         remembered,
-        grade: null,
-        // NULL on the first review of a track, and on any review whose
-        // predecessor carried no `interval` — 8,934 such rows. Guessing would
-        // put fiction into the backtest's only independent variable.
-        intervalDays: previousNextInterval,
-        nextIntervalDays,
+        elapsedDays,
+        // PLANNED, and NULL on the first review of a track and on any review
+        // whose predecessor carried no `interval` — 8,934 such rows. Guessing
+        // would put fiction into a variable half the project buckets by. Those
+        // rows keep a real elapsedDays above, which is the point of storing
+        // both.
+        scheduledDays: previousNextInterval,
+        nextScheduledDays,
         dueAt: record.due == null ? null : formatInstant(record.due, offset),
         // Mochi's `duration` is seconds; the column is milliseconds.
         durationMs: durationSeconds === null ? null : Math.round(durationSeconds * 1000),
         rereview: isTrue(record["rereview?"]) ? 1 : 0,
         source: "mochi",
       });
-      previousNextInterval = nextIntervalDays;
+      previousNextInterval = nextScheduledDays;
+      previousInstantMs = instantMs;
     }
 
     const last = reviews.at(-1) ?? null;
@@ -484,7 +550,7 @@ export function planCardTracks(
       dormant: array.track === "reverse" && !enabled ? 1 : 0,
       needsRereview: needsRereviewFor(card, array.track),
       dueAt: last?.dueAt ?? null,
-      intervalDays: last?.nextIntervalDays ?? null,
+      scheduledDays: last?.nextScheduledDays ?? null,
       reps: reviews.length,
       lapses,
       lastReviewedAt: last?.reviewedAt ?? null,
@@ -500,14 +566,14 @@ export function planCardTracks(
 
 const INSERT_TRACK = `
 INSERT INTO card_tracks
-  (card_id, kind, dormant, needs_rereview, due_at, interval_days, reps, lapses,
+  (card_id, kind, dormant, needs_rereview, due_at, scheduled_days, reps, lapses,
    last_reviewed_at, scheduler, scheduler_state)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
 ON CONFLICT (card_id, kind) DO UPDATE SET
   dormant          = excluded.dormant,
   needs_rereview   = excluded.needs_rereview,
   due_at           = excluded.due_at,
-  interval_days    = excluded.interval_days,
+  scheduled_days   = excluded.scheduled_days,
   reps             = excluded.reps,
   lapses           = excluded.lapses,
   last_reviewed_at = excluded.last_reviewed_at,
@@ -517,10 +583,14 @@ RETURNING id`;
 
 // import_key makes this idempotent. DO NOTHING rather than DO UPDATE because
 // reviews is append-only and its BEFORE UPDATE trigger would abort the import.
+//
+// There is no `grade` column to write. Binary is the design (see PlannedReview.
+// remembered), so a 1-4 rating is not a thing this INSERT can ever grow.
 const INSERT_REVIEW = `
 INSERT INTO reviews
-  (track_id, reviewed_at, tz_offset_minutes, time_unknown, remembered, grade,
-   interval_days, next_interval_days, due_at, duration_ms, rereview, source, import_key)
+  (track_id, reviewed_at, tz_offset_minutes, time_unknown, remembered,
+   elapsed_days, scheduled_days, next_scheduled_days, due_at, duration_ms,
+   rereview, source, import_key)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (import_key) DO NOTHING`;
 
@@ -544,7 +614,7 @@ export function insertPlannedTracks(
       plan.dormant,
       plan.needsRereview,
       plan.dueAt,
-      plan.intervalDays,
+      plan.scheduledDays,
       plan.reps,
       plan.lapses,
       plan.lastReviewedAt,
@@ -561,9 +631,9 @@ export function insertPlannedTracks(
         review.tzOffsetMinutes,
         review.timeUnknown,
         review.remembered,
-        review.grade,
-        review.intervalDays,
-        review.nextIntervalDays,
+        review.elapsedDays,
+        review.scheduledDays,
+        review.nextScheduledDays,
         review.dueAt,
         review.durationMs,
         review.rereview,
@@ -675,7 +745,9 @@ export function importReviews(
   let passed = 0;
   let lapses = 0;
   let reviews = 0;
-  let withoutInterval = 0;
+  let withoutScheduled = 0;
+  let withoutElapsed = 0;
+  let elapsedOnly = 0;
   let withoutDuration = 0;
   let timeUnknown = 0;
   let first: string | null = null;
@@ -685,7 +757,9 @@ export function importReviews(
       reviews += 1;
       if (review.remembered === 1) passed += 1;
       else lapses += 1;
-      if (review.intervalDays === null) withoutInterval += 1;
+      if (review.scheduledDays === null) withoutScheduled += 1;
+      if (review.elapsedDays === null) withoutElapsed += 1;
+      if (review.scheduledDays === null && review.elapsedDays !== null) elapsedOnly += 1;
       if (review.durationMs === null) withoutDuration += 1;
       if (review.timeUnknown === 1) timeUnknown += 1;
       if (first === null || review.reviewedAt < first) first = review.reviewedAt;
@@ -704,7 +778,9 @@ export function importReviews(
     retention: reviews === 0 ? null : passed / reviews,
     reverseEnabled,
     reverseForced,
-    reviewsWithoutInterval: withoutInterval,
+    reviewsWithoutScheduled: withoutScheduled,
+    reviewsWithoutElapsed: withoutElapsed,
+    reviewsElapsedOnly: elapsedOnly,
     reviewsWithoutDuration: withoutDuration,
     reviewsTimeUnknown: timeUnknown,
     firstReviewedAt: first,

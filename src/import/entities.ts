@@ -15,6 +15,10 @@
  *
  *   * `content` is "" on 4,193 of 7,716 cards. The authored text is in
  *     `fields[].value`, which is why `cardFieldValues` is not an optional extra.
+ *     Of the cards where it is NOT empty, 3,159 are templated, and on those the
+ *     template decides every side — so that text has never been rendered by
+ *     Mochi and is not rendered by Hashigo either. It is discarded here and
+ *     reported in `MappingNotes.staleContentCardIds`; see that field.
  *   * TEMPLATE IDS COLLIDE ACROSS EXPORTS. `oiaISYb2` (単語) appears in both
  *     日本語 and 基本情報 — 11 template rows, 10 distinct templates. The two
  *     definitions are byte-identical, but the mapper must upsert by id rather
@@ -128,7 +132,54 @@ export interface MappingNotes {
   readonly unknownDeckCardIds: readonly string[];
   /** Field `type` values the schema's CHECK would reject; mapped to plain. */
   readonly unknownFieldTypes: readonly string[];
+  /**
+   * STALE PRE-TEMPLATE CONTENT, discarded rather than imported.
+   *
+   * 3,159 templated cards carry hand-written text in `content` that the
+   * template overrides and that Mochi has therefore never shown. Stage 3
+   * checked all 3,159 against what their template renders: none match. It is
+   * text from before the card was put on a template, left behind by Mochi and
+   * invisible ever since.
+   *
+   * Zach's decision is to discard it on import, so `cards.content` is '' on
+   * those cards and the card's real text is exactly its field values — which is
+   * also what makes `search_text` honest. Discarding silently is the part that
+   * would be wrong, so every id is listed here, the total size is counted, and
+   * a sample carries the actual text into the import report.
+   *
+   * RECOVERY: the export is not modified by an import, so the authoritative
+   * copy of all of it is still in each export's own `data.json` under these
+   * ids, and re-importing with the discard removed would bring it back. The
+   * sample exists to make a spot check possible without going back there.
+   */
+  readonly staleContentCardIds: readonly string[];
+  /**
+   * Total characters discarded, across every card in `staleContentCardIds`.
+   *
+   * CODE POINTS, not UTF-16 code units — `[...text].length`, not `text.length`.
+   * The corpus contains exactly one astral character in this text (U+1F347
+   * GRAPES, on card `lWDwKxNL`), so the two definitions differ by exactly 1 and
+   * the naive `.length` reports 79,176 where `tools/mochi.py` and every other
+   * measurement of the corpus report 79,175. Counting the way Python does keeps
+   * this number comparable with the oracle.
+   */
+  readonly staleContentChars: number;
+  /** The first `STALE_CONTENT_SAMPLE_SIZE` of them, with their text. */
+  readonly staleContentSample: readonly StaleContent[];
 }
+
+/** One discarded `content`, kept whole so the report can show it. */
+export interface StaleContent {
+  readonly cardId: string;
+  readonly templateId: string;
+  readonly content: string;
+}
+
+/**
+ * How many discarded values carry their text into `MappingNotes`. The ids are
+ * all kept regardless; this only bounds the size of the report itself.
+ */
+export const STALE_CONTENT_SAMPLE_SIZE = 20;
 
 export interface MappedExport {
   readonly decks: readonly DeckRow[];
@@ -141,9 +192,20 @@ export interface MappedExport {
 
 export interface MapOptions {
   /**
-   * SPEC "Settled": the six empty leaf decks — 副詞, 名詞, 形容動詞, 一段動詞,
-   * 形容詞, 五段動詞 — are dropped. Off by default so the mapper stays lossless
-   * and the caller makes that call deliberately; `emptyLeafDeckIds` names them.
+   * SPEC "Settled", and Zach's decision: the six empty leaf decks — 副詞, 名詞,
+   * 形容動詞, 一段動詞, 形容詞, 五段動詞 — are dropped. DEFAULT TRUE, so 45 decks
+   * become 39.
+   *
+   * Stage 1 originally defaulted this off, reasoning that a lossless import can
+   * be filtered later while a filtered one cannot be un-filtered. That argument
+   * is sound and it is not what was chosen: the decks hold no cards and no
+   * children, they are noise in every deck picker, and the export itself
+   * remains the lossless copy. Pass `false` to opt back in — nothing else about
+   * the import changes, and in particular no card or review moves, because the
+   * six decks contain none.
+   *
+   * `emptyLeafDeckIds` names exactly which decks the rule catches, computed
+   * from the data rather than from a hardcoded list of the six.
    */
   readonly dropEmptyLeafDecks?: boolean;
   /**
@@ -185,6 +247,7 @@ export function mapExports(
   const orphanFieldValues: string[] = [];
   const unknownDeckCardIds: string[] = [];
   const unknownFieldTypes = new Set<string>();
+  const staleContent: StaleContent[] = [];
 
   // Templates first: cards and decks both point at them.
   for (const root of roots) {
@@ -237,6 +300,7 @@ export function mapExports(
       resolvedDeckReverse,
       reverseForcedCardIds,
       unknownDeckCardIds,
+      staleContent,
     });
     if (!row) continue;
     cards.set(row.id, row);
@@ -257,8 +321,10 @@ export function mapExports(
     }
   }
 
+  // Default ON: `!== false` rather than `=== true`. The six empty leaf decks go
+  // unless the caller asks to keep them.
   let deckRows = orderDecks([...decks.values()]);
-  if (options.dropEmptyLeafDecks === true) {
+  if (options.dropEmptyLeafDecks !== false) {
     const drop = new Set(emptyLeafDeckIds(deckRows, [...cards.values()]));
     deckRows = deckRows.filter((deck) => !drop.has(deck.id));
   }
@@ -276,6 +342,10 @@ export function mapExports(
       orphanFieldValues,
       unknownDeckCardIds,
       unknownFieldTypes: [...unknownFieldTypes],
+      staleContentCardIds: staleContent.map((entry) => entry.cardId),
+      // Code points, not UTF-16 code units. See `staleContentChars`.
+      staleContentChars: staleContent.reduce((n, entry) => n + [...entry.content].length, 0),
+      staleContentSample: staleContent.slice(0, STALE_CONTENT_SAMPLE_SIZE),
     },
   };
 }
@@ -356,6 +426,7 @@ function mapCard(
     readonly resolvedDeckReverse: Map<string, "on" | "off">;
     readonly reverseForcedCardIds: string[];
     readonly unknownDeckCardIds: string[];
+    readonly staleContent: StaleContent[];
   },
 ): CardRow | null {
   const { card } = walked;
@@ -378,12 +449,24 @@ function mapCard(
     }
   }
 
+  // STALE PRE-TEMPLATE CONTENT. On a templated card the template decides every
+  // side, so a non-empty `content` is text Mochi has never rendered. Discard it
+  // and record it; see MappingNotes.staleContentCardIds for why, and for how to
+  // get it back. Template-less cards (1,140 of them) define their own sides
+  // with `---` in exactly this column, so they keep it untouched.
+  const templateId = asText(card["template-id"]) || null;
+  const rawContent = asText(card["content"]);
+  const stale = templateId !== null && rawContent !== "";
+  if (stale) {
+    context.staleContent.push({ cardId: id, templateId, content: rawContent });
+  }
+
   return {
     id,
     deck_id: deckId,
-    template_id: asText(card["template-id"]) || null,
+    template_id: templateId,
     name: asText(card["name"]),
-    content: asText(card["content"]),
+    content: stale ? "" : rawContent,
     reverse,
     pinned: card["pinned?"] === true ? 1 : 0,
     archived: card["archived?"] === true ? 1 : 0,

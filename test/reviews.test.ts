@@ -155,12 +155,13 @@ describe("the first review of a track", () => {
     const rows = reviewsOf("c", "forward");
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
-      interval_days: null,
-      next_interval_days: null,
+      elapsed_days: null,
+      scheduled_days: null,
+      next_scheduled_days: null,
       duration_ms: null,
       remembered: 1,
     });
-    expect(rows[1]).toMatchObject({ next_interval_days: 3, duration_ms: 71_000 });
+    expect(rows[1]).toMatchObject({ next_scheduled_days: 3, duration_ms: 71_000 });
   });
 
   it("tests for absence rather than for index 0 — 82 real reverse tracks carry an interval on their first record", () => {
@@ -175,10 +176,13 @@ describe("the first review of a track", () => {
       "on",
     );
     const reverse = plans.find((p) => p.kind === "reverse");
-    expect(reverse?.reviews[0]?.nextIntervalDays).toBe(5);
-    // Still no PRECEDING interval: there is no earlier review to take one from.
-    expect(reverse?.reviews[0]?.intervalDays).toBeNull();
-    expect(reverse?.reviews[1]?.intervalDays).toBe(5);
+    expect(reverse?.reviews[0]?.nextScheduledDays).toBe(5);
+    // Still no PRECEDING interval, planned or measured: there is no earlier
+    // review to take one from or to measure a gap against.
+    expect(reverse?.reviews[0]?.scheduledDays).toBeNull();
+    expect(reverse?.reviews[0]?.elapsedDays).toBeNull();
+    expect(reverse?.reviews[1]?.scheduledDays).toBe(5);
+    expect(reverse?.reviews[1]?.elapsedDays).toBe(5);
   });
 
   it("refuses a review record with no date rather than inventing one", () => {
@@ -213,19 +217,52 @@ describe("interval direction", () => {
     );
 
     const rows = reviewsOf("c", "forward").map((r) => ({
-      preceded: r["interval_days"],
-      scheduled: r["next_interval_days"],
+      elapsed: r["elapsed_days"],
+      planned: r["scheduled_days"],
+      next: r["next_scheduled_days"],
     }));
+    // Row 1 is the case the two-column split exists for: Mochi recorded no
+    // interval on record 0, so `planned` is NULL — but the timestamps still say
+    // the two reviews were the same day, so `elapsed` is 0 and the row stays
+    // scorable. 8,934 rows in the real corpus are exactly this shape.
     expect(rows).toEqual([
-      { preceded: null, scheduled: null },
-      { preceded: null, scheduled: 3 },
-      { preceded: 3, scheduled: 12 },
-      { preceded: 12, scheduled: 54 },
+      { elapsed: null, planned: null, next: null },
+      { elapsed: 0, planned: null, next: 3 },
+      { elapsed: 3, planned: 3, next: 12 },
+      { elapsed: 12, planned: 12, next: 54 },
     ]);
     // The track's own interval is the last one Mochi scheduled.
     expect(
-      db.prepare("SELECT interval_days FROM card_tracks WHERE card_id = 'c'").pluck().get(),
+      db.prepare("SELECT scheduled_days FROM card_tracks WHERE card_id = 'c'").pluck().get(),
     ).toBe(54);
+    // And the schema's own audit agrees with every number above, re-deriving
+    // both chains from the raw rows rather than trusting the stored copies.
+    expect(db.prepare("SELECT * FROM review_interval_audit").all()).toEqual([]);
+  });
+
+  it("measures elapsed from the timestamps even when Mochi planned something else", () => {
+    seedDeck("d");
+    seedCard("c", "d");
+    // Planned 3 days; actually taken 10 days later. Both facts are kept, and
+    // they disagree — which is the case for 22,226 reviews in the corpus.
+    importReviews(
+      db,
+      [
+        {
+          id: "c",
+          "deck-id": "d",
+          reviews: [
+            { date: T0, due: T0 + 3 * DAY, interval: 3, "remembered?": true },
+            { date: T0 + 10 * DAY, due: T0 + 40 * DAY, interval: 30, "remembered?": true },
+          ],
+        },
+      ],
+      { deckReverse: new Map([["d", "off"]]) },
+    );
+    const late = reviewsOf("c", "forward")[1] as Record<string, unknown>;
+    expect(late["scheduled_days"]).toBe(3);
+    expect(late["elapsed_days"]).toBe(10);
+    expect(db.prepare("SELECT * FROM review_interval_audit").all()).toEqual([]);
   });
 });
 
@@ -643,10 +680,39 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
       expect(result.tracksByKind).toEqual({ forward: 7_716, reverse: 5_676 });
       expect(result.tracks).toBe(13_392);
 
-      // No preceding interval for a track's first review, nor where the
-      // predecessor carried none. Never guessed.
-      expect(result.reviewsWithoutInterval).toBe(17_960);
+      // THE TWO INTERVALS, over the real corpus.
+      //
+      // PLANNED is missing on a track's first review and wherever the
+      // predecessor carried no Mochi `interval`. Never guessed.
+      expect(result.reviewsWithoutScheduled).toBe(17_960);
+      // MEASURED is missing on exactly the first review of each track that has
+      // any reviews at all — there is no other way to lack a predecessor. 13,392
+      // tracks exist; the ones with no reviews contribute no rows.
+      const tracksWithReviews = db
+        .prepare("SELECT count(*) FROM card_tracks WHERE reps > 0")
+        .pluck()
+        .get() as number;
+      expect(result.reviewsWithoutElapsed).toBe(tracksWithReviews);
+      // And the difference is the point of the split: 8,934 rows that have no
+      // planned interval but DO have a measured one, so they are scorable and
+      // bucketable where before they were NULL and silently dropped.
+      expect(result.reviewsElapsedOnly).toBe(17_960 - tracksWithReviews);
+      expect(result.reviewsElapsedOnly).toBe(8_934);
       expect(result.reviewsWithoutDuration).toBe(102_020 - 92_089);
+
+      // The stored columns agree with the same chains re-derived from the raw
+      // rows by SQL. This is what makes the stored copies checkable.
+      expect(db.prepare("SELECT * FROM review_interval_audit").all()).toEqual([]);
+      // The `> 365d` bucket is the direct evidence for lengthening intervals
+      // past a year: empty under PLANNED (Mochi capped at 365 until 2026-02-21)
+      // and real under MEASURED. Both are now on record.
+      const past365 = (view: string): number =>
+        db
+          .prepare(`SELECT coalesce(sum(reviews), 0) FROM ${view} WHERE interval_bucket = 8`)
+          .pluck()
+          .get() as number;
+      expect(past365("retention_by_scheduled_interval")).toBe(0);
+      expect(past365("retention_by_elapsed_interval")).toBe(3_009);
 
       expect(checkIntegrity(db)).toEqual([]);
 
@@ -662,12 +728,12 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
       console.log("study_totals", totals);
       // eslint-disable-next-line no-console
       console.log(
-        "retention_by_interval",
+        "retention_by_elapsed_interval",
         db
           .prepare(
             `SELECT interval_bucket_label AS bucket, reviews, lapses,
                     round(retention * 100, 2) AS retention_pct
-               FROM retention_by_interval ORDER BY interval_bucket`,
+               FROM retention_by_elapsed_interval ORDER BY interval_bucket`,
           )
           .all(),
       );

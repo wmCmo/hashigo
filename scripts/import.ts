@@ -14,10 +14,10 @@
  *   --no-blobs               Skip media and cached generations entirely.
  *   --no-text-generations    Media only; do not import the cached ai /
  *                            translate / furigana text.
- *   --drop-empty-leaf-decks  SPEC "Settled": drop 副詞, 名詞, 形容動詞, 一段動詞,
- *                            形容詞, 五段動詞. Off by default — the import stays
- *                            lossless and this can be applied later, whereas a
- *                            filtered import cannot be un-filtered.
+ *   --keep-empty-leaf-decks  Keep 副詞, 名詞, 形容動詞, 一段動詞, 形容詞, 五段動詞.
+ *                            They are DROPPED by default (SPEC "Settled"), so
+ *                            45 decks become 39. They hold no cards and no
+ *                            children, so nothing else moves either way.
  *   --reverse-default on|off Where the three-state `inherit` bottoms out.
  *                            Written to `settings` so views.sql agrees.
  *   --json                   Emit the report as JSON on stdout and nothing else.
@@ -44,7 +44,7 @@ interface Cli {
 }
 
 const USAGE = `usage: npm run import -- [--db <file>] [--no-blobs] [--inline-blobs]
-                        [--no-text-generations] [--drop-empty-leaf-decks]
+                        [--no-text-generations] [--keep-empty-leaf-decks]
                         [--reverse-default on|off] [--json] [--quiet]
                         <export-dir>...`;
 
@@ -54,7 +54,7 @@ function parseArgs(argv: readonly string[]): Cli {
   let json = false;
   let quiet = false;
   let blobs: false | { store?: "inline" | "path"; includeTextGenerations?: boolean } = {};
-  let dropEmptyLeafDecks = false;
+  let dropEmptyLeafDecks: boolean | undefined;
   let reverseDefault: "on" | "off" | undefined;
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -79,8 +79,8 @@ function parseArgs(argv: readonly string[]): Cli {
       case "--no-text-generations":
         if (blobs !== false) blobs = { ...blobs, includeTextGenerations: false };
         break;
-      case "--drop-empty-leaf-decks":
-        dropEmptyLeafDecks = true;
+      case "--keep-empty-leaf-decks":
+        dropEmptyLeafDecks = false;
         break;
       case "--reverse-default": {
         i += 1;
@@ -114,7 +114,7 @@ function parseArgs(argv: readonly string[]): Cli {
     quiet,
     options: {
       ...(blobs === false ? { blobs: false as const } : { blobs }),
-      dropEmptyLeafDecks,
+      ...(dropEmptyLeafDecks === undefined ? {} : { dropEmptyLeafDecks }),
       ...(reverseDefault === undefined ? {} : { reverseDefault }),
     },
   };
@@ -169,6 +169,11 @@ function summarise(db: Db, report: ImportReport): string {
     row("card tags", rows("SELECT count(*) FROM card_tags")),
     row("wiki-links", rows("SELECT count(*) FROM card_links")),
     row("  unresolved", rows("SELECT count(*) FROM card_links_resolved WHERE resolved = 0")),
+    // Real links into text this import discarded. See ImportLinksResult.
+    row(
+      "  in discarded content",
+      rows("SELECT count(*) FROM card_links_resolved WHERE text_present = 0"),
+    ),
     row("blobs", rows("SELECT count(*) FROM blobs")),
     row("blob refs", rows("SELECT count(*) FROM blob_refs")),
   ];
@@ -204,6 +209,16 @@ function summarise(db: Db, report: ImportReport): string {
   }
   if (report.structure.emptyLeafDecksDropped.length > 0) {
     lines.push(`dropped ${report.structure.emptyLeafDecksDropped.length} empty leaf deck(s)`);
+  }
+  // Discarded rather than imported, so it is said out loud on every run. The
+  // ids are in the JSON report and the text itself is still in the export.
+  if (report.notes.staleContentCardIds.length > 0) {
+    lines.push(
+      `discarded stale pre-template content on ${report.notes.staleContentCardIds.length} ` +
+        `card(s), ${report.notes.staleContentChars} chars — the template overrides it and ` +
+        `Mochi never showed it; recover from the export by card id (report.notes.` +
+        `staleContentCardIds, ${report.notes.staleContentSample.length} sampled with text)`,
+    );
   }
   if (report.structure.fieldValuesRemoved > 0) {
     lines.push(`pruned ${report.structure.fieldValuesRemoved} field value(s) the export no longer has`);

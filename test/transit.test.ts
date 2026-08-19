@@ -235,7 +235,7 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     expect([...clockTimes]).toEqual(["15:00:00.000Z"]);
   });
 
-  it("maps 45 decks with 3 roots, parents before children", () => {
+  it("maps 39 decks with 3 roots, parents before children — the six empty leaves are dropped by default", () => {
     const seen = new Set<string>();
     for (const row of mapped.decks) {
       if (row.parent_id !== null) expect(seen.has(row.parent_id)).toBe(true);
@@ -245,17 +245,32 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     const perExport = roots.map((root) => walkDecks(root).length);
     console.log("decks per export      ", perExport, "total", mapped.decks.length);
     console.log("deck roots            ", deckRoots.map((row) => row.name));
+    // The walk still sees all 45 in the export; the mapper is what drops six.
     expect(perExport).toEqual([18, 4, 23]);
-    expect(mapped.decks.length).toBe(45);
+    expect(perExport.reduce((a, b) => a + b, 0)).toBe(45);
+    expect(mapped.decks.length).toBe(39);
     expect(deckRoots.map((row) => row.name)).toEqual(["日本語", "English", "基本情報"]);
+    // …and asking for them back gives exactly 45 again, so the rule is a filter
+    // over the mapper's output and not a different walk.
+    expect(mapExports(roots, { dropEmptyLeafDecks: false }).decks.length).toBe(45);
   });
 
   it("identifies exactly the six empty leaf decks SPEC drops", () => {
-    const ids = new Set(emptyLeafDeckIds(mapped.decks, mapped.cards));
-    const names = mapped.decks.filter((row) => ids.has(row.id)).map((row) => row.name);
+    // Computed over the UNFILTERED mapping — the default output no longer
+    // contains them, so asking the filtered list which decks are empty leaves
+    // is a different (and empty) question.
+    const unfiltered = mapExports(roots, { dropEmptyLeafDecks: false });
+    const ids = new Set(emptyLeafDeckIds(unfiltered.decks, unfiltered.cards));
+    const names = unfiltered.decks.filter((row) => ids.has(row.id)).map((row) => row.name);
     console.log("empty leaf decks      ", names);
     expect(names).toEqual(["副詞", "名詞", "形容動詞", "一段動詞", "形容詞", "五段動詞"]);
-    expect(mapExports(roots, { dropEmptyLeafDecks: true }).decks.length).toBe(39);
+    expect(unfiltered.decks.length - names.length).toBe(39);
+    // The default drops them, and drops nothing else.
+    expect(mapped.decks.length).toBe(39);
+    expect(mapped.decks.filter((row) => ids.has(row.id))).toEqual([]);
+    // Not one card moves: the six hold none, which is the whole reason they go.
+    expect(mapped.cards.length).toBe(unfiltered.cards.length);
+    expect(mapped.cards.length).toBe(7_716);
   });
 
   it("maps 49 template fields, defaulting the 22 without a type to plain", () => {
@@ -315,7 +330,35 @@ describe.runIf(haveCorpus)("the real corpus", () => {
       "| field values", mapped.cardFieldValues.length,
       "| cards with authored field text", authored.size,
     );
-    expect(withContent).toBe(3523);
+    // 3,523 cards carry non-empty `content` in the export. 3,159 of them are
+    // TEMPLATED, and on a templated card the template decides every side — so
+    // that text has never been rendered by Mochi and is discarded on import
+    // (Zach's decision; see MappingNotes.staleContentCardIds). What is left is
+    // the 364 template-less cards, which really do author their sides here.
+    expect(withContent).toBe(364);
+    expect(mapped.notes.staleContentCardIds.length).toBe(3_159);
+    expect(withContent + mapped.notes.staleContentCardIds.length).toBe(3_523);
+    // Discarding is not silent: every id is reported, the size is counted, and
+    // a sample carries the text itself.
+    // 79,175 CODE POINTS, matching tools/mochi.py. The naive `.length` says
+    // 79,176: one card (lWDwKxNL) writes U+1F347 GRAPES, which is a surrogate
+    // pair in UTF-16 and one character everywhere else.
+    expect(mapped.notes.staleContentChars).toBe(79_175);
+    expect(mapped.notes.staleContentSample.length).toBe(20);
+    expect(new Set(mapped.notes.staleContentCardIds).size).toBe(3_159);
+    // Every discarded card is templated, and none of them lost anything else:
+    // the text is still in the export, and the card keeps its field values.
+    const staleIds = new Set(mapped.notes.staleContentCardIds);
+    expect(mapped.cards.filter((c) => staleIds.has(c.id) && c.template_id === null)).toEqual([]);
+    expect(mapped.cards.filter((c) => staleIds.has(c.id) && c.content !== "").length).toBe(0);
+    for (const entry of mapped.notes.staleContentSample) {
+      expect(entry.content.length).toBeGreaterThan(0);
+      expect(staleIds.has(entry.cardId)).toBe(true);
+    }
+    // Keeping it is one option away, which is what makes the discard recoverable
+    // without going back to data.json.
+    const kept = mapExports(roots, { dropEmptyLeafDecks: false });
+    expect(kept.cards.filter((card) => card.content.trim() !== "").length).toBe(364);
     expect(mapped.cardFieldValues.length).toBe(22319);
     expect(authored.size).toBeGreaterThan(7000);
     // cardText sees both surfaces; content alone sees almost nothing. 16 cards

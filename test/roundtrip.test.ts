@@ -12,6 +12,7 @@ import {
 } from "../src/import/index.js";
 import { asRecord, asRecords, asText, isRecord, type MochiRecord } from "../src/import/transit.js";
 import { walkCards, walkDecks } from "../src/import/transit.js";
+import { renderPlainTextParts } from "../src/text/index.js";
 
 /**
  * Stage 1 acceptance. Two jobs, and the second is the one that matters.
@@ -118,7 +119,28 @@ function fieldTexts(card: MochiRecord): (readonly [string, string])[] {
   return out;
 }
 
-const WIKI = /\[\[([^\]|]+)\|([^\]]+)\]\]/g;
+/**
+ * Every `[[...]]` occurrence, re-derived here independently of src/text so this
+ * file checks the importer rather than agreeing with it. Three forms are links:
+ *
+ *   [[display|target]]  piped          8,690
+ *   [[target]]          bare              46
+ *   [[|target]]         empty display      8
+ *                                     ------
+ *                                      8,744
+ *
+ * `[[display|]]` has no target and is NOT a link (0 in the corpus). The inner
+ * class excludes brackets, so one match cannot span two adjacent links.
+ */
+const WIKI = /\[\[([^[\]]*)\]\]/g;
+
+/** `[display, target]`, or null when the occurrence has no target. */
+function splitWikiLink(inner: string): readonly [string, string] | null {
+  const bar = inner.indexOf("|");
+  const display = bar === -1 ? "" : inner.slice(0, bar);
+  const target = bar === -1 ? inner : inner.slice(bar + 1);
+  return target === "" ? null : [display, target];
+}
 
 interface ExpectedLink {
   readonly to_card_id: string;
@@ -127,8 +149,21 @@ interface ExpectedLink {
   readonly ordinal: number;
 }
 
-/** Re-derive a card's links: content first, then each field, ordinal per scope. */
-function expectedLinks(card: MochiRecord): ExpectedLink[] {
+/**
+ * Re-derive a card's links: content first, then each field, ordinal per scope.
+ *
+ * `content` is read from the SOURCE, not from the database — the importer
+ * discards stale pre-template content, but it extracts the links before doing
+ * so, and a link that was authored there is still an edge.
+ *
+ * The bare and empty-display forms carry no display text, and the importer
+ * fills `display_text` from the TARGET CARD'S NAME. `resolveTargetName` is
+ * passed in so this helper does not need the whole corpus in scope.
+ */
+function expectedLinks(
+  card: MochiRecord,
+  resolveTargetName: (targetId: string) => string = () => "",
+): ExpectedLink[] {
   const out: ExpectedLink[] = [];
   const scopes: (readonly [string | null, string])[] = [
     [null, asText(card["content"])],
@@ -137,9 +172,12 @@ function expectedLinks(card: MochiRecord): ExpectedLink[] {
   for (const [fieldId, text] of scopes) {
     let ordinal = 0;
     for (const match of text.matchAll(WIKI)) {
+      const split = splitWikiLink(match[1] as string);
+      if (split === null) continue;
+      const [display, target] = split;
       out.push({
-        to_card_id: match[2] as string,
-        display_text: match[1] as string,
+        to_card_id: target,
+        display_text: display === "" ? resolveTargetName(target) : display,
         field_id: fieldId,
         ordinal: ordinal++,
       });
@@ -155,9 +193,9 @@ interface ExpectedReview {
   readonly tz_offset_minutes: number;
   readonly time_unknown: number;
   readonly remembered: number;
-  readonly grade: null;
-  readonly interval_days: number | null;
-  readonly next_interval_days: number | null;
+  readonly elapsed_days: number | null;
+  readonly scheduled_days: number | null;
+  readonly next_scheduled_days: number | null;
   readonly due_at: string | null;
   readonly duration_ms: number | null;
   readonly rereview: number;
@@ -165,12 +203,22 @@ interface ExpectedReview {
 }
 
 /**
- * Re-derive every review row for one card.
+ * Re-derive every review row for one card, from the raw export, independently
+ * of the importer.
  *
- * `interval_days` is the interval that PRECEDED the review, which Mochi does not
- * store: it is the previous record's `interval`, NULL on a track's first review
- * and on any review whose predecessor carried none. Computed here in source
- * order, which the caller separately asserts is chronological.
+ * BOTH intervals describe the gap BEFORE a review, and Mochi stores neither:
+ *
+ *   `scheduled_days`  PLANNED — the previous record's `interval`, NULL on a
+ *                     track's first review and wherever the predecessor carried
+ *                     none.
+ *   `elapsed_days`    MEASURED — the difference between this record's `date`
+ *                     and the previous one's, NULL only on the first review.
+ *                     This is what stays available on the 8,934 rows that have
+ *                     no planned interval.
+ *
+ * There is no `grade`: grades are binary by design, and `remembered` is the
+ * whole signal. Computed here in source order, which the caller separately
+ * asserts is chronological.
  */
 function expectedReviews(card: MochiRecord): ExpectedReview[] {
   const cardId = asText(card["id"]);
@@ -178,6 +226,7 @@ function expectedReviews(card: MochiRecord): ExpectedReview[] {
   for (const array of ARRAYS) {
     const records = asRecords(card[array.key]);
     let previousInterval: number | null = null;
+    let previousDate: number | null = null;
     records.forEach((record, index) => {
       const date = instantMillis(record["date"]);
       const due = instantMillis(record["due"]);
@@ -190,15 +239,17 @@ function expectedReviews(card: MochiRecord): ExpectedReview[] {
         tz_offset_minutes: OFFSET_MINUTES,
         time_unknown: 1,
         remembered: record["remembered?"] === true ? 1 : 0,
-        grade: null,
-        interval_days: previousInterval,
-        next_interval_days: nextInterval,
+        elapsed_days:
+          previousDate === null ? null : ((date as number) - previousDate) / 86_400_000,
+        scheduled_days: previousInterval,
+        next_scheduled_days: nextInterval,
         due_at: due === null ? null : atOffset(due, OFFSET_MINUTES),
         duration_ms: durationSeconds === null ? null : Math.round(durationSeconds * 1000),
         rereview: record["rereview?"] === true ? 1 : 0,
         source: "mochi",
       });
       previousInterval = nextInterval;
+      previousDate = date as number;
     });
   }
   return out;
@@ -211,6 +262,14 @@ let sources: ImportSource[];
 let report: ImportReport;
 /** Every card in the corpus, by id, straight off the decoded export. */
 const byId = new Map<string, SourceCard>();
+
+/**
+ * The target card's `name`, for the bare and empty-display link forms. Reads
+ * the decoded source, not the database, so it is an independent derivation.
+ */
+function targetName(targetId: string): string {
+  return asText(byId.get(targetId)?.card["name"]);
+}
 
 function count(sql: string, ...params: readonly unknown[]): number {
   return db.prepare(sql).pluck().get(...params) as number;
@@ -242,7 +301,9 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
   it("lands every oracle number", () => {
     // ── cards, decks, templates, fields
     expect(count("SELECT count(*) FROM cards")).toBe(7_716);
-    expect(count("SELECT count(*) FROM decks")).toBe(45);
+    // 39, not 45: the six empty leaf decks are dropped by default. No card or
+    // review moves — they hold none, which is why they qualify.
+    expect(count("SELECT count(*) FROM decks")).toBe(39);
     expect(count("SELECT count(*) FROM card_field_values")).toBe(22_319);
     expect(count("SELECT count(*) FROM template_fields")).toBe(41);
 
@@ -311,9 +372,71 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
     ).toEqual([]);
 
     // ── wiki-links
-    expect(count("SELECT count(*) FROM card_links")).toBe(8_690);
+    // 8,744, not 8,690: the piped form is 8,690 and src/text also recognises the
+    // bare `[[card-id]]` (46) and empty-display `[[|card-id]]` (8) forms, which
+    // an earlier piped-only parser dropped. tools/mochi.py counts only the piped
+    // form, so this is the one place the database is deliberately AHEAD of the
+    // Python oracle. All 54 resolve.
+    expect(count("SELECT count(*) FROM card_links")).toBe(8_744);
+    // Still 18 unresolved: every one of the 54 recovered links resolves, so
+    // widening the grammar added edges without adding breakage.
     expect(count("SELECT count(*) FROM card_links_resolved WHERE resolved = 0")).toBe(18);
-    expect(count("SELECT count(DISTINCT from_card_id) FROM card_links")).toBe(4_323);
+
+    // ── the rows whose SOURCE text is not in the database ────────────────────
+    // Links are parsed from the export, which still has the stale pre-template
+    // `content` this importer discards. 889 rows on 510 cards therefore claim
+    // to live in `cards.content` while `cards.content` is now ''. Keeping them
+    // was already a deliberate, tested decision (see the stale-content test
+    // below); what was missing was any way for a CONSUMER to tell — a backlink
+    // panel joining `card_links` had no column saying "this one points at text
+    // that is gone". `card_links_resolved.text_present` and
+    // `ImportLinksResult.inDiscardedContent` are that answer, and this is where
+    // the two agree with each other and with the stale-content report.
+    expect(count("SELECT count(*) FROM card_links_resolved WHERE text_present = 0")).toBe(889);
+    expect(report.links.inDiscardedContent).toBe(889);
+    const ghostCards = db
+      .prepare("SELECT DISTINCT from_card_id FROM card_links_resolved WHERE text_present = 0")
+      .pluck()
+      .all() as string[];
+    expect(ghostCards.length).toBe(510);
+    const discarded = new Set(report.notes.staleContentCardIds);
+    expect(ghostCards.filter((id) => !discarded.has(id))).toEqual([]);
+    // The inverse has to hold too, or `text_present` is just a synonym for
+    // "content is empty": every OTHER row's text really is in the database.
+    expect(
+      count(
+        `SELECT count(*) FROM card_links_resolved r
+          WHERE r.text_present = 1
+            AND NOT EXISTS (
+              SELECT 1 FROM cards c WHERE c.id = r.from_card_id
+                AND (r.field_id IS NULL AND instr(c.content, r.to_card_id) > 0))
+            AND NOT EXISTS (
+              SELECT 1 FROM card_field_values v
+               WHERE v.card_id = r.from_card_id AND v.field_id = r.field_id
+                 AND instr(v.value, r.to_card_id) > 0)`,
+      ),
+    ).toBe(0);
+    // 4,335 linking cards, not 4,323: 12 cards whose ONLY links were bare or
+    // empty-display had no rows at all before. Cross-checked against the source
+    // rather than trusted as a constant.
+    expect(count("SELECT count(DISTINCT from_card_id) FROM card_links")).toBe(4_335);
+    const sourceLinking = new Set(
+      [...byId.values()]
+        .filter(({ card }) => expectedLinks(card).length > 0)
+        .map(({ card }) => asText(card["id"])),
+    );
+    expect(sourceLinking.size).toBe(4_335);
+    // The literal regex the piped-only importer used, kept here so the 12 is
+    // derived rather than asserted: display and target both one-or-more, so
+    // neither `[[target]]` nor `[[|target]]` can match it.
+    const PIPED_ONLY = /\[\[[^\]|]+\|[^\]]+\]\]/;
+    const pipedOnly = [...byId.values()].filter(({ card }) =>
+      [asText(card["content"]), ...fieldTexts(card).map(([, text]) => text)].some((text) =>
+        PIPED_ONLY.test(text),
+      ),
+    ).length;
+    expect(pipedOnly).toBe(4_323);
+    expect(sourceLinking.size - pipedOnly).toBe(12);
 
     // ── blobs: 10,887 live attachments, 8,958 tombstones, and the tombstones
     //    are provably absent rather than merely uncounted.
@@ -438,6 +561,9 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
       expect(counts.unchanged).toBeGreaterThan(0);
     }
     expect(again.structure.fieldValuesRemoved).toBe(0);
+    // search_text is derived, so it is the easiest column to rewrite by
+    // accident — and rewriting it re-runs the FTS trigger over all 7,716 cards.
+    expect(again.structure.searchTextWritten).toBe(0);
     // reviews is append-only and keyed on import_key: zero new rows.
     expect(again.reviews.reviews).toBe(0);
     expect(again.reviews.tracks).toBe(13_392);
@@ -635,18 +761,24 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
           if (!expected.has(fieldId)) wrong.push({ card: id, fieldId, extraneous: true });
         }
 
-        // The card's own columns, while we are here.
+        // The card's own columns, while we are here. `content` is the one
+        // column that is NOT byte-identical to the export: on a templated card
+        // the template decides every side, so a non-empty `content` there is
+        // stale pre-template text Mochi never rendered, and it is discarded on
+        // import. Template-less cards keep theirs verbatim.
+        const templateId = asText(card["template-id"]) || null;
+        const rawContent = asText(card["content"]);
         const row = db
           .prepare("SELECT name, content, archived, pinned, pos, template_id FROM cards WHERE id = ?")
           .get(id) as Record<string, unknown>;
         expect({ id, ...row }).toEqual({
           id,
           name: asText(card["name"]),
-          content: asText(card["content"]),
+          content: templateId !== null ? "" : rawContent,
           archived: card["archived?"] === true ? 1 : 0,
           pinned: card["pinned?"] === true ? 1 : 0,
           pos: asText(card["pos"]),
-          template_id: asText(card["template-id"]) || null,
+          template_id: templateId,
         });
       }
 
@@ -682,8 +814,8 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
     it("has every review record byte-identical to the source, in both directions", () => {
       const read = db.prepare(
         `SELECT t.kind, r.import_key, r.reviewed_at, r.tz_offset_minutes, r.time_unknown,
-                r.remembered, r.grade, r.interval_days, r.next_interval_days, r.due_at,
-                r.duration_ms, r.rereview, r.source
+                r.remembered, r.elapsed_days, r.scheduled_days, r.next_scheduled_days,
+                r.due_at, r.duration_ms, r.rereview, r.source
            FROM reviews r JOIN card_tracks t ON t.id = r.track_id
           WHERE t.card_id = ?`,
       );
@@ -749,7 +881,9 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
         const { card } = byId.get(id) as SourceCard;
         const key = (link: ExpectedLink): string =>
           `${link.field_id ?? ""}${link.ordinal}`;
-        const expected = new Map(expectedLinks(card).map((link) => [key(link), link]));
+        const expected = new Map(
+          expectedLinks(card, targetName).map((link) => [key(link), link]),
+        );
         const actual = new Map(
           (read.all(id) as ExpectedLink[]).map((link) => [key(link), link]),
         );
@@ -777,43 +911,210 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
       // the total: the row count equals the number of [[...]] occurrences.
       let occurrences = 0;
       for (const { card } of byId.values()) occurrences += expectedLinks(card).length;
-      expect(occurrences).toBe(8_690);
+      expect(occurrences).toBe(8_744);
       expect(count("SELECT count(*) FROM card_links")).toBe(occurrences);
       // eslint-disable-next-line no-console
       console.log("links compared", compared, "| corpus occurrences", occurrences);
     }, 120_000);
   });
 
+  // ── 3b. the derived column, and the text that is deliberately NOT kept ─────
+
+  it("renders search_text for every card without touching a stored byte", () => {
+    // Maintained on all of them. NULL would mean "not maintained" and would
+    // silently fall the search index back to the raw text.
+    expect(count("SELECT count(*) FROM cards WHERE search_text IS NULL")).toBe(0);
+    expect(count("SELECT count(*) FROM cards")).toBe(7_716);
+    // 18 cards render to '' — all of them genuinely empty "Untitled card"
+    // stubs. '' is a different fact from NULL and both are representable.
+    // 16 have no field-value rows at all (the count SPEC quotes); the other 2
+    // have a single field value that is itself the empty string.
+    expect(count("SELECT count(*) FROM cards WHERE search_text = ''")).toBe(18);
+    expect(
+      count(
+        `SELECT count(*) FROM cards c WHERE c.search_text = ''
+           AND NOT EXISTS (SELECT 1 FROM card_field_values v WHERE v.card_id = c.id)`,
+      ),
+    ).toBe(16);
+    // 16 of the 18 are empty in the SOURCE too. In particular NONE is emptied
+    // by rendering: `renderPlainTextParts` is called without a `resolveName`,
+    // so a bare `[[card-id]]` contributes nothing to the body, and no card in
+    // the corpus depends on that text to be findable.
+    //
+    // The other 2 are the measured cost of discarding stale pre-template
+    // content: BvgOrDsX ("彙") and fFsjcZla ("往") are single-kanji stubs on
+    // template oiaISYb2 whose only text was that discarded `content` and which
+    // have no field values, so they now have nothing to index. Both are still
+    // named in report.notes.staleContentCardIds and both are still in the
+    // export. 2 of 3,159 — asserted so the number cannot grow unnoticed.
+    const empties = db
+      .prepare("SELECT id FROM cards WHERE search_text = '' ORDER BY id")
+      .pluck()
+      .all() as string[];
+    const emptiedByDiscard: string[] = [];
+    for (const id of empties) {
+      const { card } = byId.get(id) as SourceCard;
+      for (const [, text] of fieldTexts(card)) expect(text).toBe("");
+      if (asText(card["content"]) !== "") emptiedByDiscard.push(id);
+    }
+    expect(emptiedByDiscard).toEqual(["BvgOrDsX", "fFsjcZla"]);
+    for (const id of emptiedByDiscard) {
+      expect(report.notes.staleContentCardIds).toContain(id);
+    }
+
+    // The rendered form is exactly src/text's, over content plus every field
+    // value in export order. Recomputed here from the DATABASE's own stored
+    // values, so this checks the importer wrote what the renderer produces.
+    const rows = db
+      .prepare(
+        `SELECT c.id, c.content, c.search_text,
+                (SELECT group_concat(v.value, char(10))
+                   FROM card_field_values v WHERE v.card_id = c.id) AS values_joined
+           FROM cards c ORDER BY c.id`,
+      )
+      .all() as { id: string; content: string; search_text: string }[];
+    const readValues = db.prepare(
+      "SELECT value FROM card_field_values WHERE card_id = ? ORDER BY rowid",
+    );
+    let checked = 0;
+    const wrong: unknown[] = [];
+    for (const row of rows) {
+      const values = (readValues.all(row.id) as { value: string }[]).map((v) => v.value);
+      const expected = renderPlainTextParts([row.content, ...values]);
+      checked += 1;
+      if (row.search_text !== expected) {
+        wrong.push({ id: row.id, expected, actual: row.search_text });
+      }
+    }
+    expect(wrong).toEqual([]);
+    expect(checked).toBe(7_716);
+
+    // The two transforms it exists to perform, over the whole corpus.
+    expect(count("SELECT count(*) FROM cards WHERE search_text GLOB '*[[]][[]]*'")).toBe(0);
+    for (const mark of ["​", "‌", "‍", "‎", "﻿"]) {
+      expect(
+        count("SELECT count(*) FROM cards WHERE instr(search_text, ?) > 0", mark),
+      ).toBe(0);
+    }
+    // …and the STORED text still has every one of them. Rendering is a
+    // projection, not a migration.
+    expect(
+      count("SELECT count(*) FROM card_field_values WHERE instr(value, ?) > 0", "‎"),
+    ).toBeGreaterThan(0);
+
+    // The compound that motivated the whole column: two linked morphemes joined
+    // by U+200E index as one searchable word.
+    const compound = db
+      .prepare("SELECT search_text FROM cards WHERE id = '2ntjaTPJ'")
+      .pluck()
+      .get() as string | undefined;
+    if (compound !== undefined) expect(compound.includes("[[")).toBe(false);
+  }, 120_000);
+
+  it("discards stale pre-template content, and says exactly what it discarded", () => {
+    // 3,159 templated cards carried text the template overrides. It is gone
+    // from the database and reported in full.
+    expect(report.notes.staleContentCardIds.length).toBe(3_159);
+    expect(report.notes.staleContentChars).toBe(79_175);
+    expect(report.notes.staleContentSample.length).toBe(20);
+
+    // Not one templated card kept content, and no template-less card lost any.
+    expect(
+      count("SELECT count(*) FROM cards WHERE template_id IS NOT NULL AND content <> ''"),
+    ).toBe(0);
+    expect(
+      count("SELECT count(*) FROM cards WHERE template_id IS NULL AND content <> ''"),
+    ).toBe(364);
+
+    // Every reported id is a real card that really did carry content in the
+    // export, and really has none now — checked against the source, not the
+    // report's own bookkeeping.
+    const ids = new Set(report.notes.staleContentCardIds);
+    expect(ids.size).toBe(3_159);
+    const stored = db.prepare("SELECT content, template_id FROM cards WHERE id = ?");
+    let verified = 0;
+    for (const id of ids) {
+      const source = byId.get(id);
+      expect(source).toBeDefined();
+      expect(asText((source as SourceCard).card["content"])).not.toBe("");
+      const row = stored.get(id) as { content: string; template_id: string | null };
+      expect(row.content).toBe("");
+      expect(row.template_id).not.toBeNull();
+      verified += 1;
+    }
+    expect(verified).toBe(3_159);
+
+    // The sample carries the real text, so a spot check needs no data.json.
+    for (const entry of report.notes.staleContentSample) {
+      expect(ids.has(entry.cardId)).toBe(true);
+      expect(entry.content).toBe(asText((byId.get(entry.cardId) as SourceCard).card["content"]));
+    }
+
+    // Discarding it does NOT cost the card its links: links are extracted from
+    // the raw export, before the discard, and the card keeps its field values.
+    const withLinksInContent = [...ids].filter((id) =>
+      asText((byId.get(id) as SourceCard).card["content"]).includes("[["),
+    );
+    expect(withLinksInContent.length).toBe(510);
+
+    // 889 of the 8,744 links therefore live in text the database no longer
+    // stores. They are kept deliberately — pruning them would lose 10% of the
+    // graph and leave 25 targets with no inbound edge — but they are NOT
+    // re-derivable from `cards.content` any more, so a stage-10 "rebuild links
+    // from the card text" would silently delete them. Locked down here so that
+    // change has to be a decision. See the header of src/import/index.ts.
+    const contentScopedFromStale = count(
+      `SELECT count(*) FROM card_links l
+        WHERE l.field_id IS NULL
+          AND EXISTS (SELECT 1 FROM cards c
+                       WHERE c.id = l.from_card_id
+                         AND c.template_id IS NOT NULL AND c.content = '')`,
+    );
+    expect(contentScopedFromStale).toBe(889);
+    expect(count("SELECT count(*) FROM card_links WHERE field_id IS NULL")).toBe(1_019);
+    // eslint-disable-next-line no-console
+    console.log(
+      "stale content discarded", ids.size,
+      "cards |", report.notes.staleContentChars, "code points |",
+      "of which carried links in content:", withLinksInContent.length,
+    );
+  }, 120_000);
+
   // ── 4. the 45-vs-39 decision, tested both ways ─────────────────────────────
 
-  it("keeps all 45 decks by default and drops exactly SPEC's six on request", () => {
-    // Lossless is the default: stage 1's contract is round-trip fidelity, and a
-    // lossless import can be filtered later while the reverse is not true.
-    expect(count("SELECT count(*) FROM decks")).toBe(45);
-    expect(report.structure.emptyLeafDecksDropped).toEqual([]);
+  it("drops exactly SPEC's six empty leaf decks by default, and keeps all 45 on request", () => {
+    // 45 becomes 39. Zach's decision; the export remains the lossless copy.
+    expect(count("SELECT count(*) FROM decks")).toBe(39);
+    expect(report.structure.emptyLeafDecksDropped.length).toBe(6);
+    // SPEC "Settled": 副詞, 名詞, 形容動詞, 一段動詞, 形容詞, 五段動詞.
+    const names = (
+      report.structure.emptyLeafDecksDropped.map((id) => {
+        const source = sources
+          .flatMap((entry) => walkDecks(entry.root))
+          .find((walked) => asText(walked.deck["id"]) === id);
+        return asText(source?.deck["name"]);
+      }) as string[]
+    ).sort();
+    expect(names).toEqual(["一段動詞", "五段動詞", "副詞", "名詞", "形容動詞", "形容詞"].sort());
+    // Every card still has a deck: the six hold none, which is why they go.
+    expect(count("SELECT count(*) FROM cards")).toBe(7_716);
+    expect(count("SELECT count(*) FROM reviews")).toBe(102_020);
 
-    const filtered = openDatabase(MEMORY);
+    // …and the opt-back-in really does restore them, with nothing else moving.
+    const kept = openDatabase(MEMORY);
     try {
-      const dropped = importExports(filtered, sources, {
-        dropEmptyLeafDecks: true,
+      const unfiltered = importExports(kept, sources, {
+        dropEmptyLeafDecks: false,
         blobs: false,
       });
-      expect(filtered.prepare("SELECT count(*) FROM decks").pluck().get()).toBe(39);
-      // SPEC "Settled": 副詞, 名詞, 形容動詞, 一段動詞, 形容詞, 五段動詞.
-      const names = (
-        dropped.structure.emptyLeafDecksDropped.map((id) => {
-          const source = sources
-            .flatMap((entry) => walkDecks(entry.root))
-            .find((walked) => asText(walked.deck["id"]) === id);
-          return asText(source?.deck["name"]);
-        }) as string[]
-      ).sort();
-      expect(names).toEqual(["一段動詞", "五段動詞", "副詞", "名詞", "形容動詞", "形容詞"].sort());
-      // Every card still has a deck: the six hold none, which is why they go.
-      expect(filtered.prepare("SELECT count(*) FROM cards").pluck().get()).toBe(7_716);
-      expect(checkIntegrity(filtered)).toEqual([]);
+      const rows = (sql: string): number => kept.prepare(sql).pluck().get() as number;
+      expect(rows("SELECT count(*) FROM decks")).toBe(45);
+      expect(unfiltered.structure.emptyLeafDecksDropped).toEqual([]);
+      expect(rows("SELECT count(*) FROM cards")).toBe(7_716);
+      expect(rows("SELECT count(*) FROM reviews")).toBe(102_020);
+      expect(checkIntegrity(kept)).toEqual([]);
     } finally {
-      filtered.close();
+      kept.close();
     }
   }, 300_000);
 

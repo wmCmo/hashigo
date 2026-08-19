@@ -37,13 +37,30 @@
  * therefore pruned to what the export currently holds, per imported card. The
  * links importer does the same thing by deleting each card's rows first.
  *
+ * SEARCH TEXT is written here and nowhere else in the importer, in a pass after
+ * both cards and field values are in place — it is derived from all of them at
+ * once, so it cannot be written row by row. The transform itself is
+ * `renderPlainTextParts` in src/text/, which is the single definition of it and
+ * the same function the `@` picker and the reviewer will call; this file must
+ * not grow its own copy of that logic.
+ *
+ * LINKS ARE EXTRACTED FROM THE RAW EXPORT, not from the rows just written, and
+ * that matters because `entities.ts` discards stale pre-template `content`.
+ * 889 of the 8,744 wiki-links live in exactly that discarded text. They are
+ * KEPT — dropping them would lose 10% of the graph and leave 25 target cards
+ * with no inbound edge at all, which is a bigger loss than the discard itself
+ * and is not what was decided.
+ *
+ * The consequence is honest but needs saying: those 889 rows are no longer
+ * derivable from the stored text. Anything that rebuilds `card_links` from
+ * `cards.content` + `card_field_values` — the editor at stage 10, or a repair
+ * task — will delete them unless it is told not to. If that is not what Zach
+ * wants, the fix is to migrate the links (or the text) rather than to let a
+ * rebuild quietly prune them. Asserted in test/roundtrip.test.ts so a change
+ * here is deliberate.
+ *
  * WHAT THIS FILE DELIBERATELY DOES NOT DO
  *
- *   * Drop the six empty leaf decks. SPEC "Settled" says 副詞, 名詞, 形容動詞,
- *     一段動詞, 形容詞, 五段動詞 are dropped, and `dropEmptyLeafDecks` does it —
- *     but the default is off, because stage 1's contract is "round-trip
- *     losslessly" and a lossless import can be filtered later while a filtered
- *     import cannot be un-filtered. 45 decks in, 39 if you ask.
  *   * Invent timestamps. Decks, templates and fields carry none in the export,
  *     so their `created_at`/`updated_at` come from the column defaults; cards
  *     carry both and keep them.
@@ -55,6 +72,7 @@ import { basename } from "node:path";
 
 import { checkIntegrity, type Db } from "../db/index.js";
 import { SETTING_KEYS } from "../schema/index.js";
+import { renderPlainTextParts } from "../text/index.js";
 import {
   type BlobImportReport,
   type ImportBlobsOptions,
@@ -131,12 +149,18 @@ export interface StructureCounts {
   /** Stale values pruned because the export no longer carries that field. */
   readonly fieldValuesRemoved: number;
   /**
-   * Deck ids the export contains but the database does not — the six empty leaf
-   * decks when `dropEmptyLeafDecks` is on, and empty otherwise. Measured as the
-   * difference between the walk and the rows, so it reports what was actually
-   * lost rather than what a rule says should have been.
+   * Deck ids the export contains but the database does not — by default the six
+   * empty leaf decks, and empty when `dropEmptyLeafDecks: false` asks to keep
+   * them. Measured as the difference between the walk and the rows, so it
+   * reports what was actually lost rather than what a rule says should have
+   * been.
    */
   readonly emptyLeafDecksDropped: readonly string[];
+  /**
+   * Cards whose `search_text` this import wrote or changed. Zero on a re-import
+   * of an unchanged export, like every other count here.
+   */
+  readonly searchTextWritten: number;
 }
 
 export interface ImportReport {
@@ -376,6 +400,20 @@ ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value
  WHERE card_field_values.value IS NOT excluded.value`;
 
 /**
+ * `search_text` is DERIVED, never authored, so it is written by its own
+ * statement rather than as a column of UPSERT_CARD: it depends on the card's
+ * field values, which are not written until after every card row exists.
+ *
+ * The guard is what keeps a re-import writing zero pages. It also matters more
+ * here than elsewhere — `search_text` is in the `cards_fts_au` trigger's
+ * UPDATE OF list, so an unguarded write would rebuild all 7,716 FTS rows on
+ * every run. `IS NOT` rather than `<>` because NULL means "not maintained" and
+ * has to compare as a real value.
+ */
+const UPDATE_SEARCH_TEXT = `
+UPDATE cards SET search_text = ? WHERE id = ? AND search_text IS NOT ?`;
+
+/**
  * Write decks, templates, fields, cards and field values in one transaction: a
  * half-written card tree is not a state this function can produce, and the FTS
  * triggers fire per row either way.
@@ -407,6 +445,7 @@ function writeStructure(
   const cards = counter();
   const cardFieldValues = counter();
   let fieldValuesRemoved = 0;
+  let searchTextWritten = 0;
 
   db.transaction(() => {
     for (const row of mapped.templates) {
@@ -479,6 +518,7 @@ function writeStructure(
     }
 
     fieldValuesRemoved = pruneFieldValues(db, mapped.cardFieldValues);
+    searchTextWritten = writeSearchText(db, mapped);
   })();
 
   return {
@@ -489,7 +529,54 @@ function writeStructure(
     cardFieldValues: cardFieldValues.result(),
     fieldValuesRemoved,
     emptyLeafDecksDropped: decksDropped,
+    searchTextWritten,
   };
+}
+
+/**
+ * Populate `cards.search_text` — the rendered, searchable form of everything
+ * authored on a card.
+ *
+ * Runs last, and inside the same transaction, because it reads the whole card:
+ * `content` plus every field value. Both are in `mapped`, so this needs no
+ * query — the rows about to be in the database and the rows just written are
+ * the same rows.
+ *
+ * The transform is NOT implemented here. `renderPlainTextParts` in src/text/ is
+ * the single definition of it (wiki-link syntax reduced to its display text,
+ * zero-width and bidi marks removed, NFC), and the reviewer and the `@` picker
+ * call the same function. A second copy of that logic in the importer is how
+ * the index and the query box drift apart — the symptom being a card you can
+ * read but cannot find.
+ *
+ * NO `resolveName` IS PASSED, so a bare `[[card-id]]` contributes nothing to
+ * the indexed body rather than contributing the target card's name. That is
+ * deliberate: resolving would make one card's search text depend on another
+ * card's name, so renaming a card would silently stale every search_text
+ * pointing at it, and nothing in the schema or the editor owns that
+ * invalidation. 54 links corpus-wide are affected and every one of them is on a
+ * card with other text. Revisit when the editor exists to maintain it.
+ *
+ * Field values are concatenated in the export's own order, which is the order
+ * `mapExports` emits them in. Order only affects where line breaks fall in the
+ * indexed body, never which cards match.
+ */
+function writeSearchText(db: Db, mapped: MappedExport): number {
+  const update = db.prepare(UPDATE_SEARCH_TEXT);
+
+  const valuesByCard = new Map<string, string[]>();
+  for (const row of mapped.cardFieldValues) {
+    const list = valuesByCard.get(row.card_id);
+    if (list === undefined) valuesByCard.set(row.card_id, [row.value]);
+    else list.push(row.value);
+  }
+
+  let written = 0;
+  for (const card of mapped.cards) {
+    const text = renderPlainTextParts([card.content, ...(valuesByCard.get(card.id) ?? [])]);
+    written += update.run(text, card.id, text).changes;
+  }
+  return written;
 }
 
 /**
