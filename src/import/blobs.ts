@@ -82,9 +82,28 @@
  * entries carry, sometimes alongside a voice -- would merge keys that genuinely
  * produced different audio: collisions rise from 12 to 46.
  *
+ * WHERE THE PAYLOADS GO.  Into `src/blobs` -- the store owns the bytes, keyed
+ * by the address.  The database records address, size, sniffed mime and
+ * provenance and NOTHING about location; `blobs.path` is never written by this
+ * module, and the INSERT does not even name the column.
+ *
+ * This replaces the mode that shipped by accident.  `store: "path"` was the
+ * default, and it wrote `C:\DEV\WEB\hashigo\exports\日本語\c7EiABp0.mp3`
+ * into 10,816 rows: an absolute path, on one machine, into a gitignored
+ * directory of reference data that CLAUDE.md says is not source.  Moving the
+ * repo, renaming a folder or clearing exports/ destroyed every audio file in
+ * the app, and a phone could never have resolved one of them.
+ *
+ * The copy costs 657 MB once.  It is idempotent -- `BlobStore.write` on an
+ * address the store already holds is a no-op -- so an interrupted import
+ * resumes and a second full run copies zero bytes.  Measured on this corpus:
+ * 10,816 payloads / 625 MB written at ~30 MB/s on the first run, 0 bytes on
+ * the second.
+ *
  * Node only, like src/db: the importer and the tests.  The browser/OPFS build
  * gets bytes from a different place, which is why every filesystem touch goes
- * through the injectable `readMedia` hook.
+ * through the injectable `readMedia` hook and every payload write goes through
+ * the injectable `blobStore`.
  */
 
 import { createHash } from "node:crypto";
@@ -93,6 +112,7 @@ import { join } from "node:path";
 
 import type { Statement } from "better-sqlite3";
 
+import { defaultStoreRoot, openBlobStore, type BlobStore } from "../blobs/index.js";
 import type { Db } from "../db/index.js";
 import type { BlobKind } from "../schema/index.js";
 
@@ -333,10 +353,13 @@ function statements(db: Db): Statements {
   let cached = STATEMENTS.get(db);
   if (cached === undefined) {
     cached = {
+      // `path` is deliberately absent from this statement. It is the one
+      // column that could weld the database to a machine, and the importer is
+      // physically unable to write it: SQLite leaves it NULL.
       insertBlob: db.prepare(
         `INSERT OR IGNORE INTO blobs
-           (hash, kind, mime, byte_size, source_text, voice, lang, options, bytes, path)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (hash, kind, mime, byte_size, source_text, voice, lang, options, bytes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ),
       insertRef: db.prepare(
         `INSERT OR IGNORE INTO blob_refs (blob_hash, card_id, field_id, ref_key)
@@ -368,19 +391,20 @@ export interface PutBlobArgs {
 }
 
 /**
- * A blob whose payload lives outside the database. `hash` and `byteSize` MUST be
- * the real payload's — `contentAddress(bytes)` and `bytes.length` — because
- * nothing downstream can recompute them from a row that holds no bytes. This
- * exists so a 657 MB import does not have to keep every file in memory, or read
- * all of it twice, to write a correct address.
+ * A blob whose payload lives in the STORE rather than in the row. `hash` and
+ * `byteSize` MUST be the real payload's — `contentAddress(bytes)` and
+ * `bytes.length` — because nothing downstream can recompute them from a row
+ * that holds no bytes.
+ *
+ * There is no `path`, and that is the point: the payload's location is
+ * `addressPath(hash)` under whatever root the reader is holding. See
+ * `src/blobs/address.ts`.
  */
 export interface PutBlobRecordArgs {
   readonly hash: string;
   readonly kind: BlobKind;
   readonly mime: string;
   readonly byteSize: number;
-  /** Where the bytes are. */
-  readonly path: string;
   readonly identity?: Omit<GenerationIdentity, "kind">;
 }
 
@@ -398,7 +422,6 @@ function insertBlob(
   byteSize: number,
   identity: Omit<GenerationIdentity, "kind"> | undefined,
   bytes: Buffer | null,
-  path: string | null,
 ): PutBlobResult {
   const info = statements(db).insertBlob.run(
     hash,
@@ -410,7 +433,6 @@ function insertBlob(
     identity?.lang ?? null,
     identity?.options ?? "{}",
     bytes,
-    path,
   );
   return { hash, inserted: info.changes === 1 };
 }
@@ -428,23 +450,15 @@ export function putBlob(db: Db, args: PutBlobArgs): PutBlobResult {
     args.bytes.length,
     args.identity,
     Buffer.from(args.bytes),
-    null,
   );
 }
 
-/** As `putBlob`, but the payload stays on disk / in OPFS and only its address,
- *  size and location are recorded. */
+/**
+ * As `putBlob`, but the payload lives in the blob store and only its address,
+ * size, type and provenance are recorded. Ask the store for the bytes.
+ */
 export function putBlobRecord(db: Db, args: PutBlobRecordArgs): PutBlobResult {
-  return insertBlob(
-    db,
-    args.hash,
-    args.kind,
-    args.mime,
-    args.byteSize,
-    args.identity,
-    null,
-    args.path,
-  );
+  return insertBlob(db, args.hash, args.kind, args.mime, args.byteSize, args.identity, null);
 }
 
 export interface BlobRef {
@@ -575,14 +589,43 @@ export interface MochiMediaSource {
   readonly cards: readonly MochiMediaCard[];
 }
 
+/**
+ * Where a media payload ends up.
+ *
+ *   `content-addressed`  copied into the blob store, addressed by its sha256.
+ *                        THE DEFAULT, and the only mode that survives the repo
+ *                        moving. 657 MB for this corpus; idempotent, so a
+ *                        second run copies nothing.
+ *   `inline`             the bytes go in the row. Correct for small payloads
+ *                        and for the text generations, which always take this
+ *                        path; a 657 MB database for the media is not.
+ *   `address-only`       the row records address, size, mime and provenance and
+ *                        NOTHING holds the bytes. The honest mode for an
+ *                        in-memory database, which has nowhere durable to put
+ *                        them, and the automatic fallback when no store can be
+ *                        resolved. Reported as such, never assumed.
+ */
+export type BlobPayloadStore = "content-addressed" | "inline" | "address-only";
+
+/**
+ * `"path"` was the old default and is why 10,816 rows held
+ * `C:\DEV\WEB\hashigo\exports\...`. It is accepted so existing callers keep
+ * compiling and is treated as `content-addressed`; the report says so in
+ * `storeWarnings`. Nothing in this module can write a path any more.
+ */
+export type LegacyPayloadStore = BlobPayloadStore | "path";
+
 export interface ImportBlobsOptions {
+  /** Media payload destination. Default `content-addressed`. */
+  readonly store?: LegacyPayloadStore;
+  /** An open store to copy media into. Wins over `storeRoot`. */
+  readonly blobStore?: BlobStore;
   /**
-   * Media payloads: `path` records where the bytes are, `inline` copies them
-   * into the row. Default `path` — the corpus is 657 MB of mp3.
+   * Directory to open a store in. Default: `defaultStoreRoot(db.name)`, i.e.
+   * `<database>.blobs` beside the database file. An in-memory database has no
+   * file to derive from, so it falls back to `address-only`.
    */
-  readonly store?: "inline" | "path";
-  /** Where `store: "path"` says the bytes live. Default: the source file. */
-  readonly pathFor?: (hash: string, sourcePath: string) => string;
+  readonly storeRoot?: string;
   /** Injected so the OPFS build can supply bytes without a filesystem. */
   readonly readMedia?: (mediaDir: string, fileName: string) => Uint8Array | null;
   /**
@@ -590,10 +633,29 @@ export interface ImportBlobsOptions {
    * dictionary results, so those do not re-bill either. Default true.
    */
   readonly includeTextGenerations?: boolean;
+  /** Progress callback, every `n` files, for a CLI line on a 657 MB copy. */
+  readonly onMediaProgress?: (done: number, total: number, bytes: number) => void;
 }
 
 /** Every claim this importer makes about what it did. */
 export interface BlobImportReport {
+  /** Which mode actually ran, after option resolution and any fallback. */
+  readonly payloadStore: BlobPayloadStore;
+  /**
+   * Where the store is RIGHT NOW, for the operator's benefit. Reported, logged,
+   * and never written to the database — that is the whole point of this module.
+   */
+  readonly storeRoot: string | null;
+  /** Payloads copied into the store on this run. */
+  readonly storeFilesWritten: number;
+  /** Payloads the store already held: what makes a re-run cost nothing. */
+  readonly storeFilesPresent: number;
+  readonly storeBytesWritten: number;
+  readonly storeSeconds: number;
+  /** MB/s over `storeBytesWritten`; 0 when nothing was copied. */
+  readonly storeMbPerSecond: number;
+  /** Anything the operator should know about how the payloads were handled. */
+  readonly storeWarnings: readonly string[];
   readonly liveAttachments: number;
   readonly tombstonesSkipped: number;
   readonly filesMissing: number;
@@ -664,7 +726,6 @@ interface HashedFile {
   readonly size: number;
   readonly mediaDir: string;
   readonly fileName: string;
-  readonly sourcePath: string;
 }
 
 /** Mochi's generator buckets inside component-cache, mapped onto BLOB_KINDS. */
@@ -716,6 +777,73 @@ function identityFor(
   return { identity, key: generationKey(identity) };
 }
 
+interface ResolvedStore {
+  readonly store: BlobPayloadStore;
+  readonly blobStore: BlobStore | null;
+  /** Diagnostic only. Never reaches a column. */
+  readonly storeRoot: string | null;
+  readonly storeWarnings: readonly string[];
+}
+
+/**
+ * Decide where media payloads go, and say so out loud.
+ *
+ * Order: an explicit store, then an explicit root, then `<database>.blobs`
+ * beside the database file. An in-memory database has no file to derive from
+ * and nowhere durable to write, so it degrades to `address-only` WITH A
+ * WARNING rather than inventing a directory or throwing -- an ephemeral
+ * database gets an ephemeral store, and the rows are still correct because a
+ * row never claimed to know where the bytes were.
+ */
+function resolvePayloadStore(db: Db, options: ImportBlobsOptions): ResolvedStore {
+  const warnings: string[] = [];
+  let requested: BlobPayloadStore;
+  if (options.store === "path") {
+    // The mode that produced 10,816 absolute Windows paths. Honoured as the
+    // thing it was always trying to be.
+    requested = "content-addressed";
+    warnings.push(
+      'store: "path" is gone -- payloads are content-addressed. No location is ' +
+        "written to the database.",
+    );
+  } else {
+    requested = options.store ?? "content-addressed";
+  }
+
+  if (requested !== "content-addressed") {
+    return { store: requested, blobStore: null, storeRoot: null, storeWarnings: warnings };
+  }
+
+  if (options.blobStore !== undefined) {
+    return {
+      store: requested,
+      blobStore: options.blobStore,
+      storeRoot: options.blobStore.describe,
+      storeWarnings: warnings,
+    };
+  }
+
+  const root = options.storeRoot ?? derivedStoreRoot(db);
+  if (root === null) {
+    warnings.push(
+      "no blob store: this database is in memory, so there is nowhere durable to " +
+        "put 657 MB of payloads. Addresses, sizes, types and provenance are still " +
+        "recorded; pass storeRoot or blobStore to keep the bytes.",
+    );
+    return { store: "address-only", blobStore: null, storeRoot: null, storeWarnings: warnings };
+  }
+  const opened = openBlobStore(root);
+  return { store: requested, blobStore: opened, storeRoot: opened.root, storeWarnings: warnings };
+}
+
+/** `<database>.blobs`, or null when the database has no file behind it. */
+function derivedStoreRoot(db: Db): string | null {
+  const file = (db as { name?: unknown }).name;
+  if (typeof file !== "string" || file === "" || file === ":memory:") return null;
+  if (file.startsWith("file::memory:") || (db as { memory?: unknown }).memory === true) return null;
+  return defaultStoreRoot(file);
+}
+
 /**
  * Read every live attachment and cache entry across `sources` into the blob
  * store, skipping tombstones.
@@ -729,10 +857,9 @@ export function importBlobs(
   sources: readonly MochiMediaSource[],
   options: ImportBlobsOptions = {},
 ): BlobImportReport {
-  const store = options.store ?? "path";
   const readMedia = options.readMedia ?? defaultReadMedia;
-  const pathFor = options.pathFor ?? ((_hash, sourcePath) => sourcePath);
   const includeText = options.includeTextGenerations !== false;
+  const { store, blobStore, storeRoot, storeWarnings } = resolvePayloadStore(db, options);
 
   // ── phase 1: scan the records. No I/O, no writes.
   const live: LiveAttachment[] = [];
@@ -849,6 +976,10 @@ export function importBlobs(
   let bytesHashed = 0;
   let emptyFiles = 0;
   let mimeCorrected = 0;
+  let storeFilesWritten = 0;
+  let storeFilesPresent = 0;
+  let storeBytesWritten = 0;
+  const storeStarted = Date.now();
 
   for (const attachment of live) {
     const slot = slotOf(attachment.mediaDir, attachment.fileName);
@@ -867,13 +998,32 @@ export function importBlobs(
         size: bytes.length,
         mediaDir: attachment.mediaDir,
         fileName: attachment.fileName,
-        sourcePath: join(attachment.mediaDir, attachment.fileName),
       };
       hashed.set(slot, entry);
+      // Copy in the same pass that hashed: the bytes are already here, and
+      // reading 657 MB twice to save nothing would be the wrong trade. The
+      // write is idempotent, so an interrupted import resumes by re-reading
+      // and re-hashing but copying only what is genuinely absent -- and a
+      // second full run copies zero bytes.
+      if (blobStore !== null && store === "content-addressed") {
+        const written = blobStore.write(entry.hash, bytes);
+        if (written.written) {
+          storeFilesWritten += 1;
+          storeBytesWritten += written.bytes;
+        } else {
+          storeFilesPresent += 1;
+        }
+        options.onMediaProgress?.(
+          storeFilesWritten + storeFilesPresent,
+          live.length,
+          storeBytesWritten,
+        );
+      }
     }
     bump(sniffedMimes, entry.mime);
     if (entry.mime !== attachment.declaredType) mimeCorrected += 1;
   }
+  const storeSeconds = (Date.now() - storeStarted) / 1000;
 
   // ── phase 3: decide one identity per blob. The key -> blob relation is
   // many-to-many and a blob row holds one tuple, so keep the lexicographically
@@ -949,14 +1099,14 @@ export function importBlobs(
           ...(identity === undefined ? {} : { identity }),
         });
       } else {
-        // The address was computed from the real bytes in phase 2 and the bytes
-        // were then released; re-reading 657 MB to recompute it would be waste.
+        // Address, size, type and provenance. NO LOCATION: the payload is in
+        // the store under `addressPath(hash)`, wherever the store happens to
+        // be mounted when someone asks for it.
         result = putBlobRecord(db, {
           hash,
           kind,
           mime: entry.mime,
           byteSize: entry.size,
-          path: pathFor(hash, entry.sourcePath),
           ...(identity === undefined ? {} : { identity }),
         });
       }
@@ -1005,6 +1155,15 @@ export function importBlobs(
   })();
 
   return {
+    payloadStore: store,
+    storeRoot,
+    storeFilesWritten,
+    storeFilesPresent,
+    storeBytesWritten,
+    storeSeconds: Number(storeSeconds.toFixed(3)),
+    storeMbPerSecond:
+      storeSeconds > 0 ? Number((storeBytesWritten / 1024 / 1024 / storeSeconds).toFixed(1)) : 0,
+    storeWarnings,
     liveAttachments: live.length,
     tombstonesSkipped,
     filesMissing,
