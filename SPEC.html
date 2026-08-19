@@ -570,12 +570,19 @@
     is structurally valid can still be pedagogically broken.</p>
   </div>
 
-  <div class="note diagnosis">
-    <p class="note-h">Answer leak in reverse mode</p>
-    <p>Side 4 carries <code>[Jisho](https://jisho.org/search/&lt;&lt;Kanji&gt;&gt;)</code>.
-    The link text is safe, but <strong>the URL contains the answer</strong>. Any renderer
-    that exposes URLs on hover, long-press, or a status bar leaks the card before you've
-    recalled it. In reverse mode, defer link rendering to the answer side.</p>
+  <div class="note">
+    <p class="note-h">Answer leak in reverse mode — raised, and overruled by the user</p>
+    <p>Side 4 carries <code>[Jisho](https://jisho.org/search/&lt;&lt;Kanji&gt;&gt;)</code>,
+    so the link text is safe but the URL contains the answer. Drafts 1&ndash;7 called this
+    a leak and prescribed deferring link rendering to the answer side in reverse mode.</p>
+    <p><strong>Zach overruled that on 2026-08-20, and he is right.</strong> Render links
+    plainly, in place, on whatever side they are authored on &mdash; no direction-dependent
+    deferral and no defanged <code>href</code>. A URL is only exposed by a desktop status
+    bar on hover or by a deliberate long-press, there is no hover on a phone at all, and
+    in his words: <em>&ldquo;i never hover on url without any reason because i never wanna
+    know before i answer anyway.&rdquo;</em> The only actor this defends against is the
+    user deliberately spoiling himself, which is his business. Machinery deleted rather
+    than built.</p>
   </div>
 
   <h3>Reverse-review resolution</h3>
