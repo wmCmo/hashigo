@@ -35,7 +35,9 @@ CREATE TABLE settings (
 
 INSERT INTO settings (key, value) VALUES
   ('reverse.default',          'off'),   -- SPEC: reverse-review resolution table
-  ('target_retention.default', '0.90'),  -- SPEC: FSRS default; per-deck override
+  ('target_retention.default', '0.95'),  -- SETTLED by Zach 2026-08-19, not FSRS's
+                                         -- 0.90. Roughly ratifies his observed
+                                         -- 96.24%; per-deck override still applies.
   ('timezone.default',         'Asia/Tokyo');
 
 -- ---------------------------------------------------------------------------

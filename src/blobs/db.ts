@@ -278,10 +278,13 @@ export const LOCATION_PATTERN =
   //                     基本情報 formula cards use for division — 変動費率＝変動費 \ 売上,
   //                     and LaTeX \times — is not a path. Getting this wrong
   //                     flags 45 rows of the user's own arithmetic.
-  //   ^\/[^/\s]+\/      /home/zach/…, anchored at the start as it always was.
+  //   \/[^/\s]+\/[^/\s]  /home/zach/... at a BOUNDARY, not only at ^.
+  //                     An embedded POSIX path slipped the anchored
+  //                     version. Boundary still excludes https://host/p
+  //                     (that / follows a colon) and the division rows.
   //   file:\/\/         both file:// forms.
   //   exports           only with a separator against it.
-  /(?<![A-Za-z0-9])[A-Za-z]:[\\/]|\\\\[^\\/\s]|^\/[^/\s]+\/|file:\/\/|[\\/]exports|exports[\\/]/;
+  /(?<![A-Za-z0-9])[A-Za-z]:[\\/]|\\\\[^\\/\s]|(?:^|[\s"'(\[])\/[^/\s]+\/[^/\s]|file:\/\/|[\\/]exports|exports[\\/]/;
 
 /** Bytes of a BLOB-typed value decoded and scanned. A path is short and early. */
 export const LOCATION_SCAN_BYTES = 4096;

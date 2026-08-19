@@ -14,7 +14,7 @@
  */
 
 import { writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 import { openDatabase } from "../db/index.js";
 import { collect } from "./metrics.js";
@@ -103,7 +103,9 @@ function main(argv: readonly string[]): void {
   try {
     const started = Date.now();
     const data = collect(db, {
-      source: args.db,
+      // basename only: provenance is useful, the absolute path is not — and
+      // echoing it verbatim leaked a temp dir into a regenerated dashboard.
+      source: basename(args.db),
       comparisonYear: args.year,
       asOf: args.asOf,
     });

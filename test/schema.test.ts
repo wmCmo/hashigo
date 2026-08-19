@@ -604,8 +604,27 @@ describe("three-state reverse", () => {
     ).toEqual([
       { deck_id: "単語", target_retention: 0.85 },
       { deck_id: "敬語", target_retention: 0.85 },
-      { deck_id: "日本語", target_retention: 0.9 },
+      { deck_id: "日本語", target_retention: 0.95 },
     ]);
+  });
+
+  // Regression: the workspace default was seeded 0.90 (FSRS's default) while
+  // src/scheduler/policy.ts, the dashboard tile and SPEC all said 0.95. The
+  // resolved view therefore returned 0.9 for all 39 decks — a silent split-brain
+  // on a value Zach settled explicitly. Per BACKTEST.md that is 47-82 day
+  // intervals versus 125-197 day ones, so it is not cosmetic.
+  it("seeds the target retention Zach settled (0.95), not FSRS's 0.90", () => {
+    expect(
+      db.prepare("SELECT value FROM settings WHERE key = 'target_retention.default'").get(),
+    ).toEqual({ value: "0.95" });
+
+    // and a deck with no override of its own inherits exactly that
+    // (日本語 is the fixture's un-overridden root; 単語 carries 0.85 from above)
+    expect(
+      db
+        .prepare("SELECT target_retention FROM deck_target_retention_resolved WHERE deck_id = '日本語'")
+        .get(),
+    ).toEqual({ target_retention: 0.95 });
   });
 });
 
