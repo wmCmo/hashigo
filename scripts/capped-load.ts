@@ -28,7 +28,7 @@ import { loadHistory, measureRecentLoad, measureRelearningCost } from "../src/sc
 const dbArg = process.argv.indexOf("--db");
 const dbPath = dbArg > -1 ? (process.argv[dbArg + 1] as string) : "build/hashigo.db";
 
-const db = openDatabase(dbPath, { readonly: true });
+const db = openDatabase(dbPath, { readOnly: true });
 const tracks = loadHistory(db);
 const live = tracks.filter((t) => t.dormant === 0 && t.archived === 0);
 const relearningCost = measureRelearningCost(tracks);
