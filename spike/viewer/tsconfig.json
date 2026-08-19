@@ -1,0 +1,23 @@
+{
+  "//": "THROWAWAY (spike harness). The repo's tsconfig.json includes only src/, test/, scripts/ and *.config.ts, so `npm run typecheck` never looks at spike/. This file is this slice's own gate: npx tsc -p spike/viewer",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["vite/client", "node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["env.d.ts", "protocol.ts", "speech-bridge.ts", "main.ts", "cards.worker.ts", "make-viewer-db.ts"]
+}

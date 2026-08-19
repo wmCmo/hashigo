@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Hashigo card viewer — THROWAWAY inspection harness over src/render</title>
+    <style>
+      /*
+        THROWAWAY (spike harness). DELIBERATELY PLAIN.
+
+        Correct typography, legible spacing, and nothing else: no colour identity,
+        no motion, no shadows, no invented look. How a cloze should read before and
+        after reveal, and how the 漢字 canvas should feel under a finger, are Zach's
+        calls to make with the thing in his hand — an agent guessing at them would
+        just be a guess that is hard to argue with later. Every class the CARD uses
+        is `hashigo-*` and comes from src/render's CLASS export; every class this
+        HARNESS adds is `viewer-*`, so the two are never confused.
+
+        Tokens live on :root, redefined once under prefers-color-scheme: dark, so
+        both themes come out of one set of names.
+      */
+      :root {
+        color-scheme: light dark;
+        --bg: #fbfbfa;
+        --panel: #f2f2ef;
+        --fg: #16160f;
+        --dim: #66665e;
+        --rule: #d6d6cf;
+        --accent: #1d4ed8;
+        --good: #0a6b3c;
+        --bad: #a11616;
+        --warn: #8a5a00;
+        --mask: #cfcfc6;
+        --tap: 44px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14140f;
+          --panel: #1e1e18;
+          --fg: #ecece4;
+          --dim: #9c9c92;
+          --rule: #33332b;
+          --accent: #93b4ff;
+          --good: #56d68b;
+          --bad: #ff8f8f;
+          --warn: #e0b25c;
+          --mask: #3a3a31;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        padding: 0.75rem clamp(0.6rem, 2.5vw, 2rem) 5rem;
+        background: var(--bg);
+        color: var(--fg);
+        /* Japanese first-class: the deck, template and field names ARE Japanese. */
+        font: 16px/1.55 system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", "Hiragino Kaku Gothic ProN",
+          "Noto Sans JP", Meiryo, sans-serif;
+      }
+      h1 {
+        font-size: 1.05rem;
+        margin: 0 0 0.15rem;
+      }
+      p.sub {
+        color: var(--dim);
+        margin: 0 0 0.75rem;
+        font-size: 0.85rem;
+        max-width: 70ch;
+      }
+      .throwaway {
+        display: inline-block;
+        border: 1px solid var(--bad);
+        color: var(--bad);
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-weight: 700;
+        font-size: 0.72rem;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+      }
+      section.viewer-panel {
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        padding: 0.6rem 0.7rem;
+        margin: 0 0 0.7rem;
+        background: var(--panel);
+      }
+      section.viewer-panel > h2 {
+        font-size: 0.78rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin: 0 0 0.5rem;
+        font-weight: 700;
+      }
+      /* Controls. Pointer-agnostic and finger-sized; nothing is hover-only. */
+      button,
+      select,
+      input[type="text"] {
+        font: inherit;
+        min-height: var(--tap);
+        padding: 0.35rem 0.7rem;
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        background: var(--bg);
+        color: inherit;
+        touch-action: manipulation;
+      }
+      button {
+        cursor: pointer;
+      }
+      button[aria-pressed="true"] {
+        border-color: var(--accent);
+        color: var(--accent);
+        font-weight: 700;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      button:focus-visible,
+      select:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .viewer-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        align-items: center;
+      }
+      .viewer-bar + .viewer-bar {
+        margin-top: 0.4rem;
+      }
+      .viewer-bar label {
+        font-size: 0.8rem;
+        color: var(--dim);
+      }
+      select {
+        max-width: 100%;
+      }
+      #cardid {
+        width: 11ch;
+      }
+      dl.viewer-facts {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 0.1rem 0.8rem;
+        margin: 0;
+        font: 12.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+      }
+      dl.viewer-facts dt {
+        color: var(--dim);
+      }
+      /* On a phone a `max-content 1fr` grid squeezes the value into a column two
+         words wide. Stack instead: term above value, which is what the 412 px
+         viewport actually reads like. */
+      @media (max-width: 560px) {
+        dl.viewer-facts {
+          grid-template-columns: 1fr;
+          gap: 0 0;
+        }
+        dl.viewer-facts dd {
+          margin: 0 0 0.35rem;
+        }
+      }
+      dl.viewer-facts dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      table.viewer-table {
+        width: 100%;
+        border-collapse: collapse;
+        font: 12px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace;
+      }
+      .viewer-scroll {
+        overflow-x: auto;
+      }
+      table.viewer-table th,
+      table.viewer-table td {
+        border-bottom: 1px solid var(--rule);
+        padding: 0.2rem 0.4rem;
+        text-align: left;
+        vertical-align: top;
+        white-space: nowrap;
+      }
+      table.viewer-table th {
+        color: var(--dim);
+        font-weight: 600;
+      }
+      td.wrap,
+      td.wrap * {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      .good {
+        color: var(--good);
+      }
+      .bad {
+        color: var(--bad);
+        font-weight: 700;
+      }
+      .warn {
+        color: var(--warn);
+      }
+      .dim {
+        color: var(--dim);
+      }
+      pre#log {
+        font: 12px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        margin: 0;
+        max-height: 45vh;
+        overflow: auto;
+      }
+      /* The side stepper: chips big enough for a thumb. */
+      .viewer-chip {
+        min-width: var(--tap);
+        text-align: center;
+      }
+
+      /* ── the card itself ─────────────────────────────────────────────────── */
+      #stage {
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        padding: 0.4rem 0.8rem 0.9rem;
+        background: var(--bg);
+        margin-bottom: 0.7rem;
+      }
+      .hashigo-card {
+        font-size: 1.25rem;
+        line-height: 1.75;
+      }
+      .hashigo-side {
+        padding: 0.6rem 0;
+      }
+      .hashigo-side + .hashigo-side {
+        border-top: 1px solid var(--rule);
+      }
+      .hashigo-side[data-empty]::after {
+        content: "(this side resolved to nothing — see the diagnostics)";
+        display: block;
+        font-size: 0.8rem;
+        color: var(--dim);
+      }
+      .hashigo-card p,
+      .hashigo-card blockquote,
+      .hashigo-card h1,
+      .hashigo-card h2,
+      .hashigo-card h3,
+      .hashigo-card h4,
+      .hashigo-card h5,
+      .hashigo-card h6 {
+        margin: 0.35em 0;
+      }
+      .hashigo-card blockquote {
+        border-left: 3px solid var(--rule);
+        padding-left: 0.7em;
+        margin-left: 0;
+      }
+      .hashigo-card h1,
+      .hashigo-card h2,
+      .hashigo-card h3,
+      .hashigo-card h4 {
+        font-size: 1.1em;
+      }
+      .hashigo-rule {
+        border: 0;
+        border-top: 1px solid var(--rule);
+        margin: 0.6em 0;
+      }
+      .hashigo-code {
+        font: 0.85em/1.5 ui-monospace, Consolas, monospace;
+        background: var(--panel);
+        padding: 0.5em 0.6em;
+        border-radius: 4px;
+        overflow-x: auto;
+      }
+      .hashigo-card a {
+        color: var(--accent);
+      }
+      /* Locked decision 5: links render plainly, in place, on whatever side they
+         were authored on. No deferral, no defanging, no state. */
+      .hashigo-card ruby {
+        ruby-position: over;
+      }
+      .hashigo-reading:empty::before {
+        content: "—";
+        color: var(--dim);
+        font-size: 0.5em;
+      }
+      /* PROVISIONAL, and the most provisional thing here. */
+      .hashigo-cloze[data-state="hidden"] .hashigo-cloze-mask {
+        background: var(--mask);
+        border-radius: 3px;
+        padding: 0 0.35em;
+      }
+      .hashigo-cloze[data-state="revealed"] {
+        border-bottom: 2px solid var(--accent);
+      }
+      .hashigo-generator[data-state="pending"]:not(.hashigo-speech):not(.hashigo-furigana)::after {
+        content: "(generation pending — stage 9)";
+        font-size: 0.62em;
+        color: var(--dim);
+      }
+      .hashigo-audio,
+      .hashigo-video {
+        display: block;
+        width: 100%;
+        max-width: 22rem;
+        margin: 0.3em 0;
+      }
+      .hashigo-image {
+        max-width: 100%;
+        height: auto;
+      }
+      .hashigo-draw {
+        border: 1px dashed var(--rule);
+        border-radius: 4px;
+        display: block;
+        width: 100%;
+        /* A stroke must not scroll the page. */
+        touch-action: none;
+      }
+      .hashigo-missing-field,
+      .hashigo-unknown {
+        border-bottom: 1px dotted var(--bad);
+      }
+      /* Harness annotation on top of rendered DOM. Never `hashigo-*`. */
+      .viewer-audio-note {
+        display: block;
+        font: 12px/1.4 ui-monospace, Consolas, monospace;
+        color: var(--dim);
+        max-width: 22rem;
+      }
+      .viewer-audio-note[data-armed="locked"] {
+        color: var(--warn);
+      }
+      .viewer-audio-note[data-armed="attached"] {
+        color: var(--good);
+      }
+    </style>
+  </head>
+  <body>
+    <span class="throwaway">THROWAWAY — spike/viewer/ is disposable harness, not app code</span>
+    <h1>Hashigo card viewer — the renderer, in a browser, over the real OPFS database</h1>
+    <p class="sub">
+      Not the review UI: no grading, no queue, no scheduler — those are stage 7 and they need your
+      taste. This renders through <code>src/render</code> itself and exists to answer one question
+      you have to check yourself: <strong>audio must be silent when a side appears and must fire on
+      the reveal.</strong> The gate panel below reports both, every time.
+    </p>
+
+    <section class="viewer-panel">
+      <h2>Pick a card</h2>
+      <div class="viewer-bar">
+        <label for="deck">deck</label>
+        <select id="deck"></select>
+        <button id="random" type="button">Random in deck</button>
+        <button id="randomAudio" type="button">Random with audio</button>
+      </div>
+      <div class="viewer-bar">
+        <label for="card">card</label>
+        <select id="card"></select>
+      </div>
+      <div class="viewer-bar">
+        <label for="cardid">id</label>
+        <input id="cardid" type="text" inputmode="latin" autocapitalize="off" autocomplete="off"
+               spellcheck="false" placeholder="29thh3wW" />
+        <button id="load" type="button">Load id</button>
+      </div>
+      <div class="viewer-bar" id="demos"></div>
+    </section>
+
+    <section class="viewer-panel">
+      <h2>Direction and sides</h2>
+      <div class="viewer-bar">
+        <button id="forward" type="button" aria-pressed="true">Forward</button>
+        <button id="reverse" type="button" aria-pressed="false">Reverse</button>
+        <span id="order" class="dim"></span>
+      </div>
+      <div class="viewer-bar" id="chips"></div>
+      <div class="viewer-bar">
+        <button id="prev" type="button">&larr; Prev side</button>
+        <button id="next" type="button">Next side &rarr;</button>
+        <button id="reveal" type="button">Reveal this side</button>
+        <button id="conceal" type="button">Conceal all</button>
+      </div>
+      <div class="viewer-bar">
+        <button id="bridge" type="button" aria-pressed="true">Speech-field bridge: ON</button>
+        <span class="dim" id="bridgeNote"></span>
+      </div>
+    </section>
+
+    <div id="stage" aria-live="polite"></div>
+
+    <section class="viewer-panel">
+      <h2>Audio gate — the hard rule, measured on this card</h2>
+      <dl class="viewer-facts" id="gate"></dl>
+      <div class="viewer-scroll">
+        <table class="viewer-table" id="gateTable">
+          <thead>
+            <tr>
+              <th>side</th><th>el</th><th>src attr</th><th>currentSrc</th><th>network</th>
+              <th>ready</th><th>preload</th><th>autoplay</th><th>loop</th><th>played</th><th>clip</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="viewer-panel">
+      <h2>This card</h2>
+      <dl class="viewer-facts" id="cardFacts"></dl>
+    </section>
+
+    <section class="viewer-panel">
+      <h2>Render census and diagnostics</h2>
+      <dl class="viewer-facts" id="census"></dl>
+      <div class="viewer-scroll">
+        <table class="viewer-table" id="diagnostics">
+          <thead><tr><th>side</th><th>kind</th><th>detail</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="viewer-panel">
+      <h2>Mounts</h2>
+      <div class="viewer-scroll">
+        <table class="viewer-table" id="mounts">
+          <thead><tr><th>what</th><th>side</th><th>detail</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="viewer-panel">
+      <h2>Blobs this card references</h2>
+      <div class="viewer-scroll">
+        <table class="viewer-table" id="attachments">
+          <thead>
+            <tr><th>kind</th><th>bytes</th><th>ref_key</th><th>source_text</th><th>voice / lang</th>
+              <th>payload</th><th>matched to</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="viewer-panel">
+      <h2>Environment and oracle</h2>
+      <dl class="viewer-facts" id="facts"></dl>
+      <div class="viewer-bar">
+        <button id="reimport" type="button">Re-import both databases</button>
+        <button id="audit" type="button">Audit every audio element now</button>
+      </div>
+    </section>
+
+    <section class="viewer-panel">
+      <h2>Log</h2>
+      <pre id="log"></pre>
+    </section>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

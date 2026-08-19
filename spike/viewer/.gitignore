@@ -1,0 +1,5 @@
+# THROWAWAY generated input, never committed. 32 MiB of real mp3 payloads.
+# `npx vite-node spike/viewer/make-viewer-db.ts` rebuilds it from build/hashigo.db.
+*.db
+*.db-journal
+*.png
