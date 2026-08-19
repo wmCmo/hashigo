@@ -43,6 +43,10 @@
       "types": "./dist/text/index.d.ts",
       "default": "./dist/text/index.js"
     },
+    "./render": {
+      "types": "./dist/render/index.d.ts",
+      "default": "./dist/render/index.js"
+    },
     "./scheduler/algorithms": {
       "types": "./dist/scheduler/algorithms/index.d.ts",
       "default": "./dist/scheduler/algorithms/index.js"

@@ -1,0 +1,240 @@
+{
+  "generatedFrom": [
+    "日本語",
+    "English",
+    "基本情報"
+  ],
+  "cards": [
+    {
+      "why": "representative of 日本語/数字",
+      "export": "日本語",
+      "id": "007pK38v",
+      "templateId": "ibeOPZ1V",
+      "content": "",
+      "values": {
+        "name": "662,928,912",
+        "8T6pdCKh": "662928912"
+      }
+    },
+    {
+      "why": "representative of 基本情報/単語",
+      "export": "基本情報",
+      "id": "01HxiZut",
+      "templateId": "oiaISYb2",
+      "content": "",
+      "values": {
+        "name": "係数",
+        "4Oge7w2M": "false",
+        "yPvQCIRC": "[[係|6nBotwKj]]‎[[数|qCJ1Bph8]]",
+        "RRps0xEY": "1. coefficient​ #Mathematics \r\n2. coefficient; factor; proportional constant; modulus​ #Physics , #Chemistry"
+      }
+    },
+    {
+      "why": "representative of 基本情報/基本情報",
+      "export": "基本情報",
+      "id": "04rkyELR",
+      "templateId": "ycFF12Ld",
+      "content": "",
+      "values": {
+        "name": "{{MTTR}}={{故障時間}}の合計$\\div${{故障}}の回数"
+      }
+    },
+    {
+      "why": "U+200E between a PIPED link and a BARE one — both forms, adjacent",
+      "export": "日本語",
+      "id": "0u55CwvF",
+      "templateId": "oiaISYb2",
+      "content": "",
+      "values": {
+        "name": "引き取る",
+        "yPvQCIRC": "[[引き|10PQotxm]]‎[[PCG0OEs8]]",
+        "RRps0xEY": "1. to take into one's possession; to receive; to accept; to collect; to claim\n2. to take into one's care (e.g. person, pet); to take [[custody|GfHjMR2P]] of; to adopt\n3. to leave; to go away; to withdraw; to get out"
+      }
+    },
+    {
+      "why": "the task's own example: ～に[[引き|…]]U+200E[[換え|…]], Reading false",
+      "export": "日本語",
+      "id": "29thh3wW",
+      "templateId": "oiaISYb2",
+      "content": "",
+      "values": {
+        "name": "～に引き換え",
+        "4Oge7w2M": "false",
+        "yPvQCIRC": "～に[[引き|10PQotxm]]‎[[換え|C1p9g1mL]]",
+        "RRps0xEY": "in contrast to ...; unlike ...; while ...; whereas ..."
+      }
+    },
+    {
+      "why": "representative of English/Synonym",
+      "export": "English",
+      "id": "5Bg6jc3a",
+      "templateId": "8JhEkkMC",
+      "content": "",
+      "values": {
+        "name": "promote"
+      }
+    },
+    {
+      "why": "representative of 日本語/文法",
+      "export": "日本語",
+      "id": "5CzTi0JU",
+      "templateId": "HxKQLDx7",
+      "content": "",
+      "values": {
+        "name": "彼女は疲れていて、笑う{{すら}}も忘れていた。",
+        "kKQLXllK": "彼女は疲れていて、笑うすらも忘れていた。"
+      }
+    },
+    {
+      "why": "representative of 日本語/Polysemy",
+      "export": "日本語",
+      "id": "5VjbloxF",
+      "templateId": "NvtutXUt",
+      "content": "裁判にかける",
+      "values": {
+        "name": "裁判にかける"
+      }
+    },
+    {
+      "why": "representative of English/New Vocab",
+      "export": "English",
+      "id": "6bOaHfsA",
+      "templateId": "Q37a0W3E",
+      "content": "expulsion",
+      "values": {
+        "name": "expulsion",
+        "yPvQCIRC": "the action of forcing someone to leave an organization.",
+        "RRps0xEY": "his expulsion from the union",
+        "ixENyvSH": "the action of forcing someone to leave an organization.",
+        "HgZKuNXJ": "his expulsion from the union"
+      }
+    },
+    {
+      "why": "representative of 日本語/漢字",
+      "export": "日本語",
+      "id": "8mpbIWYV",
+      "templateId": "Dq5TYgr9",
+      "content": "密",
+      "values": {
+        "name": "密",
+        "ixENyvSH": "ミツ",
+        "HgZKuNXJ": "secrecy, density (pop), minuteness, carefulness",
+        "atw8SiGn": "ミツ",
+        "GroakJaf": "secrecy, density (pop), minuteness, carefullness"
+      }
+    },
+    {
+      "why": "単語 with Reading TRUE: side 1 shows Reference outright",
+      "export": "日本語",
+      "id": "ChtBgqLJ",
+      "templateId": "oiaISYb2",
+      "content": "",
+      "values": {
+        "name": "粗方",
+        "4Oge7w2M": "true",
+        "yPvQCIRC": "あらかた",
+        "RRps0xEY": "Mostly; almost; nearly [Focus on: The bulk/gross majority of a pile of tasks] [N1 Adverb]"
+      }
+    },
+    {
+      "why": "representative of 日本語/単語",
+      "export": "日本語",
+      "id": "Cle3rkdm",
+      "templateId": "oiaISYb2",
+      "content": "おっと\n---\n「わたしの」husband",
+      "values": {
+        "name": "夫",
+        "yPvQCIRC": "[[夫|LqP5GCkb]]",
+        "atw8SiGn": "おっと",
+        "GroakJaf": "husband, man",
+        "RRps0xEY": "husband"
+      }
+    },
+    {
+      "why": "the corpus's only audio attachment: ![…](uVQp0iMb.mp3)",
+      "export": "English",
+      "id": "CtDsQetR",
+      "templateId": "Q37a0W3E",
+      "content": "ephemeral\n---\nlasting for a very short time.",
+      "values": {
+        "name": "ephemeral",
+        "ixENyvSH": "lasting for a very short time.",
+        "HgZKuNXJ": "fashions are ephemeral: new ones regularly drive out the old![Copilot_Audio_20260122_194103.mp3](uVQp0iMb.mp3)"
+      }
+    },
+    {
+      "why": "an @media/ image reference inside a field value",
+      "export": "日本語",
+      "id": "Hz4r241V",
+      "templateId": "Dq5TYgr9",
+      "content": "",
+      "values": {
+        "name": "鼻",
+        "atw8SiGn": "はな\n\n\n![OIG (1).jpeg](@media/mxkKeDnY.jpeg)\n",
+        "GroakJaf": "nose, [[snout|bNxe8oTC]]"
+      }
+    },
+    {
+      "why": "the corpus’s only <span style=\"color:yellow\">",
+      "export": "日本語",
+      "id": "QnHb5aT2",
+      "templateId": "oiaISYb2",
+      "content": "",
+      "values": {
+        "4Oge7w2M": "false",
+        "name": "路線",
+        "yPvQCIRC": "[[路|qGLtu5I1]]‎[[線|duVkIiZl]]",
+        "RRps0xEY": "1. route (bus, train, air, etc.); line\n2. line (taken by a group, organization, etc.); <span style=\"color:yellow\">policy; course​</span>"
+      }
+    },
+    {
+      "why": "representative of 日本語/言葉",
+      "export": "日本語",
+      "id": "R7uL5cJs",
+      "templateId": "itmYDz2N",
+      "content": "",
+      "values": {
+        "name": "じきに",
+        "4Oge7w2M": "true",
+        "yPvQCIRC": "[[直|vv0wdobC]]に",
+        "RRps0xEY": "",
+        "vVc1BRUW": "1. immediately; right away; at once; soon; shortly; in a moment; before long​\n2. easily; readily"
+      }
+    },
+    {
+      "why": "representative of 日本語/敬語",
+      "export": "日本語",
+      "id": "ZVvviezQ",
+      "templateId": "ypBVG0UL",
+      "content": "",
+      "values": {
+        "name": "聞く",
+        "yPvQCIRC": "[[伺|zV7dc56s]]う",
+        "LFnlAwfX": "伺う",
+        "gDoy82gb": "[[zV7dc56s]]"
+      }
+    },
+    {
+      "why": "the corpus's only markdown table, on a TEMPLATE-LESS card",
+      "export": "基本情報",
+      "id": "ucxaOAxb",
+      "templateId": "",
+      "content": "2つの暗号方式の比較\n|暗号方式|暗号化の鍵|復号の鍵|処理速度|暗号化アルゴリズム|\n|---|---|---|---|---|\n|共通鍵暗号方式|{{共通鍵}}|{{共通鍵}}|{{速い}}|{{AES}}、DESなど|\n|公開鍵暗号方式|{{公開鍵}}|{{秘密鍵}}|{{遅い}}|{{RSA}}、楕円曲線暗号|",
+      "values": {
+        "name": ""
+      }
+    },
+    {
+      "why": "漢字: inline $…$ math, plus the <draw> canvas on side 2",
+      "export": "日本語",
+      "id": "urSsYURi",
+      "templateId": "Dq5TYgr9",
+      "content": "積",
+      "values": {
+        "name": "積",
+        "atw8SiGn": "セキ",
+        "GroakJaf": "volume, product ($x\\times y$), [[acreage|gqShV02E]], contents, pile up, stack, load, amass"
+      }
+    }
+  ]
+}
