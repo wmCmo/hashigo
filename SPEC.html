@@ -336,7 +336,7 @@
 <div class="wrap">
 
 <header class="masthead">
-  <p class="kicker">Build specification · draft 6</p>
+  <p class="kicker">Build specification · draft 7</p>
   <h1>Hashigo<span class="jp">梯子</span></h1>
   <p class="standfirst">A local-first replacement for Mochi, scoped to one person's
   Japanese study workflow — and to the four things Mochi gets wrong. Derived from
@@ -523,9 +523,9 @@
   <span class="mono">&lt;source type&gt;</span>.</p>
 </section>
 
-<section>
+<section id="sides">
   <p class="eyebrow">Sides &amp; direction</p>
-  <h2>Cards have four sides, not two</h2>
+  <h2>Side order is the exercise, not the layout</h2>
 
   <div class="prose">
     <p>Both 単語 and 漢字 are four-side templates; 言葉, 文法 and New Vocab are
@@ -542,6 +542,32 @@
     alternative — separate recognition and production templates, as Anki does with card
     types — is more machinery for the same outcome, and FSRS already treats the two
     directions as independent tracks, capturing that production is the harder skill.</p>
+  </div>
+
+  <div class="note diagnosis">
+    <p class="note-h">Read this before building the renderer or the review UI</p>
+    <p>Drafts 1–6 described the four sides as structure. <strong>They are a
+    produce-then-verify drill, and the ordering carries the pedagogy.</strong> Stated by
+    Zach 2026-08-19 and confirmed against the templates:</p>
+    <p><strong>単語.</strong> <code>Reading</code> is a <em>boolean</em>, and it switches
+    the scaffolding. Side 1 shows <code>Reference</code> outright when it is true; side 2
+    wraps it in a cloze when it is false, alongside
+    <code>{{&lt;furigana&gt;&lt;&lt;単語&gt;&gt;&lt;/furigana&gt;}}</code> — also a cloze
+    — and <code>&lt;&lt;Speech&gt;&gt;</code>. So the reading is <em>hidden</em>: he sees
+    the kanji, recalls whether each mora is high or low, says it aloud, and only then
+    reveals and compares against the audio. Side 3 repeats the exercise at sentence
+    length with <code>例文</code> + <code>Audio</code>.</p>
+    <p><strong>漢字.</strong> Identical shape: <code>Kanji</code> →
+    <code>&lt;draw&gt;</code> canvas → <code>Reading</code> → <code>Meaning</code>. Draw
+    it from memory, <em>then</em> see the answer. No audio on this template at all.</p>
+    <p><strong>The hard requirement that follows: audio must never autoplay when a side
+    appears.</strong> It fires on the cloze reveal, after production. Autoplay is the
+    default in most flashcard renderers and it silently destroys the entire exercise by
+    giving away the contour before he has produced it. This is a correctness
+    requirement, not a preference.</p>
+    <p>The same rule governs the reverse permutation: reversing a template must not
+    place a verification side before the production side it verifies. A permutation that
+    is structurally valid can still be pedagogically broken.</p>
   </div>
 
   <div class="note diagnosis">
@@ -968,21 +994,100 @@ graph LR
   <span class="mono">image-search</span> 18 · <span class="mono">dictionary</span> 10.
   Treat that cache as a 56,767-entry labelled test set, and seed from it on import rather
   than paying to regenerate any of it.</p>
+
+  <div class="note diagnosis">
+    <p class="note-h">The bare-word problem — this blocks accent generation on either provider</p>
+    <p>Deriving a pitch accent offline (<code>pyopenjtalk</code>, MIT, with Open JTalk
+    under Modified BSD) has one rule that the corpus violates almost everywhere:
+    <strong>run the analyser on the word with its particle attached, never on the bare
+    word.</strong> OpenJTalk does not encode 平板 as <code>0</code> the way NHK and OJAD
+    dictionaries do — it returns the mora count — so bare 尾高 and bare 平板 both come
+    back as <code>accent == mora_count</code> and are indistinguishable. 学生 returns
+    <code>accent=4, moras=4</code>; treating any non-zero accent as a downstep emits
+    <code>^がくせい!</code> and turns the commonest pattern in the language into 尾高
+    across most of the deck.</p>
+    <p>Measured on 日本語: of 3,860 <code>単語</code>/<code>言葉</code> values,
+    <strong>3,788 (98.1%) are bare, with no particle</strong>. 72 carry one. So the rule
+    cannot be applied as written. The fix is mechanical — append a probe particle
+    (<code>が</code>) to determine the accent type, then emit notation for the bare word
+    alone — but it has to be deliberate, and it must be tested against the 24,558
+    existing <span class="mono">speech</span> generations rather than assumed.</p>
+    <p><strong>And one question that is pedagogy, not engineering.</strong> Bare 尾高 and
+    bare 平板 are indistinguishable <em>acoustically</em> too, to a native listener as
+    much as to a parser, because 尾高's drop lands on the following particle. 花 and 鼻
+    alone sound identical; 花が and 鼻が do not. If drilling that distinction matters,
+    the audio itself needs a particle — which changes what gets spoken, not merely how it
+    is generated. The 72 particle-carrying entries may already be that workaround.</p>
+    <p>Two smaller consequences. 23 entries are grammar patterns carrying placeholders
+    (<code>～に越したことはない</code>, <code>...にも程がある</code>): these hold multiple
+    accent phrases, needing one <code>^</code> each, and the <code>～</code> and
+    <code>...</code> characters are presumably being read aloud in the current audio.
+    And the schema needs a <strong>manual accent-override field</strong> from the start —
+    dictionary-driven analysis will guess on rare words, proper nouns and novel
+    compounds, and retrofitting a field over 7,716 cards is worse than adding one now.
+    OJAD stays the manual ground-truth reference: its terms permit exactly that use and
+    forbid the bulk scraping that would otherwise be tempting.</p>
+  </div>
 </section>
 
 <section>
   <p class="eyebrow">Services</p>
-  <h2>Azure, settled by your own data</h2>
+  <h2>TTS is reopened, because the audio is for accent</h2>
+
+  <div class="note diagnosis">
+    <p class="note-h">Correction, 2026-08-19 — the requirement changed under this section</p>
+    <p>Drafts 1–6 treated audio as &ldquo;high-quality embeddable TTS&rdquo; and settled
+    on Azure because the export names Azure voices, so identical voices reproduce the
+    existing audio exactly. <strong>That reasoning answered the wrong question.</strong>
+    The audio exists for one purpose: <strong>高低アクセント shadowing</strong>. Zach
+    looks at the kanji, recalls whether each mora is high or low, says it aloud, and
+    only then reveals the reading and listens. See
+    <a href="#sides">Sides &amp; direction</a> — the template side order is that
+    exercise, not layout.</p>
+    <p>Which inverts the Azure argument. The 4,055 existing
+    <code>ja-JP-NanamiNeural</code> clips are only an asset <em>if their accents are
+    right</em>; if they are wrong they are a liability, because a wrong accent drilled
+    through spaced repetition is worse than no audio and hard to unlearn. Regenerating
+    all of them costs nothing at this volume. <strong>Voice continuity stops being a
+    reason to choose a provider; accent control becomes the only one.</strong></p>
+  </div>
 
   <div class="prose">
-    <p>The exports name the voices outright: <code>ja-JP-NanamiNeural</code>,
-    <code>ja-JP-DaichiNeural</code>, <code>en-US-AIGenerate1Neural</code>. Those are Azure
-    Neural TTS voice IDs — so Mochi is an Azure customer, and using the same voices
-    reproduces the audio quality you already have <strong>exactly</strong>. No listening
-    test needed; I'd suggested one, and your data made it unnecessary.</p>
-    <p>Better: at your real rate — about 58,000 characters a year once regeneration churn
-    is eliminated — <strong>Azure's free tier of 500,000 characters per month covers you
-    roughly a hundred times over</strong>. Speech synthesis is, in practice, free.</p>
+    <p><strong>Google Cloud TTS specifies pitch accent. Azure, as far as its
+    documentation goes, does not.</strong> Google exposes
+    <code>CustomPronunciations</code> with a
+    <code>PHONETIC_ENCODING_JAPANESE_YOMIGANA</code> encoding taking explicit markup —
+    <code>^</code> opens an accent phrase, <code>!</code> marks the downstep, Tokyo
+    dialect, at most one <code>!</code> per phrase — and Google's own documentation uses
+    exactly the case that matters: <code>^はし</code> / <code>^は!し</code> /
+    <code>^はし!</code> for 端 / 箸 / 橋.</p>
+    <p>Azure has no documented equivalent. What it does have, checked against primary
+    sources rather than recall, is two candidate mechanisms and no specification for
+    either:</p>
+    <ul>
+      <li><code>&lt;phoneme alphabet="sapi"&gt;</code> — ja-JP's phone set is Kana-based,
+      and Microsoft's own ja-JP examples table carries a mark: 合成 →
+      <code>ゴ'ウセ</code>, 所有者 → <code>ショュ'ウ?ャ</code>. The apostrophe goes
+      <em>after</em> the affected syllable. But it is documented as
+      <strong>stress</strong>, inherited from SAPI, which was built for a
+      stress-timed language. Japanese has pitch accent, not stress. Whether a Japanese
+      neural voice reads that apostrophe as an accent nucleus or as English-style
+      emphasis is undocumented, and the words &ldquo;accent&rdquo;, &ldquo;pitch&rdquo;
+      and &ldquo;downstep&rdquo; appear nowhere in the ja-JP material.</li>
+      <li><code>&lt;prosody pitch&gt;</code> per mora — hand-shaping the contour, which
+      one published experiment reports sounding natural. It can produce a downstep, but
+      you are authoring a pitch curve rather than declaring a linguistic fact, and
+      Microsoft's own guidance says prosody behaviour varies by voice.</li>
+    </ul>
+    <p><strong>Status: open, and one test decides it.</strong> Synthesise a known
+    minimal pair — 箸 versus 橋 — through a ja-JP neural voice with the apostrophe in
+    each position, and listen. If Azure honours it as a nucleus, Azure wins and the
+    existing voice is kept for free. If it applies emphasis instead, Google's specified
+    notation wins and the whole library gets regenerated. This cannot be settled by
+    reading; it needs the key.</p>
+    <p>Google's side has an unverified claim too: its
+    <code>CustomPronunciations</code> is documented but has not been run end to end
+    here, and which voice tiers honour it is unknown. Test both before committing.</p>
     <p>Furigana should move off the API entirely. A local morphological analyser
     (kuromoji, MeCab + UniDic) plus JMdict gives you offline readings you can
     <em>correct yourself</em> when they're wrong — strictly better than a remote call you
@@ -993,7 +1098,7 @@ graph LR
     <table>
       <thead><tr><th>Service</th><th>Rate</th><th>Your annual use</th><th class="num">Cost</th></tr></thead>
       <tbody>
-        <tr><td>Azure Neural TTS</td><td>$16 / 1M chars, 500K/mo free</td><td>~58K chars</td><td class="num">$0.00</td></tr>
+        <tr><td>TTS — provider open</td><td>Azure $16 / 1M, 500K/mo free · Google Neural2 $16 / 1M, 1M/mo free</td><td>231,769 chars once, then ~58K/yr</td><td class="num">$0.00</td></tr>
         <tr><td>LLM for <span class="mono">&lt;ai&gt;</span> fields</td><td>$0.20–$1.00 / 1M in</td><td>~5,000 short calls</td><td class="num">&lt; $0.50</td></tr>
         <tr><td>Translation</td><td>$10 / 1M chars, 2M/mo free</td><td>~68K chars</td><td class="num">$0.00</td></tr>
         <tr><td>Furigana + dictionary</td><td>local</td><td>—</td><td class="num">$0.00</td></tr>
@@ -1003,7 +1108,10 @@ graph LR
     </table>
   </div>
   <p class="caption">Against $60/yr for Mochi. The subscription is not paying for
-  inference — at this volume inference is rounding error.</p>
+  inference — at this volume inference is rounding error. <strong>Which is the point:
+  cost cannot decide the TTS provider.</strong> The whole library is 231,769 characters
+  of speech, generated once; both Azure's 500K/month and Google's 1M/month free tiers
+  swallow it whole, on any voice tier. Choose on accent control and nothing else.</p>
 </section>
 
 <section id="requests">
@@ -1343,7 +1451,7 @@ graph LR
 <footer>
   Derived from 日本語, English and 基本情報 exports · Mochi format version 2 ·
   7,716 cards · 102,020 reviews · 8,744 wiki-links · 636 hours ·
-  draft 6, revised 19 August 2026
+  draft 7, revised 19 August 2026
 </footer>
 
 </div>
