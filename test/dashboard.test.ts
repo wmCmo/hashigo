@@ -372,21 +372,33 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     expect(scheduled[0]?.reviews).toBe(17_960);
   });
 
-  it("shows over-studying, and names the bands that miss the 0.95 target", () => {
+  it("shows over-studying, and names the bands that miss the target", () => {
     const { elapsed } = data.primary.intervals;
 
-    // At FSRS's 0.90 default every observed band clears the target -- which is
-    // what the page used to say. At Zach's settled 0.95 three of them do not,
-    // and that is the more useful reading, so the page prints it.
+    // At Zach's settled 0.90 target EVERY observed band clears it -- there is no
+    // interval length at which his recall drops to what the scheduler is willing
+    // to accept. That is the over-studying finding stated precisely: the schedule
+    // is not trading retention for time anywhere, it is simply reviewing more
+    // often than 0.90 requires.
+    //
+    // At the 0.95 this was briefly set to, three bands (21-60d, 60-180d,
+    // 180-365d) fell short -- so the same data supports "he is over-studying" or
+    // "he is missing target" depending only on the target. Which is why the page
+    // reads the data and names the bands rather than printing a verdict.
     for (const bucket of elapsed) {
       if (bucket.retention === null) continue;
-      expect(bucket.retention).toBeGreaterThan(0.9);
+      expect(bucket.retention).toBeGreaterThan(TARGET_RETENTION);
     }
     const below = elapsed
       .filter((b) => b.retention !== null && b.retention < TARGET_RETENTION)
       .map((b) => b.label);
-    expect(TARGET_RETENTION).toBe(0.95);
-    expect(below).toEqual(["21-60d", "60-180d", "180-365d"]);
+    expect(TARGET_RETENTION).toBe(0.9);
+    expect(below).toEqual([]);
+
+    // The 0.95 counterfactual, pinned so the band list cannot rot silently.
+    expect(
+      elapsed.filter((b) => b.retention !== null && b.retention < 0.95).map((b) => b.label),
+    ).toEqual(["21-60d", "60-180d", "180-365d"]);
 
     // Longer intervals do cost retention, which is what makes the tile useful:
     // the worst band sits below the corpus average, not above it.

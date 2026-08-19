@@ -48,16 +48,34 @@ export const SCHEDULER_ALGORITHM = "fsrs6" as const;
 export const MAX_INTERVAL_DAYS = 365;
 
 /**
- * Target retention. SETTLED: 0.95.
+ * Target retention. SETTLED: 0.90, revised down from 0.95 on 2026-08-19.
  *
- * Measured context: the user's own realised retention is 96.24% all-time and
- * 95.10% across calendar 2026, so 0.95 is close to the working point the
- * existing schedule already lands on — this is not a large behavioural change.
- * `settings.target_retention.default` in schema.sql still seeds 0.90 (FSRS's
- * own default); that row is the schema owner's and is reported as an orphan
- * rather than edited here.
+ * The earlier 0.95 rested on a false inference: that because the user's realised
+ * retention is 96.24% all-time and 95.10% in 2026, a 0.95 target reproduces the
+ * schedule he already runs. It does not. Mochi reaches 96.24% using intervals
+ * FSRS considers too long for 95%, so adopting FSRS at 0.95 means SHORTENING
+ * intervals. Measured under this file's own 365-day cap (scripts/capped-load.ts,
+ * against a realised 69.2 reviews/day over the last 90 active days):
+ *
+ *   target   median interval   reviews/day   vs realised   clipped by the cap
+ *   0.95     355-365d          130-204       1.9-3.0x      49-55%
+ *   0.90     365d               62-97        0.9-1.4x      71-74%
+ *   0.85     365d               44-64        0.6-0.9x      81-87%
+ *
+ * 0.90 reproduces the load he has actually sustained for four years. 0.95 asks
+ * him to roughly double it for retention he already has.
+ *
+ * MAX_INTERVAL_DAYS is what makes 0.90 the safe choice rather than the risky one.
+ * Uncapped, 0.90 wants a median interval near 1,000 days — twice beyond anything
+ * ever observed, since no review in the corpus follows an elapsed gap longer than
+ * 454 days. Capped at 365 the median is 365d, inside measured territory. The two
+ * constants are not independent and should not be changed independently.
+ *
+ * Below 0.90 the cap does the work rather than the target (81-87% of tracks
+ * clipped at 0.85), so going lower means raising the cap too — and then the
+ * schedule is extrapolating again.
  */
-export const TARGET_RETENTION = 0.95;
+export const TARGET_RETENTION = 0.9;
 
 /**
  * FSRS-6 weights that are UNREACHABLE BY DESIGN.

@@ -23,6 +23,7 @@ import {
   parseTrackKind,
   searchPlan,
 } from "../src/schema/index.js";
+import { TARGET_RETENTION } from "../src/scheduler/policy.js";
 
 /**
  * Stage 1 acceptance. Each block below pins one schema half that SPEC.html says
@@ -604,19 +605,23 @@ describe("three-state reverse", () => {
     ).toEqual([
       { deck_id: "単語", target_retention: 0.85 },
       { deck_id: "敬語", target_retention: 0.85 },
-      { deck_id: "日本語", target_retention: 0.95 },
+      { deck_id: "日本語", target_retention: 0.9 },
     ]);
   });
 
-  // Regression: the workspace default was seeded 0.90 (FSRS's default) while
-  // src/scheduler/policy.ts, the dashboard tile and SPEC all said 0.95. The
-  // resolved view therefore returned 0.9 for all 39 decks — a silent split-brain
-  // on a value Zach settled explicitly. Per BACKTEST.md that is 47-82 day
-  // intervals versus 125-197 day ones, so it is not cosmetic.
-  it("seeds the target retention Zach settled (0.95), not FSRS's 0.90", () => {
-    expect(
-      db.prepare("SELECT value FROM settings WHERE key = 'target_retention.default'").get(),
-    ).toEqual({ value: "0.95" });
+  // Regression: the seeded default and src/scheduler/policy.ts disagreed, so the
+  // resolved view silently returned a different target than every artefact
+  // claimed. They are now both 0.90 — settled 2026-08-19 after measuring the load
+  // under the 365-day cap: 0.90 gives 62-97 reviews/day against a realised 69.2,
+  // where 0.95 gives 130-204. This test exists to keep the two in lockstep, so
+  // if you change one and not the other it fails here.
+  it("seeds the target retention Zach settled (0.90), in lockstep with policy.ts", () => {
+    // Read the constant rather than a literal, so the two genuinely cannot drift.
+    const seeded = db
+      .prepare("SELECT value FROM settings WHERE key = 'target_retention.default'")
+      .get() as { value: string };
+    expect(Number(seeded.value)).toBe(TARGET_RETENTION);
+    expect(TARGET_RETENTION).toBe(0.9);
 
     // and a deck with no override of its own inherits exactly that
     // (日本語 is the fixture's un-overridden root; 単語 carries 0.85 from above)
@@ -624,7 +629,7 @@ describe("three-state reverse", () => {
       db
         .prepare("SELECT target_retention FROM deck_target_retention_resolved WHERE deck_id = '日本語'")
         .get(),
-    ).toEqual({ target_retention: 0.95 });
+    ).toEqual({ target_retention: TARGET_RETENTION });
   });
 });
 

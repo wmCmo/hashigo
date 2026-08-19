@@ -35,9 +35,12 @@ CREATE TABLE settings (
 
 INSERT INTO settings (key, value) VALUES
   ('reverse.default',          'off'),   -- SPEC: reverse-review resolution table
-  ('target_retention.default', '0.95'),  -- SETTLED by Zach 2026-08-19, not FSRS's
-                                         -- 0.90. Roughly ratifies his observed
-                                         -- 96.24%; per-deck override still applies.
+  ('target_retention.default', '0.90'),  -- SETTLED by Zach 2026-08-19. Reproduces
+                                         -- his realised 69.2 reviews/day; 0.95
+                                         -- would be 1.9-3.0x that. Safe because
+                                         -- MAX_INTERVAL_DAYS caps at 365 — see
+                                         -- src/scheduler/policy.ts. Per-deck
+                                         -- override still applies.
   ('timezone.default',         'Asia/Tokyo');
 
 -- ---------------------------------------------------------------------------

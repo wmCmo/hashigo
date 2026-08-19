@@ -341,14 +341,16 @@ function monthlyCardsChart(months: readonly MonthActivity[]): string {
 // ─── 定着率 × 復習間隔 ───────────────────────────────────────────────────────
 
 /**
- * SETTLED by Zach: 0.95, not FSRS's 0.90 default.  Imported rather than written
- * here so the page and the scheduler cannot disagree about what the app is
- * aiming at -- see src/scheduler/policy.ts.
+ * SETTLED by Zach: 0.90, revised down from 0.95 on 2026-08-19 after measuring the
+ * daily load under the 365-day cap -- 0.95 projects 130-204 reviews/day against a
+ * realised 69.2, where 0.90 projects 62-97.  Imported rather than written here so
+ * the page and the scheduler cannot disagree about what the app is aiming at --
+ * see src/scheduler/policy.ts and scripts/capped-load.ts.
  *
- * Moving this line from 90 to 95 changes what the page SAYS, correctly: three
- * of the nine elapsed bands (21-60d, 60-180d, 180-365d) sit below 95% and above
- * 90%, so the old copy's "every band beats the target" is true at 0.90 and
- * false at 0.95.  The text below reads the data rather than repeating a slogan.
+ * Where this line sits changes what the page SAYS, so the copy below reads the
+ * data rather than repeating a slogan: three of the nine elapsed bands (21-60d,
+ * 60-180d, 180-365d) sit between 90% and 95%, so they clear a 0.90 target and
+ * miss a 0.95 one.
  */
 const TARGET_RETENTION = TARGET_RETENTION_SETTING;
 
