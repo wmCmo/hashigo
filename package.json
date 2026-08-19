@@ -59,6 +59,10 @@
       "types": "./dist/scheduler/policy.d.ts",
       "default": "./dist/scheduler/policy.js"
     },
+    "./search": {
+      "types": "./dist/search/index.d.ts",
+      "default": "./dist/search/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
