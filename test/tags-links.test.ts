@@ -22,15 +22,20 @@ import {
   type MochiTaggedCard,
 } from "../src/import/tags.js";
 import { loadExport, walkCards } from "../src/import/transit.js";
+import { buildSearchText } from "../src/schema/index.js";
+import { renderPlainText, renderPlainTextParts } from "../src/text/index.js";
 
 /**
  * Stage 1 acceptance for tags and card links.
  *
- * The oracle is the real corpus: 23 raw tag strings normalise to 19, and 8,690
- * wiki-links come out of 4,323 cards with the unresolved ones counted, not
+ * The oracle is the real corpus: 23 raw tag strings normalise to 19, and 8,744
+ * wiki-links come out of 4,335 cards with the unresolved ones counted, not
  * dropped. The synthetic blocks pin the rules the corpus exercises only once —
  * the invisible U+200B duplicates, an ancestor path that must be synthesised so
  * Dialect/Kansai can exist, a link whose target was never exported.
+ *
+ * 8,744 and not 8,690: the parser used to require the pipe, which silently
+ * dropped 46 `[[card-id]]` and 8 `[[|card-id]]` links. All 54 resolve.
  */
 
 const EXPORT_DIRS = ["exports/日本語", "exports/English", "exports/基本情報"] as const;
@@ -38,6 +43,24 @@ const haveCorpus = EXPORT_DIRS.every((dir) => existsSync(join(dir, "data.json"))
 
 /** U+200B ZERO WIDTH SPACE — the character that corrupted the real tag list. */
 const ZWSP = "​";
+
+/**
+ * U+200E LEFT-TO-RIGHT MARK — the character Zach types between two links so
+ * that Mochi can tell them apart. 3,016 of them, 2,911 sitting exactly between
+ * `]]` and `[[`, on 2,478 cards.
+ */
+const LRM = "‎";
+
+/** A real compound from the corpus, verbatim: 引き + 換え, joined by the mark. */
+const REAL_COMPOUND = `[[引き|10PQotxm]]${LRM}[[換え|C1p9g1mL]]`;
+
+/** Make the invisible characters visible, so test output can be read. */
+function visible(text: string): string {
+  return text.replace(
+    /[\u200B-\u200F\uFEFF]/g,
+    (character) => `<U+${character.codePointAt(0)?.toString(16).toUpperCase()}>`,
+  );
+}
 
 let db: Db;
 
@@ -53,6 +76,13 @@ function seedCards(...ids: string[]): void {
   db.prepare("INSERT INTO decks (id, name) VALUES ('d', 'テスト') ON CONFLICT DO NOTHING").run();
   const insert = db.prepare("INSERT INTO cards (id, deck_id, name) VALUES (?, 'd', ?)");
   for (const id of ids) insert.run(id, id);
+}
+
+/** Seed cards that carry a real name, for the display-text fallback. */
+function seedNamed(named: Readonly<Record<string, string>>): void {
+  db.prepare("INSERT INTO decks (id, name) VALUES ('d', 'テスト') ON CONFLICT DO NOTHING").run();
+  const insert = db.prepare("INSERT INTO cards (id, deck_id, name) VALUES (?, 'd', ?)");
+  for (const [id, name] of Object.entries(named)) insert.run(id, name);
 }
 
 // ─── tag normalisation ───────────────────────────────────────────────────────
@@ -188,18 +218,50 @@ describe("importTags", () => {
   });
 });
 
-// ─── links ───────────────────────────────────────────────────────────────────
+// ─── the link grammar ────────────────────────────────────────────────────────
 
 describe("wikiLinks", () => {
   it("parses display text and target out of every occurrence", () => {
-    expect(wikiLinks("～に引き換え means [[引く|aaa]] plus [[換える|bbb]].")).toEqual([
-      { display: "引く", target: "aaa" },
-      { display: "換える", target: "bbb" },
+    const parsed = wikiLinks("～に引き換え means [[引く|aaa]] plus [[換える|bbb]].");
+    expect(parsed.map(({ display, target, form, raw }) => ({ display, target, form, raw }))).toEqual([
+      { display: "引く", target: "aaa", form: "piped", raw: "[[引く|aaa]]" },
+      { display: "換える", target: "bbb", form: "piped", raw: "[[換える|bbb]]" },
+    ]);
+    // `index` is the offset of `raw`, which is what lets the renderer splice.
+    expect(parsed.map((link) => link.index)).toEqual(
+      parsed.map((link) => "～に引き換え means [[引く|aaa]] plus [[換える|bbb]].".indexOf(link.raw)),
+    );
+  });
+
+  // ── PASS CONDITION: all three forms parse ─────────────────────────────────
+  it("accepts all three authored forms, which is the 54 dropped links", () => {
+    const parsed = wikiLinks("[[越す|t1]] [[pvtj9W17]] [[|YGaSlUTe]]");
+    console.log("three forms          ", parsed);
+    expect(parsed.map((link) => [link.form, link.display, link.target])).toEqual([
+      ["piped", "越す", "t1"],
+      ["bare", "", "pvtj9W17"],
+      ["empty-display", "", "YGaSlUTe"],
     ]);
   });
 
-  it("does not match a bracket pair without a target", () => {
-    expect(wikiLinks("[[引く]] [[|x]] [[a|]]")).toEqual([]);
+  it("refuses a bracket pair with no target, which Mochi also refuses", () => {
+    // `[[a|]]` and `[[]]` render as the literal text the author typed. 0 in the
+    // corpus; tools/mochi.py agrees, its target class is one-or-more.
+    expect(wikiLinks("[[a|]] [[]] [[|]]")).toEqual([]);
+  });
+
+  // ── PASS CONDITION: adjacency, with and without the mark ───────────────────
+  it("parses two adjacent links with the U+200E mark AND without it", () => {
+    const marked = wikiLinks(`[[a|1]]${LRM}[[b|2]]`);
+    const bare = wikiLinks("[[a|1]][[b|2]]");
+    console.log("with U+200E          ", marked.map((l) => `${l.display}->${l.target}`));
+    console.log("no mark at all       ", bare.map((l) => `${l.display}->${l.target}`));
+    expect(marked).toHaveLength(2);
+    expect(bare).toHaveLength(2);
+    expect(marked.map((l) => l.target)).toEqual(["1", "2"]);
+    expect(bare.map((l) => l.target)).toEqual(["1", "2"]);
+    // The mark is why he could type it at all; the parser no longer needs it.
+    expect(marked.map((l) => l.display)).toEqual(bare.map((l) => l.display));
   });
 
   it("is not confused by repeated calls (the global-regex lastIndex trap)", () => {
@@ -208,6 +270,53 @@ describe("wikiLinks", () => {
     expect(wikiLinks(text)).toHaveLength(2);
   });
 });
+
+// ─── the shared renderer ─────────────────────────────────────────────────────
+
+describe("renderPlainText", () => {
+  it("joins a compound that was authored as two links plus an invisible mark", () => {
+    expect(renderPlainText(REAL_COMPOUND)).toBe("引き換え");
+    expect(renderPlainText(REAL_COMPOUND)).not.toContain(LRM);
+  });
+
+  it("renders the same whether or not the mark is there", () => {
+    expect(renderPlainText("[[引き|10PQotxm]][[換え|C1p9g1mL]]")).toBe("引き換え");
+  });
+
+  it("keeps the text around a link, and leaves markdown readable", () => {
+    expect(renderPlainText("[[越す|abc12345]]に越したことはない")).toBe("越すに越したことはない");
+    expect(renderPlainText("[[**enactment**|zeeUDLTL]]")).toBe("**enactment**");
+  });
+
+  it("drops every invisible mark, not just the one Zach uses", () => {
+    expect(renderPlainText("あ​い‌う‍え‎お﻿か")).toBe("あいうえおか");
+  });
+
+  it("shows the target card's name for the two display-less forms", () => {
+    const names: Record<string, string> = { pvtj9W17: "何", YGaSlUTe: "covetousness" };
+    const resolveName = (id: string): string | undefined => names[id];
+    expect(renderPlainText("[[pvtj9W17]]", { resolveName })).toBe("何");
+    expect(renderPlainText("[[|YGaSlUTe]]", { resolveName })).toBe("covetousness");
+  });
+
+  it("renders a display-less link as nothing rather than leaking the id", () => {
+    // No resolver, or a target that does not exist: an 8-character handle is
+    // not text, and putting it in the search index matches unrelated queries.
+    expect(renderPlainText("[[pvtj9W17]]")).toBe("");
+    expect(renderPlainText("[[|YGaSlUTe]]")).toBe("");
+  });
+
+  it("leaves a targetless bracket pair alone", () => {
+    expect(renderPlainText("[[a|]]")).toBe("[[a|]]");
+  });
+
+  it("joins the parts of a card with newlines, skipping the empty ones", () => {
+    expect(renderPlainTextParts(["単語", null, undefined, "", "意味"])).toBe("単語\n意味");
+    expect(renderPlainTextParts([])).toBe("");
+  });
+});
+
+// ─── links on a card ─────────────────────────────────────────────────────────
 
 describe("cardLinks", () => {
   const card: MochiLinkedCard = {
@@ -221,7 +330,12 @@ describe("cardLinks", () => {
   };
 
   it("reads content AND field values, numbering ordinals per scope", () => {
-    expect(cardLinks(card)).toEqual([
+    const rows = cardLinks(card).map(
+      ({ from_card_id, to_card_id, display_text, field_id, ordinal }) => ({
+        from_card_id, to_card_id, display_text, field_id, ordinal,
+      }),
+    );
+    expect(rows).toEqual([
       { from_card_id: "c1", to_card_id: "t1", display_text: "越す", field_id: null, ordinal: 0 },
       { from_card_id: "c1", to_card_id: "t2", display_text: "引く", field_id: "f-1", ordinal: 0 },
       { from_card_id: "c1", to_card_id: "t3", display_text: "換える", field_id: "f-1", ordinal: 1 },
@@ -236,6 +350,26 @@ describe("cardLinks", () => {
     expect(mapped.notes.unresolvedTargets).toEqual(["t3"]);
     expect(mapped.notes.linksInContent).toBe(1);
     expect(mapped.notes.linksInFields).toBe(3);
+  });
+
+  it("takes display text from the target card's name when none was authored", () => {
+    const mapped = mapCardLinks([
+      { id: "c1", name: "compound", content: "[[t1]] [[|t2]]" },
+      { id: "t1", name: "何" },
+      { id: "t2", name: "covetousness" },
+    ]);
+    console.log("fallback display     ", mapped.links.map((row) => row.display_text));
+    expect(mapped.links.map((row) => row.display_text)).toEqual(["何", "covetousness"]);
+    expect(mapped.notes.byForm).toEqual({ piped: 0, bare: 1, emptyDisplay: 1 });
+    expect(mapped.notes.displayFromTargetName).toBe(2);
+    expect(mapped.notes.displayMissing).toBe(0);
+  });
+
+  it("still writes the row when the name cannot be found", () => {
+    const mapped = mapCardLinks([{ id: "c1", content: "[[gone]]" }]);
+    expect(mapped.links.map((row) => [row.to_card_id, row.display_text])).toEqual([["gone", ""]]);
+    expect(mapped.notes.displayMissing).toBe(1);
+    expect(mapped.notes.unresolvedTargets).toEqual(["gone"]);
   });
 });
 
@@ -262,6 +396,63 @@ describe("importLinks", () => {
     expect(checkIntegrity(db)).toEqual([]);
   });
 
+  it("writes the bare and empty-display forms, naming them from the database", () => {
+    seedNamed({ c1: "～に引き換え", pvtj9W17: "何", YGaSlUTe: "covetousness" });
+    const result = importLinks(db, [
+      { id: "c1", content: "[[pvtj9W17]] and [[|YGaSlUTe]]" },
+    ]);
+    console.log("recovered forms      ", result.byForm, "from name", result.displayFromTargetName);
+    expect(result.links).toBe(2);
+    expect(result.byForm).toEqual({ piped: 0, bare: 1, emptyDisplay: 1 });
+    expect(result.displayFromTargetName).toBe(2);
+    expect(result.unresolvedRows).toBe(0);
+
+    const rows = db
+      .prepare("SELECT to_card_id, display_text, resolved FROM card_links_resolved ORDER BY ordinal")
+      .all();
+    console.log("card_links_resolved  ", rows);
+    expect(rows).toEqual([
+      { to_card_id: "pvtj9W17", display_text: "何", resolved: 1 },
+      { to_card_id: "YGaSlUTe", display_text: "covetousness", resolved: 1 },
+    ]);
+  });
+
+  // ── PASS CONDITION: the mark survives storage, and not the rendering ───────
+  it("keeps U+200E in the stored value and not in the rendered text", () => {
+    seedNamed({ "10PQotxm": "引き", C1p9g1mL: "換え" });
+    db.prepare("INSERT INTO cards (id, deck_id, name, content) VALUES ('c1', 'd', '引き換え', ?)")
+      .run(REAL_COMPOUND);
+    const links = importLinks(db, [{ id: "c1", content: REAL_COMPOUND }]);
+    expect(links.links).toBe(2);
+
+    const stored = db.prepare("SELECT content FROM cards WHERE id = 'c1'").pluck().get() as string;
+    const rendered = renderPlainText(stored);
+    db.prepare("UPDATE cards SET search_text = ? WHERE id = 'c1'").run(rendered);
+    const indexed = db
+      .prepare("SELECT body FROM card_search_index WHERE card_id = 'c1'")
+      .pluck()
+      .get() as string;
+
+    console.log("authored ", visible(REAL_COMPOUND));
+    console.log("stored   ", visible(stored));
+    console.log("rendered ", visible(rendered));
+    console.log("indexed  ", visible(indexed));
+
+    // Byte-identical to what was authored: the mark, both links, everything.
+    expect(stored).toBe(REAL_COMPOUND);
+    expect(stored).toContain(LRM);
+    expect(stored.split(LRM).length - 1).toBe(1);
+    // And the projection has neither the mark nor the syntax.
+    expect(rendered).toBe("引き換え");
+    expect(rendered).not.toContain(LRM);
+    expect(indexed).toContain("引き換え");
+    // The compound is findable as one word, which is the point of rendering.
+    const hit = db
+      .prepare("SELECT card_id FROM card_fts WHERE card_fts MATCH ?")
+      .all('"引き換え"');
+    expect(hit).toEqual([{ card_id: "c1" }]);
+  });
+
   it("replaces a card's links on re-import instead of leaving ghosts", () => {
     seedCards("c1", "t1", "t2");
     importLinks(db, [{ id: "c1", content: "[[a|t1]] [[b|t2]]" }]);
@@ -284,6 +475,19 @@ describe.runIf(haveCorpus)("the real corpus", () => {
   const cards = EXPORT_DIRS.flatMap((dir) => walkCards(loadExport(dir)).map(({ card }) => card));
   const tagged = cards as unknown as MochiTaggedCard[];
   const linked = cards as unknown as MochiLinkedCard[];
+
+  /** `content` plus every string field value, in the export's own order. */
+  function textParts(card: Record<string, unknown>): (string | null | undefined)[] {
+    const parts: (string | null | undefined)[] = [card["content"] as string | undefined];
+    for (const field of Object.values((card["fields"] ?? {}) as Record<string, unknown>)) {
+      const value =
+        typeof field === "object" && field !== null
+          ? (field as Record<string, unknown>)["value"]
+          : field;
+      if (typeof value === "string") parts.push(value);
+    }
+    return parts;
+  }
 
   // ── PASS CONDITION 1: 23 raw tags normalise to exactly 19 ──────────────────
   it("normalises 23 raw tags to 19", () => {
@@ -324,14 +528,19 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     expect(mapped.cardTags.filter((row) => row.manual === 1).length).toBe(3);
   });
 
-  // ── PASS CONDITION 2: 8,690 links, unresolved counted separately ───────────
-  it("extracts 8,690 links from 4,323 cards, 18 rows unresolved", () => {
+  // ── PASS CONDITION 2: 8,744 links, none of the three forms dropped ─────────
+  it("extracts 8,744 links from 4,335 cards, 18 rows unresolved", () => {
     const mapped = mapCardLinks(linked);
     console.log(
       "links", mapped.links.length,
       "| cards with links", mapped.notes.cardsWithLinks,
       "| in content", mapped.notes.linksInContent,
       "| in field values", mapped.notes.linksInFields,
+    );
+    console.log("by authored form     ", mapped.notes.byForm);
+    console.log(
+      "display from target name", mapped.notes.displayFromTargetName,
+      "| display missing", mapped.notes.displayMissing,
     );
     console.log(
       "distinct targets", mapped.notes.distinctTargets,
@@ -340,14 +549,32 @@ describe.runIf(haveCorpus)("the real corpus", () => {
       mapped.notes.unresolvedTargets,
     );
 
-    expect(mapped.links.length).toBe(8690);
-    expect(mapped.notes.cardsWithLinks).toBe(4323);
+    expect(mapped.links.length).toBe(8744);
+    // 8,690 was the old total: the pipe-only parser saw only the first of these.
+    expect(mapped.notes.byForm).toEqual({ piped: 8690, bare: 46, emptyDisplay: 8 });
+    expect(mapped.notes.cardsWithLinks).toBe(4335);
     // Both surfaces. Reading only `content` would find 12% of the links.
-    expect(mapped.notes.linksInContent).toBe(1011);
-    expect(mapped.notes.linksInFields).toBe(7679);
-    expect(mapped.notes.distinctTargets).toBe(2881);
+    expect(mapped.notes.linksInContent).toBe(1019);
+    expect(mapped.notes.linksInFields).toBe(7725);
+    expect(mapped.notes.distinctTargets).toBe(2895);
+    // Unchanged by the fix: every one of the 54 recovered links resolves.
     expect(mapped.notes.unresolvedRows).toBe(18);
     expect(mapped.notes.unresolvedTargets.length).toBe(15);
+    // All 54 display-less links found their target's name.
+    expect(mapped.notes.displayFromTargetName).toBe(54);
+    expect(mapped.notes.displayMissing).toBe(0);
+  });
+
+  it("resolves every one of the 54 links the old parser dropped", () => {
+    const known = new Set(linked.map((card) => card.id));
+    const recovered = mapCardLinks(linked).links.filter((row) => row.form !== "piped");
+    const unresolved = recovered.filter((row) => !known.has(row.to_card_id));
+    console.log("recovered            ", recovered.length, "| unresolved", unresolved.length);
+    console.log("sample               ", recovered.slice(0, 4).map((row) =>
+      `${row.form} -> ${row.to_card_id} "${row.display_text}"`));
+    expect(recovered.length).toBe(54);
+    expect(unresolved).toEqual([]);
+    expect(recovered.every((row) => row.display_text !== "")).toBe(true);
   });
 
   it("reconciles the parse against Mochi's references array (SPEC's 8 of 7,771)", () => {
@@ -357,8 +584,89 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     // array, not the parsed rows. The two sets genuinely differ.
     expect(refs.declared).toBe(7771);
     expect(refs.declaredUnresolved).toBe(8);
-    expect(refs.declaredOnly).toBe(41);
-    expect(refs.parsedOnly).toBe(92);
+    // Was 41 before the fix. Mochi's own derived array already knew about 40 of
+    // the links the pipe-only parser could not see — independent corroboration
+    // that the recovered 54 are real edges and not a looser regex inventing them.
+    expect(refs.declaredOnly).toBe(1);
+    expect(refs.parsedOnly).toBe(97);
+  });
+
+  it("finds the U+200E compounds, and renders them without the mark", () => {
+    const withMark = linked.filter((card) =>
+      textParts(card as unknown as Record<string, unknown>).some(
+        (part) => typeof part === "string" && part.includes(`]]${LRM}[[`),
+      ),
+    );
+    const sample = withMark[0] as unknown as Record<string, unknown>;
+    const raw = textParts(sample).find(
+      (part) => typeof part === "string" && part.includes(`]]${LRM}[[`),
+    ) as string;
+    const names = new Map(linked.map((card) => [card.id, card.name ?? ""] as const));
+    const rendered = renderPlainText(raw, { resolveName: (id) => names.get(id) });
+    console.log("cards with ]]U+200E[[", withMark.length);
+    console.log("raw                  ", visible(raw));
+    console.log("rendered             ", visible(rendered));
+
+    expect(withMark.length).toBe(2478);
+    expect(raw).toContain(LRM);
+    expect(rendered).not.toContain(LRM);
+    expect(rendered).not.toContain("[[");
+  });
+
+  /**
+   * `buildSearchText` in `src/schema/index.ts` is a thin alias for
+   * `renderPlainTextParts`. It used to be a SECOND IMPLEMENTATION, and the two
+   * had already drifted before anyone noticed — this corpus sweep was green the
+   * whole time, because no card in the corpus takes any of the shapes they
+   * disagreed on. Corpus agreement is therefore necessary and not sufficient,
+   * so the shapes are probed directly below it.
+   */
+  it("renders identically to the schema module's alias, on every card", () => {
+    let differ = 0;
+    const examples: string[] = [];
+    for (const card of cards as unknown as Record<string, unknown>[]) {
+      const parts = textParts(card);
+      const mine = renderPlainTextParts(parts);
+      const theirs = buildSearchText(...parts);
+      if (mine !== theirs) {
+        differ += 1;
+        if (examples.length < 3) examples.push(String(card["id"]));
+      }
+    }
+    console.log("cards rendered       ", cards.length, "| disagreements", differ, examples);
+    expect(differ).toBe(0);
+  });
+
+  /**
+   * The four inputs the two copies used to disagree on, and four they agreed on
+   * even while drifting. Every one of these is OUTSIDE the corpus, which is the
+   * point: this is the test the corpus sweep cannot be.
+   */
+  it("agrees with the schema alias on the shapes that used to drift", () => {
+    const probes = [
+      // Was: buildSearchText 'a'. A targetless [[a|]] is not a link.
+      ["[[a|]]", "[[a|]]"],
+      // Was: buildSearchText ''.
+      ["[[]]", "[[]]"],
+      ["[[|]]", "[[|]]"],
+      // Was: buildSearchText 'displaytail'.
+      ["[[display|]]tail", "[[display|]]tail"],
+      // These four agreed even before the merge; they stay pinned so a future
+      // rewrite of the grammar cannot quietly change the corpus behaviour.
+      ["[[越す|abc12345]]に越したことはない", "越すに越したことはない"],
+      ["[[10PQotxm]]", ""],
+      ["[[|C1p9g1mL]]", ""],
+      ["[[a|b|c]]", "a"],
+    ] as const;
+    const drifted: string[] = [];
+    for (const [input, expected] of probes) {
+      const mine = renderPlainText(input);
+      const theirs = buildSearchText(input);
+      expect(mine).toBe(expected);
+      if (mine !== theirs) drifted.push(`${input}: src/text=${mine} schema=${theirs}`);
+    }
+    console.log("drift probes", probes.length, "| divergent", drifted.length, drifted);
+    expect(drifted).toEqual([]);
   });
 
   it("loads both into the database and reads them back through the views", () => {
@@ -378,7 +686,12 @@ describe.runIf(haveCorpus)("the real corpus", () => {
 
     expect(db.prepare("SELECT count(*) FROM tags").pluck().get()).toBe(20);
     expect(db.prepare("SELECT count(*) FROM card_tags").pluck().get()).toBe(66);
-    expect(db.prepare("SELECT count(*) FROM card_links").pluck().get()).toBe(8690);
+    expect(db.prepare("SELECT count(*) FROM card_links").pluck().get()).toBe(8744);
+    // Nothing was written with an empty display: the names came from the rows
+    // already in `cards`, which is where importLinks reads them from.
+    expect(
+      db.prepare("SELECT count(*) FROM card_links WHERE display_text = ''").pluck().get(),
+    ).toBe(0);
 
     const byResolution = db
       .prepare("SELECT resolved, count(*) AS rows FROM card_links_resolved GROUP BY resolved")
@@ -390,7 +703,7 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     console.log("card_links_resolved  ", byResolution, "| tags with cards", usedTags);
     expect(byResolution).toEqual([
       { resolved: 0, rows: 18 },
-      { resolved: 1, rows: 8672 },
+      { resolved: 1, rows: 8726 },
     ]);
     expect(usedTags).toBe(19);
 
