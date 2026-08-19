@@ -116,6 +116,42 @@ CREATE INDEX template_fields_source ON template_fields (template_id, source_fiel
 -- cards.  content is '' on templated cards (the real text lives in
 -- card_field_values) and non-empty on the 1,140 template-less cards that define
 -- their own sides with '---'.  Any scan that reads only content sees nothing.
+--
+-- search_text is the DERIVED, RENDERED form of everything authored on the card:
+-- content plus every field value, with wiki-link syntax reduced to its display
+-- text and zero-width / bidi format characters removed.  It exists because the
+-- raw text is not searchable as written:
+--
+--   * multi-kanji compounds are stored as SEPARATE LINKED CARDS joined by an
+--     invisible U+200E LEFT-TO-RIGHT MARK, e.g.
+--       [[引き|10PQotxm]]<U+200E>[[換え|C1p9g1mL]]
+--     Mochi's parser could not tell where one link ended and the next began, so
+--     the mark was added by hand.  Measured over the three exports: 3,016
+--     U+200E on 2,504 cards, 2,911 adjacent link pairs on 2,478 cards, 2,321
+--     U+200B, 1 U+FEFF.  Reconstructing those runs gives 2,472 distinct
+--     compounds, of which 58 (30 of two characters, 28 of three or more) do not
+--     occur contiguously anywhere in their own card's raw text, and 16 do not
+--     occur anywhere in the raw corpus at all.  Rendering first is a
+--     CORRECTNESS fix of that size -- it is NOT the cause of the two-character
+--     failure, which is the trigram floor and is solved by the LIKE fallback.
+--   * [[display|id]] otherwise puts an 8-character opaque id inside every
+--     trigram window that crosses a link boundary.
+--
+-- THE STORED VALUES ARE NEVER TOUCHED.  card_field_values.value and
+-- cards.content keep the marks and the link syntax verbatim -- round-trip
+-- fidelity is non-negotiable.  Only this derived column is cleaned, and it is
+-- maintained by the importer and the editor through renderPlainTextParts()
+-- in src/text/render.ts, which is the single definition of the transform.
+-- (buildSearchText() in src/schema/index.ts is a thin alias for it and must
+-- stay one: the two used to be separate implementations and had already
+-- drifted on four probed inputs before anyone noticed.)
+--
+-- NULL means "not maintained"; '' means "maintained, and this card genuinely
+-- has no text" (16 cards in the corpus are empty "Untitled card" rows).  The
+-- two are different facts, so the column is nullable rather than NOT NULL
+-- DEFAULT ''.  card_search_index falls back to the raw concatenation on NULL,
+-- so a writer that has not been migrated degrades to the old behaviour rather
+-- than to an empty search index.
 -- ---------------------------------------------------------------------------
 CREATE TABLE cards (
   seq            INTEGER PRIMARY KEY,         -- FTS5 docid; stable across VACUUM
@@ -124,6 +160,8 @@ CREATE TABLE cards (
   template_id    TEXT REFERENCES templates (id) ON DELETE SET NULL,
   name           TEXT NOT NULL DEFAULT '',    -- display title; indexed for Ctrl+K and @
   content        TEXT NOT NULL DEFAULT '',
+  search_text    TEXT,                        -- derived; see above.  Never authored.
+                                              -- NULL = not maintained; '' = empty card.
   reverse        TEXT NOT NULL DEFAULT 'inherit'
                    CHECK (reverse IN ('inherit', 'on', 'off')),
   pinned         INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
@@ -182,7 +220,11 @@ CREATE TABLE card_tracks (
   -- in scheduler_state as JSON.  SPEC derives `new?` from an empty track rather
   -- than storing it, so due_at IS NULL AND reps = 0 means new.
   due_at           TEXT,
-  interval_days    REAL,
+  -- The interval the scheduler currently PLANS for this track: due_at minus the
+  -- last review.  Named scheduled_days for the same reason reviews.scheduled_days
+  -- is -- "interval" meant three different things across three consumers, and
+  -- now the word does not appear as a column name anywhere in this schema.
+  scheduled_days   REAL CHECK (scheduled_days IS NULL OR scheduled_days >= 0),
   reps             INTEGER NOT NULL DEFAULT 0,
   lapses           INTEGER NOT NULL DEFAULT 0,
   last_reviewed_at TEXT,
@@ -220,26 +262,63 @@ CREATE TABLE reviews (
   tz_offset_minutes  INTEGER NOT NULL DEFAULT 0
                        CHECK (tz_offset_minutes BETWEEN -1080 AND 1080),
   time_unknown       INTEGER NOT NULL DEFAULT 0 CHECK (time_unknown IN (0, 1)),
+  -- GRADES ARE BINARY, BY DESIGN.  remembered is the entire recall signal and
+  -- there is deliberately no `grade` column: Anki's four-button
+  -- Again/Hard/Good/Easy was considered and rejected, so a 1-4 scale is not a
+  -- thing this application will ever record.  It was NULL on all 102,020
+  -- imported rows and it would have stayed NULL forever, which is a column that
+  -- advertises support that does not exist.
+  --
+  -- The scheduler maps the boolean to FSRS's ratings at the call site:
+  -- remembered = 0 -> Again (1), remembered = 1 -> Good (3).  See BINARY_GRADE
+  -- in src/schema/index.ts.  FSRS-6's w[15] (hard penalty) and w[16] (easy
+  -- bonus) are therefore unreachable and MUST be frozen at their defaults
+  -- rather than fitted -- no observation in this corpus or any future one can
+  -- inform them.  The upside is worth stating: the scheduler is fitted on
+  -- exactly the signal it receives in production, so there is no train/serve
+  -- distribution shift.
   remembered         INTEGER NOT NULL CHECK (remembered IN (0, 1)),
-  -- Mochi records only remembered?.  grade is for schedulers that want the 1-4
-  -- scale; NULL means "only the boolean is known", which is all of history.
-  grade              INTEGER CHECK (grade IS NULL OR grade BETWEEN 1 AND 4),
-  -- interval_days is the interval that PRECEDED this review, which is what the
-  -- backtest scores predicted recall against.  Mochi does NOT store it: its
-  -- `interval` field (93,076 of 102,020 rows, in days) equals due - date, i.e.
-  -- the interval chosen AFTER the review -- verified against the export, 2,214
-  -- of 2,233 in 基本情報 match due-date exactly and none match the preceding
-  -- gap.  So the importer carries Mochi's value into next_interval_days and
-  -- derives interval_days from the previous review of the same track.  Reading
-  -- Mochi's `interval` as the preceding one shifts the whole backtest by one
-  -- review.  Measured consequence, loaded from the real corpus: next intervals
-  -- reach 2,707 days but no review in four years FOLLOWS an interval longer
-  -- than 365 days -- all 1,356 of those were scheduled after 2026-02 and fall
-  -- due 2027-2033, so they are pending, not capped.  The backtest therefore has
-  -- zero observations of recall beyond one year, which is the sharp edge of
-  -- SPEC's selection-bias caveat.
-  interval_days      REAL,
-  next_interval_days REAL,                     -- Mochi `interval` == due - date, in days
+
+  -- THE TWO INTERVALS.  Both are days, both describe the gap BEFORE this
+  -- review, and they are different numbers.  One column called interval_days
+  -- used to carry one of them while three consumers each assumed a different
+  -- meaning (importer: planned; backtest: elapsed; dashboard: planned), which
+  -- silently moved every retention-versus-interval figure in the project.
+  --
+  --   elapsed_days    MEASURED.  Ground truth: what actually happened, the time
+  --                   between this review and the previous review of the same
+  --                   track.  NULL only on a track's first review.  It is
+  --                   derivable from reviewed_at alone, which is why the
+  --                   review_log view backfills it (see views.sql) and why the
+  --                   8,934 rows that have no planned interval are still
+  --                   scorable.  Median 15d, p75 74d, p90 210d, max 454d.
+  --   scheduled_days  PLANNED.  What the scheduler had asked for that same gap,
+  --                   stored once at review time and never recomputed.  On
+  --                   import this is the PRECEDING review's next_scheduled_days.
+  --                   Median 24.7d, p75 123d, p90 358d, max 2,707d.
+  --
+  -- 22,226 reviews were taken more than 1.5 days late and 240 early, so the two
+  -- disagree constantly and neither is a substitute for the other.  Report which
+  -- one you bucketed by; views.sql offers both and names them.
+  elapsed_days       REAL CHECK (elapsed_days IS NULL OR elapsed_days >= 0),
+  scheduled_days     REAL CHECK (scheduled_days IS NULL OR scheduled_days >= 0),
+
+  -- The interval this review scheduled going FORWARD: Mochi's `interval` field
+  -- (93,076 of 102,020 rows), which equals due - date -- verified against the
+  -- export, 2,214 of 2,233 in 基本情報 match due-date exactly and none match the
+  -- preceding gap.  Reading Mochi's `interval` as the preceding interval shifts
+  -- the whole backtest by one review, which is the trap this naming closes.
+  --
+  -- Kept rather than folded into the next row's scheduled_days, because the
+  -- chain has no next row at the end of a track: 1,356 records carry a planned
+  -- interval beyond 365 days, every one written on or after 2026-02-21 (when
+  -- Mochi's 365-day cap was lifted) and falling due 2027-2033.  Folding it in
+  -- would delete those, which are the only evidence of post-cap scheduling.
+  --
+  --   INVARIANT, across consecutive reviews of one track:
+  --     reviews[n].scheduled_days == reviews[n-1].next_scheduled_days
+  --   Audited by the review_interval_audit view, which must return no rows.
+  next_scheduled_days REAL CHECK (next_scheduled_days IS NULL OR next_scheduled_days >= 0),
   due_at             TEXT,                     -- Mochi `due`: when this review scheduled the next
   duration_ms        INTEGER,                  -- Mochi `duration` is SECONDS; x1000 on import
                                                -- (present on 92,106 of 102,020)
@@ -421,20 +500,64 @@ BEGIN
 END;
 
 -- ---------------------------------------------------------------------------
+-- card_search_index -- exactly what search sees, defined once.
+--
+-- Both the FTS triggers and the 1-2 character LIKE fallback read this view, so
+-- the trigram index and the scan can never disagree about what a card's
+-- searchable text is.  It also collapses the eight FTS triggers below from
+-- eight copies of a three-way correlated subquery to one SELECT each.
+--
+-- body prefers cards.search_text -- the rendered, zero-width-stripped form
+-- maintained by renderPlainTextParts() -- and falls back to the raw concatenation
+-- when it has not been populated.  The fallback is deliberate: a writer that
+-- has not been migrated yet degrades to the old (raw) behaviour instead of
+-- indexing the empty string, which would make search silently return nothing.
+-- search_text_populated exposes which of the two happened, so the condition is
+-- countable rather than invisible:
+--
+--   SELECT count(*) FROM card_search_index WHERE search_text_populated = 0;
+--
+-- STALENESS is the cost of the denormalisation and it cannot be enforced in
+-- SQL: a writer that edits card_field_values without recomputing search_text
+-- leaves the index behind.  Every write path must go through
+-- renderPlainTextParts() in src/text/render.ts.
+-- ---------------------------------------------------------------------------
+CREATE VIEW card_search_index AS
+SELECT c.seq,
+       c.id   AS card_id,
+       c.name,
+       CASE WHEN c.search_text IS NOT NULL THEN c.search_text
+            ELSE c.content || char(10)
+                 || COALESCE((SELECT group_concat(v.value, char(10))
+                                FROM card_field_values v WHERE v.card_id = c.id), '')
+       END    AS body,
+       COALESCE((SELECT group_concat(t.tag_path, char(10))
+                   FROM card_tags t WHERE t.card_id = c.id), '') AS tags,
+       CASE WHEN c.search_text IS NOT NULL THEN 1 ELSE 0 END AS search_text_populated
+  FROM cards c;
+
+-- ---------------------------------------------------------------------------
 -- card_fts -- Ctrl+K search, and the index the @ picker reuses.
 --
 -- THE TOKENISER IS THE DECISION.  FTS5's default (unicode61) tokeniser splits
 -- on whitespace and punctuation, so on Japanese it emits roughly one token per
 -- run of kana/kanji and cannot match anything a user would actually type.  The
 -- trigram tokeniser indexes every 3-character window instead, which gives real
--- CJK substring matching: 語の意 finds 単語の意味.  The cost is that queries
--- shorter than 3 characters cannot use the index at all -- that is a UI
--- constraint (fall back to a name LIKE scan for 1-2 character queries), not a
--- schema one.
+-- CJK substring matching: 語の意 finds 単語の意味.
 --
--- Indexed: card name, all field values, and tag paths.  Field values rather
--- than rendered output, so a word is findable by its reading even when the card
--- displays only kanji.  rowid = cards.seq; kept in sync by the triggers below.
+-- THE THREE-CHARACTER FLOOR IS REAL AND IS NOT A UI DETAIL.  A trigram index
+-- physically cannot serve a 1- or 2-character query, and two characters is the
+-- commonest search unit in Japanese -- 意味, 勉強, 漢字, 日本.  Measured on the
+-- corpus: '意味' LIKE 3 / MATCH 0, 'する' LIKE 229 / MATCH 0, 'ない' LIKE 77 /
+-- MATCH 0, while '気持ち' and 'とはない' are exact under both.  So the fallback
+-- is part of the contract, not an afterthought: below FTS_MIN_QUERY_CHARS,
+-- search scans card_search_index with LIKE over body, name AND tags -- a
+-- name-only scan would miss all three '意味' hits, which are in bodies.  7,716
+-- rows is a scan of no consequence.  searchPlan() in src/schema/index.ts picks
+-- the path; both paths return the same columns.
+--
+-- Indexed: card name, the rendered body from card_search_index, and tag paths.
+-- rowid = cards.seq; kept in sync by the triggers below.
 -- ---------------------------------------------------------------------------
 CREATE VIRTUAL TABLE card_fts USING fts5 (
   card_id UNINDEXED,
@@ -444,30 +567,22 @@ CREATE VIRTUAL TABLE card_fts USING fts5 (
   tokenize = 'trigram'
 );
 
--- Each trigger reindexes exactly one card, delete-then-insert.  The body is
--- content plus every field value; tags are the materialised paths.  Written out
--- longhand per trigger because SQLite has no way to share a statement between
--- them.
+-- Each trigger reindexes exactly one card, delete-then-insert, reading its text
+-- from card_search_index so the definition of "searchable text" lives in one
+-- place.  Written out longhand per trigger because SQLite has no way to share a
+-- statement between them; only the WHERE differs.
 CREATE TRIGGER cards_fts_ai AFTER INSERT ON cards BEGIN
   DELETE FROM card_fts WHERE rowid = NEW.seq;
   INSERT INTO card_fts (rowid, card_id, name, body, tags)
-    SELECT c.seq, c.id, c.name,
-           c.content || char(10) || COALESCE((SELECT group_concat(v.value, char(10))
-             FROM card_field_values v WHERE v.card_id = c.id), ''),
-           COALESCE((SELECT group_concat(t.tag_path, char(10))
-             FROM card_tags t WHERE t.card_id = c.id), '')
-      FROM cards c WHERE c.id = NEW.id;
+    SELECT seq, card_id, name, body, tags FROM card_search_index WHERE card_id = NEW.id;
 END;
 
-CREATE TRIGGER cards_fts_au AFTER UPDATE OF name, content ON cards BEGIN
+-- search_text is in the UPDATE OF list: recomputing it is what republishes a
+-- card to the index after an edit.
+CREATE TRIGGER cards_fts_au AFTER UPDATE OF name, content, search_text ON cards BEGIN
   DELETE FROM card_fts WHERE rowid = NEW.seq;
   INSERT INTO card_fts (rowid, card_id, name, body, tags)
-    SELECT c.seq, c.id, c.name,
-           c.content || char(10) || COALESCE((SELECT group_concat(v.value, char(10))
-             FROM card_field_values v WHERE v.card_id = c.id), ''),
-           COALESCE((SELECT group_concat(t.tag_path, char(10))
-             FROM card_tags t WHERE t.card_id = c.id), '')
-      FROM cards c WHERE c.id = NEW.id;
+    SELECT seq, card_id, name, body, tags FROM card_search_index WHERE card_id = NEW.id;
 END;
 
 CREATE TRIGGER cards_fts_ad AFTER DELETE ON cards BEGIN
@@ -477,54 +592,29 @@ END;
 CREATE TRIGGER card_field_values_fts_ai AFTER INSERT ON card_field_values BEGIN
   DELETE FROM card_fts WHERE rowid = (SELECT seq FROM cards WHERE id = NEW.card_id);
   INSERT INTO card_fts (rowid, card_id, name, body, tags)
-    SELECT c.seq, c.id, c.name,
-           c.content || char(10) || COALESCE((SELECT group_concat(v.value, char(10))
-             FROM card_field_values v WHERE v.card_id = c.id), ''),
-           COALESCE((SELECT group_concat(t.tag_path, char(10))
-             FROM card_tags t WHERE t.card_id = c.id), '')
-      FROM cards c WHERE c.id = NEW.card_id;
+    SELECT seq, card_id, name, body, tags FROM card_search_index WHERE card_id = NEW.card_id;
 END;
 
 CREATE TRIGGER card_field_values_fts_au AFTER UPDATE ON card_field_values BEGIN
   DELETE FROM card_fts WHERE rowid = (SELECT seq FROM cards WHERE id = NEW.card_id);
   INSERT INTO card_fts (rowid, card_id, name, body, tags)
-    SELECT c.seq, c.id, c.name,
-           c.content || char(10) || COALESCE((SELECT group_concat(v.value, char(10))
-             FROM card_field_values v WHERE v.card_id = c.id), ''),
-           COALESCE((SELECT group_concat(t.tag_path, char(10))
-             FROM card_tags t WHERE t.card_id = c.id), '')
-      FROM cards c WHERE c.id = NEW.card_id;
+    SELECT seq, card_id, name, body, tags FROM card_search_index WHERE card_id = NEW.card_id;
 END;
 
 CREATE TRIGGER card_field_values_fts_ad AFTER DELETE ON card_field_values BEGIN
   DELETE FROM card_fts WHERE rowid = (SELECT seq FROM cards WHERE id = OLD.card_id);
   INSERT INTO card_fts (rowid, card_id, name, body, tags)
-    SELECT c.seq, c.id, c.name,
-           c.content || char(10) || COALESCE((SELECT group_concat(v.value, char(10))
-             FROM card_field_values v WHERE v.card_id = c.id), ''),
-           COALESCE((SELECT group_concat(t.tag_path, char(10))
-             FROM card_tags t WHERE t.card_id = c.id), '')
-      FROM cards c WHERE c.id = OLD.card_id;
+    SELECT seq, card_id, name, body, tags FROM card_search_index WHERE card_id = OLD.card_id;
 END;
 
 CREATE TRIGGER card_tags_fts_ai AFTER INSERT ON card_tags BEGIN
   DELETE FROM card_fts WHERE rowid = (SELECT seq FROM cards WHERE id = NEW.card_id);
   INSERT INTO card_fts (rowid, card_id, name, body, tags)
-    SELECT c.seq, c.id, c.name,
-           c.content || char(10) || COALESCE((SELECT group_concat(v.value, char(10))
-             FROM card_field_values v WHERE v.card_id = c.id), ''),
-           COALESCE((SELECT group_concat(t.tag_path, char(10))
-             FROM card_tags t WHERE t.card_id = c.id), '')
-      FROM cards c WHERE c.id = NEW.card_id;
+    SELECT seq, card_id, name, body, tags FROM card_search_index WHERE card_id = NEW.card_id;
 END;
 
 CREATE TRIGGER card_tags_fts_ad AFTER DELETE ON card_tags BEGIN
   DELETE FROM card_fts WHERE rowid = (SELECT seq FROM cards WHERE id = OLD.card_id);
   INSERT INTO card_fts (rowid, card_id, name, body, tags)
-    SELECT c.seq, c.id, c.name,
-           c.content || char(10) || COALESCE((SELECT group_concat(v.value, char(10))
-             FROM card_field_values v WHERE v.card_id = c.id), ''),
-           COALESCE((SELECT group_concat(t.tag_path, char(10))
-             FROM card_tags t WHERE t.card_id = c.id), '')
-      FROM cards c WHERE c.id = OLD.card_id;
+    SELECT seq, card_id, name, body, tags FROM card_search_index WHERE card_id = OLD.card_id;
 END;
