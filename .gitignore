@@ -9,6 +9,34 @@ build/
 *.tsbuildinfo
 coverage/
 
+# Content-addressed blob store. The bytes it holds are the same 657 MB of mp3
+# that exports/ holds, re-sharded by hash — the repo must never gain them.
+#
+# `<db>.blobs` is the shape `defaultStoreRoot()` in src/blobs/node.ts produces,
+# so the default store beside build/hashigo.db is covered twice over. It is
+# NOT anchored, because the root travels with whatever --db the user names.
+# The rest ARE anchored with a leading slash on purpose: an unanchored
+# `blobs/` would also match `src/blobs/`, which is source code.
+*.blobs/
+/blobs/
+/blobstore/
+/.hashigo/
+/media/
+/data/
+
+# Second net, in case the store root moves or someone points it somewhere new:
+# no generated audio or video enters this repo by any path. There are zero
+# tracked media files today (`git ls-files` over these extensions is empty), so
+# this ignores nothing that exists and everything that would be a mistake.
+*.mp3
+*.m4a
+*.wav
+*.ogg
+*.opus
+*.flac
+*.mp4
+*.webm
+
 # Local SQLite stores (the OPFS/Node databases are always rebuildable from exports/)
 *.db
 *.db-journal
@@ -21,6 +49,7 @@ coverage/
 scratch/
 tmp/
 out/
+.playwright-mcp/
 *.log
 __pycache__/
 *.pyc

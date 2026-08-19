@@ -8,12 +8,66 @@
   "engines": {
     "node": ">=22"
   },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./schema": {
+      "types": "./dist/schema/index.d.ts",
+      "default": "./dist/schema/index.js"
+    },
+    "./db": {
+      "types": "./dist/db/index.d.ts",
+      "default": "./dist/db/index.js"
+    },
+    "./import": {
+      "types": "./dist/import/index.d.ts",
+      "default": "./dist/import/index.js"
+    },
+    "./template": {
+      "types": "./dist/template/index.d.ts",
+      "default": "./dist/template/index.js"
+    },
+    "./dashboard": {
+      "types": "./dist/dashboard/index.d.ts",
+      "default": "./dist/dashboard/index.js"
+    },
+    "./blobs": {
+      "types": "./dist/blobs/index.d.ts",
+      "default": "./dist/blobs/index.js"
+    },
+    "./text": {
+      "types": "./dist/text/index.d.ts",
+      "default": "./dist/text/index.js"
+    },
+    "./scheduler/algorithms": {
+      "types": "./dist/scheduler/algorithms/index.d.ts",
+      "default": "./dist/scheduler/algorithms/index.js"
+    },
+    "./scheduler/backtest": {
+      "types": "./dist/scheduler/backtest.d.ts",
+      "default": "./dist/scheduler/backtest.js"
+    },
+    "./scheduler/policy": {
+      "types": "./dist/scheduler/policy.d.ts",
+      "default": "./dist/scheduler/policy.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "test": "vitest run",
-    "import": "vite-node scripts/import.ts --",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "node scripts/build.mjs",
+    "build:verify": "node scripts/build.mjs --verify-only",
+    "import": "vite-node scripts/import.ts --",
+    "dashboard": "vite-node src/dashboard/cli.ts --"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.0"

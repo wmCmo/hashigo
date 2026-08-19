@@ -1,0 +1,26 @@
+# Line endings are LF in the repository and in the working tree.
+#
+# Without this, git on Windows normalises SPEC.html to CRLF on checkout while
+# storing LF, and every `git add` of it prints "LF will be replaced by CRLF".
+# The warning is noise, but a repository that is half-converted is not: a
+# CRLF copy of schema.sql hashes differently from the LF one, and the build
+# asserts dist/*.sql is byte-identical to src/*.sql.
+* text=auto eol=lf
+
+# Generated audio and databases are bytes, never text. All of these are
+# gitignored as well; this is the second net, in case one ever is not.
+*.mp3 binary
+*.m4a binary
+*.wav binary
+*.ogg binary
+*.opus binary
+*.flac binary
+*.mp4 binary
+*.webm binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+*.mochi binary

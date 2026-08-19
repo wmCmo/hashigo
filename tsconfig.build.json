@@ -1,11 +1,20 @@
 {
+  // The distribution build. `npm run build` drives this through scripts/build.mjs,
+  // which cleans dist/ first, copies the .sql tsc ignores, and then refuses to
+  // exit 0 unless the emitted package can actually be imported.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
     "outDir": "dist",
     "rootDir": "src",
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+
+    // A failed compile must leave NOTHING behind. Without this, tsc exits
+    // non-zero and still writes every file it managed to emit, so a broken
+    // build leaves a dist/ that is partially populated and looks plausible —
+    // the same class of lie as the exit-0 build this replaces.
+    "noEmitOnError": true
   },
   "include": ["src/**/*.ts"]
 }
