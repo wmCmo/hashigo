@@ -336,7 +336,7 @@
 <div class="wrap">
 
 <header class="masthead">
-  <p class="kicker">Build specification · draft 4</p>
+  <p class="kicker">Build specification · draft 5</p>
   <h1>Hashigo<span class="jp">梯子</span></h1>
   <p class="standfirst">A local-first replacement for Mochi, scoped to one person's
   Japanese study workflow — and to the four things Mochi gets wrong. Derived from
@@ -359,7 +359,7 @@
     <div class="stat"><span class="stat-n">10</span><span class="stat-l">templates (11 rows, one shared)</span></div>
     <div class="stat"><span class="stat-n">657</span><span class="stat-l">MB of audio</span></div>
     <div class="stat"><span class="stat-n">636</span><span class="stat-l">hours studied</span></div>
-    <div class="stat"><span class="stat-n">96.2%</span><span class="stat-l">retention — target settled at 95%</span></div>
+    <div class="stat"><span class="stat-n">96.2%</span><span class="stat-l">retention — target settled at 90%</span></div>
     <div class="stat flag"><span class="stat-n">8,958</span><span class="stat-l">orphaned attachments</span></div>
   </div>
   <p class="caption">Reviews split 58,937 forward / 43,083 reverse, over 1,317 active
@@ -372,8 +372,10 @@
     settle which scheduler to ship by measurement instead of assumption. 102,020 graded
     reviews with their preceding intervals is a large, clean test set.</p>
     <p>It has already surfaced the single most actionable number in the export:
-    <strong>96.24% observed retention</strong> — which is what settled the target at 0.95
-    rather than FSRS's default 0.90. See <a href="#scheduling">Scheduling</a>.</p>
+    <strong>96.24% observed retention</strong> — which is what made the target a
+    measured decision rather than an inherited default. It settled at 0.90, and
+    <em>not</em> because 96.24% is close to 95%: see the correction in
+    <a href="#scheduling">Scheduling</a>. See <a href="#scheduling">Scheduling</a>.</p>
   </div>
 </section>
 
@@ -577,7 +579,7 @@
   </div>
 
   <div class="note">
-    <p class="note-h">Settled — FSRS-6, capped at 365 days, target retention 0.95</p>
+    <p class="note-h">Settled — FSRS-6, capped at 365 days, target retention 0.90</p>
     <p><strong>Algorithm: FSRS-6</strong>, fitted to your own history rather than shipped
     with population defaults.</p>
     <p><strong>Maximum interval: 365 days.</strong> A policy ceiling, not a data limit,
@@ -586,12 +588,30 @@
     that is extrapolation off the end of the support the fit was measured on. Raise it
     deliberately later if you want longer intervals — do not let a model fitted on
     censored data pick 1,000 days on its own.</p>
-    <p><strong>Target retention: 0.95</strong>, and this needs saying plainly rather than
-    being sold: it roughly <em>ratifies</em> what you already do. Your realised retention
-    is 96.24% all-time and 95.10% across 2026, so 0.95 sits about a point below where you
-    are and <strong>will not meaningfully reduce your ~69 reviews a day</strong>. If you
-    ever do want that reduction, target retention is the lever — it stays a per-deck
-    setting, and lowering it is the one change that lengthens intervals.</p>
+    <p><strong>Target retention: 0.90.</strong> Draft 4 said 0.95 and justified it by
+    noting that realised retention is 96.24%, so a 0.95 target &ldquo;roughly ratifies what
+    you already do&rdquo;. <strong>That inference was wrong and the number has changed.</strong>
+    Realised retention tells you where the <em>old</em> scheduler landed, not what the new
+    one will schedule. Mochi reaches 96.24% using intervals FSRS considers too long for
+    95%, so adopting FSRS at 0.95 <em>shortens</em> intervals. Measured under the 365-day
+    cap above, against a realised 69.2 reviews/day over the last 90 active days
+    (<span class="mono">scripts/capped-load.ts</span>):</p>
+    <table>
+      <thead><tr><th>Target</th><th class="num">Median interval</th><th class="num">Reviews/day</th><th>Versus realised</th><th class="num">Clipped by the cap</th></tr></thead>
+      <tbody>
+        <tr><td>0.95</td><td class="num">355–365 d</td><td class="num">130–204</td><td>1.9–3.0× — nearly double to triple</td><td class="num">49–55%</td></tr>
+        <tr><td><strong>0.90</strong></td><td class="num">365 d</td><td class="num">62–97</td><td>0.9–1.4× — what you already sustain</td><td class="num">71–74%</td></tr>
+        <tr><td>0.85</td><td class="num">365 d</td><td class="num">44–64</td><td>0.6–0.9× — a real reduction</td><td class="num">81–87%</td></tr>
+      </tbody>
+    </table>
+    <p><strong>The cap is what makes 0.90 the safe choice rather than the risky one</strong>,
+    and the two constants are therefore not independent. Uncapped, 0.90 wants a median
+    interval near 1,000 days — twice beyond the longest gap ever observed, since no review
+    in the corpus follows an elapsed interval longer than 454 days. Capped at 365 the
+    median is 365 days, inside measured territory. Below 0.90 the cap does the work rather
+    than the target (81–87% of tracks clipped at 0.85), so going lower means raising the
+    cap too, and then the schedule is extrapolating again. Target retention stays a
+    per-deck setting.</p>
   </div>
 
   <div class="note diagnosis">
@@ -643,7 +663,7 @@
       <thead><tr><th>Measure</th><th class="num">Value</th><th>Reading</th></tr></thead>
       <tbody>
         <tr><td>Observed retention</td><td class="num">96.24%</td><td>3,832 lapses in 102,020 reviews</td></tr>
-        <tr><td>Target retention — settled</td><td class="num">95%</td><td>FSRS's own default is 90%; this deliberately is not it</td></tr>
+        <tr><td>Target retention — settled</td><td class="num">90%</td><td>Chosen on projected daily load, not on realised retention; 0.95 would be 1.9–3.0× the current workload</td></tr>
         <tr><td>Total study time</td><td class="num">636.1 h</td><td>26.5 days of wall clock</td></tr>
         <tr><td>Median review</td><td class="num">10 s</td><td>Mean 24.9 s — long tail</td></tr>
         <tr><td>Reviews / day</td><td class="num">69</td><td>Last 90 days; peak 229</td></tr>
@@ -673,16 +693,17 @@
     It ran, and it <em>declined</em> to name one: 5 of its 17 free parameters land on
     clamp boundaries and wildly different weight vectors score within 0.0006 of each
     other, so a "recommended default" would have been an artefact of the fit rather than a
-    finding. The number was chosen instead, and 0.95 is a deliberate ratification of how
-    you already study rather than a workload cut. <strong>The saving draft 3 anticipated
-    is still available — but only if you ask for it, by lowering the target.</strong></p>
+    finding. The number was chosen instead, on projected daily load under the cap:
+    0.90 reproduces the ~69 reviews/day already sustained, where 0.95 would be 1.9–3.0×
+    it. <strong>The saving draft 3 anticipated needs 0.85, and 0.85 needs the cap raised
+    as well — at which point the schedule is extrapolating past its evidence.</strong></p>
     <p>Calibrate expectations on the algorithm too: fitted FSRS-6 scores 0.1905 held-out
     log loss against a constant-base-rate model's 0.2111, which is roughly a 10%
     improvement over a model with no inputs at all. <strong>Nobody should expect leaving
     Mochi to feel like a better scheduler.</strong> The wins in this project are the four
     problems at the top of it.</p>
     <p><strong>Target retention stays a setting</strong> — per deck, since 漢字 and
-    基本情報 have different stakes — defaulting to the 0.95 above.</p>
+    基本情報 have different stakes — defaulting to the 0.90 above.</p>
   </div>
 </section>
 
@@ -1152,7 +1173,7 @@ graph LR
         <tr><td>Review log</td><td>Append-only per track</td><td>Merges by set union; can never conflict</td></tr>
         <tr><td>Attachments</td><td>Content-addressed + refcounted, <strong>never a stored path</strong></td><td>Kills the regeneration churn above; an absolute path welds the library to one directory on one machine</td></tr>
         <tr><td>Server</td><td>Workers + D1 + R2</td><td>Two PCs need a rendezvous; free tier, nothing to maintain</td></tr>
-        <tr><td>Scheduler</td><td><strong>FSRS-6</strong>, fitted · max interval 365 d · target retention 0.95</td><td>Chosen by backtest over 102,020 graded reviews rather than assumed, and the cap sits where the observed support stops</td></tr>
+        <tr><td>Scheduler</td><td><strong>FSRS-6</strong>, fitted · max interval 365 d · target retention 0.90</td><td>Chosen by backtest over 102,020 graded reviews rather than assumed; the cap sits where the observed support stops, and it is what makes 0.90 safe</td></tr>
         <tr><td>Grades</td><td><strong>Binary</strong> — remembered / forgot</td><td>Anki's four-button scale was considered and rejected. <span class="mono">w[15]</span>/<span class="mono">w[16]</span> are unreachable and frozen; the payoff is no train/serve distribution shift</td></tr>
         <tr><td>Import</td><td>Lossless, except stale pre-template <span class="mono">content</span></td><td>3,159 cards carry 79,175 characters the template replaced; discarded so the render has one source of truth, and reported so it stays recoverable</td></tr>
         <tr><td>Review direction</td><td>Ordered sides; reverse = declared permutation</td><td>Templates run to four sides, so "reverse" needs defining</td></tr>
@@ -1235,8 +1256,10 @@ graph LR
       today's deck-wide behaviour by inheritance while allowing per-card exceptions, which
       Mochi's boolean cannot express.</li>
       <li><strong>The scheduler is FSRS-6</strong> — chosen by backtest rather than
-      assumed, fitted to your own history, capped at 365 days, targeting 0.95 retention.
-      Target retention stays a per-deck setting; 0.95 is its default.</li>
+      assumed, fitted to your own history, capped at 365 days, targeting 0.90 retention.
+      Target retention stays a per-deck setting; 0.90 is its default. It was set from
+      projected daily load rather than from realised retention — 0.95 would be 1.9–3.0×
+      the current workload — and the cap is what keeps 0.90 inside measured intervals.</li>
       <li><strong>Grades are binary: remembered / forgot.</strong> Anki's four-button
       Again / Hard / Good / Easy was considered and rejected. FSRS's
       <span class="mono">w[15]</span> and <span class="mono">w[16]</span> are therefore
@@ -1281,7 +1304,7 @@ graph LR
 <footer>
   Derived from 日本語, English and 基本情報 exports · Mochi format version 2 ·
   7,716 cards · 102,020 reviews · 8,744 wiki-links · 636 hours ·
-  draft 4, revised 19 August 2026
+  draft 5, revised 19 August 2026
 </footer>
 
 </div>
