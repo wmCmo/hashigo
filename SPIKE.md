@@ -14,10 +14,11 @@ came from an adversarial verifier that regenerated it, or from a command I re-ra
 myself. Where a builder and a verifier disagreed, the verifier's figure is the one
 quoted, because in all three cases the builder had published its fastest run.
 
-Gates, re-run by me at the end:
+Gates, re-run at the time of writing. **The test count has since grown to 542 with
+stage 4 and stage 8 — this 352 is a snapshot, not the current figure.**
 
 ```
-npx vitest run   → 10 files, 352 passed | 1 skipped
+npx vitest run   → 10 files, 352 passed | 1 skipped   (2026-08-19; now 14 files / 542)
 npm run typecheck → exit 0
 npm run build     → VERIFIED 35 modules, 2 .sql byte-identical, 22 entry points · OK
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths  → exits 0

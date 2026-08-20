@@ -1,5 +1,15 @@
 # Browser feasibility — can Hashigo actually be a local-first PWA?
 
+> [!WARNING]
+> **SNAPSHOT, 2026-08-19. Some claims below are superseded — see `NEXT.md` and
+> `CLAUDE.md` for current state.** This is kept as the record of what was found and
+> measured at the time, so it is not rewritten. Known stale in this file:
+> - the **65x** write / 20x read blob multiplier. An adversarial re-measurement across
+>   four Chrome 151 environments reproduced none of these figures; the honest range is
+>   **13-40x** on write. The ORDERING never reversed, so the decision it supports
+>   stands — only the multiplier was optimistic. See `SPIKE.md` §2.
+> - `reclaim()` at 6.8 s — re-measured at **35-54 s**
+
 **Short answer: yes, and the risk is much lower than OVERNIGHT.md §2.4 implies.**
 I ran the real 66 MB Hashigo database inside a real browser, over real OPFS, and
 reproduced the entire oracle from it. Trigram FTS5 — the thing Ctrl+K depends on —

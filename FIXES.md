@@ -1,5 +1,16 @@
 # Fixes — what actually landed
 
+> [!WARNING]
+> **SNAPSHOT, 2026-08-19. Some claims below are superseded — see `NEXT.md` and
+> `CLAUDE.md` for current state.** This is kept as the record of what was found and
+> measured at the time, so it is not rewritten. Known stale in this file:
+> - test count 306 (now 542) · target retention 0.95 (now **0.90**)
+> - "blobs are one file per payload" and the 65x multiplier — payloads moved into
+>   BLOB rows and the re-measured advantage is 13-40x
+> - "there is still no renderer" — stage 4 landed 2026-08-20
+> - §3's 7 unratified decisions: 3 have since been decided, 1 was informational,
+>   2 remain open (the `orphanFieldValues` definition, and the OVERNIGHT §4 bundle)
+
 **The test suite passes: `npx vitest run` → 10 files, 306 passed, 1 skipped (307), twice in a row, and the one skipped test passes too when its gate is opened.**
 
 Written 2026-08-19 by the completeness critic, the last agent of the run. Every

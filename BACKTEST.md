@@ -551,11 +551,16 @@ wants for them. Working through that backlog is a larger, better-evidenced lever
 than moving the target, and it is the one whose effect the incoming data can
 check as it lands.
 
-Note what the settled 0.95 target means here: the 0.95 row is the **only one of
-the three that lands inside the observed range** (median 355–416 days against a
-454-day ceiling on anything ever observed), and it is approximately what the
-existing schedule already does. It is the conservative choice of the three, and
-it is the one this document can actually support.
+**SUPERSEDED 2026-08-20 — the target is 0.90, not 0.95.** When this was written the
+settled target was 0.95, and the argument below was that 0.95 is the only row landing
+inside the observed range (median 355–416 days against a 454-day ceiling on anything ever
+observed). That reasoning was sound but incomplete: it ignored the interaction with
+`MAX_INTERVAL_DAYS`. Measured under the 365-day cap that actually ships
+(`scripts/capped-load.ts`), 0.95 asks for **130–204 reviews/day against a realised 69.2**,
+while 0.90 asks for 62–97 — and the cap keeps 0.90's median interval at 365 days, i.e.
+inside the observed range after all. So the extrapolation risk this paragraph worried
+about is removed by the cap, and 0.95's real cost is a doubling of daily load. See
+`src/scheduler/policy.ts`, which documents that the two constants are not independent.
 
 Per-deck target retention (SPEC asks for a recommendation): **no.** Observed
 retention does differ by deck — 97.00% 単語, 94.65% 漢字, 93.19% English/Vocabulary
@@ -563,7 +568,8 @@ retention does differ by deck — 97.00% 単語, 94.65% 漢字, 93.19% English/V
 through stability. Nothing in this backtest identifies a deck where a different
 *target* is better, because target retention determines intervals that were never
 scheduled. Ship the per-deck setting SPEC asks for, default it to the global
-0.95, and leave it alone until there is data from more than one target.
+target (**0.90** since 2026-08-20; this document said 0.95), and leave it alone until
+there is data from more than one target.
 
 ---
 

@@ -1,5 +1,14 @@
 # Persistence, quota, multi-tab, recovery — measured
 
+> [!WARNING]
+> **SNAPSHOT, 2026-08-19. Some claims below are superseded — see `NEXT.md` and
+> `CLAUDE.md` for current state.** This is kept as the record of what was found and
+> measured at the time, so it is not rewritten. Known stale in this file:
+> - test count 351 (now 542)
+> - every desktop persistence figure: `persist()` was DENIED here and quota read as a
+>   hard 10 GiB. On Zach's actual phone `persist()` is **GRANTED** and quota is
+>   **133.96 GiB** — see "Measured on the real device" at the end of this file
+
 **The one-line answer: Zach's data is much safer than the feasibility note
 feared, but for a reason nobody had checked — a full rebuild from `exports/`
 takes 16.4 seconds and includes all 624.6 MiB of audio. Eviction is a

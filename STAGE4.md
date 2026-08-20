@@ -1,5 +1,12 @@
 # STAGE 4 — completeness critique
 
+> [!WARNING]
+> **SNAPSHOT, 2026-08-20. Some claims below are superseded — see `NEXT.md` and
+> `CLAUDE.md` for current state.** This is kept as the record of what was found and
+> measured at the time, so it is not rewritten. Known stale in this file:
+> - test count and the silent-audio numbers still hold as of writing; the FIX has
+>   been decided (resolve on demand) but NOT yet implemented — see `NEXT.md` step 1
+
 **Can you look at your own cards rendered correctly? For 漢字 yes; for 単語 no — 45% of its
 sides render blank and not one of its 3,456 audio clips is reachable, because all 19
 generator-typed template fields hold zero values and `<<Speech>>` therefore interpolates to

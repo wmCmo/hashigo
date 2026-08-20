@@ -103,9 +103,35 @@ Everything in `CLAUDE.md` "Decisions that are settled", plus, from 2026-08-20:
 
 ---
 
+## Which docs are snapshots, and what is stale in them
+
+Audited 2026-08-20. The point-in-time reports are **kept as the record** and bannered
+rather than rewritten, because a rewritten report no longer tells you what was actually
+found. Current state lives in `CLAUDE.md`, `SPEC.html` (draft 8), and this file.
+
+| Doc | Snapshot | Superseded in it |
+|---|---|---|
+| `CLAUDE.md` | live | — current |
+| `SPEC.html` | live, draft 8 | — current; carries its own retractions in place |
+| `NEXT.md` | live | — this file |
+| `notes/pitch-accent-pipeline.md` | live | — current |
+| `notes/design-tokens.md` | live | — current (Notion claims marked OBSERVED, not measured) |
+| `notes/dashboard-reconciliation.md` | live | — current |
+| `BACKTEST.md` | mostly live | **corrected**: two passages said the settled target was 0.95 |
+| `SPIKE.md` | 2026-08-19 | test count 352 (now 542); blob multiplier corrected in §2 already |
+| `FIXES.md` | 2026-08-19 | retention 0.95, test count 306, "no renderer", one-file-per-blob, 65x |
+| `OVERNIGHT.md` | 2026-08-19 | test count 242, "no renderer", retention 0.95 |
+| `STAGE4.md` | 2026-08-20 | the fix is decided but not implemented |
+| `notes/persistence.md` | 2026-08-19 | every desktop persistence figure — the phone contradicts two |
+| `notes/browser-feasibility.md` | 2026-08-19 | 65x multiplier (really 13-40x), `reclaim()` 6.8 s (really 35-54 s) |
+
+**The pattern worth noticing:** every stale item is a number that got *better-measured*
+later, and in every case the earlier figure was somebody's most favourable observation.
+Treat any single number in an older doc as a sample, not a fact.
+
 ## Working with him — the things that cost time to learn
 
-Ten memory files hold this; the index is at
+11 memory files hold this; the index is at
 `C:\Users\Zach\.claude\projects\C--DEV-WEB-hashigo\memory\MEMORY.md`. The four that
 matter most day to day:
 

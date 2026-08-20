@@ -1,5 +1,13 @@
 # Overnight build — completeness report
 
+> [!WARNING]
+> **SNAPSHOT, 2026-08-19. Some claims below are superseded — see `NEXT.md` and
+> `CLAUDE.md` for current state.** This is kept as the record of what was found and
+> measured at the time, so it is not rewritten. Known stale in this file:
+> - test count 242 (now 542)
+> - "there is no renderer" — stage 4 landed 2026-08-20
+> - target retention 0.95 wherever it appears (now **0.90**)
+
 **The test suite is green.** `npm test` → 10 files, 242 passed, 1 skipped; `npm run
 typecheck` → exit 0. I ran the suite three times end to end on a quiet tree and got
 the same result each time, so the flakiness two agents reported was them watching
