@@ -1753,3 +1753,44 @@ carries the argument. Azure's clips run 1.72 s for three mora with sizeable unvo
 so its tracking is less reliable than Google's. And **nothing here has been heard by a
 human**: Zach should listen to `hashi-0/1/2` for both providers and confirm the
 measurement agrees with his ear before 8,392 clips are regenerated.
+
+### MEASURED — Azure's own frontend was right all along
+
+The probe tested whether Azure honours OUR notation. It does not. But its unaided
+predictions are correct on all four minimal-pair baselines, so the 7,403 existing Nanami
+clips are most likely **fine**, not a liability:
+
+| unaided | Azure Hz | wanted |
+|---|--:|---|
+| 箸が 頭高 | 279 → 282 → 189 | start high, drop ✓ |
+| 橋が 尾高 | 172 → 273 → 233 | rise, drop on が ✓ |
+| 花が 尾高 | 185 → 259 → 217 | ✓ |
+| 鼻が 平板 | 186 → 242 → 250 | rise and hold ✓ |
+
+Zach's ear agrees with the measurement ("google sounds correct, azure's all sound the
+same"). So the case for moving is **override control and the male voice**, not broken
+audio. Azure's dictionary will still be wrong on rare words, proper nouns and novel
+compounds — it just cannot be told so.
+
+### MEASURED — notation fidelity varies BY VOICE inside Google
+
+Same three notations, four voices. All four produce distinct output; only some produce
+the right contours.
+
+| Voice | 頭高 want start-high | 尾高 want rise-drop | 平板 want rise-hold | Verdict |
+|---|--:|--:|--:|---|
+| `ja-JP-Neural2-B` ♀ | **280** → 254 → 184 | 203 → 307 → 216 | 197 → 269 → 256 | correct |
+| **`ja-JP-Neural2-C` ♂** | **174** → 154 → 104 | 118 → 177 → 114 | 117 → 152 → 139 | **correct, cleanest** |
+| `ja-JP-Neural2-D` ♂ | 156 → 168 → 99 | 114 → 197 → 116 | 111 → 169 → 155 | 頭高 rises before falling |
+| `ja-JP-Chirp3-HD-Charon` ♂ | 119 → 152 → 130 | **149** → 188 → 112 | 88 → 146 → 156 | **muddled — do not use** |
+
+**Recommend `ja-JP-Neural2-C`** (Zach wants a male voice; he has been shadowing Nanami for
+four years because Mochi locked the voice at template level). Its contours separate in the
+first third exactly as the female reference does, and its 104-177 Hz range is a natural
+male register for shadowing.
+
+**Chirp3-HD is a trap:** newer and better-sounding, honours the notation in the weak sense
+that output changes, but its 頭高 does not start high and its 尾高 starts too high. "Use
+the newest tier" would have been the wrong default. Voice selection is therefore a
+CORRECTNESS decision for this app, not only an aesthetic one — which is one more argument
+for the per-card voice override.
