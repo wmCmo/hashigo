@@ -169,6 +169,13 @@ SELECT r.text,
   JOIN accents x ON x.text = r.text
                 AND x.analyser NOT IN ('manual', 'openjtalk')
                 AND x.type IS NOT NULL
+ -- An ADJUDICATED word is settled, not open. Without this the queue never
+ -- empties: OJAD backed our derivation on 11 words, the cross-check still
+ -- disagrees with all 11, and they reappeared as work forever. A work list that
+ -- cannot be finished stops being read, which is the same failure as a stale
+ -- report -- the adjudications stay auditable in `accents`, with their citation
+ -- in `note`.
+   AND r.analyser <> 'manual'
  WHERE r.type IS NULL OR r.type <> x.type;
 
 -- Per-deck target retention, inherited the same way, defaulting to the

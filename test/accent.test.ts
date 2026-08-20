@@ -12,6 +12,8 @@ import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { MEMORY, openDatabase } from "../src/db/index.js";
 import {
+  OJAD_ADJUDICATIONS,
+  OJAD_AMBIGUOUS,
   accentFor,
   accentKey,
   hasPlaceholder,
@@ -380,6 +382,70 @@ describe.runIf(haveCorpus)("the real corpus", () => {
       // The defect this whole key exists to prevent, asserted against the real
       // load rather than a fixture.
       expect(bad.map((r) => r.text)).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("the OJAD adjudications", () => {
+  it("never gives an ambiguous word a single label", () => {
+    // まく has THREE different accents across 巻く / 蒔く・撒く / 膜・幕. Picking
+    // one would drill a wrong contour on two thirds of its senses, so the
+    // ambiguous list and the adjudication list must not overlap.
+    const settled = new Set(OJAD_ADJUDICATIONS.map((a) => a.word));
+    for (const { word } of OJAD_AMBIGUOUS) {
+      expect(settled.has(word), `${word} is ambiguous and must not be adjudicated`).toBe(false);
+    }
+  });
+
+  it("keeps type and accent position consistent with each other", () => {
+    for (const row of OJAD_ADJUDICATIONS) {
+      if (row.type === "平板") expect(row.accent, row.word).toBe(0);
+      else expect(row.accent, row.word).toBeGreaterThan(0);
+      if (row.type === "頭高") expect(row.accent, row.word).toBe(1);
+    }
+  });
+
+  it("carries the な-adjective correction, which changes a label", () => {
+    // OJAD shows 地味 as じみな — accent 2 of 3 morae, which reads as 中高. The
+    // bare noun じみ is 2 morae with accent 2, which is 尾高. The nucleus did not
+    // move; the mora count did. Getting this wrong is a wrong label, silently.
+    const jimi = OJAD_ADJUDICATIONS.find((a) => a.word === "地味");
+    expect(jimi).toMatchObject({ reading: "じみ", accent: 2, type: "尾高" });
+  });
+
+  it("records the word both analysers got wrong", () => {
+    // 正義: the probe rule refused it, UniDic read it as the personal name
+    // マサヨシ, OJAD says せいぎ 頭高. This is the case that justifies not letting
+    // a cross-check resolve on its own.
+    const seigi = OJAD_ADJUDICATIONS.find((a) => a.word === "正義");
+    expect(seigi).toMatchObject({ reading: "せいぎ", accent: 1, type: "頭高", backed: "neither" });
+  });
+});
+
+describe.runIf(haveCorpus)("adjudication against the real database", () => {
+  it("resolves every adjudicated word as manual, and empties them from the queue", () => {
+    const db = openDatabase(DB, { readOnly: true });
+    try {
+      const queued = new Set(
+        (db.prepare("SELECT text FROM accent_disagreements").all() as { text: string }[]).map(
+          (r) => r.text,
+        ),
+      );
+      for (const row of OJAD_ADJUDICATIONS) {
+        const resolved = accentFor(db, row.word);
+        // Skipped rather than failed when the accent data has not been loaded —
+        // that is a manual step needing the Python analyser.
+        if (resolved === null) continue;
+        expect(resolved.analyser, row.word).toBe("manual");
+        expect(resolved.type, row.word).toBe(row.type);
+        expect(resolved.accentType, row.word).toBe(row.accent);
+        // AN ADJUDICATED WORD IS SETTLED, NOT OPEN. Without this the queue never
+        // empties: OJAD backed our derivation on 11 words, the cross-check still
+        // disagrees with all 11, and they came back as work forever.
+        expect(queued.has(row.word), `${row.word} is adjudicated but still queued`).toBe(false);
+      }
     } finally {
       db.close();
     }

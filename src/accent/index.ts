@@ -28,6 +28,13 @@ export {
 } from "./key.js";
 
 export {
+  OJAD_ADJUDICATIONS,
+  OJAD_AMBIGUOUS,
+  applyOjadAdjudications,
+  type Adjudication,
+} from "./ojad.js";
+
+export {
   accentFor,
   loadAccents,
   materialiseAccents,

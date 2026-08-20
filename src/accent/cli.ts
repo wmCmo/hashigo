@@ -14,6 +14,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { openDatabase } from "../db/index.js";
 import { accentKey, readingLooksUnanalysed } from "./key.js";
+import { applyOjadAdjudications } from "./ojad.js";
 import { accentFor, loadAccents, materialiseAccents, type AccentRow } from "./store.js";
 
 /**
@@ -62,7 +63,7 @@ function arg(name: string, fallback?: string): string {
 function main(): number {
   const command = process.argv[2];
   if (command === undefined || command.startsWith("--")) {
-    console.error("usage: cli.ts <words|load|write|show|queue> --db <file> ...");
+    console.error("usage: cli.ts <words|load|ojad|write|show|queue> --db <file> ...");
     return 2;
   }
   const db = openDatabase(arg("db"), {
@@ -140,6 +141,14 @@ function main(): number {
             ` ${row["other_reading"]}`,
         );
       }
+      return 0;
+    }
+
+    if (command === "ojad") {
+      // The hand-entered adjudications. They land as manual overrides, so they
+      // beat both the primary derivation and the cross-check.
+      const { applied } = applyOjadAdjudications(db);
+      console.log(`applied ${applied} OJAD adjudication(s) as manual overrides`);
       return 0;
     }
 

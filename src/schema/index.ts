@@ -20,6 +20,11 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
 /**
  * Bumped only by a migration. `PRAGMA user_version` holds this.
  *
+ * 6 excludes adjudicated words from `accent_disagreements`. Without it the queue
+ * never empties — OJAD backed our derivation on 11 words and the cross-check
+ * still disagrees with all 11, so they reappeared as work forever. A work list
+ * that cannot be finished stops being read.
+ *
  * 5 makes `accent_resolved` name its analyser priority (manual, then the
  * primary `openjtalk`) instead of ordering by version across analysers — with
  * two analysers loaded, `version DESC` compared 'pyopenjtalk-plus/…' against
@@ -51,7 +56,7 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
  * longer exist and every database in the project is rebuildable from
  * `exports/` in about fifteen seconds. Re-import rather than migrate.
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /**
  * Three-state, on both cards and decks. `inherit` resolves up the deck tree and
