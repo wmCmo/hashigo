@@ -72,6 +72,59 @@ SELECT c.id AS card_id,
   FROM cards c
   JOIN deck_reverse_resolved dr ON dr.deck_id = c.deck_id;
 
+-- Per-card TTS voice, inherited the same way.  NULL here means "nothing
+-- overrides it", and the caller then keeps the voice the TEMPLATE FIELD
+-- recorded -- which SQL cannot know, because it is per-field, not per-card.
+-- That last hop lives in `voiceFor`; everything a card and its decks have to say
+-- is decided here, so there is one definition of the inheritance rather than a
+-- SQL one and a TypeScript one that drift.
+--
+-- Why NULL rather than a provider default: every one of the 10,791 speech blobs
+-- is addressed by the voice Mochi recorded.  A non-empty default would miss
+-- every lookup at once and re-bill the corpus.
+CREATE VIEW card_voice_resolved AS
+SELECT c.id AS card_id,
+       c.deck_id,
+       c.voice AS card_voice,
+       COALESCE(
+         NULLIF(TRIM(c.voice), ''),
+         (SELECT NULLIF(TRIM(a.voice), '')
+            FROM deck_ancestry an JOIN decks a ON a.id = an.ancestor_id
+           WHERE an.deck_id = c.deck_id AND NULLIF(TRIM(a.voice), '') IS NOT NULL
+           ORDER BY an.depth
+           LIMIT 1),
+         NULLIF(TRIM((SELECT value FROM settings WHERE key = 'voice.default')), '')
+       ) AS voice,
+       CASE
+         WHEN NULLIF(TRIM(c.voice), '') IS NOT NULL THEN 'card'
+         WHEN (SELECT NULLIF(TRIM(a.voice), '')
+                 FROM deck_ancestry an JOIN decks a ON a.id = an.ancestor_id
+                WHERE an.deck_id = c.deck_id AND NULLIF(TRIM(a.voice), '') IS NOT NULL
+                ORDER BY an.depth LIMIT 1) IS NOT NULL THEN 'deck'
+         WHEN NULLIF(TRIM((SELECT value FROM settings WHERE key = 'voice.default')), '')
+              IS NOT NULL THEN 'workspace'
+         ELSE 'field'
+       END AS source
+  FROM cards c;
+
+-- The accent for a string, with one definition of "which row wins": a human
+-- override beats every analyser, and otherwise the newest version.
+--
+-- `basis = 'guarded'` rows are KEPT and surfaced rather than filtered out. They
+-- are the manual-review queue -- 32 of 3,850 words on this corpus -- and a view
+-- that hid them would turn "the rule refused" into "no data", which is the same
+-- miss-as-silence defect the audio binding was built to fix.
+CREATE VIEW accent_resolved AS
+SELECT text, analyser, version, probe, phrases, type, accent_type, reading,
+       position_basis, basis, note
+  FROM accents a
+ WHERE a.rowid = (
+   SELECT b.rowid FROM accents b
+    WHERE b.text = a.text
+    ORDER BY (b.analyser = 'manual') DESC, b.version DESC, b.created_at DESC
+    LIMIT 1
+ );
+
 -- Per-deck target retention, inherited the same way, defaulting to the
 -- workspace setting.  SPEC: "Target retention must be a setting -- per deck."
 CREATE VIEW deck_target_retention_resolved AS

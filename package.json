@@ -47,6 +47,10 @@
       "types": "./dist/render/index.d.ts",
       "default": "./dist/render/index.js"
     },
+    "./accent": {
+      "types": "./dist/accent/index.d.ts",
+      "default": "./dist/accent/index.js"
+    },
     "./generate": {
       "types": "./dist/generate/index.d.ts",
       "default": "./dist/generate/index.js"

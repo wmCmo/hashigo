@@ -20,6 +20,12 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
 /**
  * Bumped only by a migration. `PRAGMA user_version` holds this.
  *
+ * 4 adds the `accents` table (derived 高低アクセント facts keyed by TEXT, not by
+ * card), the `accent_resolved` and `card_voice_resolved` views, and `'accent'`
+ * to `template_fields.type` — Zach's `<<型>>` field. Added now rather than
+ * retrofitted because SPEC is explicit that retrofitted storage means a
+ * migration over 7,716 cards.
+ *
  * 3 adds `decks.voice` and `cards.voice` (NULL = inherit, resolving up the deck
  * tree and bottoming out at settings `voice.default`), seeds that setting EMPTY
  * so nothing changes until it is set, and adds `blobs.unreferenced_at` so a
@@ -37,7 +43,7 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
  * longer exist and every database in the project is rebuildable from
  * `exports/` in about fifteen seconds. Re-import rather than migrate.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * Three-state, on both cards and decks. `inherit` resolves up the deck tree and
@@ -67,6 +73,10 @@ export const FIELD_TYPES = [
   "furigana",
   "dictionary",
   "image-search",
+  // Zach's <<型>>: 平板 / 頭高 / 中高 / 尾高 beside the audio. His idea, and it
+  // doubles as the error-detection mechanism for the whole accent pipeline,
+  // because a wrong LABEL is visible where a wrong CONTOUR is silently absorbed.
+  "accent",
 ] as const;
 export type FieldType = (typeof FIELD_TYPES)[number];
 

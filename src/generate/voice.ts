@@ -37,12 +37,17 @@ export interface VoiceResolution {
   readonly deckId?: string;
 }
 
-/** Depth cap on the deck chain. The corpus's deepest nesting is 4. */
-const MAX_DECK_DEPTH = 32;
-
-const CARD_SQL = "SELECT voice, deck_id FROM cards WHERE id = ?";
-const DECK_SQL = "SELECT id, voice, parent_id FROM decks WHERE id = ?";
-const SETTING_SQL = "SELECT value FROM settings WHERE key = ?";
+/**
+ * The inheritance lives in the `card_voice_resolved` VIEW, not here.
+ *
+ * It was a hand-rolled tree walk in this file first, which made two definitions
+ * of one rule — a SQL one for `reverse` and `target_retention`, and a
+ * TypeScript one for voice. `deck_ancestry` already existed. The view returns
+ * the winner and names its source; the only hop left in TypeScript is the field
+ * fallback, which SQL cannot do because a voice is recorded per FIELD and the
+ * view only knows about cards and decks.
+ */
+const RESOLVED_SQL = "SELECT voice, source FROM card_voice_resolved WHERE card_id = ?";
 
 function clean(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
@@ -60,38 +65,38 @@ export function voiceFor(
   cardId: string,
   fieldVoice: string | null = null,
 ): VoiceResolution {
-  const card = db.prepare(CARD_SQL).get(cardId) as
-    | { voice: string | null; deck_id: string }
+  const row = db.prepare(RESOLVED_SQL).get(cardId) as
+    | { voice: string | null; source: VoiceResolution["source"] }
     | undefined;
-  if (card === undefined) {
+  const resolved = clean(row?.voice);
+  if (row === undefined || resolved === null) {
+    // Nothing overrides it, so the template's own voice stands. NOT
+    // null-as-"provider default": that would silently change what 7,093 Nanami
+    // clips were made with.
     return { voice: fieldVoice, source: "field" };
   }
-
-  const own = clean(card.voice);
-  if (own !== null) return { voice: own, source: "card" };
-
-  let deckId: string | null = card.deck_id;
-  const deck = db.prepare(DECK_SQL);
-  for (let depth = 0; deckId !== null && depth < MAX_DECK_DEPTH; depth += 1) {
-    const row = deck.get(deckId) as
-      | { id: string; voice: string | null; parent_id: string | null }
+  if (row.source === "deck") {
+    const deckId = db.prepare("SELECT deck_id FROM cards WHERE id = ?").pluck().get(cardId) as
+      | string
       | undefined;
-    if (row === undefined) break;
-    const found = clean(row.voice);
-    if (found !== null) return { voice: found, source: "deck", deckId: row.id };
-    deckId = row.parent_id;
+    return deckId === undefined
+      ? { voice: resolved, source: "deck" }
+      : { voice: resolved, source: "deck", deckId: nearestDeck(db, deckId) };
   }
+  return { voice: resolved, source: row.source };
+}
 
-  const setting = db.prepare(SETTING_SQL).get(SETTING_KEYS.voiceDefault) as
-    | { value: string }
-    | undefined;
-  const workspace = clean(setting?.value);
-  if (workspace !== null) return { voice: workspace, source: "workspace" };
-
-  // Nothing overrides it, so the template's own voice stands. NOT null-as-
-  // "provider default": that would silently change what 7,093 Nanami clips were
-  // made with.
-  return { voice: fieldVoice, source: "field" };
+/** Which deck in the chain actually supplied the voice, for the explanation. */
+function nearestDeck(db: Db, deckId: string): string {
+  const row = db
+    .prepare(
+      `SELECT a.id FROM deck_ancestry an JOIN decks a ON a.id = an.ancestor_id
+        WHERE an.deck_id = ? AND NULLIF(TRIM(a.voice), '') IS NOT NULL
+        ORDER BY an.depth LIMIT 1`,
+    )
+    .pluck()
+    .get(deckId) as string | undefined;
+  return row ?? deckId;
 }
 
 /**

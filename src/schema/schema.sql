@@ -111,10 +111,16 @@ CREATE TABLE template_fields (
   -- Mochi omits `type` on plain fields entirely: only 27 of the 49 fields across
   -- the 11 templates carry one.  The importer defaults the absent case to
   -- 'plain' rather than letting NULL mean two different things.
+  -- 'accent' is Zach's <<型>> field: 平板 / 頭高 / 中高 / 尾高 shown beside the
+  -- audio.  Added in stage 1 rather than retrofitted, because SPEC is explicit
+  -- that "a feature whose storage is retrofitted later means a migration over
+  -- 7,716 cards".  Unlike the other generated types its value is MATERIALISED
+  -- (see the accents table): a label is small, stable, and needs to be
+  -- searchable, where audio is large and changes with the provider.
   type            TEXT NOT NULL CHECK (type IN (
                     'plain', 'text', 'boolean', 'number',
                     'speech', 'ai', 'translate', 'furigana',
-                    'dictionary', 'image-search')),
+                    'dictionary', 'image-search', 'accent')),
   source_field_id TEXT,                       -- input field; NULL is legitimate
   options         TEXT NOT NULL DEFAULT '{}', -- JSON: voice, lang (BCP-47), prompt, from, to
   pos             TEXT NOT NULL DEFAULT '',
@@ -472,6 +478,68 @@ CREATE TABLE blobs (
 
 CREATE INDEX blobs_unreferenced ON blobs (unreferenced_at) WHERE refcount = 0;
 CREATE INDEX blobs_kind_text    ON blobs (kind, source_text);
+
+-- ---------------------------------------------------------------------------
+-- accents -- derived 高低アクセント facts, keyed by TEXT rather than by card.
+--
+-- 橋 has one accent whichever card it appears on, exactly as a blob has one
+-- address whatever references it.  Keying by card would run the analyser 3,858
+-- times for 3,850 distinct strings and invite two rows disagreeing about the
+-- same word.
+--
+-- WHY THIS IS NOT card_field_values.  That table is authored text, "kept
+-- verbatim", and round-trip fidelity is non-negotiable; writing a derivation
+-- into it and then re-deriving would clobber a manual override.  So the
+-- derivation and the override live here and card_field_values holds only the
+-- materialised render cache for the 型 field.  Re-running the materialiser is
+-- idempotent and cannot destroy an override, because the override was never
+-- there.
+--
+-- A WRONG ACCENT IS WORSE THAN NO ACCENT.  Drilled through spaced repetition it
+-- is actively hard to unlearn, so every column that could hide a guess is
+-- explicit: `basis` says which branch of the rule produced the answer, and
+-- `type`/`accent_type` are NULL on a refusal rather than defaulted.  The rule
+-- refuses 32 of 3,850 words on this corpus and those 32 are a manual-review
+-- queue, not an accent.
+-- ---------------------------------------------------------------------------
+CREATE TABLE accents (
+  -- `accentKey()` output: rendered (wiki-links reduced to display text),
+  -- invisible marks stripped, all five placeholder spellings normalised to a
+  -- single `~`, whitespace collapsed, NFC.  NORMALISED rather than STRIPPED
+  -- because a placeholder marks an accent-phrase boundary better than the
+  -- analyser's own guess, so removing it here would throw the segmentation away.
+  text         TEXT NOT NULL,
+  analyser     TEXT NOT NULL,      -- 'openjtalk' | 'manual'
+  version      TEXT NOT NULL,      -- 'pyopenjtalk-plus/0.4.1.post9'; '' for manual
+  probe        TEXT NOT NULL,      -- 'が'; '' when no probe was used.  NEVER spoken.
+  phrases      TEXT NOT NULL,      -- JSON [[morae,accent],...], ONE ENTRY PER ACCENT PHRASE
+  type         TEXT CHECK (type IS NULL OR type IN ('平板', '頭高', '中高', '尾高')),
+  accent_type  INTEGER CHECK (accent_type IS NULL OR accent_type >= 0),
+  reading      TEXT,               -- kana the notation was built from
+  -- NAME THE BASIS (CLAUDE.md decision 6).  'accent-position' = the last HIGH
+  -- mora, 1-based -- Azure's word and this schema's.  'downstep-after' = the
+  -- boundary following it.  They differ by one, and Azure and Polly describe
+  -- them from opposite sides, so the column is not optional.
+  position_basis TEXT NOT NULL DEFAULT 'accent-position'
+                   CHECK (position_basis IN ('accent-position', 'downstep-after')),
+  -- Why this row exists, i.e. how much to trust it.
+  --   probe        single accent phrase, probe added exactly one mora
+  --   multi-phrase leading phrases verbatim, probe rule on the last only
+  --   bare         no probe was used
+  --   manual       a human said so; wins outright
+  --   guarded      the rule REFUSED.  type and accent_type are NULL.
+  basis        TEXT NOT NULL CHECK (basis IN
+                 ('probe', 'bare', 'multi-phrase', 'manual', 'guarded')),
+  note         TEXT,               -- 'probe changed the reading', an OJAD citation, ...
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  PRIMARY KEY (text, analyser, version, probe),
+  -- A refusal must not masquerade as an answer, in either direction.
+  CHECK ((basis = 'guarded') = (type IS NULL)),
+  CHECK ((type IS NULL) = (accent_type IS NULL))
+);
+
+CREATE INDEX accents_text ON accents (text);
+CREATE INDEX accents_type ON accents (type) WHERE type IS NOT NULL;
 
 -- Every reference to a blob.  refcount is maintained by trigger so it cannot
 -- drift from reality, and ON DELETE RESTRICT means a referenced blob cannot be

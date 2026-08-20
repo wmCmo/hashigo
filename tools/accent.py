@@ -112,3 +112,144 @@ def sapi_kana(reading_katakana, accent_type):
     if accent_type <= 0 or accent_type > len(moras):
         return "".join(moras) + "+"
     return "".join(moras[:accent_type]) + "'" + "".join(moras[accent_type:])
+
+
+# ---------------------------------------------------------------------------
+# Placeholders, the multi-phrase rule, and readings.
+#
+# Everything below implements what notes/pitch-accent-pipeline.md SPECIFIES and
+# accent.py did not yet DO: derive() refused every multi-phrase entry with
+# "apply the rule to the LAST phrase only" and left the caller to do it.
+# ---------------------------------------------------------------------------
+
+# THREE tilde codepoints and TWO ellipsis spellings are in use, measured by an
+# exhaustive codepoint census over 3,860 values -- not by a regex, because a
+# regex for `～〜...` is exactly what missed the single ASCII tilde in
+# `~に越したことはない` and produced a count of 20 instead of 21.
+PLACEHOLDERS = ("～", "〜", "~", "...", "…")
+
+# Measured: a LEADING placeholder contributes no phoneme yet flips `なり` from
+# accent 2 to accent 1, because the unknown symbol changes how the following
+# morpheme is tagged. A MEDIAL one becomes a `pau` and splits breath groups. So
+# it corrupts the derivation either way and comes off before analysis -- while
+# staying in the DISPLAYED text, which is authored and verbatim by decision.
+def split_placeholders(text):
+    """Segments of `text` between placeholders, empties dropped.
+
+    Returns the segmentation the notation wants: one `^` per surviving segment.
+    The placeholder positions are better phrase boundaries than the analyser's
+    own guesses, which is the whole reason to split here rather than strip and
+    re-analyse.
+    """
+    out, current = [], text
+    for mark in PLACEHOLDERS:
+        current = current.replace(mark, "\x00")
+    for piece in current.split("\x00"):
+        piece = piece.strip()
+        if piece:
+            out.append(piece)
+    return out
+
+
+def has_placeholder(text):
+    return any(mark in text for mark in PLACEHOLDERS)
+
+
+def reading_of(text):
+    """Katakana reading, as the analyser reads it. '' when it yields nothing."""
+    try:
+        return pyopenjtalk.g2p(text, kana=True) or ""
+    except Exception:                      # noqa: BLE001 - analyser can refuse
+        return ""
+
+
+def derive_phrase_list(word, probe="が"):
+    """The full rule, including the multi-phrase case.
+
+    MEASURED (notes §3): the probe touches only the LAST accent phrase -- across
+    空気を読む, 気を配る, にもかかわらず, ～なり～なり and ...は...に限る every
+    leading phrase's (morae, accent) came back byte-identical and only the final
+    one changed. So: analyse bare, take every phrase but the last verbatim, and
+    apply the probe rule to the last one only.
+
+    `basis` says which branch produced the answer, because a single-phrase probe
+    result and a multi-phrase one do not deserve the same confidence and a column
+    that conflates them is a number without a basis.
+    """
+    bare = phrases(word)
+    if not bare:
+        return {"word": word, "ok": False, "basis": "guarded",
+                "reason": "analyser produced no accent phrase"}
+
+    probed = phrases(word + probe)
+    if len(probed) != len(bare):
+        # The probe changed the SEGMENTATION, not just the last phrase. Refuse
+        # rather than guess which phrase to trust.
+        return {"word": word, "ok": False, "basis": "guarded", "guarded": True,
+                "bare": bare, "probed": probed,
+                "reason": "probe changed the phrase count; manual review"}
+
+    last_bare_moras, _ = bare[-1]
+    last_probed_moras, last_probed_accent = probed[-1]
+    if last_probed_moras != last_bare_moras + 1:
+        return {"word": word, "ok": False, "basis": "guarded", "guarded": True,
+                "bare": bare, "probed": probed,
+                "reason": "probe changed the reading; manual review"}
+
+    name, atype = classify(last_bare_moras, last_probed_moras, last_probed_accent)
+    if name == "不明":
+        return {"word": word, "ok": False, "basis": "guarded",
+                "bare": bare, "probed": probed,
+                "reason": "accent position past the word; manual review"}
+
+    # Leading phrases keep their OWN bare accent: they are already followed by
+    # material inside their own phrase, so the bare-word problem does not arise
+    # for them and no probe is needed.
+    out_phrases = [list(p) for p in bare[:-1]] + [[last_bare_moras, atype]]
+    return {
+        "word": word,
+        "ok": True,
+        "guarded": False,
+        "basis": "probe" if len(bare) == 1 else "multi-phrase",
+        "bare": bare,
+        "probed": probed,
+        # The TYPE names the last phrase, which is the one being drilled. For a
+        # multi-phrase entry that is a statement about the final phrase and the
+        # `basis` column says so -- it is not a label for the whole string.
+        "type": name,
+        "accent_type": atype,
+        "phrases": out_phrases,
+    }
+
+
+def derive_value(value, probe="が"):
+    """Derive for one AUTHORED field value, placeholders and all.
+
+    The authored value is what is on the card; the analyser must never see the
+    placeholders. Segments are derived independently and reported together, so a
+    caller can emit one `^` per segment.
+    """
+    segments = split_placeholders(value)
+    if not segments:
+        return {"value": value, "ok": False, "basis": "guarded",
+                "reason": "nothing left after removing placeholders"}
+    derived = [derive_phrase_list(segment, probe) for segment in segments]
+    ok = all(d.get("ok") for d in derived)
+    phrase_list = []
+    for d in derived:
+        phrase_list.extend(d.get("phrases") or [])
+    return {
+        "value": value,
+        "analysed": segments,
+        "had_placeholder": has_placeholder(value),
+        "ok": ok,
+        "guarded": any(d.get("guarded") for d in derived),
+        # One segment: its own basis. Several: the notation spans placeholders.
+        "basis": derived[0]["basis"] if len(derived) == 1 else ("multi-phrase" if ok else "guarded"),
+        "type": derived[-1].get("type") if ok else None,
+        "accent_type": derived[-1].get("accent_type") if ok else None,
+        "phrases": phrase_list if ok else [],
+        "reading": "".join(reading_of(s) for s in segments),
+        "segments": derived,
+        "reason": next((d["reason"] for d in derived if d.get("reason")), None),
+    }
