@@ -172,6 +172,9 @@ if (!existsSync(schemaModule)) {
  */
 const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const declared = new Set();
+// Two different bases, per the naming rule: `declared` counts .js/.d.ts targets
+// (a subpath contributes both), `exportSubpaths` counts the public import specifiers.
+const exportSubpaths = Object.keys(manifest.exports).filter((k) => k !== "./package.json").length;
 const claim = (value) => {
   if (typeof value === "string") {
     if (value.startsWith("./dist/")) declared.add(value);
@@ -204,5 +207,5 @@ console.log(
   `hashigo-build: VERIFIED ${importedCount} modules imported, ` +
     `${entryPoints.length} CLI(s) skipped, ${sqlSources.length} .sql byte-identical, ` +
     `${emitted.length} .js with types, ` +
-    `${declared.size} package.json entry points resolve`,
+    `${declared.size} declared dist targets resolve (${exportSubpaths} export subpaths)`,
 );
