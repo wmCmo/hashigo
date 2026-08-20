@@ -57,9 +57,9 @@ Rebuilding the accent data after a re-import:
 
 ```bash
 npx vite-node src/accent/cli.ts -- words --db build/hashigo.db --out build/head-words.txt
-PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent_derive.py --words build/head-words.txt --out build/accents.jsonl
+.venv-accent/Scripts/python tools/accent_derive.py --words build/head-words.txt --out build/accents.jsonl
 npx vite-node src/accent/cli.ts -- load --db build/hashigo.db --in build/accents.jsonl
-PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent_crosscheck.py --derived build/accents.jsonl --out build/accent-disagreements.jsonl --emit-rows build/accents-unidic.jsonl
+.venv-accent/Scripts/python tools/accent_crosscheck.py --derived build/accents.jsonl --out build/accent-disagreements.jsonl --emit-rows build/accents-unidic.jsonl
 npx vite-node src/accent/cli.ts -- load --db build/hashigo.db --in build/accents-unidic.jsonl
 npx vite-node src/accent/cli.ts -- ojad --db build/hashigo.db
 ```

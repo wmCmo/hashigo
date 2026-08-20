@@ -1,7 +1,7 @@
 """Derive an accent for every head word handed to us, as JSONL.
 
     npx vite-node src/accent/cli.ts -- words --db build/hashigo.db --out build/head-words.txt
-    PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent_derive.py         --words build/head-words.txt --out build/accents.jsonl
+    .venv-accent/Scripts/python tools/accent_derive.py         --words build/head-words.txt --out build/accents.jsonl
     npx vite-node src/accent/cli.ts -- load --db build/hashigo.db --in build/accents.jsonl
 
 WHY PYTHON NEITHER READS THE DATABASE NOR WRITES IT. The analyser only exists

@@ -13,7 +13,14 @@ and are skipped.  DO NOT use "the /A: a2 field resets to 1" as the boundary
 test: it fails on `に引き換え`, whose two phrases both start at a2=1.
 """
 import re
+import sys
+
 import pyopenjtalk        # or pyopenjtalk_plus, which exposes the same module name
+
+# cp932 console. Set here, not asked of the caller: `VAR=value cmd` is bash and a
+# parser error in PowerShell.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 F_RE = re.compile(r'/F:(\d+)_(\d+)#[^@]*@(\d+)_(\d+)')
 I_RE = re.compile(r'/I:[^@]*@(\d+)\+')

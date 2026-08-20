@@ -1,6 +1,6 @@
 """F0 over the voiced span of a WAV, in thirds. No dependencies beyond stdlib.
 
-    PYTHONIOENCODING=utf-8 python tools/f0.py build/longvowel/*.wav
+    python tools/f0.py build/longvowel/*.wav
 
 WHY THIS EXISTS AS A FILE. The 22-call provider comparison that settled
 Google-vs-Azure measured F0 this way, but the script was ad-hoc and was not
@@ -27,6 +27,13 @@ import statistics
 import struct
 import sys
 import wave
+
+# The console here is cp932, so printing anything non-ASCII raises without this.
+# Done IN the script rather than asked of the caller: `PYTHONIOENCODING=utf-8 cmd`
+# is bash syntax and is a parser error in PowerShell, which is the shell actually
+# used on this machine.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 def read_mono(path):

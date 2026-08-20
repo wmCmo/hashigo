@@ -10,7 +10,7 @@ expects 尾高. That is the only cheap check on 3,850 derivations.
 
 ```bash
 npx vite-node src/accent/cli.ts -- words --db build/hashigo.db --out build/head-words.txt
-PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent_derive.py \
+.venv-accent/Scripts/python tools/accent_derive.py \
     --words build/head-words.txt --out build/accents.jsonl
 npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accents.jsonl
 npx vite-node src/accent/cli.ts -- write --db build/hashigo.db --dry-run

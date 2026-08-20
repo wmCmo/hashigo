@@ -1,6 +1,6 @@
 """Cross-check the OpenJTalk derivation against UniDic — a SECOND dictionary.
 
-    PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent_crosscheck.py \
+    .venv-accent/Scripts/python tools/accent_crosscheck.py \
         --derived build/accents.jsonl --out build/accent-disagreements.jsonl
 
 WHY THIS EXISTS. The step-3 derivation rests on one analyser plus my recall, and

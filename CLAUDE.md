@@ -73,11 +73,11 @@ npm run spike:check     # the browser contract; spike/ is excluded from tsconfig
 # The accent pipeline. Python owns the analyser and NOTHING else -- see
 # src/accent/README.md for why that boundary is a bug fix, not tidiness.
 npx vite-node src/accent/cli.ts -- words --db build/hashigo.db --out build/head-words.txt
-PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent_derive.py --words build/head-words.txt --out build/accents.jsonl
+.venv-accent/Scripts/python tools/accent_derive.py --words build/head-words.txt --out build/accents.jsonl
 npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accents.jsonl
 npx vite-node src/accent/cli.ts -- ojad  --db build/hashigo.db     # 33 OJAD adjudications
 npx vite-node src/accent/cli.ts -- queue --db build/hashigo.db     # 57 still disputed
-PYTHONIOENCODING=utf-8 python tools/f0.py build/longvowel/*.wav    # F0 in thirds
+python tools/f0.py build/longvowel/*.wav    # F0 in thirds
 npm run spike:dev -- --host 127.0.0.1   # bind IPv4: a server on ::1 refuses 127.0.0.1
 ```
 
@@ -216,10 +216,18 @@ before writing anything that parses the export.
 
 ## Environment
 
-* **Windows.** The console is **cp932** (Japanese locale), so any script printing
-  Japanese needs both `PYTHONIOENCODING=utf-8` in the environment and
-  `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` in the script.
-  Without them you get `UnicodeEncodeError` on the first kanji.
+* **Windows, and Zach's interactive shell is PowerShell 5.1.** So
+  **`VAR=value cmd` is a parser error** in anything handed to him — it is bash
+  syntax, PowerShell needs `$env:VAR="value"; cmd`. `&&` is also a parser error in
+  5.1; use `;`. This has now cost him two failed commands, so:
+  **every script that prints Japanese sets its own encoding**, in the script, and
+  no documented command line carries an env prefix. The console is **cp932**
+  (Japanese locale), so `sys.stdout.reconfigure(encoding="utf-8",
+  errors="replace")` at the top of the file is what makes that work — asking the
+  caller for `PYTHONIOENCODING` pushes a bash-ism onto a PowerShell user.
+  (Point-in-time reports under `notes/`, `FIXES.md`, `STAGE4.md` etc. still show
+  the old prefix inside quoted transcripts. Those are records of what was run, not
+  instructions.)
 * Python is `python` (3.13). `python3` is not on PATH — it hits the Microsoft Store
   alias and fails.
 * The Bash tool's working directory does not reliably persist between calls. Use
