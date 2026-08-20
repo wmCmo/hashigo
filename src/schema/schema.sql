@@ -41,7 +41,12 @@ INSERT INTO settings (key, value) VALUES
                                          -- MAX_INTERVAL_DAYS caps at 365 — see
                                          -- src/scheduler/policy.ts. Per-deck
                                          -- override still applies.
-  ('timezone.default',         'Asia/Tokyo');
+  ('timezone.default',         'Asia/Tokyo'),
+  -- Empty means "whatever the template field already says", which is the only
+  -- safe default: every existing blob is keyed by the voice Mochi recorded, so a
+  -- non-empty default here would miss all 10,791 speech lookups at once and
+  -- re-bill the corpus.  Set it when regenerating deliberately, not before.
+  ('voice.default',            '');
 
 -- ---------------------------------------------------------------------------
 -- decks -- nested via parent_id.  Three-state reverse, and per-deck target
@@ -56,6 +61,13 @@ CREATE TABLE decks (
                         CHECK (reverse IN ('inherit', 'on', 'off')),
   target_retention    REAL CHECK (target_retention IS NULL
                         OR (target_retention > 0.5 AND target_retention < 1.0)),
+  -- TTS voice for cards in this deck.  NULL = inherit, resolving up the tree
+  -- exactly as `reverse` does and bottoming out at settings 'voice.default'.
+  -- Mochi has no equivalent: it sets the voice on the TEMPLATE, applies it to
+  -- every card, and offers no way to change one -- which is why four years of
+  -- shadowing happened against a female voice that was never chosen.  A voice
+  -- column is the whole of pain point #5.
+  voice               TEXT,
   default_template_id TEXT REFERENCES templates (id) ON DELETE SET NULL,
   archived            INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
   pos                 TEXT NOT NULL DEFAULT '',   -- lexicographic sort key
@@ -169,6 +181,10 @@ CREATE TABLE cards (
                                               -- NULL = not maintained; '' = empty card.
   reverse        TEXT NOT NULL DEFAULT 'inherit'
                    CHECK (reverse IN ('inherit', 'on', 'off')),
+  -- Per-CARD voice override.  NULL = inherit from the deck chain.  This is the
+  -- granularity that matters: one word mispronounced by the provider needs one
+  -- clip regenerated, not a template-wide change and not a re-import.
+  voice          TEXT,
   pinned         INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
   archived       INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
   needs_rereview INTEGER NOT NULL DEFAULT 0 CHECK (needs_rereview IN (0, 1)),
@@ -445,10 +461,16 @@ CREATE TABLE blobs (
   bytes       BLOB,                          -- inline payload, or NULL when...
   path        TEXT,                          -- ...stored outside the DB (OPFS / disk)
   refcount    INTEGER NOT NULL DEFAULT 0 CHECK (refcount >= 0),
+  -- WHEN the last reference went away, maintained by trigger; NULL while the
+  -- blob is referenced.  A sweep needs this and cannot use created_at: a clip
+  -- generated a year ago and dereferenced a minute ago would be swept
+  -- instantly, which makes a free A/B of two voices destroy the loser the
+  -- moment the winner is pointed at.  See `sweepUnreferenced`'s grace period.
+  unreferenced_at TEXT,
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
-CREATE INDEX blobs_unreferenced ON blobs (created_at) WHERE refcount = 0;
+CREATE INDEX blobs_unreferenced ON blobs (unreferenced_at) WHERE refcount = 0;
 CREATE INDEX blobs_kind_text    ON blobs (kind, source_text);
 
 -- Every reference to a blob.  refcount is maintained by trigger so it cannot
@@ -469,21 +491,38 @@ CREATE UNIQUE INDEX blob_refs_scope ON blob_refs
   (card_id, COALESCE(field_id, ''), ref_key);
 CREATE INDEX blob_refs_blob ON blob_refs (blob_hash);
 
+-- refcount AND unreferenced_at are maintained together, in the same trigger, so
+-- they cannot disagree.  A blob that gains a reference has its timestamp
+-- cleared: it is no longer a sweep candidate and must not look like one.
 CREATE TRIGGER blob_refs_ai AFTER INSERT ON blob_refs
 BEGIN
-  UPDATE blobs SET refcount = refcount + 1 WHERE hash = NEW.blob_hash;
+  UPDATE blobs SET refcount = refcount + 1, unreferenced_at = NULL
+   WHERE hash = NEW.blob_hash;
 END;
 
 CREATE TRIGGER blob_refs_ad AFTER DELETE ON blob_refs
 BEGIN
-  UPDATE blobs SET refcount = refcount - 1 WHERE hash = OLD.blob_hash;
+  UPDATE blobs
+     SET refcount = refcount - 1,
+         unreferenced_at = CASE WHEN refcount - 1 = 0
+           THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ELSE unreferenced_at END
+   WHERE hash = OLD.blob_hash;
 END;
 
+-- RETARGETING.  This trigger existed and nothing called it, which is the
+-- literal shape of "I cannot delete the audio I do not want": pointing a
+-- reference at a different blob is how a voice is replaced, and there was no
+-- API to do it.  See `retargetBlobRef` in src/import/blobs.ts.
 CREATE TRIGGER blob_refs_au AFTER UPDATE OF blob_hash ON blob_refs
 WHEN NEW.blob_hash <> OLD.blob_hash
 BEGIN
-  UPDATE blobs SET refcount = refcount - 1 WHERE hash = OLD.blob_hash;
-  UPDATE blobs SET refcount = refcount + 1 WHERE hash = NEW.blob_hash;
+  UPDATE blobs
+     SET refcount = refcount - 1,
+         unreferenced_at = CASE WHEN refcount - 1 = 0
+           THEN strftime('%Y-%m-%dT%H:%M:%fZ', 'now') ELSE unreferenced_at END
+   WHERE hash = OLD.blob_hash;
+  UPDATE blobs SET refcount = refcount + 1, unreferenced_at = NULL
+   WHERE hash = NEW.blob_hash;
 END;
 
 -- Immutable: content-addressing is a lie the moment a blob's bytes or identity

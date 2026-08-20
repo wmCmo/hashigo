@@ -520,6 +520,73 @@ export function addBlobRef(db: Db, ref: BlobRef): boolean {
   return info.changes === 1;
 }
 
+/**
+ * Point an existing reference at a DIFFERENT blob. Returns false when there was
+ * no such reference.
+ *
+ * THIS IS "I CANNOT DELETE THE AUDIO I DO NOT WANT", fixed. The
+ * `blob_refs_au` trigger has always existed and nothing ever called it, so the
+ * only way to change a card's clip was to delete the row and insert another —
+ * which, with an immediate sweep, destroyed the old payload before the new one
+ * had been listened to. Retargeting moves the reference in one statement and
+ * leaves the old blob unreferenced-but-present for the grace period.
+ *
+ * The old blob is NOT deleted here. `sweepUnreferenced` owns that, and only
+ * after the grace period, which is what makes a two-voice A/B free to abandon.
+ */
+export function retargetBlobRef(
+  db: Db,
+  ref: Omit<BlobRef, "blobHash">,
+  toBlobHash: string,
+): boolean {
+  const info = db
+    .prepare(
+      `UPDATE blob_refs SET blob_hash = ?
+        WHERE card_id = ? AND COALESCE(field_id, '') = COALESCE(?, '') AND ref_key = ?`,
+    )
+    .run(toBlobHash, ref.cardId, ref.fieldId ?? null, ref.refKey);
+  return info.changes === 1;
+}
+
+/**
+ * Drop a reference. Returns false when there was nothing to drop.
+ *
+ * The blob survives with `refcount` decremented and `unreferenced_at` stamped by
+ * trigger. Deleting the payload is a separate, later, deliberate act — the whole
+ * complaint about Mochi's attachment handling is that the two were the same act.
+ */
+export function removeBlobRef(db: Db, ref: Omit<BlobRef, "blobHash">): boolean {
+  const info = db
+    .prepare(
+      `DELETE FROM blob_refs
+        WHERE card_id = ? AND COALESCE(field_id, '') = COALESCE(?, '') AND ref_key = ?`,
+    )
+    .run(ref.cardId, ref.fieldId ?? null, ref.refKey);
+  return info.changes === 1;
+}
+
+/** Every reference a card holds, so a caller can show what it would delete. */
+export function blobRefsForCard(db: Db, cardId: string): readonly BlobRef[] {
+  return (
+    db
+      .prepare(
+        `SELECT blob_hash, card_id, field_id, ref_key FROM blob_refs
+          WHERE card_id = ? ORDER BY id`,
+      )
+      .all(cardId) as {
+      blob_hash: string;
+      card_id: string;
+      field_id: string | null;
+      ref_key: string;
+    }[]
+  ).map((row) => ({
+    blobHash: row.blob_hash,
+    cardId: row.card_id,
+    fieldId: row.field_id,
+    refKey: row.ref_key,
+  }));
+}
+
 // ─── the cache-hit path ──────────────────────────────────────────────────────
 
 /** A generation request as a caller states it, before normalisation. */
@@ -594,6 +661,47 @@ export function resolveGeneration(
   if (existing !== null) return { hash: existing, hit: true, key };
 
   const produced = generate(identity);
+  const { hash } = putBlob(db, {
+    bytes: produced.bytes,
+    kind: identity.kind,
+    ...(produced.mime === undefined ? {} : { mime: produced.mime }),
+    identity: {
+      sourceText: identity.sourceText,
+      voice: identity.voice,
+      lang: identity.lang,
+      options: identity.options,
+    },
+  });
+  return { hash, hit: false, key };
+}
+
+/**
+ * The same thing, for a generator that has to make a network call.
+ *
+ * The synchronous form above cannot express real TTS: `generate` returns bytes,
+ * so an HTTP request could not be passed to it at all, and the only way to use
+ * it was to fetch first and then resolve — which bills the provider on every
+ * cache HIT and defeats the entire point of the store.
+ *
+ * The cache check happens BEFORE the await, so a hit still costs no request and
+ * no microtask beyond the one this returns. The write happens after; a caller
+ * racing two identical requests writes one blob, because `putBlob` is addressed
+ * by content and `INSERT OR IGNORE`.
+ */
+export async function resolveGenerationAsync(
+  db: Db,
+  request: GenerationRequest,
+  generate: (identity: GenerationIdentity) => Promise<{
+    readonly bytes: Uint8Array;
+    readonly mime?: string;
+  }>,
+): Promise<ResolvedGeneration> {
+  const identity = generationIdentity(request);
+  const key = generationKey(identity);
+  const existing = lookupGeneration(db, identity);
+  if (existing !== null) return { hash: existing, hit: true, key };
+
+  const produced = await generate(identity);
   const { hash } = putBlob(db, {
     bytes: produced.bytes,
     kind: identity.kind,

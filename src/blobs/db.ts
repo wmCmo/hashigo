@@ -194,28 +194,97 @@ export interface SweepResult {
   readonly rowsDeleted: number;
   readonly payloadsRemoved: number;
   readonly bytesReclaimed: number;
+  /** Unreferenced, but still inside the grace period. Reported, not deleted. */
+  readonly heldByGrace: number;
+  readonly bytesHeldByGrace: number;
 }
 
 /**
- * Reclaim every blob nothing references: the row first (the schema's
- * `blobs_no_delete_while_referenced` trigger is the backstop), then the
- * payload. Deleting the row first means a crash between the two leaves an
- * orphaned payload, which `auditBlobStore` reports and a later sweep removes —
- * the failure mode is wasted disk, never a dangling reference.
+ * How long an unreferenced blob is kept before a sweep may remove it.
+ *
+ * 7 days, and the reason is a workflow rather than a safety margin: comparing
+ * two TTS voices means generating both, pointing the card at one, and living
+ * with it for a few days of actual reviews. With no grace period the loser's
+ * payload is destroyed the instant the winner is pointed at, so going back costs
+ * another billed request — which is Mochi's attachment behaviour, the fourth
+ * pain point, rebuilt by accident.
+ *
+ * A day would be too short to survive a weekend of not studying; a month keeps
+ * 657 MB of abandoned mp3 on a phone.
+ */
+export const SWEEP_GRACE_DAYS = 7;
+
+export interface SweepOptions {
+  readonly dryRun?: boolean;
+  /**
+   * Days an unreferenced blob is held. Default `SWEEP_GRACE_DAYS`. Pass 0 for
+   * the old immediate behaviour — correct for a scratch database in a test, and
+   * a mistake on a real one.
+   */
+  readonly graceDays?: number;
+  /** ISO instant to measure the grace period against. Defaults to now. */
+  readonly now?: string;
+}
+
+/**
+ * Reclaim every blob nothing references AND nothing might still want: the row
+ * first (the schema's `blobs_no_delete_while_referenced` trigger is the
+ * backstop), then the payload. Deleting the row first means a crash between the
+ * two leaves an orphaned payload, which `auditBlobStore` reports and a later
+ * sweep removes — the failure mode is wasted disk, never a dangling reference.
+ *
+ * `unreferenced_at` rather than `created_at` decides eligibility. Using
+ * `created_at` would sweep a clip generated a year ago and dereferenced a minute
+ * ago, which is exactly the case the grace period exists for. A blob whose
+ * `unreferenced_at` is NULL while `refcount = 0` predates the column and is
+ * treated as eligible; nothing in the corpus is in that state after a re-import.
  */
 export function sweepUnreferenced(
   db: SqliteHandle,
   store: BlobStore | null = null,
-  options: { readonly dryRun?: boolean } = {},
+  options: SweepOptions = {},
 ): SweepResult {
-  const doomed = db
-    .prepare("SELECT hash, byte_size, (bytes IS NOT NULL) AS inline FROM blobs WHERE refcount = 0")
-    .all() as { hash: string; byte_size: number; inline: number }[];
+  const graceDays = options.graceDays ?? SWEEP_GRACE_DAYS;
+  const candidates = db
+    .prepare(
+      `SELECT hash, byte_size, (bytes IS NOT NULL) AS inline, unreferenced_at
+         FROM blobs WHERE refcount = 0`,
+    )
+    .all() as {
+    hash: string;
+    byte_size: number;
+    inline: number;
+    unreferenced_at: string | null;
+  }[];
+
+  const cutoff =
+    graceDays <= 0
+      ? null
+      : new Date(
+          (options.now === undefined ? Date.now() : Date.parse(options.now)) -
+            graceDays * 86_400_000,
+        ).toISOString();
+
+  const doomed: typeof candidates = [];
+  let heldByGrace = 0;
+  let bytesHeldByGrace = 0;
+  for (const row of candidates) {
+    const held =
+      cutoff !== null && row.unreferenced_at !== null && row.unreferenced_at > cutoff;
+    if (held) {
+      heldByGrace += 1;
+      bytesHeldByGrace += row.byte_size;
+    } else {
+      doomed.push(row);
+    }
+  }
   if (options.dryRun === true) {
     return {
       rowsDeleted: 0,
       payloadsRemoved: 0,
       bytesReclaimed: doomed.reduce((sum, row) => sum + row.byte_size, 0),
+      heldByGrace,
+      bytesHeldByGrace,
     };
   }
 
@@ -243,7 +312,7 @@ export function sweepUnreferenced(
     if (store.batch === undefined) removals();
     else store.batch(removals);
   }
-  return { rowsDeleted, payloadsRemoved, bytesReclaimed };
+  return { rowsDeleted, payloadsRemoved, bytesReclaimed, heldByGrace, bytesHeldByGrace };
 }
 
 // ---------------------------------------------------------------------------

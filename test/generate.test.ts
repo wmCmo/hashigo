@@ -17,6 +17,14 @@
 import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { openDatabase } from "../src/db/index.js";
+import { MEMORY } from "../src/db/index.js";
+import { resolveGenerationAsync } from "../src/import/blobs.js";
+import {
+  setCardVoice,
+  setDeckVoice,
+  setDefaultVoice,
+  voiceFor,
+} from "../src/generate/voice.js";
 import {
   expandGeneratorFields,
   fieldGenerationRequest,
@@ -421,6 +429,128 @@ describe.runIf(haveCorpus)("the real export", () => {
       // If this ever fails it names the field and the option, and it means the
       // request and the renderer's own descriptor would hash differently.
       expect([...divergent]).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("voice — pain point #5, in code", () => {
+  const scratch = () => {
+    const db = openDatabase(MEMORY);
+    db.prepare("INSERT INTO decks (id, name) VALUES ('root', '日本語')").run();
+    db.prepare("INSERT INTO decks (id, parent_id, name) VALUES ('kid', 'root', '単語')").run();
+    db.prepare("INSERT INTO cards (id, deck_id, name) VALUES ('c1', 'kid', '橋')").run();
+    return db;
+  };
+
+  it("leaves the field's own voice alone by default — the only safe default", () => {
+    const db = scratch();
+    try {
+      // Every one of the 10,791 speech blobs is addressed by the voice Mochi
+      // recorded. A non-empty default would miss all of them at once and re-bill
+      // the corpus, so shipping `voice.default` empty is load-bearing.
+      const resolved = voiceFor(db, "c1", "ja-JP-NanamiNeural");
+      expect(resolved).toEqual({ voice: "ja-JP-NanamiNeural", source: "field" });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("resolves card over deck over parent deck over workspace", () => {
+    const db = scratch();
+    try {
+      setDefaultVoice(db, "workspace-voice");
+      expect(voiceFor(db, "c1", "field-voice")).toMatchObject({
+        voice: "workspace-voice",
+        source: "workspace",
+      });
+
+      setDeckVoice(db, "root", "root-voice");
+      expect(voiceFor(db, "c1", "field-voice")).toMatchObject({
+        voice: "root-voice",
+        source: "deck",
+        deckId: "root",
+      });
+
+      // The nearer deck wins, which is what makes "単語 gets the male voice,
+      // everything else does not" expressible at all.
+      setDeckVoice(db, "kid", "kid-voice");
+      expect(voiceFor(db, "c1", "field-voice")).toMatchObject({
+        voice: "kid-voice",
+        source: "deck",
+        deckId: "kid",
+      });
+
+      setCardVoice(db, "c1", "ja-JP-Neural2-C");
+      expect(voiceFor(db, "c1", "field-voice")).toEqual({
+        voice: "ja-JP-Neural2-C",
+        source: "card",
+      });
+
+      // Clearing goes back to inherit rather than to null-as-provider-default.
+      setCardVoice(db, "c1", null);
+      expect(voiceFor(db, "c1", "field-voice")).toMatchObject({ source: "deck" });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("treats whitespace as unset, so a stray space is not a voice name", () => {
+    const db = scratch();
+    try {
+      setCardVoice(db, "c1", "   ");
+      expect(voiceFor(db, "c1", "field-voice")).toEqual({
+        voice: "field-voice",
+        source: "field",
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("answers for a card that does not exist rather than throwing", () => {
+    const db = scratch();
+    try {
+      expect(voiceFor(db, "nope", "field-voice")).toEqual({
+        voice: "field-voice",
+        source: "field",
+      });
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("resolveGenerationAsync — an HTTP call could not be passed to the sync form", () => {
+  it("bills nothing on a hit, and the cache check happens before the await", async () => {
+    const db = openDatabase(MEMORY);
+    try {
+      db.prepare("INSERT INTO decks (id, name) VALUES ('d', 'd')").run();
+      db.prepare("INSERT INTO cards (id, deck_id) VALUES ('c', 'd')").run();
+      let calls = 0;
+      const generate = async () => {
+        calls += 1;
+        return { bytes: new TextEncoder().encode("audio bytes"), mime: "audio/mpeg" };
+      };
+      const request = { kind: "speech" as const, text: "橋", lang: "ja-JP", voice: "v" };
+
+      const first = await resolveGenerationAsync(db, request, generate);
+      expect(first.hit).toBe(false);
+      expect(calls).toBe(1);
+
+      const second = await resolveGenerationAsync(db, request, generate);
+      expect(second.hit).toBe(true);
+      expect(second.hash).toBe(first.hash);
+      // The point: a hit must not cost a request. The synchronous form could not
+      // express this at all, so the only way to use it was fetch-then-resolve,
+      // which billed on every hit.
+      expect(calls).toBe(1);
+
+      // Same identity spelled differently is still one blob and one bill.
+      const inline = await resolveGenerationAsync(db, { ...request, lang: "jp" }, generate);
+      expect(inline.hash).toBe(first.hash);
+      expect(calls).toBe(1);
     } finally {
       db.close();
     }

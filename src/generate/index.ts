@@ -38,6 +38,14 @@ export {
 } from "./fields.js";
 
 export {
+  setCardVoice,
+  setDeckVoice,
+  setDefaultVoice,
+  voiceFor,
+  type VoiceResolution,
+} from "./voice.js";
+
+export {
   resolveFieldGeneration,
   resolveFieldGenerations,
   storeTextResolver,

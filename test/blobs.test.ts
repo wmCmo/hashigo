@@ -72,6 +72,8 @@ import {
   parseEdnOptions,
   putBlob,
   resolveGeneration,
+  removeBlobRef,
+  retargetBlobRef,
   sniffMime,
   splitComponentCacheKey,
   type MochiMediaSource,
@@ -999,22 +1001,105 @@ describe("refcounts, not tombstones", () => {
 
     // One card goes: still referenced, so the payload stays.
     db.prepare("DELETE FROM cards WHERE id = 'c1'").run();
-    expect(sweepUnreferenced(db, store)).toEqual({
+    expect(sweepUnreferenced(db, store, { graceDays: 0 })).toEqual({
       rowsDeleted: 0,
       payloadsRemoved: 0,
       bytesReclaimed: 0,
+      heldByGrace: 0,
+      bytesHeldByGrace: 0,
     });
     expect(store.has(hash)).toBe(true);
 
     db.prepare("DELETE FROM cards WHERE id = 'c2'").run();
-    const dry = sweepUnreferenced(db, store, { dryRun: true });
+    const dry = sweepUnreferenced(db, store, { dryRun: true, graceDays: 0 });
     expect(dry.rowsDeleted).toBe(0);
     expect(dry.bytesReclaimed).toBe(bytes.length);
 
-    const swept = sweepUnreferenced(db, store);
-    expect(swept).toEqual({ rowsDeleted: 1, payloadsRemoved: 1, bytesReclaimed: bytes.length });
+    const swept = sweepUnreferenced(db, store, { graceDays: 0 });
+    expect(swept).toEqual({
+      rowsDeleted: 1,
+      payloadsRemoved: 1,
+      bytesReclaimed: bytes.length,
+      heldByGrace: 0,
+      bytesHeldByGrace: 0,
+    });
     expect(store.has(hash)).toBe(false);
     expect(db.prepare("SELECT count(*) FROM blobs").pluck().get()).toBe(0);
+  });
+
+  it("HOLDS an unreferenced payload for the grace period, so a voice A/B is free", () => {
+    // The gap this closes: with an immediate sweep, generating two voices and
+    // pointing the card at one destroyed the loser's payload the instant the
+    // winner was chosen, so changing your mind cost another billed request. That
+    // is Mochi's attachment behaviour rebuilt by accident.
+    const db = fresh(["c1"]);
+    const store = openBlobStore(join(scratchDir("store-grace"), "blobs"));
+    const bytes = mp3("the losing voice");
+    const hash = contentAddress(bytes);
+    store.write(hash, bytes);
+    db.prepare(
+      "INSERT INTO blobs (hash, kind, mime, byte_size) VALUES (?, 'speech', 'audio/mpeg', ?)",
+    ).run(hash, bytes.length);
+    addBlobRef(db, { blobHash: hash, cardId: "c1", refKey: "a.mp3" });
+    removeBlobRef(db, { cardId: "c1", refKey: "a.mp3" });
+
+    // Trigger-maintained, in the same statement as refcount so they cannot drift.
+    const row = db
+      .prepare("SELECT refcount, unreferenced_at FROM blobs WHERE hash = ?")
+      .get(hash) as { refcount: number; unreferenced_at: string | null };
+    expect(row.refcount).toBe(0);
+    expect(row.unreferenced_at).not.toBeNull();
+
+    const held = sweepUnreferenced(db, store, {});
+    expect(held.rowsDeleted).toBe(0);
+    expect(held.heldByGrace).toBe(1);
+    expect(held.bytesHeldByGrace).toBe(bytes.length);
+    expect(store.has(hash)).toBe(true);
+
+    // Past the grace period it goes. `now` rather than a real clock so the test
+    // asserts the boundary instead of waiting a week for it.
+    const later = new Date(Date.now() + 8 * 86_400_000).toISOString();
+    const gone = sweepUnreferenced(db, store, { now: later });
+    expect(gone.rowsDeleted).toBe(1);
+    expect(gone.heldByGrace).toBe(0);
+    expect(store.has(hash)).toBe(false);
+  });
+
+  it("retargets a reference instead of deleting and re-adding it", () => {
+    // The `blob_refs_au` trigger has existed since stage 1 and nothing called
+    // it, which is exactly "I cannot delete the audio I do not want".
+    const db = fresh(["c1"]);
+    const nanami = mp3("nanami");
+    const neural2 = mp3("neural2-c");
+    const from = contentAddress(nanami);
+    const to = contentAddress(neural2);
+    for (const [hash, bytes] of [
+      [from, nanami],
+      [to, neural2],
+    ] as const) {
+      db.prepare(
+        "INSERT INTO blobs (hash, kind, mime, byte_size) VALUES (?, 'speech', 'audio/mpeg', ?)",
+      ).run(hash, bytes.length);
+    }
+    addBlobRef(db, { blobHash: from, cardId: "c1", fieldId: "spk", refKey: "k" });
+
+    expect(retargetBlobRef(db, { cardId: "c1", fieldId: "spk", refKey: "k" }, to)).toBe(true);
+    const counts = db.prepare("SELECT hash, refcount, unreferenced_at FROM blobs").all() as {
+      hash: string;
+      refcount: number;
+      unreferenced_at: string | null;
+    }[];
+    const old = counts.find((r) => r.hash === from);
+    const now = counts.find((r) => r.hash === to);
+    expect(old?.refcount).toBe(0);
+    // Stamped, so the old clip is a sweep candidate only after the grace period.
+    expect(old?.unreferenced_at).not.toBeNull();
+    expect(now?.refcount).toBe(1);
+    // And gaining a reference CLEARS the stamp: it must not look like a candidate.
+    expect(now?.unreferenced_at).toBeNull();
+
+    // Nothing to retarget reports false rather than inventing a row.
+    expect(retargetBlobRef(db, { cardId: "c1", fieldId: "spk", refKey: "nope" }, to)).toBe(false);
   });
 
   it("audits both sides, and says which missing payloads can regenerate themselves", () => {

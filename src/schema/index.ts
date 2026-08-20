@@ -20,6 +20,14 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
 /**
  * Bumped only by a migration. `PRAGMA user_version` holds this.
  *
+ * 3 adds `decks.voice` and `cards.voice` (NULL = inherit, resolving up the deck
+ * tree and bottoming out at settings `voice.default`), seeds that setting EMPTY
+ * so nothing changes until it is set, and adds `blobs.unreferenced_at` so a
+ * sweep can hold a grace period instead of destroying the losing candidate of a
+ * voice A/B the instant the winner is pointed at. Between them those three are
+ * Mochi pain point #5 — the voice is set on the template, applies to every card,
+ * and cannot be changed for one.
+ *
  * 2 renames `reviews.interval_days` to the explicit `elapsed_days` /
  * `scheduled_days` pair, renames `next_interval_days` to
  * `next_scheduled_days`, renames `card_tracks.interval_days` to
@@ -29,7 +37,7 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
  * longer exist and every database in the project is rebuildable from
  * `exports/` in about fifteen seconds. Re-import rather than migrate.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * Three-state, on both cards and decks. `inherit` resolves up the deck tree and
@@ -109,6 +117,7 @@ export type ReviewSource = (typeof REVIEW_SOURCES)[number];
 export const SETTING_KEYS = {
   reverseDefault: "reverse.default",
   targetRetentionDefault: "target_retention.default",
+  voiceDefault: "voice.default",
   timezoneDefault: "timezone.default",
 } as const;
 
