@@ -59,7 +59,7 @@ harness, not that shell. See `OVERNIGHT.md` for the gap list,
 for the OPFS measurements.
 
 ```bash
-npm test                # 15 files, 560 passed, 1 skipped (the FSRS refit, gated)
+npm test                # 16 files, 584 passed, 1 skipped (the FSRS refit, gated)
                         # 32.7-87.7 s over five runs. Under load it can also emit
                         # "Timeout calling onTaskUpdate" — that is Vitest's reporter
                         # RPC, not a failure. Check the pass count, not the error line.
@@ -69,8 +69,35 @@ npm run import -- --db build/hashigo.db exports/日本語 exports/English export
 npm run dashboard -- --db build/hashigo.db --out dashboard.html
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 1 on any location
 npm run spike:check     # the browser contract; spike/ is excluded from tsconfig.json
+
+# The accent pipeline. Python owns the analyser and NOTHING else -- see
+# src/accent/README.md for why that boundary is a bug fix, not tidiness.
+npx vite-node src/accent/cli.ts -- words --db build/hashigo.db --out build/head-words.txt
+PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent_derive.py --words build/head-words.txt --out build/accents.jsonl
+npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accents.jsonl
+npx vite-node src/accent/cli.ts -- queue --db build/hashigo.db     # 90 words for OJAD
+PYTHONIOENCODING=utf-8 python tools/f0.py build/longvowel/*.wav    # F0 in thirds
 npm run spike:dev -- --host 127.0.0.1   # bind IPv4: a server on ::1 refuses 127.0.0.1
 ```
+
+## A schema bump means RE-IMPORT, not migrate
+
+`SCHEMA_VERSION` is **5** and `applySchema` refuses any other version outright.
+That is deliberate — every database here rebuilds from `exports/` in about
+fifteen seconds and the reviews still come from the export — but it means a
+schema change is a three-step chore, and skipping the third breaks a test:
+
+```bash
+rm build/hashigo.db
+npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
+npm run dashboard -- --db build/hashigo.db --out dashboard.html   # asserts byte-identical
+```
+
+The dashboard prints the schema version, and `test/dashboard.test.ts` compares
+the committed file byte-for-byte, so a bump without a regenerate fails there with
+a one-line diff. This happened three times in one session. It is the workflow,
+not a surprise. The accent data also has to be reloaded — `NEXT.md` has the four
+commands.
 
 ## Decisions that are settled — do not relitigate these
 
@@ -93,7 +120,20 @@ npm run spike:dev -- --host 127.0.0.1   # bind IPv4: a server on ::1 refuses 127
    of defect has since appeared in a math count (29 AUTHORED fragments vs 28
    RESOLVED) and a furigana count (4,933 skeleton runs vs 4,943 `<rt>` elements).
    Name the basis or the number is not a fact.
-7. **Links render PLAINLY, in place, on whatever side they are authored on.**
+7. **The generator's input is the RENDERED text, never the stored value.** This
+   cost real work twice, in two different subsystems, in one session: the audio
+   cache key missed all 471 基本情報 cards because the value is `{{データ}}` and
+   the key is `データ`, and the accent analyser mis-READ 準備 as ジュン+ソナエ and
+   面倒 as メン+タオセ because U+200E sits inside those compounds. 3,016 of those
+   marks are on 2,504 cards. `generationInput` and `accentKey` are the two
+   definitions and they are both thin wrappers over `renderPlainText`.
+8. **A cross-check analyser is stored but never RESOLVES.** UniDic agrees with
+   the primary derivation on 97.31% of 3,007 comparable words, and it is
+   measurably wrong on some of the words it could otherwise rescue — it reads 正義
+   as the personal name マサヨシ. A wrong accent drilled through spaced repetition
+   is worse than no accent, so it is a candidate for adjudication, never the
+   answer. See `accent_disagreements`.
+9. **Links render PLAINLY, in place, on whatever side they are authored on.**
    Drafts 1-7 called the Jisho URL on 漢字's side 4 an answer leak and prescribed
    deferring link rendering in reverse mode. Zach overruled that on 2026-08-20:
    there is no hover on a phone, a long-press is deliberate, and he never checks a

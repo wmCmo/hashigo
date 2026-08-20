@@ -13,67 +13,75 @@ his notes there are in his own voice — preserve them, don't paraphrase them aw
 
 ---
 
-## The agreed plan, in dependency order
+## Progress, 2026-08-20 evening
 
-Zach green-lit steps 1 → 2 → 3 → 3.5 → 4 on 2026-08-20, and asked for step 3.5
-explicitly. **He has NOT yet green-lit the workflow itself** — he wanted to `/compact`
-first. Ask before launching a multi-agent run.
+Zach green-lit steps 1 -> 2 -> 3 -> 3.5 -> 4 and then said *"you can proceed til
+the point when you need my decision"*. Steps **1, 2, 3 are DONE**, and 3.5 is
+done except the OJAD leg. No multi-agent workflow was used — he never green-lit
+one, and it was not needed.
 
-### 1. Bind generated values to fields — BLOCKING, nothing else matters as much
+| step | state | where |
+|---|---|---|
+| 1. bind generated values to fields | **DONE** | `src/generate`, 98.11% of 18,356 field slots playable |
+| 2. the four voice gaps | **DONE** | schema v3, `src/generate/voice.ts`, `retargetBlobRef`, 7-day sweep grace |
+| 3. derivation + `<<型>>` | **DONE** | schema v4, `src/accent`, 3,816 of 3,850 keys labelled |
+| 3.5 long-vowel test | **DONE — answered** | `ー` and `い` behave the same; no conversion needed |
+| 3.5 second dictionary | **DONE** | UniDic 2.3.0, 97.31% agreement on 3,007 comparable words |
+| 3.5 OJAD | **NOT STARTED** | 90-word queue: `cli.ts queue --db build/hashigo.db` |
+| 4. regenerate 20 cards, listen | **NEEDS HIM** | `accent_probe.py cards --limit 20 --go` |
 
-Makes the audio he already owns actually play. Independent of every TTS decision.
-Resolve **on demand**; emit a loud diagnostic count on a miss. Details in `CLAUDE.md`
-under "THE APP IS SILENT".
+### Two things waiting on Zach specifically
 
-### 2. The four voice gaps — all grep-verified, all in our own code
+1. **Step 4 is his ears.** The tooling refuses more than 20 cards by design. It
+   also spends on his Google account, and the point of the step is that he
+   listens — nobody else can do it.
+2. **`<<型>>` is not on any template yet.** The storage, derivation, resolution
+   and materialiser all exist and are tested, but no template has an
+   `accent`-typed field, so `cli.ts write` has nothing to write to. Adding one
+   is authoring: WHICH SIDE it goes on (the reveal side — a 平板 label on the
+   prompt side is the same class of error as autoplay) is settled, but where on
+   that side, and whether it reads `平板` or `平板 (0)`, is his taste. A locally
+   added field is also dropped by the next re-import, which the importer does not
+   yet know how to preserve — worth deciding together.
 
-His Mochi pain point, rebuilt by us:
+### Schema is at v5, and there is still no migration path
 
-- no voice column on cards or decks, so no per-card override
-- **no production API to drop or retarget a `blob_refs` row** — the `blob_refs_au`
-  trigger exists and nothing calls it. This is literally "can't delete the audio I don't
-  want".
-- no sweep grace period, which would make free voice A/B destroy the losing candidate
-- `resolveGeneration` takes a **synchronous** callback, so an HTTP call cannot be passed
-  to it at all
+That is deliberate and stated in `src/schema/index.ts`: every database here
+rebuilds from `exports/` in about fifteen seconds, and reviews still come from
+the export. **A schema bump therefore means `rm build/hashigo.db` and re-import,
+then regenerate `dashboard.html`** (its one-line `スキーマ v5` field is asserted
+byte-identical by a test). This bit three times in one session; it is not a
+surprise, it is the workflow.
 
-Voice should resolve through the same three-state inheritance the reverse-review setting
-uses (card → deck → workspace).
+Rebuilding the accent data after a re-import:
 
-### 3. The derivation and `<<型>>`
+```bash
+npx vite-node src/accent/cli.ts -- words --db build/hashigo.db --out build/head-words.txt
+PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent_derive.py --words build/head-words.txt --out build/accents.jsonl
+npx vite-node src/accent/cli.ts -- load --db build/hashigo.db --in build/accents.jsonl
+PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent_crosscheck.py --derived build/accents.jsonl --out build/accent-disagreements.jsonl --emit-rows build/accents-unidic.jsonl
+npx vite-node src/accent/cli.ts -- load --db build/hashigo.db --in build/accents-unidic.jsonl
+```
 
-`pyopenjtalk` will not build here (no cmake); **`pyopenjtalk-plus` 0.4.1.post9 installs
-from a wheel** and exposes the same module name. Derivation rule, traps, and a validated
-implementation are in `notes/pitch-accent-pipeline.md` §3.
+The venv (`.venv-accent/`, gitignored, ~1.4 GB with UniDic) rebuilds with:
 
-`<<型>>` renders 平板 / 頭高 / 中高 / 尾高 next to the audio — **his idea**, and it is now
-also the error-detection mechanism for the whole pipeline, because a wrong *label* is
-visible where a wrong *contour* is silently absorbed. Materialise it in a new `accents`
-table keyed by **text**, not card. **It must live on the reveal side** — a 平板 label on
-the prompt side is the same class of error as autoplay.
+```bash
+python -m venv .venv-accent
+.venv-accent/Scripts/python -m pip install pyopenjtalk-plus fugashi unidic
+```
 
-### 3.5 Verification before regenerating at scale
+`python -m unidic download` **fails on Windows** — it calls `fork`. Fetch
+`https://cotonoha-dic.s3-ap-northeast-1.amazonaws.com/unidic.zip` directly and
+unzip it into `.venv-accent/Lib/site-packages/unidic/dicdir/`, then create a
+`mecabrc` there (any content; fugashi only checks it exists). UniDic 3.1.0a1's
+URL is dead — 2.3.0 has the same `aType` field.
 
-- **Re-run the long-vowel test with KANA content.** The first attempt was invalidated,
-  not passed: both arms used kanji content, so Google ignored both and they came back
-  byte-identical. `シメー` vs `シメイ` is still unanswered and it affects most
-  Sino-Japanese vocabulary.
-- **Cross-check the derivation against a second licensed dictionary** (UniDic carries an
-  accent field; there are standalone pitch-accent datasets). Two independent dictionaries
-  agreeing beats one fork plus my recall — the 5-of-15 mismatch (紙, 髪, 心, 友達, 水) was
-  measured against *recall*, which is not a citation.
-- **OJAD only for the disagreements, and only through the UI.** Zach's instruction: use
-  **Claude in Chrome**, driving OJAD's interface as a human would, and OJAD also offers a
-  file download. Do **not** write a scraper — their terms permit educational and research
-  use and ask people to refrain from bulk automated use, and it is publicly funded
-  university infrastructure.
+### The `.env` name mismatch, which will waste ten minutes otherwise
 
-### 4. Regenerate 20 cards, listen, then decide about the other 8,372
-
-`tools/accent_probe.py cards --limit 20 --go` exists and refuses more than 20. He wants
-to start small; he has said so twice.
-
----
+His `.env` calls the Google key **`GOOGLE_TTS_SECRET`**; `accent_probe.py`
+defaults to `GOOGLE_TTS_API_KEY`. Pass `--google-key-env GOOGLE_TTS_SECRET`. The
+probe reads secrets by NAME and never prints them, and the key now travels in the
+`x-goog-api-key` header rather than the URL query string.
 
 ## What is already settled — do not reopen
 
