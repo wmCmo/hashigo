@@ -59,7 +59,7 @@ harness, not that shell. See `OVERNIGHT.md` for the gap list,
 for the OPFS measurements.
 
 ```bash
-npm test                # 16 files, 584 passed, 1 skipped (the FSRS refit, gated)
+npm test                # 16 files, 589 passed, 1 skipped (the FSRS refit, gated)
                         # 32.7-87.7 s over five runs. Under load it can also emit
                         # "Timeout calling onTaskUpdate" — that is Vitest's reporter
                         # RPC, not a failure. Check the pass count, not the error line.
@@ -75,14 +75,15 @@ npm run spike:check     # the browser contract; spike/ is excluded from tsconfig
 npx vite-node src/accent/cli.ts -- words --db build/hashigo.db --out build/head-words.txt
 PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent_derive.py --words build/head-words.txt --out build/accents.jsonl
 npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accents.jsonl
-npx vite-node src/accent/cli.ts -- queue --db build/hashigo.db     # 90 words for OJAD
+npx vite-node src/accent/cli.ts -- ojad  --db build/hashigo.db     # 33 OJAD adjudications
+npx vite-node src/accent/cli.ts -- queue --db build/hashigo.db     # 57 still disputed
 PYTHONIOENCODING=utf-8 python tools/f0.py build/longvowel/*.wav    # F0 in thirds
 npm run spike:dev -- --host 127.0.0.1   # bind IPv4: a server on ::1 refuses 127.0.0.1
 ```
 
 ## A schema bump means RE-IMPORT, not migrate
 
-`SCHEMA_VERSION` is **5** and `applySchema` refuses any other version outright.
+`SCHEMA_VERSION` is **6** and `applySchema` refuses any other version outright.
 That is deliberate — every database here rebuilds from `exports/` in about
 fifteen seconds and the reviews still come from the export — but it means a
 schema change is a three-step chore, and skipping the third breaks a test:

@@ -27,7 +27,7 @@ one, and it was not needed.
 | 3. derivation + `<<型>>` | **DONE** | schema v4, `src/accent`, 3,816 of 3,850 keys labelled |
 | 3.5 long-vowel test | **DONE — answered** | `ー` and `い` behave the same; no conversion needed |
 | 3.5 second dictionary | **DONE** | UniDic 2.3.0, 97.31% agreement on 3,007 comparable words |
-| 3.5 OJAD | **NOT STARTED** | 90-word queue: `cli.ts queue --db build/hashigo.db` |
+| 3.5 OJAD | **PARTLY DONE** | 33 of 90 adjudicated; 57 left, ~51 of them not in OJAD at all |
 | 4. regenerate 20 cards, listen | **NEEDS HIM** | `accent_probe.py cards --limit 20 --go` |
 
 ### Two things waiting on Zach specifically
@@ -44,7 +44,7 @@ one, and it was not needed.
    added field is also dropped by the next re-import, which the importer does not
    yet know how to preserve — worth deciding together.
 
-### Schema is at v5, and there is still no migration path
+### Schema is at v6, and there is still no migration path
 
 That is deliberate and stated in `src/schema/index.ts`: every database here
 rebuilds from `exports/` in about fifteen seconds, and reviews still come from
@@ -61,7 +61,28 @@ PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent_derive.py --word
 npx vite-node src/accent/cli.ts -- load --db build/hashigo.db --in build/accents.jsonl
 PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent_crosscheck.py --derived build/accents.jsonl --out build/accent-disagreements.jsonl --emit-rows build/accents-unidic.jsonl
 npx vite-node src/accent/cli.ts -- load --db build/hashigo.db --in build/accents-unidic.jsonl
+npx vite-node src/accent/cli.ts -- ojad --db build/hashigo.db
 ```
+
+### What is left in the accent queue, and why it is not a gap to close
+
+57 words. **~51 of them are simply not in OJAD** — it holds ~9,000 nouns and
+~3,500 用言, which does not reach his 上級 vocabulary (敵軍, 空前, 脆弱, 転嫁,
+横柄) or his onomatopoeia (もやもや, ベタベタ, ニコニコ). Those keep the primary
+derivation or stay `guarded`, which is the honest state.
+
+**6 are genuinely ambiguous and must stay unlabelled.** `まく` has three
+different accents across 巻く / 蒔く・撒く / 膜・幕. A single label would drill a
+wrong contour on two thirds of its senses. Settling them needs the card's own
+意味, which is a review-UI question — worth raising with Zach when the UI exists,
+not before.
+
+**One hypothesis to test, not to act on yet.** Where OJAD backed one analyser
+against the other it backed UniDic 11 times and OpenJTalk 4, and the UniDic wins
+cluster on Sino-Japanese compounds that should be 平板 where our probe rule
+produced a nucleus. That is an inference from 15 words. It wants a larger OJAD
+sample before `tools/accent.py` changes. `notes/accent-ojad-adjudication.md` §
+"The pattern worth acting on".
 
 The venv (`.venv-accent/`, gitignored, ~1.4 GB with UniDic) rebuilds with:
 
