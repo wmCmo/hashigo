@@ -102,7 +102,7 @@ experiment rather than trusting a green suite.
 
 ## Repo layout
 
-```
+```plaintext
 exports/          Extracted .mochi exports (~657 MB of mp3). NOT source — reference data.
   日本語/          5,947 cards · data.json is 21 MB
   English/        1,258 cards · data.json is 3.4 MB
@@ -122,7 +122,7 @@ python tools/mochi.py exports/日本語 exports/English exports/基本情報
 
 Expected output (a regression check — these numbers are known-correct):
 
-```
+```plaintext
 cards 7,716 | reviews 102,020 | retention 96.24%
 wiki-links 8,690 | tombstones 8,958
 inline generators: {'speech': 287, 'translate': 106, 'image': 8, 'furigana': 19, 'ai': 125}
@@ -140,20 +140,20 @@ before writing anything that parses the export.
 
 ## Environment
 
-- **Windows.** The console is **cp932** (Japanese locale), so any script printing
+* **Windows.** The console is **cp932** (Japanese locale), so any script printing
   Japanese needs both `PYTHONIOENCODING=utf-8` in the environment and
   `sys.stdout.reconfigure(encoding="utf-8", errors="replace")` in the script.
   Without them you get `UnicodeEncodeError` on the first kanji.
-- Python is `python` (3.13). `python3` is not on PATH — it hits the Microsoft Store
+* Python is `python` (3.13). `python3` is not on PATH — it hits the Microsoft Store
   alias and fails.
-- The Bash tool's working directory does not reliably persist between calls. Use
+* The Bash tool's working directory does not reliably persist between calls. Use
   absolute paths, or `cd` in the same command.
 
 ## Conventions
 
-- Deck, template, and field names are Japanese where the user wrote them Japanese.
+* Deck, template, and field names are Japanese where the user wrote them Japanese.
   Do not translate or romanise them — `単語`, `漢字`, `例文`, `意味` are identifiers.
-- Language codes normalise to BCP-47 (`ja-JP`), never Mochi's inline `jp`.
-- Prefer measuring over assuming: this project has 102,020 graded reviews and 19,710
+* Language codes normalise to BCP-47 (`ja-JP`), never Mochi's inline `jp`.
+* Prefer measuring over assuming: this project has 102,020 graded reviews and 19,710
   existing AI generations, which double as labelled test sets. See the memory note
   on not inheriting Mochi's defaults.

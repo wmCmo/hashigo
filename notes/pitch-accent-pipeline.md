@@ -1678,3 +1678,78 @@ PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent.py
 stored *on* the row and is what `lookupGeneration` queries. `schema.sql`'s comment on
 `blobs.hash` still says "identity tuple" and contradicts `src/import/blobs.ts`, which
 explains at length why the bytes had to win.
+
+---
+
+## MEASURED — the probe was run, 2026-08-20
+
+22 synthesis calls (11 per provider), ~40 characters, both inside free tier. Output was
+switched from MP3 to 24 kHz 16-bit PCM so the F0 contour could be measured with stdlib
+`wave` + numpy — this machine has no ffmpeg, and a measurable contour beats a subjective
+listen. Voices: `ja-JP-NanamiNeural` (Azure), `ja-JP-Neural2-B` (Google).
+
+### Test 1 — is the notation honoured at all? (sha256 over the returned bytes)
+
+| Provider | Distinct clips | Collisions |
+|---|--:|---|
+| Azure | **15 of 15** | none |
+| Google | 11 of 15 | `baseline-hashi2` == `scope-in` == `scope-out`; `long-ortho` == `long-phonetic`; `tilde-lead` == `tilde-none` |
+
+Azure changes the audio for every notation. Google's collisions are themselves findings —
+see test 3.
+
+### Test 2 — does the drop land where the notation says? (F0, voiced span, thirds)
+
+Same input text `はしが`, three notations. This is the decisive test.
+
+| Case | Notation | Wanted | Azure Hz | Google Hz |
+|---|---|---|--:|--:|
+| `hashi-1` | `ハ'シ` / `^は!し` | 頭高 **H**-L-L | 165 → 258 → 222 | **280 → 254 → 184** |
+| `hashi-2` | `ハシ'` / `^はし!` | 尾高 L-**H**-L | 175 → 262 → 252 | 203 → **307** → 216 |
+| `hashi-0` | `ハシ+` / `^はし` | 平板 L-H-**H** | 172 → 250 → 255 | 197 → 269 → **256** |
+
+**Google is correct on all three.** 頭高 starts highest of the three (280 against
+197/203) and falls throughout; 尾高 rises to a 307 Hz peak then drops 91 Hz; 平板 rises
+and holds, falling only 13 Hz, which is ordinary declination rather than a downstep. The
+three contours separate in the *first* third — exactly where 頭高 must differ.
+
+**Azure changes the bytes but not the accent.** Its three contours are nearly the same
+shape (rise to ~250-262, then hold or fall slightly), and `hashi-1` — which must start
+HIGH for 頭高 — starts at **165 Hz, the lowest of its three**. That is the opposite of the
+requested pattern. The `'` does *something* (all 15 hashes differ) but it is not placing a
+Japanese accent nucleus on this voice.
+
+### Test 3 — Google's collisions, and a constraint nobody had
+
+`scope-in` and `scope-out` came back **byte-identical to the unaided baseline**. Both put
+**kanji** inside the element (`<phoneme ph="^はし!">橋</phoneme>`), where `hashi-0/1/2` put
+**kana** (`はし`). So:
+
+> **Google honours `yomigana` when the element's content is kana, and silently ignores it
+> when the content is kanji.** Every request must carry the reading as content, not the
+> headword.
+
+Two consequences:
+
+- `tilde-lead` == `tilde-none` byte-for-byte: on Google the `～` placeholder is
+  **silent**. On Azure the same pair is 1.34 s against 1.72 s — **Azure voices it.**
+  Affects 21 cards.
+- The long-vowel question is **NOT answered**: `long-ortho` and `long-phonetic` came out
+  identical because both used kanji content, so both were ignored. That test was
+  invalidated, not passed. Re-run with kana content.
+
+### Verdict
+
+**Ship Google, SSML `<phoneme alphabet="yomigana">` on Neural2, reading as element
+content.** Azure's documentation is right that `'` means "Accent position", and the
+earlier SPEC correction stands — but on a current neural voice it does not produce the
+pattern, which is exactly what a 2012-vintage reference could not tell us.
+
+### Limits of this measurement, stated plainly
+
+One voice per provider, one utterance each. The F0 tracker is my own autocorrelation
+estimator, not Praat — absolute Hz may be off, though the shape *within* a clip is what
+carries the argument. Azure's clips run 1.72 s for three mora with sizeable unvoiced gaps,
+so its tracking is less reliable than Google's. And **nothing here has been heard by a
+human**: Zach should listen to `hashi-0/1/2` for both providers and confirm the
+measurement agrees with his ear before 8,392 clips are regenerated.
