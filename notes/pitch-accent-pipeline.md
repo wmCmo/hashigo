@@ -1605,6 +1605,88 @@ PYTHONIOENCODING=utf-8 .venv-accent/Scripts/python tools/accent.py
 
 ---
 
+## §7. The long-vowel question, ANSWERED (2026-08-20, later the same day)
+
+**The earlier attempt was an INVALID INSTRUMENT, not a null result**, and the two
+are easy to confuse in a report. Both arms used `使命` — kanji — as the element
+content, and Google silently ignores yomigana whenever the element contains
+kanji, so both came back byte-identical. That measured the harness.
+
+Re-run with **kana content**, `ja-JP-Neural2-C`, 4 calls, F0 by
+`tools/f0.py` (which is now a committed file — the 22-call comparison that
+settled Google-vs-Azure measured F0 with an ad-hoc script that was never saved,
+so the most decision-changing measurement in the project was not reproducible):
+
+| case | ssml `ph` | content | F0 thirds (Hz) | shape |
+|---|---|---|--:|---|
+| `long-control-0` | `^しめー` | しめー | 141.2 / 162.2 / 138.7 | no early fall — correct 平板 |
+| `long-control-1` | `^し!めー` | しめー | 205.1 / 164.4 / 100.2 | steep fall — correct 頭高 |
+| `long-phonetic-kana` | `^し!めー` | しめー | 205.1 / 164.4 / 100.2 | identical to the control |
+| `long-ortho-kana` | `^し!めい` | しめい | 199.2 / 166.7 / 102.6 | same shape, ~3% apart |
+
+**Three findings.**
+
+1. **The notation IS honoured with kana content.** 205 Hz vs 141 Hz in the first
+   third, same input text, notation the only difference. This also re-confirms
+   the kanji trap from the other side: it is the CONTENT that disables the
+   notation, not the notation itself.
+2. **`ー` and `い` behave the same.** 205/164/100 against 199/167/103 — a 3%
+   spread, well under the 8% threshold `tools/f0.py` uses for a downstep, and
+   the durations agree to 1.3% (41,956 vs 41,394 bytes). So **the derivation does
+   not need to convert OpenJTalk's phonetic ー into orthographic い.** That was
+   listed as unresolved and as affecting most Sino-Japanese vocabulary; it does
+   not.
+3. **The pipeline is deterministic.** `long-phonetic-kana` and `long-control-1`
+   are the same request and came back byte-identical, which is the free control
+   on everything above.
+
+**Basis, and its limits:** ONE word, ONE voice, 4 calls. It answers "does the
+spelling of a long vowel change the contour" and nothing wider.
+
+## §8. A SECOND dictionary: UniDic 2.3.0
+
+The step-3 derivation rested on one analyser plus my recall, and "5 of 15
+mismatched against what I remembered" is not a citation. UniDic 2.3.0 carries
+`aType` — the accent nucleus, looked up rather than derived — and is
+independently licensed. (UniDic 3.1.0a1's download URL is dead; 2.3.0's is live
+and has the same field. `python -m unidic download` fails on Windows because it
+calls `fork`, so the zip has to be fetched directly.)
+
+It agrees on all five reference words: 橋 2 · 箸 1 · 端 0 · 花 2 · 鼻 0.
+
+**MEASURED over 3,850 distinct normalised head-word keys:**
+
+```
+agree/exact                       2921   75.9%
+agree/type-only                      5    0.1%   same label, different mora count
+DISAGREE                            81    2.1%
+not-comparable/multi-token         394   10.2%   aType is per-MORPHEME
+not-comparable/no-atype            441   11.5%   dictionary declines to commit
+ours-refused/unidic-has-answer       8    0.2%
+-> of 3,007 COMPARABLE words, 2,926 agree (97.31%)
+```
+
+**Multi-token words are NOT COMPARABLE, and are counted as such rather than as
+agreement.** `aType` describes a morpheme; a compound's accent comes from
+`aConType` / `aModType`, and combining those correctly is its own project.
+Counting 394 words as either agreeing or disagreeing would be a number without a
+basis.
+
+**UNIDIC IS STORED BUT DOES NOT RESOLVE, and that is the important design
+decision here.** It would be tempting to let it answer the 8 words the probe rule
+refused — but it is measurably wrong on some of exactly those: it reads **正義 as
+the personal name マサヨシ**, not セイギ, and **近々 as キンキン**, not チカジカ.
+A wrong accent drilled through spaced repetition is worse than none, so a
+cross-check answer is a CANDIDATE for adjudication, never the resolved answer.
+`accent_resolved` names its analyser priority (manual, then `openjtalk`);
+`accent_disagreements` is the queue.
+
+**The adjudication queue is 90 words** — 9 the rule refused, 81 where the two
+dictionaries differ. 31 of the 81 are written in kana only (`いか`, `まく`,
+`ばら`, `ぶり`, `どく`, `はえ`), where both analysers are guessing which lemma was
+meant; that is genuine ambiguity rather than one of them being wrong. This is the
+set for OJAD, through its own interface, driven as a person would.
+
 ## What is settled, and what is not
 
 **Settled by this investigation**

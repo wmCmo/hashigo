@@ -155,6 +155,29 @@ PROBE_CASES = [
          why="OpenJTalk's phonetic kana: long vowel as ー"),
     Case("long-ortho",    "使命が", "使命", "しめい", "シメイ", 1,
          why="orthographic kana: same word spelled しめい"),
+
+    # 5b. THE SAME QUESTION, ASKED VALIDLY.  Cases 5a above are INVALID and are
+    #     kept only as the negative control: their element content is 使命,
+    #     KANJI, and Google silently ignores yomigana whenever the element
+    #     contains kanji -- so both arms came back byte-identical and the test
+    #     answered nothing.  That is not a null result, it is a broken
+    #     instrument, and the two are easy to confuse in a report.
+    #
+    #     The rule (CLAUDE.md): every request must carry the READING as element
+    #     content, never the headword.  So these two arms differ ONLY in how the
+    #     long vowel is spelled, in both the notation and the content.
+    Case("long-phonetic-kana", "しめーが", "しめー", "しめー", "シメー", 1,
+         why="VALID: kana content, long vowel as ー"),
+    Case("long-ortho-kana",    "しめいが", "しめい", "しめい", "シメイ", 1,
+         why="VALID: kana content, long vowel as い"),
+    #     And a control that pins the instrument itself: same kana content, the
+    #     downstep moved. If THIS pair does not differ, the notation is being
+    #     ignored for a reason unrelated to long vowels and 5b says nothing
+    #     either.
+    Case("long-control-1", "しめーが", "しめー", "しめー", "シメー", 1,
+         why="control: downstep after し"),
+    Case("long-control-0", "しめーが", "しめー", "しめー", "シメー", 0,
+         why="control: no downstep at all"),
 ]
 
 TILDE_CASES = [
@@ -252,10 +275,16 @@ def google_payload_field(case: Case, voice: str) -> dict:
 
 def google_call(payload: dict, key: str) -> bytes:
     import base64
+    # `x-goog-api-key`, NOT `?key=`. A query string lands in server and proxy
+    # access logs and in shell history; a header does not. Google accepts both
+    # and documents the header for exactly this reason.
     req = urllib.request.Request(
-        f"https://texttospeech.googleapis.com/v1/text:synthesize?key={key}",
+        "https://texttospeech.googleapis.com/v1/text:synthesize",
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json; charset=utf-8"},
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "x-goog-api-key": key,
+        },
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -263,8 +292,11 @@ def google_call(payload: dict, key: str) -> bytes:
 
 
 def google_voices(key: str) -> list[dict]:
-    url = f"https://texttospeech.googleapis.com/v1/voices?languageCode=ja-JP&key={key}"
-    with urllib.request.urlopen(url, timeout=30) as r:
+    req = urllib.request.Request(
+        "https://texttospeech.googleapis.com/v1/voices?languageCode=ja-JP",
+        headers={"x-goog-api-key": key},
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r)["voices"]
 
 
@@ -386,6 +418,9 @@ def main() -> None:
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("mode", choices=["probe", "cards", "voices"])
     p.add_argument("--provider", choices=["azure", "google", "both"], default="both")
+    p.add_argument("--only", default=None,
+                   help="comma-separated case names; re-asks ONE question without "
+                        "re-billing the other ten")
     p.add_argument("--go", action="store_true",
                    help="actually call the API. Without this, nothing is sent.")
     p.add_argument("--out", default="build/accent-probe")
@@ -424,6 +459,13 @@ def main() -> None:
 
     if args.mode == "probe":
         cases = PROBE_CASES + TILDE_CASES
+        if args.only:
+            wanted = {name.strip() for name in args.only.split(",") if name.strip()}
+            missing = wanted - {c.name for c in cases}
+            if missing:
+                print(f"unknown case name(s): {sorted(missing)}")
+                return 2
+            cases = [c for c in cases if c.name in wanted]
     else:
         cases = load_cards(args.db, args.limit)
         print(f"{len(cases)} cards (cap {HARD_CARD_CAP})")

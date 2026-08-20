@@ -67,3 +67,7 @@ Thumbs.db
 !.vscode/extensions.json
 
 .obsidian
+# The accent analyser venv. pyopenjtalk-plus + fugashi + UniDic 2.3.0 is
+# ~1.4 GB of dictionary; rebuild it with the two commands in
+# notes/pitch-accent-pipeline.md rather than committing it.
+.venv-accent/

@@ -45,6 +45,8 @@ interface DerivedLine {
   version: string;
   probe: string;
   reason?: string | null;
+  /** Present on cross-check rows. Defaults to the primary analyser. */
+  analyser?: string;
 }
 
 function arg(name: string, fallback?: string): string {
@@ -60,10 +62,12 @@ function arg(name: string, fallback?: string): string {
 function main(): number {
   const command = process.argv[2];
   if (command === undefined || command.startsWith("--")) {
-    console.error("usage: cli.ts <words|load|write|show> --db <file> ...");
+    console.error("usage: cli.ts <words|load|write|show|queue> --db <file> ...");
     return 2;
   }
-  const db = openDatabase(arg("db"), { readOnly: command === "words" || command === "show" });
+  const db = openDatabase(arg("db"), {
+      readOnly: command === "words" || command === "show" || command === "queue",
+    });
   try {
     if (command === "words") {
       const rows = db.prepare(HEAD_WORDS_SQL).all() as { value: string }[];
@@ -90,7 +94,7 @@ function main(): number {
         const guarded = !parsed.ok || bad;
         rows.push({
           text: parsed.value,
-          analyser: "openjtalk",
+          analyser: parsed.analyser ?? "openjtalk",
           version: parsed.version,
           probe: parsed.probe,
           phrases: guarded ? [] : parsed.phrases,
@@ -111,6 +115,30 @@ function main(): number {
       const total = Object.values(report.byType).reduce((a, b) => a + b, 0);
       for (const [type, count] of Object.entries(report.byType).sort((a, b) => b[1] - a[1])) {
         console.log(`  ${type}  ${String(count).padStart(5)}  ${((count / total) * 100).toFixed(1)}%`);
+      }
+      return 0;
+    }
+
+    if (command === "queue") {
+      // The adjudication queue, from the view rather than a report file so it
+      // cannot go stale. Zach's instruction for settling these: OJAD, through
+      // its own interface, driven the way a person would — not a scraper.
+      const rows = db
+        .prepare(
+          `SELECT text, primary_type, primary_accent, primary_basis, primary_reading,
+                  other_analyser, other_type, other_accent, other_reading, kind
+             FROM accent_disagreements ORDER BY kind, text`,
+        )
+        .all() as Record<string, string | number | null>[];
+      console.log(`${rows.length} word(s) need adjudication` + "\n");
+      for (const row of rows) {
+        console.log(
+          `  ${String(row["text"]).padEnd(12)} ${String(row["kind"]).padEnd(16)}` +
+            ` primary=${row["primary_type"] ?? "REFUSED"}(${row["primary_accent"] ?? "-"})` +
+            ` ${String(row["primary_reading"] ?? "-").padEnd(10)}` +
+            ` ${row["other_analyser"]}=${row["other_type"]}(${row["other_accent"]})` +
+            ` ${row["other_reading"]}`,
+        );
       }
       return 0;
     }

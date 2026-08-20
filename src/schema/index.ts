@@ -20,6 +20,14 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
 /**
  * Bumped only by a migration. `PRAGMA user_version` holds this.
  *
+ * 5 makes `accent_resolved` name its analyser priority (manual, then the
+ * primary `openjtalk`) instead of ordering by version across analysers — with
+ * two analysers loaded, `version DESC` compared 'pyopenjtalk-plus/…' against
+ * 'unidic/…' as strings, so the winner depended on where u sorts after p. Adds
+ * `accent_disagreements`, the adjudication queue: a cross-check analyser is
+ * stored but never resolves, because UniDic is measurably wrong on some of the
+ * words it could otherwise answer (it reads 正義 as the name マサヨシ).
+ *
  * 4 adds the `accents` table (derived 高低アクセント facts keyed by TEXT, not by
  * card), the `accent_resolved` and `card_voice_resolved` views, and `'accent'`
  * to `template_fields.type` — Zach's `<<型>>` field. Added now rather than
@@ -43,7 +51,7 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
  * longer exist and every database in the project is rebuildable from
  * `exports/` in about fifteen seconds. Re-import rather than migrate.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * Three-state, on both cards and decks. `inherit` resolves up the deck tree and

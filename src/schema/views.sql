@@ -107,23 +107,69 @@ SELECT c.id AS card_id,
        END AS source
   FROM cards c;
 
--- The accent for a string, with one definition of "which row wins": a human
--- override beats every analyser, and otherwise the newest version.
+-- The accent for a string, with one definition of "which row wins".
+--
+--   1. a human override ('manual') beats everything, outright
+--   2. then the PRIMARY analyser, 'openjtalk' -- the probe-rule derivation,
+--      validated on 箸/橋/端/花/鼻 against Google's own documented notation
+--   3. newest version within an analyser
+--
+-- A SECOND ANALYSER IS STORED BUT DOES NOT RESOLVE, and that is deliberate.
+-- UniDic 2.3.0 is loaded as a cross-check: 97.31% agreement over 3,007
+-- comparable words, 81 disagreements. It would be tempting to let it answer the
+-- words openjtalk refused -- it has an answer for 8 of them -- but it is
+-- measurably wrong on some of exactly those: it reads 正義 as the personal name
+-- マサヨシ rather than セイギ. A wrong accent drilled through spaced repetition
+-- is worse than no accent, so a cross-check answer becomes a CANDIDATE for
+-- adjudication, never the resolved answer. `accent_disagreements` below is where
+-- it shows up.
+--
+-- Ordering by version alone was the earlier rule and it was wrong for a second
+-- reason: with two analysers, `version DESC` compares 'pyopenjtalk-plus/0.4.1'
+-- against 'unidic/2.3.0' as strings, so which one won depended on the letter u
+-- sorting after p. That is not a rule, it is an accident.
 --
 -- `basis = 'guarded'` rows are KEPT and surfaced rather than filtered out. They
--- are the manual-review queue -- 32 of 3,850 words on this corpus -- and a view
+-- are the manual-review queue -- 34 of 3,850 words on this corpus -- and a view
 -- that hid them would turn "the rule refused" into "no data", which is the same
 -- miss-as-silence defect the audio binding was built to fix.
 CREATE VIEW accent_resolved AS
 SELECT text, analyser, version, probe, phrases, type, accent_type, reading,
        position_basis, basis, note
   FROM accents a
- WHERE a.rowid = (
+ WHERE a.analyser IN ('manual', 'openjtalk')
+   AND a.rowid = (
    SELECT b.rowid FROM accents b
-    WHERE b.text = a.text
+    WHERE b.text = a.text AND b.analyser IN ('manual', 'openjtalk')
     ORDER BY (b.analyser = 'manual') DESC, b.version DESC, b.created_at DESC
     LIMIT 1
  );
+
+-- Where the primary derivation and a cross-check analyser do not agree, plus
+-- every word the primary REFUSED that a cross-check can speak to.
+--
+-- This is the adjudication queue, and it is a view rather than a report file so
+-- it cannot go stale. Zach's instruction for settling these: OJAD, through its
+-- own interface, driven the way a person would -- not a scraper. Their terms
+-- permit educational and research use and ask people to refrain from bulk
+-- automated use, and it is publicly funded university infrastructure.
+CREATE VIEW accent_disagreements AS
+SELECT r.text,
+       r.type        AS primary_type,
+       r.accent_type AS primary_accent,
+       r.basis       AS primary_basis,
+       r.reading     AS primary_reading,
+       x.analyser    AS other_analyser,
+       x.type        AS other_type,
+       x.accent_type AS other_accent,
+       x.reading     AS other_reading,
+       CASE WHEN r.type IS NULL THEN 'primary refused'
+            ELSE 'types differ' END AS kind
+  FROM accent_resolved r
+  JOIN accents x ON x.text = r.text
+                AND x.analyser NOT IN ('manual', 'openjtalk')
+                AND x.type IS NOT NULL
+ WHERE r.type IS NULL OR r.type <> x.type;
 
 -- Per-deck target retention, inherited the same way, defaulting to the
 -- workspace setting.  SPEC: "Target retention must be a setting -- per deck."
