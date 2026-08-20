@@ -336,7 +336,7 @@
 <div class="wrap">
 
 <header class="masthead">
-  <p class="kicker">Build specification · draft 7</p>
+  <p class="kicker">Build specification · draft 8</p>
   <h1>Hashigo<span class="jp">梯子</span></h1>
   <p class="standfirst">A local-first replacement for Mochi, scoped to one person's
   Japanese study workflow — and to the four things Mochi gets wrong. Derived from
@@ -1060,27 +1060,47 @@ graph LR
   </div>
 
   <div class="prose">
-    <p><strong>Google Cloud TTS specifies pitch accent. Azure, as far as its
-    documentation goes, does not.</strong> Google exposes
+    <p><strong>Google Cloud TTS specifies pitch accent, and so — it turns out — does
+    Azure.</strong> Google exposes
     <code>CustomPronunciations</code> with a
     <code>PHONETIC_ENCODING_JAPANESE_YOMIGANA</code> encoding taking explicit markup —
     <code>^</code> opens an accent phrase, <code>!</code> marks the downstep, Tokyo
     dialect, at most one <code>!</code> per phrase — and Google's own documentation uses
     exactly the case that matters: <code>^はし</code> / <code>^は!し</code> /
     <code>^はし!</code> for 端 / 箸 / 橋.</p>
-    <p>Azure has no documented equivalent. What it does have, checked against primary
-    sources rather than recall, is two candidate mechanisms and no specification for
-    either:</p>
+    <div class="note diagnosis">
+      <p class="note-h">Correction, 2026-08-20 — draft 7 was wrong about Azure</p>
+      <p>Draft 7 said Azure has no documented pitch-accent control, and that its
+      apostrophe is &ldquo;documented as stress&rdquo;. <strong>Both were my error.</strong>
+      Microsoft's own <em>Japanese Phonemes</em> reference (<code>jj127901</code>,
+      ms.date 2012-05-09) defines the SAPI Japanese symbols outright:
+      <code>'</code> = <strong>Accent position</strong>, <code>+</code> = <strong>Accent
+      boundary</strong>, <code>|</code> = <strong>Phrase boundary</strong>,
+      <code>_</code> = one mora pause. The word &ldquo;stress&rdquo; does not appear on
+      that page at all.</p>
+      <p>What I did was read the <em>global</em> IPA legend at the top of
+      <code>speech-ssml-phonetic-sets.md</code> — which covers some forty locales and
+      glosses <code>ˈ</code> as &ldquo;Primary stress&rdquo; — and report it as Japanese's
+      meaning. The ja-JP include is 3,310 bytes and carries no legend for <code>'</code>
+      whatsoever. Microsoft also documents tone where it exists (zh-CN has a Pinyin Tone
+      section), so the ja-JP silence is a documentation gap rather than absent capability.
+      <code>|</code> is the find that matters most: <strong>117 corpus entries are
+      multi-phrase</strong> and nothing else addresses them.</p>
+      <p><strong>Still unverified, and only a listening test settles it:</strong> that
+      reference is SAPI-era, and whether today's <em>neural</em> ja-JP voices honour the
+      apostrophe is a separate question with one blog post as its entire empirical
+      record.</p>
+    </div>
+    <p>So both providers are candidates, and the honest position is a probe rather than a
+    preference:</p>
     <ul>
       <li><code>&lt;phoneme alphabet="sapi"&gt;</code> — ja-JP's phone set is Kana-based,
-      and Microsoft's own ja-JP examples table carries a mark: 合成 →
-      <code>ゴ'ウセ</code>, 所有者 → <code>ショュ'ウ?ャ</code>. The apostrophe goes
-      <em>after</em> the affected syllable. But it is documented as
-      <strong>stress</strong>, inherited from SAPI, which was built for a
-      stress-timed language. Japanese has pitch accent, not stress. Whether a Japanese
-      neural voice reads that apostrophe as an accent nucleus or as English-style
-      emphasis is undocumented, and the words &ldquo;accent&rdquo;, &ldquo;pitch&rdquo;
-      and &ldquo;downstep&rdquo; appear nowhere in the ja-JP material.</li>
+      and Microsoft's ja-JP examples carry the mark: 合成 → <code>ゴ'ウセ</code>,
+      所有者 → <code>ショュ'ウ?ャ</code>, the apostrophe placed <em>after</em> the
+      affected syllable, which is the Japanese nucleus convention (Microsoft documents
+      <code>sapi</code> stress as going after the syllable where IPA goes before).
+      Custom lexicon via <code>x-microsoft-sapi</code> is supported for ja-JP and is the
+      bulk path.</li>
       <li><code>&lt;prosody pitch&gt;</code> per mora — hand-shaping the contour, which
       one published experiment reports sounding natural. It can produce a downstep, but
       you are authoring a pitch curve rather than declaring a linguistic fact, and
@@ -1458,7 +1478,7 @@ graph LR
 <footer>
   Derived from 日本語, English and 基本情報 exports · Mochi format version 2 ·
   7,716 cards · 102,020 reviews · 8,744 wiki-links · 636 hours ·
-  draft 7, revised 19 August 2026
+  draft 8, revised 20 August 2026
 </footer>
 
 </div>

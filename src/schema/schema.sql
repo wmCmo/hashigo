@@ -412,7 +412,12 @@ CREATE INDEX card_links_target ON card_links (to_card_id);
 -- a 2.18x overspend, one card (領域) regenerated 33 times.
 --
 -- Three rules, each removing one failure mode:
---   1. Address by hash.  hash = sha256 over the identity tuple below
+--   1. Address by hash.  hash = sha256 of the PAYLOAD BYTES (src/blobs/address.ts).
+--      An earlier version of this comment said "over the identity tuple"; that was
+--      never true of the code. Idempotent regeneration comes from the identity
+--      LOOKUP (src/import/blobs.ts: kind + source_text + voice + lang + options),
+--      not from the address. Two generations of the same text land at two
+--      addresses; the lookup is what makes the second one a cache hit.
 --      (kind, normalised source_text, voice, lang, canonical options).
 --      Regenerating identical input is a cache hit, so a typo that is then
 --      undone costs nothing and creates nothing.
@@ -427,7 +432,7 @@ CREATE INDEX card_links_target ON card_links (to_card_id);
 -- attachment metadata.
 -- ---------------------------------------------------------------------------
 CREATE TABLE blobs (
-  hash        TEXT PRIMARY KEY,              -- lowercase hex sha256 of the identity tuple
+  hash        TEXT PRIMARY KEY,              -- lowercase hex sha256 of the payload bytes
   kind        TEXT NOT NULL CHECK (kind IN (
                 'speech', 'ai', 'translate', 'furigana',
                 'dictionary', 'image', 'file')),
