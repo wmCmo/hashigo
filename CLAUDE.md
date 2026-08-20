@@ -4,24 +4,44 @@ A local-first spaced-repetition app replacing [Mochi](https://mochi.cards) for o
 user's Japanese study. Built because Mochi's developer stopped fixing reported bugs.
 
 **Read [SPEC.html](SPEC.html) first** — it is the authoritative design document
-(build spec, **draft 7**). Every figure in it is measured from the real export in
+(build spec, **draft 8**). Every figure in it is measured from the real export in
 `exports/`, not estimated. Published copy:
 <https://claude.ai/code/artifact/c8416a42-779a-49da-81c1-54459067d94b>
 
-**The published copy is one revision behind, checked 2026-08-20.** Its masthead
-reads `draft 7`, but its "Answer leak in reverse mode" callout is still the old
-`diagnosis` note prescribing deferred link rendering — the version Zach overruled
-(decision 7 below). The file in this repo carries the overrule. **The file wins;
-republish that same path to bring the URL forward** (same `url` argument, or a
-second artifact gets created).
+The published copy is current as of draft 8 (2026-08-20). To revise: edit
+`SPEC.html` and republish **the same file path**, passing that URL as the `url`
+argument, or a second artifact gets created instead of updating this one.
+
+## THE APP IS SILENT — read this before touching anything
+
+The renderer is correct on all 7,716 cards. It renders **no audio**, because all 19
+generator-typed template fields hold **zero values**: Mochi keeps generated content in
+`component-cache` keyed by text, never in `fields[].value`, so the importer landed the
+blobs and never connected them to the fields that would render them.
+
+    generator-typed fields: speech 10, translate 5, ai 4  ->  0 have any value
+    blob refs bound to a field_id: 0 of 42,569
+    5,708 cards hold audio · 86 render an <audio> element
+    単語: 3,477 cards, 3,456 with clips, renders NONE
+
+**Decided (Zach, 2026-08-20): resolve on demand, not materialised** — audio will change
+when the provider changes, and a typo fix should not need a migration. Cost is a `sha256`
+of a short string plus one indexed lookup, measured at 0.20-1.06 ms in a real browser.
+**But miss-as-silence is the bug being fixed**, so on-demand resolution must emit a
+diagnostic count when it finds nothing, the way the renderer already reports its 10,316
+resolver warnings. `<<型>>` goes the other way — materialise it, in a new `accents` table
+keyed by text rather than card.
+
+See `STAGE4.md` §3 and `notes/pitch-accent-pipeline.md`.
 
 Stages 0, 1, 2, 3, 4, 5 and 8 exist and are tested against the real export:
 schema, importer, dashboard, template engine, **renderer** (`src/render`),
 scheduler backtest, **search** (`src/search`), plus the content-addressed blob
 store, the browser database handle (`src/db/browser.ts`, sqlite-wasm on OPFS) and
-`src/text`. What is still missing is the **review UI** — grading, the queue, and
-the app shell that mounts a rendered card (stages 6, 7, 9, 10). `spike/viewer/` is
-a THROWAWAY browser harness, not that shell. See `OVERNIGHT.md` for the gap list,
+`src/text`. What is still missing: the **field binding above** (blocking), the scheduler
+implementation, and the **review UI** — grading, the queue, and the app shell that
+mounts a rendered card (stages 6, 7, 9, 10). `spike/viewer/` is a THROWAWAY browser
+harness, not that shell. See `OVERNIGHT.md` for the gap list,
 `SPIKE.md` for what the browser spike settled, and `notes/browser-feasibility.md`
 for the OPFS measurements.
 
@@ -154,6 +174,47 @@ before writing anything that parses the export.
 * Deck, template, and field names are Japanese where the user wrote them Japanese.
   Do not translate or romanise them — `単語`, `漢字`, `例文`, `意味` are identifiers.
 * Language codes normalise to BCP-47 (`ja-JP`), never Mochi's inline `jp`.
-* Prefer measuring over assuming: this project has 102,020 graded reviews and 19,710
-  existing AI generations, which double as labelled test sets. See the memory note
-  on not inheriting Mochi's defaults.
+* Prefer measuring over assuming: this project has 102,020 graded reviews and 56,767
+  `component-cache` entries (ai 19,710 · speech 24,558 · translate 9,216 · furigana
+  3,255 · image-search 18 · dictionary 10), which double as labelled test sets. See the
+  memory note on not inheriting Mochi's defaults.
+
+## TTS: settled by measurement, 2026-08-20
+
+**Provider: Google. Voice: `ja-JP-Neural2-C` (male).** Zach picked it by ear and it
+agrees with an F0 measurement. He had been shadowing a female voice for four years only
+because Mochi locks the voice at template level — which is a fifth pain point this
+project exists to fix: per-card voice override, cheap regeneration, cheap deletion.
+
+Measured with 22 synthesis calls, F0 over the voiced span in thirds
+(`tools/accent_probe.py`, `notes/pitch-accent-pipeline.md`):
+
+* **Google honours `<phoneme alphabet="yomigana">` on Neural2** — `^` opens an accent
+  phrase, `!` marks the downstep. Three notations over the same text produce three
+  correct, distinct contours.
+* **Azure does NOT**, on a current neural voice. Microsoft really does document `'` as
+  "Accent position" (`jj127901`) — so SPEC's earlier claim that it has no notation was
+  wrong and is corrected — but all three contours come out near-identical and 頭高
+  starts at the LOWEST pitch of the three. The 2012 reference cannot speak for a 2026
+  neural voice.
+* **THE SILENT TRAP: Google ignores the notation when the element contains kanji.** It
+  works with kana content and fails with no error at all — the audio returns unaccented
+  and sounds plausible. Every request must carry the READING as element content, never
+  the headword.
+* **Voice fidelity varies within Google.** `Chirp3-HD` changes its output per notation
+  but its contours do not match the patterns — newer and better-sounding, and wrong for
+  this purpose. Voice choice is a correctness decision here, not an aesthetic one.
+* **Azure's own frontend was right all along.** Its unaided predictions land all four
+  minimal pairs, so the 7,403 existing Nanami clips are most likely fine. The case for
+  moving is override control and the male voice, NOT broken audio.
+
+Annotate the **isolated word** only, never the example sentence: isolated words are the
+hard case (no context to disambiguate 箸 from 橋), sentences give the frontend context and
+it handles them well, and annotating them would require getting every accent-phrase
+boundary right — a heuristic measured to fail *silently* on `に引き換え`.
+
+**No particle in the audio** (Zach's decision). Three different particles get conflated;
+`notes/pitch-accent-pipeline.md` keeps them apart. The probe particle is internal to the
+derivation and never spoken — OpenJTalk returns the mora count rather than `0` for 平板,
+so bare 尾高 and bare 平板 are indistinguishable without it. The naive `if accent > 0`
+rule fires on **100%** of his bare words and would drill **2,065 phantom 尾高**.
