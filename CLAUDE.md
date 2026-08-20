@@ -12,46 +12,59 @@ The published copy is current as of draft 8 (2026-08-20). To revise: edit
 `SPEC.html` and republish **the same file path**, passing that URL as the `url`
 argument, or a second artifact gets created instead of updating this one.
 
-## THE APP IS SILENT — read this before touching anything
+## The audio is BOUND — but nothing plays it yet
 
-The renderer is correct on all 7,716 cards. It renders **no audio**, because all 19
-generator-typed template fields hold **zero values**: Mochi keeps generated content in
-`component-cache` keyed by text, never in `fields[].value`, so the importer landed the
-blobs and never connected them to the fields that would render them.
+**FIXED 2026-08-20 in `src/generate`.** All 19 generator-typed template fields hold
+**zero values** — Mochi keeps generated content in `component-cache` keyed by input text,
+never in `fields[].value` — so `<<Speech>>` resolved to the empty string and the renderer,
+correct on all 7,716 cards, rendered silence. `src/generate` reconstructs the cache key
+from the field and resolves it **on demand** (Zach's decision: audio changes when the
+provider changes, and a typo fix must not need a migration).
 
-    generator-typed fields: speech 10, translate 5, ai 4  ->  0 have any value
-    blob refs bound to a field_id: 0 of 42,569
-    5,708 cards hold audio · 86 render an <audio> element
-    単語: 3,477 cards, 3,456 with clips, renders NONE
+Measured over 18,356 **field slots** — one per generator field per card, which is neither
+a card count nor a blob count:
 
-**Decided (Zach, 2026-08-20): resolve on demand, not materialised** — audio will change
-when the provider changes, and a typo fix should not need a migration. Cost is a `sha256`
-of a short string plus one indexed lookup, measured at 0.20-1.06 ms in a real browser.
-**But miss-as-silence is the bug being fixed**, so on-demand resolution must emit a
-diagnostic count when it finds nothing, the way the renderer already reports its 10,316
-resolver warnings. `<<型>>` goes the other way — materialise it, in a new `accents` table
-keyed by text rather than card.
+    exact        17,502   the identity Mochi filed
+    other-voice     507   same text, DIFFERENT voice - playable now
+    mismatch        312   card has a clip of that kind, nothing matches its text
+    missing          35   never generated
+    unbuildable     159   no resolvable input, so no key is invented
+    -> 98.11% playable · 単語 Speech 3,278 exact + 124 other-voice
 
-See `STAGE4.md` §3 and `notes/pitch-accent-pipeline.md`.
+`other-voice` is **pain point #5 in the data**: it exists only where the template voice
+changed under clips already generated. It is also the regenerate-with-Neural2-C set.
+
+**Three things there were measured, not reasoned**, each a silent whole-template failure
+if guessed: the generation input is the **rendered** text, not the stored value (基本情報's
+key is `データ` where the value is `{{データ}}` — worth 471 cards); only `ai-task` /
+`gender` / `from` / `to` / `language` are part of the key, never `ai-custom-prompt`; and
+prompt markers carry spaces (`<< 言葉 >>`). See `src/generate/README.md`.
+
+**WHAT STILL DOES NOT PLAY.** Binding is not playback. Nothing mounts a rendered card and
+nothing calls `play()`, because that is the review UI (stage 7) and it does not exist. The
+audio is now findable, not audible. `<<型>>` goes the other way from all of this —
+materialise it, in a new `accents` table keyed by text rather than card.
+
+See `src/generate/README.md`, `STAGE4.md` §3 and `notes/pitch-accent-pipeline.md`.
 
 Stages 0, 1, 2, 3, 4, 5 and 8 exist and are tested against the real export:
 schema, importer, dashboard, template engine, **renderer** (`src/render`),
 scheduler backtest, **search** (`src/search`), plus the content-addressed blob
 store, the browser database handle (`src/db/browser.ts`, sqlite-wasm on OPFS) and
-`src/text`. What is still missing: the **field binding above** (blocking), the scheduler
-implementation, and the **review UI** — grading, the queue, and the app shell that
+`src/text`. Stage 1.5 — the **field binding** (`src/generate`) — landed 2026-08-20. What is still
+missing: the scheduler implementation, and the **review UI** — grading, the queue, and the app shell that
 mounts a rendered card (stages 6, 7, 9, 10). `spike/viewer/` is a THROWAWAY browser
 harness, not that shell. See `OVERNIGHT.md` for the gap list,
 `SPIKE.md` for what the browser spike settled, and `notes/browser-feasibility.md`
 for the OPFS measurements.
 
 ```bash
-npm test                # 14 files, 542 passed, 1 skipped (the FSRS refit, gated)
+npm test                # 15 files, 560 passed, 1 skipped (the FSRS refit, gated)
                         # 32.7-87.7 s over five runs. Under load it can also emit
                         # "Timeout calling onTaskUpdate" — that is Vitest's reporter
                         # RPC, not a failure. Check the pass count, not the error line.
 npm run typecheck       # exit 0
-npm run build           # refuses to exit 0 unless dist/ actually imports (13 export subpaths)
+npm run build           # refuses to exit 0 unless dist/ actually imports (14 export subpaths)
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
 npm run dashboard -- --db build/hashigo.db --out dashboard.html
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 1 on any location

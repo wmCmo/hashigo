@@ -158,10 +158,10 @@ fastest run* until proven otherwise — that has been true four times.
 Current gates, and they should stay true:
 
 ```bash
-npm test          # 14 files, 542 passed, 1 skipped (gated FSRS refit). 32.7-87.7 s
+npm test          # 15 files, 560 passed, 1 skipped (gated FSRS refit). 32.7-87.7 s
                   # over five runs. A "Timeout calling onTaskUpdate" line is
                   # Vitest reporter RPC under load, not a failing test.
 npm run typecheck # exit 0
-npm run build     # VERIFIED 50 modules, 26 dist targets = 13 export subpaths x (.js + .d.ts)
+npm run build     # VERIFIED 53 modules, 28 dist targets = 14 export subpaths x (.js + .d.ts)
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 0, blobs.path 0
 ```
