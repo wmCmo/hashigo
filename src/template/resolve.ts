@@ -39,6 +39,7 @@
  * silently discarding 3,159 cards' worth of authored text.
  */
 
+import { GENERATOR_FIELD_TYPES } from "../schema/index.js";
 import {
   type Block,
   type Side,
@@ -103,12 +104,42 @@ export type WarningKind =
   /** `reverse_permutation` was not a permutation of the side indices. */
   | "invalid-permutation"
   /** A side resolved to nothing visible. 単語's first side does this by design. */
-  | "empty-side";
+  | "empty-side"
+  /**
+   * A generator-typed field with no stored value. NOT an error: Mochi keeps
+   * generated content in `component-cache` keyed by input text, so all 19
+   * generator-typed fields in the corpus are empty and every one of them is
+   * this. The marker is left standing so the reference survives into the AST as
+   * a `field` node, where `expandGeneratorFields` in `src/generate/fields.ts`
+   * can turn it into a generation request. Substituting the empty string is what
+   * made 3,456 単語 cards with a clip render no `<audio>` at all.
+   */
+  | "generator-pending";
 
 export interface ResolveWarning {
   readonly kind: WarningKind;
   /** Field name, side index or offending text — whatever names the site. */
   readonly detail: string;
+}
+
+/** How to treat a generator-typed field that has no stored value. */
+export interface ResolveOptions {
+  /**
+   * Keep the `<<Field>>` marker standing for a valueless GENERATOR field, so it
+   * survives into the AST as a `field` node for `expandGeneratorFields` to turn
+   * into a generation request.
+   *
+   * Default FALSE, and the default is the important half. Opting in changes what
+   * a card looks like: an unexpanded render then shows the literal text
+   * `<<Speech>>` on 18,515 field slots, which trades silence for visible junk.
+   * So only a caller that will run the expansion may ask for it — the flag is
+   * effectively "I am the generation pipeline".
+   *
+   * The `generator-pending` WARNING is emitted either way. The debt is real
+   * whether or not this caller intends to settle it, and a silent default is
+   * what hid the whole defect for eight drafts.
+   */
+  readonly pendingGenerators?: boolean;
 }
 
 export interface RenderedCard {
@@ -251,9 +282,18 @@ export interface ResolvedText {
  * resolved text, and the inline `<speech>` tags in card content have to hash the
  * same way — SPEC, "one cache, two callers".
  */
-export function resolveSideTexts(card: CardInput, template: TemplateInput): ResolvedText {
+export function resolveSideTexts(
+  card: CardInput,
+  template: TemplateInput,
+  options: ResolveOptions = {},
+): ResolvedText {
   const warnings: ResolveWarning[] = [];
-  const texts = resolveTexts(maskFields(template.content), lookupFor(template, card), warnings);
+  const texts = resolveTexts(
+    maskFields(template.content),
+    lookupFor(template, card),
+    warnings,
+    options,
+  );
   return { texts, warnings };
 }
 
@@ -261,6 +301,7 @@ function resolveTexts(
   masked: MaskedSource,
   lookup: Lookup,
   warnings: ResolveWarning[],
+  options: ResolveOptions = {},
 ): string[] {
   return splitMaskedSides(masked.text).map((side) => {
     const gated = gateSections(side.split("\n"), masked.tokens, lookup, warnings);
@@ -286,6 +327,14 @@ function resolveTexts(
       // Markers are stripped from the value, not from the body: a value that
       // happened to contain one must not be able to forge a field reference.
       const value = stripMarkers(lookup.value(token.name) ?? "");
+      if (value === "" && GENERATOR_FIELD_TYPES.has(lookup.type(token.name) ?? "")) {
+        // This module cannot open a database, so it cannot resolve the
+        // generation; what it CAN do is refuse to delete the evidence that one
+        // is owed. The warning always fires; the marker only stands for a caller
+        // that has said it will expand it.
+        warnings.push({ kind: "generator-pending", detail: token.name });
+        if (options.pendingGenerators === true) return markerFor(index);
+      }
       if (SIDE_BREAK_LINE.test(value)) {
         warnings.push({ kind: "side-break-in-value", detail: token.name });
       }
@@ -300,7 +349,11 @@ function resolveTexts(
  * Pass `template` as null for a template-less card; its `content` then supplies
  * the sides. 370 cards in the corpus are in that shape, 349 of them with a `---`.
  */
-export function resolveCard(card: CardInput, template?: TemplateInput | null): RenderedCard {
+export function resolveCard(
+  card: CardInput,
+  template?: TemplateInput | null,
+  options: ResolveOptions = {},
+): RenderedCard {
   const warnings: ResolveWarning[] = [];
   const content = card.content ?? "";
 
@@ -315,7 +368,7 @@ export function resolveCard(card: CardInput, template?: TemplateInput | null): R
     }
     const masked = maskFields(template.content);
     const lookup = lookupFor(template, card);
-    sides = resolveTexts(masked, lookup, warnings).map((text, index) => ({
+    sides = resolveTexts(masked, lookup, warnings, options).map((text, index) => ({
       index,
       // Tokens are still passed in: any marker left standing is an unresolved
       // reference, and stays a `field` node.
@@ -335,8 +388,9 @@ export function resolveSide(
   card: CardInput,
   template: TemplateInput,
   index: number,
+  options: ResolveOptions = {},
 ): readonly Block[] {
-  return resolveCard(card, template).sides[index]?.blocks ?? [];
+  return resolveCard(card, template, options).sides[index]?.blocks ?? [];
 }
 
 // ─── direction ───────────────────────────────────────────────────────────────
@@ -408,8 +462,9 @@ export function renderCard(
   card: CardInput,
   template: TemplateInput | null | undefined,
   direction: Direction,
+  options: ResolveOptions = {},
 ): RenderedCard {
-  const rendered = resolveCard(card, template);
+  const rendered = resolveCard(card, template, options);
   const permutation = template?.reversePermutation ?? null;
   const warnings = [...rendered.warnings];
   if (

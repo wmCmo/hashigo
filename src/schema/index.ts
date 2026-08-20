@@ -74,6 +74,33 @@ export const BLOB_KINDS = [
 ] as const;
 export type BlobKind = (typeof BLOB_KINDS)[number];
 
+/**
+ * `template_fields.type` -> `blobs.kind`, for the field types that GENERATE
+ * their content rather than store it.
+ *
+ * One definition, here, because three layers need it and a second copy is how
+ * two of them come to disagree: `src/template/resolve.ts` needs it to know that
+ * an empty value means "pending" rather than "blank", `src/generate/fields.ts`
+ * needs it to build the request, and the importer's cache-bucket mapping is the
+ * same table read the other way. `image-search` -> `image` is the only rename,
+ * and it is Mochi's: the cache bucket is `image-search`, the blob kind is not.
+ *
+ * All 19 generator-typed fields in the reference corpus are one of these six.
+ */
+export const FIELD_TYPE_BLOB_KIND: Readonly<Record<string, BlobKind>> = {
+  speech: "speech",
+  ai: "ai",
+  translate: "translate",
+  furigana: "furigana",
+  dictionary: "dictionary",
+  "image-search": "image",
+};
+
+/** The `template_fields.type` values that generate. Keys of the table above. */
+export const GENERATOR_FIELD_TYPES: ReadonlySet<string> = new Set(
+  Object.keys(FIELD_TYPE_BLOB_KIND),
+);
+
 /** Provenance of a review row. Everything imported from Mochi is `mochi`. */
 export const REVIEW_SOURCES = ["mochi", "local"] as const;
 export type ReviewSource = (typeof REVIEW_SOURCES)[number];
