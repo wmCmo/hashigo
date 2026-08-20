@@ -1794,3 +1794,33 @@ that output changes, but its 頭高 does not start high and its 尾高 starts to
 the newest tier" would have been the wrong default. Voice selection is therefore a
 CORRECTNESS decision for this app, not only an aesthetic one — which is one more argument
 for the per-card voice override.
+
+### SETTLED 2026-08-20 — voice, and where annotation applies
+
+**Voice: `ja-JP-Neural2-C`** (male). Chosen by Zach by ear after the four-voice probe,
+agreeing with the F0 measurement. Chirp3-HD rejected — better-sounding, unfaithful
+contours.
+
+**Three particles, kept separate, because they are easy to conflate:**
+
+1. **In the probe** — a measurement instrument only. Bare 尾高 and bare 平板 are
+   acoustically identical (the drop lands on the following particle), so a bare-word test
+   cannot discriminate. `はしが` exists so the experiment can tell honoured from ignored.
+2. **In the derivation** — internal, never spoken. OpenJTalk returns mora count rather
+   than `0` for 平板, so the probe particle `が` is appended to read the accent type, then
+   discarded before emitting notation for the bare word. Required.
+3. **In the audio** — **NO.** Zach's decision, and it holds. 単語 clips speak the bare
+   word; the 51 尾高 words that bare audio cannot distinguish are carried by `<<型>>`.
+
+**Annotate the isolated word, NOT the example sentence.** Isolated words are the hard
+case — no context to disambiguate 箸 from 橋 — which is exactly why `<<Speech>>` needs the
+notation. `例文` gives the engine a full sentence of context and its frontend handles that
+well. Annotating sentences would mean segmenting each into accent phrases and getting
+every boundary right, and the phrase-boundary heuristic was measured to fail *silently* on
+`に引き換え`; 117 entries are already multi-phrase. Bad trade.
+
+**What the notation actually buys**, stated honestly now that Azure's frontend has been
+shown correct on common words: override for the cases a dictionary gets wrong (rare words,
+proper nouns, novel compounds — plentiful at N1), inspectability so `<<型>>` and the audio
+derive from one source and cannot silently disagree, and the male voice. It is NOT buying
+correctness on common vocabulary; both frontends already had that.
