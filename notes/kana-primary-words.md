@@ -120,12 +120,12 @@ nothing, and the only warning left is the expected `generator-pending`.
 
 ## Still to decide
 
-* **Which side the label renders on.** On the reveal it is grading information ("do not
-  count this fully against yourself") and real-life usage information. On the prompt it
-  would soften the self-judgement before answering — but it also hints that the word is
-  unusual, which works against the 漢字検定 goal. Same shape as the `<<型>>` decision,
-  which landed on the reveal side.
-* **The exact label text.** `◎かな主流` as proposed, or shorter.
+* ~~Which side the label renders on~~ — **DECIDED**: side 1, inside `<<#Reading>>`.
+  See the section above.
+* **The exact label text.** `◎かな主流` as proposed, or shorter. Argument for shorter:
+  it sits beside dense Japanese, the meaning is learned once, and `型` is also a pill —
+  they should read as one family. `かな` or `◎かな`. Not in the accent colour: the accent
+  is green and grades are binary, so every green pixel is focus or "remembered".
 * **B's mechanism** — a `reading-hint` field, or lean on the existing `Reference` and
   furigana.
 * Editing the 13 cards is authoring work: stage 10, or a one-off script.
