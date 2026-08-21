@@ -81,6 +81,43 @@ like a syntax error. `isTruthy` and the boolean are fine; the line layout is the
 `template_fields.local = 1` (schema v7) means the field and its values survive a
 re-import, so this does not become a chore after every fresh `.mochi`.
 
+## The template, and the one thing that does not work
+
+Zach's placement, from the 単語 template he pasted 2026-08-21: **`かな主流` on side 1,
+inside the `<<#Reading>>` gate; `型` on side 2, immediately above `<<Speech>>`.**
+
+Side 1 already shows `Reference` when `Reading` is true, so the reading is given there
+anyway — the label is not a spoiler on that side, which is why it can sit on the prompt
+without the objection that applies to `型`.
+
+**HIS TEMPLATE AS WRITTEN DOES NOT WORK, and it fails silently.** He wrote:
+
+```
+<<#Reading>>
+<<Reference>>
+<<かな主流>>
+<</Reading>>
+```
+
+`<<かな主流>>` interpolates a BOOLEAN. The resolver reports `boolean-interpolated` and
+substitutes the empty string, so the label renders on **neither** branch — it looks like
+the flag being ignored rather than like a syntax error. Verified by running his block
+verbatim.
+
+The working form, markers each alone on their own line:
+
+```
+<<#Reading>>
+<<Reference>>
+<<#かな主流>>
+◎かな主流
+<</かな主流>>
+<</Reading>>
+```
+
+Verified nested inside the real template: `true` renders the label, `false` renders
+nothing, and the only warning left is the expected `generator-pending`.
+
 ## Still to decide
 
 * **Which side the label renders on.** On the reveal it is grading information ("do not
