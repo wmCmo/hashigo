@@ -3,6 +3,15 @@
 A local-first spaced-repetition app replacing [Mochi](https://mochi.cards) for one
 user's Japanese study. Built because Mochi's developer stopped fixing reported bugs.
 
+## Where this is, right now (2026-08-22)
+
+**8 of 11 stages plus stage 1.5 are built and tested against the real export.** The
+audio is BOUND and the accent pipeline is VALIDATED; what is missing is the **review
+UI (stage 7)**, which is why nothing plays yet, and the **scheduler implementation
+(stage 6)**. **Zach's decision queue is EMPTY** — do not open by asking him to decide
+something, the answer is very likely in "Decisions that are settled" or "Ratified"
+below. **`NEXT.md` has the build order.** Read it second.
+
 **Read [SPEC.html](SPEC.html) first** — it is the authoritative design document
 (build spec, **draft 8**). Every figure in it is measured from the real export in
 `exports/`, not estimated. Published copy:
@@ -84,7 +93,7 @@ npm test                # 16 files, 592 passed, 1 skipped (the FSRS refit, gated
                         # "Timeout calling onTaskUpdate" — that is Vitest's reporter
                         # RPC, not a failure. Check the pass count, not the error line.
 npm run typecheck       # exit 0
-npm run build           # refuses to exit 0 unless dist/ actually imports (14 export subpaths)
+npm run build           # refuses to exit 0 unless dist/ actually imports (15 export subpaths)
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
 npm run dashboard -- --db build/hashigo.db --out dashboard.html
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 1 on any location
@@ -177,6 +186,31 @@ commands.
    URL before answering. No direction-dependent deferral, no defanged `href`, no
    state for it. Deleting that machinery was the correct outcome.
 
+## Ratified 2026-08-22 — small calls an agent had made without authority
+
+`OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach
+took the remaining five, all as recommended, so they are no longer open questions:
+
+* **A `---` inside a field value stays a horizontal rule**, not a side break. Only
+  card `EPp9rse6` does it. He wrote those five sides deliberately to partition ten
+  clozes, and then reconsidered: *"it doesn't matter if I divide a card, I still
+  have to remember all of them anyway, and If i fail one, i fail the whole card"* —
+  so the better fix is splitting the CARD, which is authoring, not parsing.
+* **The CommonMark emphasis deviations stay.** They exist because his corpus broke
+  the standard rule: `\*` jisho wildcards, underscores in filenames, and `路_線_図`
+  being italicised.
+* **The dashboard keeps zero JavaScript** (SPEC problem #1, battery). But that is
+  not a reason to leave data unreachable — see the heatmap item below.
+* **The heatmap keeps 4 colour bins.** A 5-step ramp failed the contrast check, and
+  contrast wins in an app where every grey carries a reading.
+* **`tags` keeps 20 rows for 19 real tags** — `Dialect` is a childless ancestor so
+  `Dialect/Kansai` has a parent. Any count filters `cards_direct > 0`; the
+  dashboard's tag count needs that filter, which is a fix and not a decision.
+
+`orphanFieldValues` reports **235** with the 137-real-text figure broken out and the
+card ids listed — the same treatment the 3,159-card stale-`content` case gets. The
+143 definition silently skips the 92 template-less cards.
+
 ## The hard rule: audio must never autoplay
 
 **The audio in this corpus is for 高低アクセント (pitch accent) SHADOWING.** Zach
@@ -204,31 +238,6 @@ It is pinned by tests with demonstrated teeth (integrator, 2026-08-20): adding
 sweep (450 violations); adding an `autoplay` attribute in `src/render/nodes.ts`
 turns 8 tests red across three files. If you change either file, re-run that
 experiment rather than trusting a green suite.
-
-## Ratified 2026-08-22 — small calls an agent had made without authority
-
-`OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach
-took the remaining five, all as recommended, so they are no longer open questions:
-
-* **A `---` inside a field value stays a horizontal rule**, not a side break. Only
-  card `EPp9rse6` does it. He wrote those five sides deliberately to partition ten
-  clozes, and then reconsidered: *"it doesn't matter if I divide a card, I still
-  have to remember all of them anyway, and If i fail one, i fail the whole card"* —
-  so the better fix is splitting the CARD, which is authoring, not parsing.
-* **The CommonMark emphasis deviations stay.** They exist because his corpus broke
-  the standard rule: `\*` jisho wildcards, underscores in filenames, and `路_線_図`
-  being italicised.
-* **The dashboard keeps zero JavaScript** (SPEC problem #1, battery). But that is
-  not a reason to leave data unreachable — see the heatmap item below.
-* **The heatmap keeps 4 colour bins.** A 5-step ramp failed the contrast check, and
-  contrast wins in an app where every grey carries a reading.
-* **`tags` keeps 20 rows for 19 real tags** — `Dialect` is a childless ancestor so
-  `Dialect/Kansai` has a parent. Any count filters `cards_direct > 0`; the
-  dashboard's tag count needs that filter, which is a fix and not a decision.
-
-`orphanFieldValues` reports **235** with the 137-real-text figure broken out and the
-card ids listed — the same treatment the 3,159-card stale-`content` case gets. The
-143 definition silently skips the 92 template-less cards.
 
 ## The four problems this exists to solve
 

@@ -1,57 +1,62 @@
 # Next session — start here
 
-Written 2026-08-20 immediately before a `/compact`. Zach's instruction: *"assume that the
-new session will know NOTHING about our conversation, don't trust the summary process, it
-loses so much context."* So this file is the handoff, not the summary.
+Rewritten 2026-08-22, immediately before a `/compact`. Zach's standing instruction:
+*"assume that the new session will know NOTHING about our conversation, don't trust the
+summary process, it loses so much context."* So this is the handoff, not a summary.
 
-Read in this order: `CLAUDE.md` (auto-loads, and now carries the silent-audio problem and
-the TTS findings) → this file → `STAGE4.md` → `notes/pitch-accent-pipeline.md`.
+**Read in this order:** `CLAUDE.md` (auto-loads; carries the current state and every
+settled decision) → this file → whichever `notes/` file the task touches.
 
-The Obsidian planner Zach maintains himself is at
-`C:\DEV\obsidian\second-brain\PARA\1Projects\ハシゴ\Planner.md`. He edits it directly and
-his notes there are in his own voice — preserve them, don't paraphrase them away.
+Zach also keeps his own planner at
+`C:\DEV\obsidian\second-brain\PARA\1Projects\ハシゴ\Planner.md`. It is his decision queue
+in his own voice, it is NOT in git, and it deliberately holds no measurements — those
+live here. Preserve his wording if you edit it; don't paraphrase him away.
 
 ---
 
-## Progress, 2026-08-20 evening
+## THE DECISION QUEUE IS EMPTY
 
-Zach green-lit steps 1 -> 2 -> 3 -> 3.5 -> 4 and then said *"you can proceed til
-the point when you need my decision"*. Steps **1, 2, 3 are DONE**, and 3.5 is
-done except the OJAD leg. No multi-agent workflow was used — he never green-lit
-one, and it was not needed.
+As of 2026-08-22 Zach has cleared every open question. **Do not open this session by
+asking him to decide something** — check `CLAUDE.md` "Decisions that are settled" and the
+"Ratified 2026-08-22" section first, because the answer is probably already there.
 
-| step | state | where |
+The next work is **building**, in this order:
+
+| | what | notes |
 |---|---|---|
-| 1. bind generated values to fields | **DONE** | `src/generate`, 98.11% of 18,356 field slots playable |
-| 2. the four voice gaps | **DONE** | schema v3, `src/generate/voice.ts`, `retargetBlobRef`, 7-day sweep grace |
-| 3. derivation + `<<型>>` | **DONE** | schema v4, `src/accent`, 3,816 of 3,850 keys labelled |
-| 3.5 long-vowel test | **DONE — answered** | `ー` and `い` behave the same; no conversion needed |
-| 3.5 second dictionary | **DONE** | UniDic 2.3.0, 97.31% agreement on 3,007 comparable words |
-| 3.5 OJAD | **PARTLY DONE** | 33 of 90 adjudicated; 57 left, ~51 of them not in OJAD at all |
-| 4. regenerate 20 cards, listen | **DONE, then INVALIDATED** | he judged them accurate, but `cards` mode sent KANJI content so Google ignored the notation — he heard the unaided frontend. `--card-content kana` fixes it; worth re-running |
+| 1 | **Stage 7 — Review UI** | the critical path. It is the only reason the audio still does not play. **Needs his taste** — it is the screen he lives in. Hard constraint: audio fires on cloze reveal, NEVER on side entry |
+| 2 | **Stage 6 — Scheduler** | FSRS-6 over tracks. `BACKTEST.md` already chose and fitted it; this is implementation, no judgement calls |
+| 3 | Design tokens → `spike/viewer/`, then he judges on his phone | 3 named fixes in `notes/design-tokens.md` |
+| 4 | Dashboard in English | 369 Japanese strings. A `LABELS` table, English default. Deck/template/field names stay Japanese — they are identifiers |
+| 5 | Nested-tag sidebar · Ctrl+K palette | query layers done, no UI |
+| 6 | Phone write throughput | the one unmeasured number |
+| 7 | **`読み` field + parse the 13 parenthesis cards** | green-lit. Show him the 13 before/after rows before applying anything |
+| 8 | Heatmap `<details>` table · dashboard tag count filters `cards_direct > 0` | two small fixes, no decisions attached |
+| 9 | Stage 10 — Editor | add / delete / move a field from the UI |
+| 10 | Stage 11 — Sync | Cloudflare account exists. One browser per device, Samsung Internet |
 
-### Two things waiting on Zach specifically
+**Deliberately NOT acted on:** where OJAD picked a side it backed UniDic 11x to
+OpenJTalk 4x, clustering on Sino-Japanese compounds that should be 平板 where our rule
+produced a nucleus. That is an inference from 15 words. It wants a larger OJAD sample
+before anything in `tools/accent.py` changes. Do not "fix" the derivation on this basis.
 
-1. **Step 4 is his ears.** The tooling refuses more than 20 cards by design. It
-   also spends on his Google account, and the point of the step is that he
-   listens — nobody else can do it.
-2. **`<<型>>` is not on any template yet.** The storage, derivation, resolution
-   and materialiser all exist and are tested, but no template has an
-   `accent`-typed field, so `cli.ts write` has nothing to write to. Adding one
-   is authoring: WHICH SIDE it goes on (the reveal side — a 平板 label on the
-   prompt side is the same class of error as autoplay) is settled, but where on
-   that side, and whether it reads `平板` or `平板 (0)`, is his taste. A locally
-   added field is also dropped by the next re-import, which the importer does not
-   yet know how to preserve — worth deciding together.
+---
 
-### Schema is at v7, and there is still no migration path
+## The accent pipeline is DONE and VALIDATED — do not redo it
 
-That is deliberate and stated in `src/schema/index.ts`: every database here
-rebuilds from `exports/` in about fifteen seconds, and reviews still come from
-the export. **A schema bump therefore means `rm build/hashigo.db` and re-import,
-then regenerate `dashboard.html`** (its one-line `スキーマ v5` field is asserted
-byte-identical by a test). This bit three times in one session; it is not a
-surprise, it is the workflow.
+This consumed most of two days and it is finished. `notes/pitch-accent-pipeline.md` §7-§10
+has every measurement.
+
+* 3,850 distinct head words: 3,816 labelled, 34 refused. 平板 54.3% · 中高 · 頭高 ·
+  **尾高 1.4%**, and that last number is pinned as a RATIO in a test because a decision
+  rests on it.
+* The notation is honoured only with **kana** element content — Google silently ignores it
+  when the element contains kanji, returning plausible unaccented audio.
+* **8 of 8** nucleus words put the downstep where the derivation asked.
+* A blind A/B says the notation carries no audible penalty (46% of clips called fuzzy
+  were the notated arm, p = 0.709).
+* `tools/accent_verify.py` produces **false misses on words starting with an unvoiced
+  consonant** — its output is a shortlist to listen to, never a verdict.
 
 Rebuilding the accent data after a re-import:
 
@@ -64,133 +69,91 @@ npx vite-node src/accent/cli.ts -- load --db build/hashigo.db --in build/accents
 npx vite-node src/accent/cli.ts -- ojad --db build/hashigo.db
 ```
 
-### What is left in the accent queue, and why it is not a gap to close
+The venv (`.venv-accent/`, gitignored, ~1.4 GB with UniDic) rebuilds with
+`python -m venv .venv-accent` then
+`.venv-accent/Scripts/python -m pip install pyopenjtalk-plus fugashi unidic`.
+**`python -m unidic download` fails on Windows** — it calls `fork`. Fetch
+`https://cotonoha-dic.s3-ap-northeast-1.amazonaws.com/unidic.zip` directly, unzip into
+`.venv-accent/Lib/site-packages/unidic/dicdir/`, and create an empty `mecabrc` there.
+UniDic 3.1.0a1's URL is dead; 2.3.0 has the same `aType` field.
 
-57 words. **~51 of them are simply not in OJAD** — it holds ~9,000 nouns and
-~3,500 用言, which does not reach his 上級 vocabulary (敵軍, 空前, 脆弱, 転嫁,
-横柄) or his onomatopoeia (もやもや, ベタベタ, ニコニコ). Those keep the primary
-derivation or stay `guarded`, which is the honest state.
-
-**6 are genuinely ambiguous and must stay unlabelled.** `まく` has three
-different accents across 巻く / 蒔く・撒く / 膜・幕. A single label would drill a
-wrong contour on two thirds of its senses. Settling them needs the card's own
-意味, which is a review-UI question — worth raising with Zach when the UI exists,
-not before.
-
-**One hypothesis to test, not to act on yet.** Where OJAD backed one analyser
-against the other it backed UniDic 11 times and OpenJTalk 4, and the UniDic wins
-cluster on Sino-Japanese compounds that should be 平板 where our probe rule
-produced a nucleus. That is an inference from 15 words. It wants a larger OJAD
-sample before `tools/accent.py` changes. `notes/accent-ojad-adjudication.md` §
-"The pattern worth acting on".
-
-The venv (`.venv-accent/`, gitignored, ~1.4 GB with UniDic) rebuilds with:
-
-```bash
-python -m venv .venv-accent
-.venv-accent/Scripts/python -m pip install pyopenjtalk-plus fugashi unidic
-```
-
-`python -m unidic download` **fails on Windows** — it calls `fork`. Fetch
-`https://cotonoha-dic.s3-ap-northeast-1.amazonaws.com/unidic.zip` directly and
-unzip it into `.venv-accent/Lib/site-packages/unidic/dicdir/`, then create a
-`mecabrc` there (any content; fugashi only checks it exists). UniDic 3.1.0a1's
-URL is dead — 2.3.0 has the same `aType` field.
-
-### The `.env` name mismatch, which will waste ten minutes otherwise
-
-His `.env` calls the Google key **`GOOGLE_TTS_SECRET`**; `accent_probe.py`
-defaults to `GOOGLE_TTS_API_KEY`. Pass `--google-key-env GOOGLE_TTS_SECRET`. The
-probe reads secrets by NAME and never prints them, and the key now travels in the
-`x-goog-api-key` header rather than the URL query string.
-
-## What is already settled — do not reopen
-
-Everything in `CLAUDE.md` "Decisions that are settled", plus, from 2026-08-20:
-
-| | |
-|---|---|
-| TTS provider | **Google** |
-| Voice | **`ja-JP-Neural2-C`** (male), chosen by ear, agrees with F0 |
-| Notation | SSML `<phoneme alphabet="yomigana">`, **reading as element content, never kanji** |
-| Particle in the audio | **No.** 尾高 is 1.4% of his vocabulary — 51 words — and `<<型>>` carries them |
-| Annotate | the isolated word only, **never** the example sentence |
-| Generated value resolution | **on demand**, with a loud miss diagnostic |
-| `<<型>>` storage | **materialised**, `accents` table keyed by text |
-| Regeneration scope | Japanese only (8,392 clips / 106,926 chars). English's 2,372 clips are untouched — pitch accent is meaningless there. **$0** on Neural2. |
-| Browser | one per device; Samsung Internet on the phone, `persist()` granted, quota 133.96 GiB |
-| Audio on the phone | all local, no lazy fetch |
-| Visual direction | Monkeytype `terminal` + Notion; see `notes/design-tokens.md` |
-
-## Two open items he has NOT decided
-
-- The `orphanFieldValues` definition — 143 (cards with a template) vs 235 (all
-  unreferenced values). `FIXES.md` §2.3, §3.6.
-- The `OVERNIGHT.md` §4 bundle: sides being structural, the CommonMark emphasis
-  deviations, the 4-bin heatmap, the JS-free dashboard, the 20-row `tags` table for 19
-  real tags. All small, none blocking.
+**57 words remain in the OJAD adjudication queue** (`cli.ts queue`), ~51 of which simply
+are not in OJAD — it holds ~9,000 nouns and ~3,500 用言, which does not reach his 上級
+vocabulary or his onomatopoeia. Those keep the primary derivation. That is the honest
+state, not a gap.
 
 ---
 
-## Which docs are snapshots, and what is stale in them
+## The gates, and the one chore that bites
 
-Audited 2026-08-20. The point-in-time reports are **kept as the record** and bannered
-rather than rewritten, because a rewritten report no longer tells you what was actually
-found. Current state lives in `CLAUDE.md`, `SPEC.html` (draft 8), and this file.
+```bash
+npm test          # 16 files, 592 passed, 1 skipped (gated FSRS refit). 32.7-87.7 s.
+                  # A "Timeout calling onTaskUpdate" line is Vitest's reporter under
+                  # load, not a failing test. Check the pass count.
+npm run typecheck # exit 0
+npm run build     # VERIFIED 58 modules, 30 dist targets = 15 export subpaths
+npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 0
+```
 
-| Doc | Snapshot | Superseded in it |
-|---|---|---|
-| `CLAUDE.md` | live | — current |
-| `SPEC.html` | live, draft 8 | — current; carries its own retractions in place |
-| `NEXT.md` | live | — this file |
-| `notes/pitch-accent-pipeline.md` | live | — current |
-| `notes/design-tokens.md` | live | — current (Notion claims marked OBSERVED, not measured) |
-| `notes/dashboard-reconciliation.md` | live | — current |
-| `BACKTEST.md` | mostly live | **corrected**: two passages said the settled target was 0.95 |
-| `SPIKE.md` | 2026-08-19 | test count 352 (now 542); blob multiplier corrected in §2 already |
-| `FIXES.md` | 2026-08-19 | retention 0.95, test count 306, "no renderer", one-file-per-blob, 65x |
-| `OVERNIGHT.md` | 2026-08-19 | test count 242, "no renderer", retention 0.95 |
-| `STAGE4.md` | 2026-08-20 | the fix is decided but not implemented |
-| `notes/persistence.md` | 2026-08-19 | every desktop persistence figure — the phone contradicts two |
-| `notes/browser-feasibility.md` | 2026-08-19 | 65x multiplier (really 13-40x), `reclaim()` 6.8 s (really 35-54 s) |
+**A schema bump means RE-IMPORT, not migrate.** `SCHEMA_VERSION` is **7** and
+`applySchema` refuses anything else. Three steps, and skipping the third fails a test:
 
-**The pattern worth noticing:** every stale item is a number that got *better-measured*
-later, and in every case the earlier figure was somebody's most favourable observation.
-Treat any single number in an older doc as a sample, not a fact.
+```bash
+rm build/hashigo.db
+npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
+npm run dashboard -- --db build/hashigo.db --out dashboard.html
+```
 
-## Working with him — the things that cost time to learn
+`test/dashboard.test.ts` compares `dashboard.html` byte-for-byte, so a bump without a
+regenerate fails there with a one-line diff. This happened four times in two days. Then
+reload the accent data with the commands above.
 
-11 memory files hold this; the index is at
-`C:\Users\Zach\.claude\projects\C--DEV-WEB-hashigo\memory\MEMORY.md`. The four that
+---
+
+## Working with him — what cost time to learn
+
+Eleven memory files hold this; the index is at
+`C:\Users\Zach\.claude\projects\C--DEV-WEB-hashigo\memory\MEMORY.md`. The five that
 matter most day to day:
 
-- **He reads every document end to end and acts on it.** So an inference stated as a
-  measurement propagates into his decisions. Label MEASURED vs INFERRED, every time. Two
-  of my confident claims have had to be retracted (target retention 0.95; "Azure has no
-  accent notation") and both reached him first.
-- **His interactive shell is PowerShell 5.1**, though the tool runs pwsh 7. `&&` is a
-  parser error in anything handed to him — use `;`. He is often at `C:\Users\Zach`, not
-  the repo.
-- **Ask what a feature is FOR.** The entire purpose of the audio — pitch-accent
-  shadowing — went unstated for the whole design phase because it was obvious to him. So
-  did his U+200E convention, which is in a third of his corpus.
-- **He gives good pushback and it is usually right.** He overruled seven drafts of spec
-  on the "answer leak" and the machinery was correctly deleted rather than built.
+* **He reads every document end to end and acts on it.** An inference stated as a
+  measurement propagates into his decisions. **Label MEASURED vs INFERRED, every time.**
+  Retractions that reached him first: target retention 0.95, "Azure has no accent
+  notation", "speech binding fails on 100% of slots", and a 6/8 accent score that was
+  really 8/8.
+* **His interactive shell is PowerShell 5.1.** `&&` is a parser error, and so is
+  `VAR=value cmd`. Prefer fixing the root over translating the command: every Python tool
+  here sets its own encoding so no documented command needs an env prefix.
+* **Ask what a feature is FOR.** The entire purpose of the audio — pitch-accent shadowing
+  — went unstated through the whole design phase because it was obvious to him. So did
+  his U+200E convention, in a third of his corpus, and so did the fact that his
+  `器（うつわ）` parentheses were a TTS workaround rather than a display choice.
+* **His pushback is usually right, and it is usually a reframe.** He overruled seven spec
+  drafts on the "answer leak". He spotted that display-as-furigana was not optional
+  because the furigana generator would mis-read the same kanji. He noticed clips sounded
+  "fuzzy" — wrong, but it produced the blind test that validated the notation.
+* **He is still reviewing ~100 cards/day in Mochi** and will re-export repeatedly. Any
+  repair that is needed once after an import is needed forever, which is why
+  `template_fields.local` exists.
 
 ## Verify, do not relay
 
-Subagent reports have been wrong in decision-changing ways, and right in
-decision-changing ways. Both times the check was one command. Re-run pass conditions,
-regenerate output rather than trusting a paste, and treat a published number as *somebody's
-fastest run* until proven otherwise — that has been true four times.
+Subagent and tool output has been wrong in decision-changing ways, and right in
+decision-changing ways, and the check was one command both times. Re-run pass conditions,
+regenerate output rather than trusting a paste, and treat any single published number as
+somebody's most favourable observation until proven otherwise — that has now been true
+six times. **My own measurements have been wrong twice today**: a probe that measured
+itself rather than the code, and a verifier whose tolerance hid a systematic offset.
 
-Current gates, and they should stay true:
+## Which docs are snapshots
 
-```bash
-npm test          # 16 files, 592 passed, 1 skipped (gated FSRS refit). 32.7-87.7 s
-                  # over five runs. A "Timeout calling onTaskUpdate" line is
-                  # Vitest reporter RPC under load, not a failing test.
-npm run typecheck # exit 0
-npm run build     # VERIFIED 53 modules, 28 dist targets = 14 export subpaths x (.js + .d.ts)
-npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 0, blobs.path 0
-```
+Live and current: `CLAUDE.md`, `SPEC.html` (draft 8), this file, every `src/*/README.md`,
+`notes/pitch-accent-pipeline.md`, `notes/accent-ojad-adjudication.md`,
+`notes/kana-primary-words.md`, `notes/design-tokens.md`,
+`notes/dashboard-reconciliation.md`, `BACKTEST.md`.
+
+Bannered snapshots — kept as the record, not rewritten: `FIXES.md`, `OVERNIGHT.md`,
+`STAGE4.md`, `SPIKE.md`, `PHONE-TEST.md`, `notes/persistence.md`,
+`notes/browser-feasibility.md`. Every stale item in them is a number that got
+better-measured later, and in each case the earlier figure was somebody's most favourable
+observation. **Treat any single number in a bannered doc as a sample, not a fact.**

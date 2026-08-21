@@ -1,10 +1,16 @@
 # src/schema — Stage 1. Owns the data model: cards, ordered sides, review *tracks* (forward / reverse / cloze:n), three-state reverse resolution, materialised tag paths, refcounted content-addressed blobs, and the stage-1 aggregate shape the dashboard and phase-2 insights both read.
 
-## The contract, v2
+## The contract, v7
 
-Four other stages code against these names. `PRAGMA user_version` is **2**; a
-version-1 file is refused rather than migrated, because every database here is
-rebuildable from `exports/` in about fifteen seconds.
+Four other stages code against these names. `PRAGMA user_version` is **7**; any
+other version is refused rather than migrated, because every database here is
+rebuildable from `exports/` in about fifteen seconds. `SCHEMA_VERSION` in
+`index.ts` carries the changelog for every bump — read that, not this line, for
+what each version added. The short version of 3-7: per-card/deck `voice` plus
+`blobs.unreferenced_at` (3), the `accents` table and the `accent` field type (4),
+analyser priority in `accent_resolved` (5), adjudicated words leaving the
+disagreement queue (6), and `template_fields.local` so a field Mochi never had
+survives a re-import (7).
 
 **Intervals are two columns, never one.** `reviews.elapsed_days` is MEASURED —
 what actually happened between two reviews — and `reviews.scheduled_days` is

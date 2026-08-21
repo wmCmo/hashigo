@@ -1,5 +1,12 @@
 # Phone test: will the browser keep your data?
 
+> [!WARNING]
+> **SNAPSHOT, 2026-08-19, and the test has since been RUN — it passed.** Samsung
+> Internet installed as a PWA granted `persist()` with a 133.96 GiB quota, and a
+> full rebuild took 16-20 s including all 624.6 MiB of audio. So this document is
+> the procedure and the record, not an open task. The transcript in it quotes
+> `schema version 2`; the schema is now **7**. Live state is in `CLAUDE.md`.
+
 **This is for you, Zach, not for an agent.** It should take about twenty
 minutes, plus one two-minute check a week later.
 
