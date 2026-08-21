@@ -14,39 +14,54 @@ live here. Preserve his wording if you edit it; don't paraphrase him away.
 
 ---
 
-## THE DECISION QUEUE IS EMPTY
+## IF YOU WERE JUST TOLD "PROCEED", START AT TABLE A
 
-As of 2026-08-22 Zach has cleared every open question. **Do not open this session by
-asking him to decide something** — check `CLAUDE.md` "Decisions that are settled" and the
-"Ratified 2026-08-22" section first, because the answer is probably already there.
+Zach is reviewing in a parallel session and will read whatever you produce. He has
+cleared every open decision, so **do not open by asking him to decide something** —
+check `CLAUDE.md` "Decisions that are settled" and "Ratified 2026-08-22" first, because
+the answer is very likely already there.
 
-Stage 6 added exactly two questions and **neither blocks anything**: how many new cards
-a session should introduce, and whether a forgotten card comes back before the session
-ends. Both are stage 7's, both are answerable while building the screen rather than
-before it, and the scheduler deliberately leaves both open (see row 2 below). Do not
-lead with them either.
+**Stage 6 — the scheduler — landed 2026-08-22.** `src/scheduler` grades a track, advances
+its FSRS-6 state and answers what is due. `src/scheduler/README.md` has the four things
+worth knowing before changing it; CLAUDE.md has the three that would have been
+whole-subsystem defects if guessed. Today's queue is **443 due, 328 of them overdue,
+3,980 new** — `npx vite-node src/scheduler/cli.ts -- counts --db build/hashigo.db`.
 
-**Stage 6 — the scheduler — landed 2026-08-22.** `src/scheduler` grades a track,
-advances its FSRS-6 state and answers what is due; `src/scheduler/README.md` has the
-four things worth knowing before changing it, and CLAUDE.md has the three that would
-have been whole-subsystem defects if guessed. Today's queue is **443 due, 328 of them
-overdue, 3,980 new**, and `npx vite-node src/scheduler/cli.ts -- counts --db
-build/hashigo.db` prints it.
+### Table A — do these now, unsupervised. All decided, none need him.
 
-The next work is **building**, in this order:
-
-| | what | notes |
+| | what | why it is safe |
 |---|---|---|
-| 1 | **Stage 7 — Review UI** | the critical path, and now the ONLY thing between him and using this. The queue and grading exist; nothing mounts a card. **Needs his taste** — it is the screen he lives in. Hard constraint: audio fires on cloze reveal, NEVER on side entry |
-| 2 | The two stage-7 calls above, answered while building it | how many NEW cards a session introduces, and whether a forgotten card returns before the session ends. `newTracks` is returned separately from `dueTracks` so both stay open; `clampInterval` already floors a lapse at one day, so the second is a session-buffer question, not a scheduling one |
-| 3 | Design tokens → `spike/viewer/`, then he judges on his phone | 3 named fixes in `notes/design-tokens.md` |
-| 4 | Dashboard in English | 369 Japanese strings. A `LABELS` table, English default. Deck/template/field names stay Japanese — they are identifiers |
-| 5 | Nested-tag sidebar · Ctrl+K palette | query layers done, no UI |
-| 6 | Phone write throughput | the one unmeasured number |
-| 7 | **`読み` field + parse the 13 parenthesis cards** | green-lit. Show him the 13 before/after rows before applying anything |
-| 8 | Heatmap `<details>` table · dashboard tag count filters `cards_direct > 0` · the 復習予測 tile | three small fixes, no decisions attached. `reviewForecast` in `src/scheduler` is the tile's data, and SPEC deferred it until the scheduler existed |
-| 9 | Stage 10 — Editor | add / delete / move a field from the UI |
-| 10 | Stage 11 — Sync | Cloudflare account exists. One browser per device, Samsung Internet |
+| **A1** | **Interval fuzz, ±5%** | fully specified in CLAUDE.md decision 11, including the width's derivation and the **two ways to build it wrong**. ~20 lines where the interval is finalised, plus tests. Read that decision before writing a line |
+| **A2** | The `復習予測` forecast tile on the dashboard | `reviewForecast` in `src/scheduler` is its data source. SPEC deferred this tile until the scheduler existed; it now does |
+| **A3** | Heatmap `<details>` table · dashboard tag count filters `cards_direct > 0` | two small fixes. The heatmap has 48 SVG `<title>` tooltips and no table, so 1,317 daily values are unreachable on a phone — there is no hover on touch |
+| **A4** | `読み` field + parse the 13 parenthesis cards | decided (CLAUDE.md decision 10, `notes/kana-primary-words.md`). **Produce the 13 before/after rows and STOP** — do not write to `card_field_values` until he has seen them |
+| **A5** | Dashboard in English | 369 Japanese strings. A `LABELS` table, English default. Deck/template/field names stay Japanese — they are identifiers. Regenerate `dashboard.html`; a test compares it byte-for-byte |
+
+### Table B — do NOT start these without him
+
+| | what | why |
+|---|---|---|
+| **B1** | **Stage 7 — Review UI** | it is the critical path AND the screen he lives in. His planner files it under "needs my taste", and an agent inventing his review interface produces work he will reject. The hard constraint if you ever do touch it: **audio fires on cloze reveal, NEVER on side entry** — `src/render/reveal.ts` and the autoplay section of CLAUDE.md |
+| **B2** | Design tokens → `spike/viewer/` | 3 named fixes exist in `notes/design-tokens.md`, but he judges the result on his own phone. Propose, do not decide |
+| **B3** | Nested-tag sidebar · Ctrl+K palette | query layers are done; the UI is taste |
+| **B4** | Stage 10 Editor · Stage 11 Sync | both large, both unspecified in shape |
+
+### The one stage-7 question still open
+
+**Should a forgotten card come back before the session ends?** `clampInterval` already
+floors a lapse at one day, so this is a session-buffer question, not a scheduling one.
+The other one is **answered**: new cards default to **10/day and are a SETTING** (CLAUDE.md
+decision 12), which is Mochi's default and what he wants kept. At 10/day the 3,980 waiting
+take ~398 days, so it is the dial that decides how fast the backlog moves.
+
+### Before you report back
+
+He reviews what comes back and he re-runs the numbers. So: **run the gates yourself,
+break your own tests to prove they have teeth, and say which figures you regenerated
+versus which you are repeating.** Two of today's four reported fault injections found
+nothing on the first try and had to be strengthened — that is the standard here, not a
+formality. If a claim of yours turns out wrong, say so plainly; that has happened to
+every session on this project including the ones that did good work.
 
 **Deliberately NOT acted on:** where OJAD picked a side it backed UniDic 11x to
 OpenJTalk 4x, clustering on Sino-Japanese compounds that should be 平板 where our rule

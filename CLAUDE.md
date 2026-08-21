@@ -10,7 +10,9 @@ audio is BOUND, the accent pipeline is VALIDATED, and the **scheduler now runs**
 (stage 6 landed 2026-08-22). What is missing is the **review UI (stage 7)**, which is
 the only reason nothing plays yet. **Zach's decision queue is EMPTY** — do not open by
 asking him to decide something, the answer is very likely in "Decisions that are
-settled" or "Ratified" below. **`NEXT.md` has the build order.** Read it second.
+settled" or "Ratified" below. **`NEXT.md` has the build order** — read it second. If you were told only "proceed",
+**Table A** in it is the work that is safe to do unsupervised and **Table B** is what
+needs Zach at the keyboard. Do not start Table B on your own.
 
 **Read [SPEC.html](SPEC.html) first** — it is the authoritative design document
 (build spec, **draft 8**). Every figure in it is measured from the real export in
