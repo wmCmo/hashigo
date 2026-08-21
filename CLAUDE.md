@@ -59,7 +59,7 @@ harness, not that shell. See `OVERNIGHT.md` for the gap list,
 for the OPFS measurements.
 
 ```bash
-npm test                # 16 files, 589 passed, 1 skipped (the FSRS refit, gated)
+npm test                # 16 files, 592 passed, 1 skipped (the FSRS refit, gated)
                         # 32.7-87.7 s over five runs. Under load it can also emit
                         # "Timeout calling onTaskUpdate" — that is Vitest's reporter
                         # RPC, not a failure. Check the pass count, not the error line.
@@ -83,7 +83,7 @@ npm run spike:dev -- --host 127.0.0.1   # bind IPv4: a server on ::1 refuses 127
 
 ## A schema bump means RE-IMPORT, not migrate
 
-`SCHEMA_VERSION` is **6** and `applySchema` refuses any other version outright.
+`SCHEMA_VERSION` is **7** and `applySchema` refuses any other version outright.
 That is deliberate — every database here rebuilds from `exports/` in about
 fifteen seconds and the reviews still come from the export — but it means a
 schema change is a three-step chore, and skipping the third breaks a test:
@@ -134,7 +134,14 @@ commands.
    as the personal name マサヨシ. A wrong accent drilled through spaced repetition
    is worse than no accent, so it is a candidate for adjudication, never the
    answer. See `accent_disagreements`.
-9. **Links render PLAINLY, in place, on whatever side they are authored on.**
+9. **A field that exists HERE and not in any Mochi export is marked
+   `template_fields.local = 1`.** `pruneFieldValues` cannot otherwise tell a field
+   Mochi DELETED from one Mochi NEVER HAD, and it threw away all 3,454
+   materialised `型` labels the first time it met one. This matters because
+   re-importing is not a one-off — Zach still reviews ~100 cards/day in Mochi, so
+   every fresh export brings history worth having, and a repair that is needed
+   once after an import is needed forever.
+10. **Links render PLAINLY, in place, on whatever side they are authored on.**
    Drafts 1-7 called the Jisho URL on 漢字's side 4 an answer leak and prescribed
    deferring link rendering in reverse mode. Zach overruled that on 2026-08-20:
    there is no hover on a phone, a long-press is deliberate, and he never checks a

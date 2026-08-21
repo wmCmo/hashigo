@@ -124,6 +124,19 @@ CREATE TABLE template_fields (
   source_field_id TEXT,                       -- input field; NULL is legitimate
   options         TEXT NOT NULL DEFAULT '{}', -- JSON: voice, lang (BCP-47), prompt, from, to
   pos             TEXT NOT NULL DEFAULT '',
+  -- 1 = this field exists HERE and not in any Mochi export.  The 型 field is the
+  -- first one; the かな主流 flag will be the second.
+  --
+  -- It exists because `pruneFieldValues` deletes any card_field_values row the
+  -- export does not carry -- correct for a field Mochi DELETED, wrong for a field
+  -- Mochi never had.  Without this, every re-import silently threw away 3,454
+  -- materialised 型 labels.  Measured, not predicted: the importer printed
+  -- "pruned 3454 field value(s) the export no longer has".
+  --
+  -- Zach will re-export repeatedly -- he still reviews ~100 cards/day in Mochi --
+  -- so "just re-run the materialiser" is a chore that recurs forever, and a chore
+  -- that recurs forever is a chore that gets forgotten.
+  local           INTEGER NOT NULL DEFAULT 0 CHECK (local IN (0, 1)),
   created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   PRIMARY KEY (template_id, id),

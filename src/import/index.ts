@@ -586,6 +586,16 @@ function writeSearchText(db: Db, mapped: MappedExport): number {
  * old value in the database and in the FTS body forever — the card would keep
  * matching text it no longer contains. Scoped to the cards in this import, so
  * it can never touch a card that came from an export not being re-read.
+ *
+ * LOCALLY DEFINED FIELDS ARE EXEMPT (`template_fields.local = 1`). A field Mochi
+ * DELETED and a field Mochi NEVER HAD look identical from here — both are absent
+ * from the export — and they want opposite treatment. Conflating them threw away
+ * all 3,454 materialised `型` labels on the first re-import after that field
+ * existed. Measured, not predicted; the importer printed the count.
+ *
+ * It matters because re-importing is not a one-off: Zach still reviews ~100
+ * cards a day in Mochi, so every fresh export brings history worth having, and
+ * anything that needs manual repair afterwards needs it forever.
  */
 function pruneFieldValues(db: Db, values: readonly CardFieldValueRow[]): number {
   db.exec(
@@ -604,7 +614,9 @@ function pruneFieldValues(db: Db, values: readonly CardFieldValueRow[]): number 
         WHERE card_id IN (SELECT card_id FROM import_field_keys)
           AND NOT EXISTS (SELECT 1 FROM import_field_keys k
                            WHERE k.card_id = card_field_values.card_id
-                             AND k.field_id = card_field_values.field_id)`,
+                             AND k.field_id = card_field_values.field_id)
+          AND NOT EXISTS (SELECT 1 FROM template_fields f
+                           WHERE f.id = card_field_values.field_id AND f.local = 1)`,
     )
     .run().changes;
   db.exec("DROP TABLE IF EXISTS import_field_keys");

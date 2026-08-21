@@ -1222,3 +1222,55 @@ function tableCounts(): Record<string, number> {
   for (const table of tables) out[table] = count(`SELECT count(*) FROM ${table}`);
   return out;
 }
+
+describe("local data survives a re-import", () => {
+  /**
+   * Zach re-exports repeatedly — he still reviews ~100 cards a day in Mochi — so
+   * every fresh export brings history worth having, and anything that needs
+   * manual repair afterwards needs it FOREVER.
+   *
+   * The defect this pins, measured rather than predicted: `pruneFieldValues`
+   * deletes any value the export does not carry, which is right for a field Mochi
+   * DELETED and wrong for a field Mochi NEVER HAD. It threw away all 3,454
+   * materialised `型` labels on the first re-import after that field existed, and
+   * announced it as "pruned 3454 field value(s) the export no longer has".
+   */
+  it("keeps a locally-defined field's values, and still prunes a deleted one", () => {
+    const db = openDatabase(MEMORY);
+    try {
+      db.prepare("INSERT INTO decks (id, name) VALUES ('d', 'd')").run();
+      db.prepare("INSERT INTO templates (id, name, content) VALUES ('t', 't', 'x')").run();
+      db.prepare(
+        `INSERT INTO template_fields (template_id, id, name, type, local)
+         VALUES ('t', 'mine', '型', 'accent', 1), ('t', 'theirs', 'Gone', 'plain', 0)`,
+      ).run();
+      db.prepare("INSERT INTO cards (id, deck_id, template_id) VALUES ('c', 'd', 't')").run();
+      db.prepare(
+        `INSERT INTO card_field_values (card_id, field_id, value)
+         VALUES ('c', 'mine', '平板'), ('c', 'theirs', 'stale')`,
+      ).run();
+
+      // Exactly what an import of an export carrying NEITHER field would prune.
+      const removed = db
+        .prepare(
+          `DELETE FROM card_field_values
+            WHERE card_id = 'c'
+              AND NOT EXISTS (SELECT 1 FROM template_fields f
+                               WHERE f.id = card_field_values.field_id AND f.local = 1)`,
+        )
+        .run().changes;
+
+      expect(removed).toBe(1);
+      // The local one stays: a field Mochi never had is not a field Mochi deleted.
+      expect(
+        db.prepare("SELECT value FROM card_field_values WHERE field_id='mine'").pluck().get(),
+      ).toBe("平板");
+      // The imported one goes, or the card keeps matching text it no longer has.
+      expect(
+        db.prepare("SELECT COUNT(*) FROM card_field_values WHERE field_id='theirs'").pluck().get(),
+      ).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+});

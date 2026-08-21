@@ -20,6 +20,11 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
 /**
  * Bumped only by a migration. `PRAGMA user_version` holds this.
  *
+ * 7 adds `template_fields.local`, so a field that exists HERE and not in any
+ * Mochi export survives a re-import. `pruneFieldValues` could not tell a field
+ * Mochi DELETED from one Mochi NEVER HAD, and threw away all 3,454 materialised
+ * `型` labels the first time it met one.
+ *
  * 6 excludes adjudicated words from `accent_disagreements`. Without it the queue
  * never empties — OJAD backed our derivation on 11 words and the cross-check
  * still disagrees with all 11, so they reappeared as work forever. A work list
@@ -56,7 +61,7 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
  * longer exist and every database in the project is rebuildable from
  * `exports/` in about fifteen seconds. Re-import rather than migrate.
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /**
  * Three-state, on both cards and decks. `inherit` resolves up the deck tree and
