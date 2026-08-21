@@ -4,6 +4,7 @@
 > **SNAPSHOT, 2026-08-19. Some claims below are superseded — see `NEXT.md` and
 > `CLAUDE.md` for current state.** This is kept as the record of what was found and
 > measured at the time, so it is not rewritten. Known stale in this file:
+>
 > - test count 306 (now 542) · target retention 0.95 (now **0.90**)
 > - "blobs are one file per payload" and the 65x multiplier — payloads moved into
 >   BLOB rows and the re-measured advantage is 13-40x
@@ -576,22 +577,22 @@ will read first, and it will cost them the same afternoon it cost the note's aut
 
 ### 2.6 Still open from OVERNIGHT.md, deliberately or otherwise
 
-* **Append-only reviews still are not.** `schema.sql:338` is
+- **Append-only reviews still are not.** `schema.sql:338` is
   `CREATE TRIGGER reviews_append_only BEFORE UPDATE ON reviews` — UPDATE only. DELETE
   stays unguarded so `ON DELETE CASCADE` from a card works, so hard-deleting a card
   still destroys its review history. Cards are archived (234 of them) rather than
   deleted, so this remains a loaded gun rather than a wound. Unchanged, and I think
   correctly so, but it is still a gun.
-* **The sanitiser is still a policy object, not enforcement.** `ELEMENTS[].attributes`
+- **The sanitiser is still a policy object, not enforcement.** `ELEMENTS[].attributes`
   and `sanitiseStyle` exist in `src/template/ast.ts`; nothing applies them. Stage 4
   work, correctly deferred, but do not let stage 4 assume it is done because the
   policy exists.
-* **No CI.** `ls .github/workflows` → nothing. Everything in §0 is a command someone
+- **No CI.** `ls .github/workflows` → nothing. Everything in §0 is a command someone
   has to remember to type. Given that `npm run build` now *can* fail honestly, this is
   the cheapest remaining safety net in the project.
-* **`collect()` is still ~7 s** (7.1 s measured on the full corpus above). Fine for a
+- **`collect()` is still ~7 s** (7.1 s measured on the full corpus above). Fine for a
   precomputed render, still too slow for the interactive filtering stage 7 wants.
-* `.gitattributes` exists and `npm run dashboard` exists — both OVERNIGHT items, both
+- `.gitattributes` exists and `npm run dashboard` exists — both OVERNIGHT items, both
   genuinely fixed.
 
 ### 2.7 Nothing regressed
@@ -651,28 +652,28 @@ These are all defensible. None of them is yours yet.
 
 ## 4. What I could not verify
 
-* **Anything in a browser, by me.** I ran no browser this session. §5 is my reading of
+- **Anything in a browser, by me.** I ran no browser this session. §5 is my reading of
   another agent's note plus my own check of the code it describes; the measurements in
   it are theirs, not mine.
-* **`--inline-blobs` at full scale.** Still never run over the 657 MB corpus, by me or
+- **`--inline-blobs` at full scale.** Still never run over the 657 MB corpus, by me or
   anyone. The flag exists; the 26,947 inline payloads in my database are all text
   generations, not audio.
-* **The rendered appearance of `dashboard.html` or `SPEC.html`.** I verified both
+- **The rendered appearance of `dashboard.html` or `SPEC.html`.** I verified both
   structurally, numerically and byte-for-byte. I did not open either in a browser this
   session. The stage-2 agent and the spec agent each report doing so.
-* **The template renderer's output**, because there is still no renderer, and because
+- **The template renderer's output**, because there is still no renderer, and because
   the export contains nothing to diff a render against — `content` on templated cards
   is stale pre-template text, not a render cache.
-* **`w[15]`/`w[16]`.** Frozen by design, unreachable by design, so nothing depends on
+- **`w[15]`/`w[16]`.** Frozen by design, unreachable by design, so nothing depends on
   them. Not a gap; the intended end state.
-* **Whether the refit is stable across seeds.** I ran the fitter once. It reproduced
+- **Whether the refit is stable across seeds.** I ran the fitter once. It reproduced
   the committed vector, which is the assertion — but "5 of 17 free parameters land on
   clamp boundaries and wildly different vectors score within 0.0006" is BACKTEST.md's
   own caveat and I did not attempt to break it.
-* **Multi-tab, Android, Safari, iOS, real `persist()`, real audio playback** — the
+- **Multi-tab, Android, Safari, iOS, real `persist()`, real audio playback** — the
   browser note is explicit that none of these were tested and I did not test them
   either.
-* **All timings** are Windows, better-sqlite3, this machine, warm cache.
+- **All timings** are Windows, better-sqlite3, this machine, warm cache.
 
 ---
 
@@ -706,16 +707,16 @@ lines of real measurement from a real browser by an investigation agent, and it 
 most of the unknowns OVERNIGHT.md §2.4 was worried about. Its findings, which are its
 measurements and not mine:
 
-* `@sqlite.org/sqlite-wasm` 3.53.0 ships `ENABLE_FTS5`; `schema.sql` and `views.sql`
+- `@sqlite.org/sqlite-wasm` 3.53.0 ships `ENABLE_FTS5`; `schema.sql` and `views.sql`
   load **unmodified** — 19 tables, 21 views, 14 triggers, including the trigram
   `card_fts`.
-* The `opfs-sahpool` VFS needs **no COOP/COEP headers** — confirmed empirically with
+- The `opfs-sahpool` VFS needs **no COOP/COEP headers** — confirmed empirically with
   `crossOriginIsolated=false`. Hashigo can be plain static files. That was the single
   biggest deployment constraint and it is gone.
-* The full oracle reproduced *inside the browser* from an OPFS-backed database, and
+- The full oracle reproduced *inside the browser* from an OPFS-backed database, and
   survived a page reload with no re-import.
-* 77% of `src/` (10,164 of 13,203 lines) already has zero Node imports.
-* Estimate: **17 hours ≈ 2 working days**, of which items 1–4 (bundle, `schema.sql` as
+- 77% of `src/` (10,164 of 13,203 lines) already has zero Node imports.
+- Estimate: **17 hours ≈ 2 working days**, of which items 1–4 (bundle, `schema.sql` as
   bundled text, `openDatabaseBrowser()`, non-WAL bootstrap) are the true go/no-go at
   **8 hours**.
 
@@ -811,7 +812,7 @@ broken build without needing three agents to notice it.
 ## 7. Files I created or modified
 
 | Path | What |
-|---|---|
+| --- | --- |
 | `C:\DEV\WEB\hashigo\FIXES.md` | This report. Created, committed. |
 | `C:\DEV\WEB\hashigo\SPEC.html` | **Not authored by me.** Rescued from the uncommitted working tree and committed unmodified — see ORPHAN A. |
 

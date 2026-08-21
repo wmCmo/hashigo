@@ -179,6 +179,25 @@ PROBE_CASES = [
          why="control: downstep after し"),
     Case("long-control-0", "しめーが", "しめー", "しめー", "シメー", 0,
          why="control: no downstep at all"),
+
+    # 6. THE TWO WORDS THE VERIFIER FLAGGED, each at BOTH candidate accents.
+    #
+    #    `accent_verify.py` found the audio putting the downstep one mora later
+    #    than the derivation asked on exactly these two, after the systematic +1
+    #    offset was removed. Asking "where does the pitch drop" is a hard question;
+    #    asking "which of these two is right" is an easy one. So each word is
+    #    synthesised twice — once at the derived accent, once at the observed one —
+    #    and the listener only has to pick.
+    #
+    #    Kana content, so the notation is honoured. See §9.
+    Case("kizukai-2", "きずかいが", "きずかい", "きずかい", "キズカイ", 2,
+         why="気遣い as DERIVED: 中高(2), drop after き-ず"),
+    Case("kizukai-3", "きずかいが", "きずかい", "きずかい", "キズカイ", 3,
+         why="気遣い as OBSERVED: 中高(3), drop after き-ず-か"),
+    Case("kakugo-1", "かくごが", "かくご", "かくご", "カクゴ", 1,
+         why="覚悟 as DERIVED: 頭高(1), drop after か"),
+    Case("kakugo-2", "かくごが", "かくご", "かくご", "カクゴ", 2,
+         why="覚悟 as OBSERVED: 中高(2), drop after か-く"),
 ]
 
 TILDE_CASES = [
