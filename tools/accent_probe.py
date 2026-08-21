@@ -30,6 +30,7 @@ import argparse
 import json
 import os
 import pathlib
+import re
 import sqlite3
 import sys
 import urllib.error
@@ -325,7 +326,7 @@ def load_cards(db_path: str, limit: int) -> list[Case]:
 
     out: list[Case] = []
     for row in rows:
-        word = row["val"].strip()
+        word = normalise_head_word(row["val"])
         if not word:
             continue
         d = derive(word)
@@ -333,12 +334,45 @@ def load_cards(db_path: str, limit: int) -> list[Case]:
             continue                       # guarded / multi-phrase: review by hand
         kana = pyopenjtalk.g2p(word, kana=True)
         hira = "".join(chr(ord(c) - 0x60) if "ァ" <= c <= "ヶ" else c for c in kana)
-        out.append(Case(f"card-{len(out):02d}-{word}", word + "が", word, hira, kana,
+        # THE ELEMENT CONTENT DECIDES WHETHER THE NOTATION IS HONOURED AT ALL.
+        # Google silently ignores yomigana when the element contains KANJI -- no
+        # error, and the audio comes back plausible but unaccented. The first run
+        # of this mode sent `<phoneme ph="^きず!かい">気遣い</phoneme>` and therefore
+        # measured Google's UNAIDED frontend, not our derivation. Zach listened to
+        # 20 of those and judged them accurate, which is a real result about a
+        # different thing.
+        #
+        #   content="kana"   the reading is the content -> notation applies
+        #   content="kanji"  the headword is the content -> notation IGNORED.
+        #                    Kept as the NEGATIVE CONTROL and as the honest way to
+        #                    hear the unaided frontend on purpose.
+        content = hira if CARD_CONTENT == "kana" else word
+        out.append(Case(f"card-{len(out):02d}-{word}", content + "が", content, hira, kana,
                         d["accent_type"],
-                        why=f"{d['type']}({d['accent_type']}) / {d['bare_moras']} morae"))
+                        why=f"{d['type']}({d['accent_type']}) / {d['bare_moras']} morae"
+                            f" / content={CARD_CONTENT}"))
         if len(out) >= limit:
             break
     return out
+
+
+# Set from --card-content before load_cards runs. A module global rather than a
+# parameter because `Case` is built here and the payload builders read from it.
+CARD_CONTENT = "kana"
+
+# The same normalisation src/accent/key.ts applies, and for the same reason: fed
+# raw values the analyser mis-READ his own compounds -- 準備 as ジュン+ソナエ,
+# 面倒 as メン+タオセ -- because U+200E sits inside them, and a wiki-link's opaque
+# id was read out loud. 3,016 of those marks sit on 2,504 cards.
+_WIKI_LINK = re.compile(r"\[\[(?:([^\]|]*)\|)?([^\]|]*)\]\]")
+_INVISIBLE = re.compile(r"[​‌‍‎‏﻿]")
+
+
+def normalise_head_word(value: str) -> str:
+    text = _WIKI_LINK.sub(lambda m: m.group(1) or m.group(2) or "", value or "")
+    text = _INVISIBLE.sub("", text)
+    text = re.sub(r"\{\{(?:\d+::)?([^{}]*)\}\}", r"", text)
+    return text.strip()
 
 
 # --------------------------------------------------------------------------
@@ -428,6 +462,10 @@ def main() -> None:
     p.add_argument("--limit", type=int, default=HARD_CARD_CAP)
     p.add_argument("--azure-voice", default="ja-JP-NanamiNeural")
     p.add_argument("--google-voice", default="ja-JP-Neural2-B")
+    p.add_argument("--card-content", choices=["kana", "kanji"], default="kana",
+                   help="what goes INSIDE the phoneme element. kana => the notation "
+                        "is honoured. kanji => Google IGNORES it silently, which is "
+                        "the negative control, not a second opinion.")
     p.add_argument("--google-field", action="store_true",
                    help="also try the custom_pronunciations FIELD, not just SSML")
     p.add_argument("--azure-key-env", default="AZURE_SPEECH_KEY")
@@ -452,6 +490,9 @@ def main() -> None:
             for v in google_voices(secret(args.google_key_env)):
                 print(f"  {v['name']:<40} {v.get('ssmlGender')}")
         return
+
+    global CARD_CONTENT
+    CARD_CONTENT = args.card_content
 
     outdir = pathlib.Path(args.out)
     if args.go:

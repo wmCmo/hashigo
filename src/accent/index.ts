@@ -36,6 +36,7 @@ export {
 
 export {
   accentFor,
+  accentLabel,
   loadAccents,
   materialiseAccents,
   setManualAccent,

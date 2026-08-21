@@ -170,6 +170,27 @@ export function setManualAccent(
   ]);
 }
 
+// ─── the label ───────────────────────────────────────────────────────────────
+
+/**
+ * What `<<型>>` actually says on the card.
+ *
+ * ZACH'S RULE, and it is right for a reason worth stating: the number is only
+ * information for 中高. Everywhere else it is derivable from the label itself, so
+ * printing it is noise on the one screen where noise costs the most.
+ *
+ *     平板   accent is always 0 by definition
+ *     頭高   always 1
+ *     尾高   always the LAST mora, so the number just restates the word length
+ *     中高   2 .. n-1, and WHICH one is the whole question
+ *
+ * So 中高 renders `中高 (3)` and the other three render bare. On this corpus that
+ * is 910 cards carrying a number and 2,906 not.
+ */
+export function accentLabel(type: AccentType, accentType: number | null): string {
+  return type === "中高" && accentType !== null ? `${type} (${accentType})` : type;
+}
+
 // ─── materialising <<型>> ────────────────────────────────────────────────────
 
 export interface MaterialiseReport {
@@ -239,12 +260,13 @@ export function materialiseAccents(db: Db, options: { readonly dryRun?: boolean 
         continue;
       }
       byType[accent.type] = (byType[accent.type] ?? 0) + 1;
+      const label = accentLabel(accent.type, accent.accentType);
       const current = (existing.get(card.id, field.field_id) as { value: string } | undefined)?.value;
-      if (current === accent.type) {
+      if (current === label) {
         unchanged += 1;
         continue;
       }
-      if (options.dryRun !== true) upsert.run(card.id, field.field_id, accent.type);
+      if (options.dryRun !== true) upsert.run(card.id, field.field_id, label);
       written += 1;
     }
   }

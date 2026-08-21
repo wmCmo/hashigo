@@ -13,6 +13,7 @@ import { existsSync } from "node:fs";
 import { MEMORY, openDatabase } from "../src/db/index.js";
 import {
   OJAD_ADJUDICATIONS,
+  accentLabel,
   OJAD_AMBIGUOUS,
   accentFor,
   accentKey,
@@ -186,6 +187,22 @@ describe("the accents table", () => {
   });
 });
 
+describe("the <<型>> label", () => {
+  it("shows the number only for 中高, where it is the whole question", () => {
+    // Zach's call, and right for a reason: everywhere else the number restates
+    // the label. 平板 is 0 by definition, 頭高 is always 1, and 尾高 is always the
+    // last mora — so the digit only says how long the word is.
+    expect(accentLabel("中高", 3)).toBe("中高 (3)");
+    expect(accentLabel("平板", 0)).toBe("平板");
+    expect(accentLabel("頭高", 1)).toBe("頭高");
+    expect(accentLabel("尾高", 2)).toBe("尾高");
+  });
+
+  it("falls back to the bare label rather than printing (null)", () => {
+    expect(accentLabel("中高", null)).toBe("中高");
+  });
+});
+
 describe("materialising <<型>>", () => {
   /** A 単語-shaped template with an accent field pointed at the head word. */
   const scratch = () => {
@@ -238,6 +255,7 @@ describe("materialising <<型>>", () => {
         .prepare("SELECT value FROM card_field_values WHERE card_id = 'c1' AND field_id = 'kata'")
         .pluck()
         .get();
+      // 尾高 carries no number — see `accentLabel`.
       expect(value).toBe("尾高");
       // A guarded word writes NOTHING. Writing 不明 or '' would be
       // indistinguishable on screen from "not derived yet", and the entire value
