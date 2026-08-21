@@ -28,7 +28,7 @@ one, and it was not needed.
 | 3.5 long-vowel test | **DONE — answered** | `ー` and `い` behave the same; no conversion needed |
 | 3.5 second dictionary | **DONE** | UniDic 2.3.0, 97.31% agreement on 3,007 comparable words |
 | 3.5 OJAD | **PARTLY DONE** | 33 of 90 adjudicated; 57 left, ~51 of them not in OJAD at all |
-| 4. regenerate 20 cards, listen | **NEEDS HIM** | `accent_probe.py cards --limit 20 --go` |
+| 4. regenerate 20 cards, listen | **DONE, then INVALIDATED** | he judged them accurate, but `cards` mode sent KANJI content so Google ignored the notation — he heard the unaided frontend. `--card-content kana` fixes it; worth re-running |
 
 ### Two things waiting on Zach specifically
 
@@ -44,7 +44,7 @@ one, and it was not needed.
    added field is also dropped by the next re-import, which the importer does not
    yet know how to preserve — worth deciding together.
 
-### Schema is at v6, and there is still no migration path
+### Schema is at v7, and there is still no migration path
 
 That is deliberate and stated in `src/schema/index.ts`: every database here
 rebuilds from `exports/` in about fifteen seconds, and reviews still come from
@@ -187,7 +187,7 @@ fastest run* until proven otherwise — that has been true four times.
 Current gates, and they should stay true:
 
 ```bash
-npm test          # 15 files, 560 passed, 1 skipped (gated FSRS refit). 32.7-87.7 s
+npm test          # 16 files, 592 passed, 1 skipped (gated FSRS refit). 32.7-87.7 s
                   # over five runs. A "Timeout calling onTaskUpdate" line is
                   # Vitest reporter RPC under load, not a failing test.
 npm run typecheck # exit 0
