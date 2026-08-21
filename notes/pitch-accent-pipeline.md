@@ -1687,6 +1687,61 @@ dictionaries differ. 31 of the 81 are written in kana only (`いか`, `まく`,
 meant; that is genuine ambiguity rather than one of them being wrong. This is the
 set for OJAD, through its own interface, driven as a person would.
 
+## §9. The 20-card listening test measured Google, not us (2026-08-21)
+
+Zach ran `accent_probe.py cards --limit 20 --go`, listened to all twenty, checked them
+against OJAD and reported: *"it's amazing, very accurate."*
+
+**That is a real result about a different thing.** `load_cards` built the SSML with the
+KANJI headword as the element content:
+
+```
+<phoneme alphabet="yomigana" ph="^きず!かい">気遣い</phoneme>が
+```
+
+and §2 already established that **Google silently ignores yomigana whenever the element
+contains kanji.** So the notation never applied, and those twenty clips were Google's
+own unaided ja-JP frontend.
+
+**What the test therefore established** — and it is worth having, it is twenty more data
+points on the question §1 opened: Google's unaided frontend is accurate on twenty of his
+real words. His 7,403 existing Nanami clips were never broken, and regeneration is about
+the male voice and per-card override control. That was already the conclusion; this
+strengthens it.
+
+**What it did NOT establish:** that the derivation in §3 is right. And the derivation is
+what feeds `<<型>>`, so the label remains unvalidated against audio.
+
+### The inference to avoid, because it is backwards
+
+Zach then asked whether the ~51 words OJAD does not carry are *"likely to be correct
+from google tts."* When a request carries notation, **Google does not know the accent —
+the notation IS the answer**, and Google renders whatever it is handed. A wrong
+derivation produces a faithfully wrong contour. The unaided frontend knows; the annotated
+path does not.
+
+So there are two separate facts and only one of them is measured:
+
+| claim | status |
+|---|---|
+| unaided Google is accurate on kanji-written words | **measured**, 20 words |
+| our derivation is accurate | **unvalidated against audio** |
+
+### Where this points
+
+For a kanji-written word, Google's frontend already has the information that
+disambiguates it — that is why the unaided clips are right. Annotating those may buy
+little. **The notation earns its place on kana-written words and homographs**, which is
+exactly the set `notes/kana-primary-words.md` is about. Worth testing on that set before
+annotating 8,392 clips.
+
+### Fixed
+
+`--card-content` now defaults to `kana`, so the notation applies. `kanji` is kept as the
+**negative control** — the honest way to hear the unaided frontend deliberately rather
+than by accident. `load_cards` also normalises the head word the way `accentKey` does;
+it previously fed raw values to the analyser, the same defect §3 describes.
+
 ## What is settled, and what is not
 
 **Settled by this investigation**

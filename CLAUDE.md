@@ -47,6 +47,13 @@ materialise it, in a new `accents` table keyed by text rather than card.
 
 See `src/generate/README.md`, `STAGE4.md` §3 and `notes/pitch-accent-pipeline.md`.
 
+**The 20-card listening test measured GOOGLE, not us.** Zach judged the clips accurate
+and they were — but `cards` mode sent the kanji headword as element content, so Google
+ignored the notation and he heard its unaided frontend. That is twenty more data points
+saying his existing clips are fine; it says nothing about our derivation, which is still
+unvalidated against audio. When a request carries notation the notation IS the answer —
+Google renders whatever it is handed. `notes/pitch-accent-pipeline.md` §9.
+
 Stages 0, 1, 2, 3, 4, 5 and 8 exist and are tested against the real export:
 schema, importer, dashboard, template engine, **renderer** (`src/render`),
 scheduler backtest, **search** (`src/search`), plus the content-addressed blob
