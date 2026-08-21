@@ -5,12 +5,12 @@ user's Japanese study. Built because Mochi's developer stopped fixing reported b
 
 ## Where this is, right now (2026-08-22)
 
-**8 of 11 stages plus stage 1.5 are built and tested against the real export.** The
-audio is BOUND and the accent pipeline is VALIDATED; what is missing is the **review
-UI (stage 7)**, which is why nothing plays yet, and the **scheduler implementation
-(stage 6)**. **Zach's decision queue is EMPTY** — do not open by asking him to decide
-something, the answer is very likely in "Decisions that are settled" or "Ratified"
-below. **`NEXT.md` has the build order.** Read it second.
+**9 of 11 stages plus stage 1.5 are built and tested against the real export.** The
+audio is BOUND, the accent pipeline is VALIDATED, and the **scheduler now runs**
+(stage 6 landed 2026-08-22). What is missing is the **review UI (stage 7)**, which is
+the only reason nothing plays yet. **Zach's decision queue is EMPTY** — do not open by
+asking him to decide something, the answer is very likely in "Decisions that are
+settled" or "Ratified" below. **`NEXT.md` has the build order.** Read it second.
 
 **Read [SPEC.html](SPEC.html) first** — it is the authoritative design document
 (build spec, **draft 8**). Every figure in it is measured from the real export in
@@ -76,28 +76,64 @@ saying his existing clips are fine; it says nothing about our derivation, which 
 unvalidated against audio. When a request carries notation the notation IS the answer —
 Google renders whatever it is handed. `notes/pitch-accent-pipeline.md` §9.
 
-Stages 0, 1, 2, 3, 4, 5 and 8 exist and are tested against the real export:
+Stages 0, 1, 2, 3, 4, 5, 6 and 8 exist and are tested against the real export:
 schema, importer, dashboard, template engine, **renderer** (`src/render`),
-scheduler backtest, **search** (`src/search`), plus the content-addressed blob
-store, the browser database handle (`src/db/browser.ts`, sqlite-wasm on OPFS) and
-`src/text`. Stage 1.5 — the **field binding** (`src/generate`) — landed 2026-08-20. What is still
-missing: the scheduler implementation, and the **review UI** — grading, the queue, and the app shell that
-mounts a rendered card (stages 6, 7, 9, 10). `spike/viewer/` is a THROWAWAY browser
-harness, not that shell. See `OVERNIGHT.md` for the gap list,
-`SPIKE.md` for what the browser spike settled, and `notes/browser-feasibility.md`
-for the OPFS measurements.
+scheduler backtest, **the scheduler itself** (`src/scheduler`), **search**
+(`src/search`), plus the content-addressed blob store, the browser database handle
+(`src/db/browser.ts`, sqlite-wasm on OPFS) and `src/text`. Stage 1.5 — the **field
+binding** (`src/generate`) — landed 2026-08-20. What is still missing: the **review
+UI** — a session, grading buttons, and the app shell that mounts a rendered card
+(stages 7, 9, 10, 11). `spike/viewer/` is a THROWAWAY browser harness, not that
+shell. See `OVERNIGHT.md` for the gap list, `SPIKE.md` for what the browser spike
+settled, and `notes/browser-feasibility.md` for the OPFS measurements.
+
+## The scheduler runs, as of 2026-08-22 — and the queue is 443 cards
+
+`src/scheduler` is stage 6: `gradeTrack` writes a review and advances a track,
+`dueTracks`/`newTracks`/`queueCounts`/`reviewForecast` answer what to study.
+Measured against the real export at 2026-08-22, and pinned in
+`test/scheduler.test.ts`:
+
+    due          443    of which 328 from before today
+    new        3,980    never reviewed (4,366 before the archived filter)
+    scheduled  8,518    not yet due
+    dormant        0
+
+**Three implementation facts that are not obvious and cost thought.** Each is a
+whole-subsystem defect if guessed, and `src/scheduler/README.md` has the reasoning:
+
+* **An imported Mochi track is SEEDED from its history, lazily.** 9,026 of 13,392
+  tracks have `scheduler = 'mochi'` and no state — Mochi never exported stability
+  or difficulty. The first local grade replays that track's whole review log
+  through FSRS-6 and then applies the grade. Lazily, so an ungraded track keeps
+  Mochi's own due date and day one's queue is the queue he already knows.
+* **The model is fed WHOLE LOCAL DAYS; `reviews.elapsed_days` keeps the exact
+  fraction.** The fit only ever saw date-only observations, and whole days are
+  what reach FSRS's short-term branch. A test grades the same card at 02:00 and
+  20:00 of one day and demands an identical schedule — decision 6 below, as code.
+* **The planned interval comes from the previous REVIEW ROW, never from
+  `card_tracks.scheduled_days`.** That is what makes `review_interval_audit` pass
+  by construction rather than only while the cache happens to be right.
+
+It does NOT hold a session, choose a new-cards-per-day number, interleave new with
+due, or undo a grade. Those are stage 7's and two of them are his taste.
 
 ```bash
-npm test                # 16 files, 592 passed, 1 skipped (the FSRS refit, gated)
-                        # 32.7-87.7 s over five runs. Under load it can also emit
+npm test                # 17 files, 625 passed, 1 skipped (the FSRS refit, gated)
+                        # 32.7-87.7 s over six runs. Under load it can also emit
                         # "Timeout calling onTaskUpdate" — that is Vitest's reporter
                         # RPC, not a failure. Check the pass count, not the error line.
 npm run typecheck       # exit 0
-npm run build           # refuses to exit 0 unless dist/ actually imports (15 export subpaths)
+npm run build           # refuses to exit 0 unless dist/ actually imports (16 export subpaths)
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
 npm run dashboard -- --db build/hashigo.db --out dashboard.html
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 1 on any location
 npm run spike:check     # the browser contract; spike/ is excluded from tsconfig.json
+
+# The scheduler. Read-only except `seed`, which writes state and moves no due date.
+npx vite-node src/scheduler/cli.ts -- counts   --db build/hashigo.db
+npx vite-node src/scheduler/cli.ts -- queue    --db build/hashigo.db --limit 20
+npx vite-node src/scheduler/cli.ts -- forecast --db build/hashigo.db --days 14
 
 # The accent pipeline. Python owns the analyser and NOTHING else -- see
 # src/accent/README.md for why that boundary is a bug fix, not tidiness.
@@ -179,7 +215,26 @@ commands.
    The 13 parenthesis cards classify by a decidable rule — kanji-outside +
    kana-inside is a reading (7), kana-outside + kanji-inside is kana-primary (5),
    Latin inside is a gloss (1), zero unclassified. `notes/kana-primary-words.md`.
-11. **Links render PLAINLY, in place, on whatever side they are authored on.**
+11. **Interval fuzz is ±5%, applied ONCE at grade time, keyed PER TRACK.** Zach
+   raised it; it was missing entirely. It matters here more than in general because
+   **43.2% of the scheduled tracks — 3,746 of 8,666 — sit at exactly 365 days**, the
+   cap, so any heavy study day becomes a spike a year later. Measured: fuzz takes
+   the worst single day from **188 to 70** and the CV from 2.49 to 1.91.
+   The width was DERIVED, not copied from Anki: the smallest width whose worst day
+   fits inside the realised sustained load is 4% on a per-active-day basis (77.5) and
+   6% on `BACKTEST.md`'s 69.2 basis, so 5% sits between two defensible bases.
+   **Two ways to build it wrong.** Keying the shift per COHORT rather than per track
+   translates the clump instead of spreading it and makes things worse (CV 2.49 ->
+   2.83, worst day 109 -> 207) — measured, by getting it wrong first. And computing it
+   when READING the queue rather than at grade time makes the due date jitter on every
+   query. It does not invalidate `BACKTEST.md`: that measured which scheduler ranks
+   best, and the fuzzed value is what was planned, so it lands in
+   `reviews.scheduled_days` and `review_interval_audit` still passes.
+12. **New cards default to 10/day and are a SETTING.** Mochi's default, and Zach wants
+   the same. At 10/day the 3,980 waiting take ~398 days, so it is the dial that decides
+   how fast the backlog moves. `newTracks` is already returned separately from
+   `dueTracks` so the session layer owns this.
+13. **Links render PLAINLY, in place, on whatever side they are authored on.**
    Drafts 1-7 called the Jisho URL on 漢字's side 4 an answer leak and prescribed
    deferring link rendering in reverse mode. Zach overruled that on 2026-08-20:
    there is no hover on a phone, a long-press is deliberate, and he never checks a

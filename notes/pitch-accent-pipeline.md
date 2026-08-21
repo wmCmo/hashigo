@@ -1815,7 +1815,8 @@ enough to say so.**
 ### What this establishes, and what is still open
 
 **Established, for the first time:** the notation demonstrably moves the downstep to
-where the derivation asks, on 6 of 8 words that have one. Combined with §7 (the notation
+where the derivation asks, on 8 of 8 words that have one (6 of 8 by slicing alone; the
+two apparent misses were the instrument, and are resolved below). Combined with §7 (the notation
 is honoured with kana content) and §9 (the unaided frontend is good on kanji-written
 words), the annotated path is now known to work rather than assumed to.
 

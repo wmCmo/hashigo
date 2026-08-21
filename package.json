@@ -55,6 +55,10 @@
       "types": "./dist/generate/index.d.ts",
       "default": "./dist/generate/index.js"
     },
+    "./scheduler": {
+      "types": "./dist/scheduler/index.d.ts",
+      "default": "./dist/scheduler/index.js"
+    },
     "./scheduler/algorithms": {
       "types": "./dist/scheduler/algorithms/index.d.ts",
       "default": "./dist/scheduler/algorithms/index.js"

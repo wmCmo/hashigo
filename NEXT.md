@@ -20,18 +20,31 @@ As of 2026-08-22 Zach has cleared every open question. **Do not open this sessio
 asking him to decide something** — check `CLAUDE.md` "Decisions that are settled" and the
 "Ratified 2026-08-22" section first, because the answer is probably already there.
 
+Stage 6 added exactly two questions and **neither blocks anything**: how many new cards
+a session should introduce, and whether a forgotten card comes back before the session
+ends. Both are stage 7's, both are answerable while building the screen rather than
+before it, and the scheduler deliberately leaves both open (see row 2 below). Do not
+lead with them either.
+
+**Stage 6 — the scheduler — landed 2026-08-22.** `src/scheduler` grades a track,
+advances its FSRS-6 state and answers what is due; `src/scheduler/README.md` has the
+four things worth knowing before changing it, and CLAUDE.md has the three that would
+have been whole-subsystem defects if guessed. Today's queue is **443 due, 328 of them
+overdue, 3,980 new**, and `npx vite-node src/scheduler/cli.ts -- counts --db
+build/hashigo.db` prints it.
+
 The next work is **building**, in this order:
 
 | | what | notes |
 |---|---|---|
-| 1 | **Stage 7 — Review UI** | the critical path. It is the only reason the audio still does not play. **Needs his taste** — it is the screen he lives in. Hard constraint: audio fires on cloze reveal, NEVER on side entry |
-| 2 | **Stage 6 — Scheduler** | FSRS-6 over tracks. `BACKTEST.md` already chose and fitted it; this is implementation, no judgement calls |
+| 1 | **Stage 7 — Review UI** | the critical path, and now the ONLY thing between him and using this. The queue and grading exist; nothing mounts a card. **Needs his taste** — it is the screen he lives in. Hard constraint: audio fires on cloze reveal, NEVER on side entry |
+| 2 | The two stage-7 calls above, answered while building it | how many NEW cards a session introduces, and whether a forgotten card returns before the session ends. `newTracks` is returned separately from `dueTracks` so both stay open; `clampInterval` already floors a lapse at one day, so the second is a session-buffer question, not a scheduling one |
 | 3 | Design tokens → `spike/viewer/`, then he judges on his phone | 3 named fixes in `notes/design-tokens.md` |
 | 4 | Dashboard in English | 369 Japanese strings. A `LABELS` table, English default. Deck/template/field names stay Japanese — they are identifiers |
 | 5 | Nested-tag sidebar · Ctrl+K palette | query layers done, no UI |
 | 6 | Phone write throughput | the one unmeasured number |
 | 7 | **`読み` field + parse the 13 parenthesis cards** | green-lit. Show him the 13 before/after rows before applying anything |
-| 8 | Heatmap `<details>` table · dashboard tag count filters `cards_direct > 0` | two small fixes, no decisions attached |
+| 8 | Heatmap `<details>` table · dashboard tag count filters `cards_direct > 0` · the 復習予測 tile | three small fixes, no decisions attached. `reviewForecast` in `src/scheduler` is the tile's data, and SPEC deferred it until the scheduler existed |
 | 9 | Stage 10 — Editor | add / delete / move a field from the UI |
 | 10 | Stage 11 — Sync | Cloudflare account exists. One browser per device, Samsung Internet |
 
@@ -87,13 +100,22 @@ state, not a gap.
 ## The gates, and the one chore that bites
 
 ```bash
-npm test          # 16 files, 592 passed, 1 skipped (gated FSRS refit). 32.7-87.7 s.
+npm test          # 17 files, 625 passed, 1 skipped (gated FSRS refit). 32.7-87.7 s.
                   # A "Timeout calling onTaskUpdate" line is Vitest's reporter under
                   # load, not a failing test. Check the pass count.
 npm run typecheck # exit 0
-npm run build     # VERIFIED 58 modules, 30 dist targets = 15 export subpaths
+npm run build     # VERIFIED 63 modules, 32 dist targets = 16 export subpaths
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 0
+npm run spike:check
 ```
+
+The stage-6 tests were checked by BREAKING the code rather than by being green:
+dropping the lazy seed turns 2 red, computing due dates from the instant instead of
+local midnight turns 2 red, feeding the model fractional elapsed days turns 1 red,
+and taking the planned interval from `card_tracks.scheduled_days` turns 1 red. Two
+of those four found nothing the first time and the tests were strengthened until they
+did — including one comment in `day.ts` that the injection proved OVERCLAIMED. If you
+change `src/scheduler`, re-run that experiment rather than trusting a green suite.
 
 **A schema bump means RE-IMPORT, not migrate.** `SCHEMA_VERSION` is **7** and
 `applySchema` refuses anything else. Three steps, and skipping the third fails a test:

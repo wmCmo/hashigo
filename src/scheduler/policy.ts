@@ -13,6 +13,8 @@
 
 import { FROZEN_FSRS_WEIGHTS, GRADES_ARE_BINARY, BINARY_GRADE } from "../schema/index.js";
 
+import { FSRS6_FITTED_PARAMETERS, type Fsrs6Parameters } from "./algorithms/fsrs6.js";
+
 /**
  * FSRS-6, fitted to this user, binary-graded.
  *
@@ -78,6 +80,29 @@ export const MAX_INTERVAL_DAYS = 365;
 export const TARGET_RETENTION = 0.9;
 
 /**
+ * The 21 FSRS-6 weights the app schedules with. SETTLED: the fitted vector,
+ * marked PROVISIONAL — BACKTEST.md's recommendation 2, verbatim: "Ship it with
+ * the fitted parameters, marked provisional, and refit automatically once there
+ * is a year of reviews carrying real timestamps".
+ *
+ * The margin is 6.5% of held-out log loss over the stock vector (0.2038 ->
+ * 0.1905), which is worth having and is not worth reading: refitting with a
+ * different sweep budget lands within 0.0006 of the same training loss on a
+ * COMPLETELY DIFFERENT vector, so no individual weight here means anything. The
+ * fit's real content is the decay — w[20] 0.1542 -> 0.100, a flatter forgetting
+ * curve — and the stability update.
+ *
+ * So: do not tune these by hand, do not read them as facts about him, and do
+ * not replace them with anything other than the fitter's output on his own
+ * history. `PARAMETERS_ARE_PROVISIONAL` is exported so anything that prints the
+ * configuration says so.
+ */
+export const SCHEDULER_PARAMETERS: Fsrs6Parameters = FSRS6_FITTED_PARAMETERS;
+
+/** True until a refit on reviews carrying real timestamps replaces the above. */
+export const PARAMETERS_ARE_PROVISIONAL = true as const;
+
+/**
  * FSRS-6 weights that are UNREACHABLE BY DESIGN.
  *
  * READ THIS BEFORE "IMPROVING" IT. These are not unfitted for lack of data, and
@@ -113,6 +138,8 @@ export const SCHEDULER_POLICY = {
   algorithm: SCHEDULER_ALGORITHM,
   maxIntervalDays: MAX_INTERVAL_DAYS,
   targetRetention: TARGET_RETENTION,
+  parameters: SCHEDULER_PARAMETERS,
+  parametersAreProvisional: PARAMETERS_ARE_PROVISIONAL,
   gradesAreBinary: GRADES_ARE_BINARY,
   grades: BINARY_GRADE,
   unreachableWeights: UNREACHABLE_BY_DESIGN,

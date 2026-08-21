@@ -623,7 +623,7 @@ live with.
 |---|---|---|
 | Algorithm | **FSRS-6**, fitted to this user | `SCHEDULER_ALGORITHM` |
 | Maximum interval | **365 days** | `MAX_INTERVAL_DAYS` |
-| Target retention | **0.95** | `TARGET_RETENTION` |
+| Target retention | **0.90** | `TARGET_RETENTION` |
 | Grades | **binary only** — remembered / forgot, mapped Again=1 / Good=3 | `BINARY_GRADE` |
 | w15, w16 | **frozen, unreachable by design** | `UNREACHABLE_BY_DESIGN` |
 
@@ -650,12 +650,22 @@ live with.
    Mochi's cap was lifted**. They are not a scheduling problem — they are simply
    due when they are due — but they are the reason the corpus has no long-interval
    observations, and working through them is what will eventually produce some.
-4. **Target retention: 0.95, per-deck override available. SETTLED.** It is the
-   only one of the three modelled targets that lands inside the observed range,
-   and it is close to the 96.24% all-time / 95.10% 2026 working point the existing
-   schedule already reaches, so it is not a large behavioural change. Note that
-   `settings.target_retention.default` in `schema.sql` still seeds `0.90`, FSRS's
-   own default — that row belongs to the schema and has not been changed here.
+4. **Target retention: 0.90, per-deck override available. SETTLED by Zach on
+   2026-08-19** — the date `policy.ts`, `schema.sql` and `CLAUDE.md` all carry;
+   the banner in [Target retention](#target-retention-and-daily-load) says
+   2026-08-20, which is when that section was corrected rather than when the
+   decision was taken. This table said **0.95** until 2026-08-22 and it was stale: the reasoning that
+   picked 0.95 — that realised retention is 96.24%, so a 0.95 target "roughly
+   ratifies what you already do" — is a false inference, and the correction is
+   two sections up under [Target retention](#target-retention-and-daily-load).
+   Realised retention says where the OLD scheduler landed, not what the new one
+   will schedule: Mochi reaches 96.24% using intervals FSRS considers too long
+   for 95%, so adopting FSRS at 0.95 means SHORTENING intervals. Measured under
+   the 365-day cap against a realised 69.2 reviews/day, **0.95 asks for 130–204
+   reviews/day and 0.90 asks for 62–97** — 0.90 reproduces the load he has
+   sustained for four years. `settings.target_retention.default` in `schema.sql`
+   seeds `0.90` and `TARGET_RETENTION` holds `0.90`; all three now agree, which
+   they did not for three days.
 5. **Record what would make the next backtest better.** Two of the three items
    this list used to carry are still live: **real timestamps** (turns 6,996
    unscorable rows into the sub-daily answer) and **both intervals recorded at
@@ -677,7 +687,12 @@ live with.
 | `src/scheduler/algorithms/fsrs6.ts` | FSRS-6 port, published defaults, clamps, fitted vector, coordinate-descent fitter |
 | `src/scheduler/algorithms/sm2.ts` | SM-2 with the published quality formula, both curve options |
 | `src/scheduler/algorithms/baseline.ts` | Fixed multiplier and the constant base rate |
-| `src/scheduler/policy.ts` | The settled decisions: FSRS-6, max interval 365d, target retention 0.95, binary grades, w15/w16 frozen |
+| `src/scheduler/policy.ts` | The settled decisions: FSRS-6, max interval 365d, target retention 0.90, the fitted weights (provisional), binary grades, w15/w16 frozen |
+| `src/scheduler/schedule.ts` | Stage 6: grade -> next memory state -> next interval. Pure |
+| `src/scheduler/day.ts` | Stage 6: local dates, whole-day arithmetic, due dates at local midnight |
+| `src/scheduler/tracks.ts` | Stage 6: seeding from history, writing a review, advancing a track |
+| `src/scheduler/queue.ts` | Stage 6: what is due, what is new, the 復習予測 forecast |
+| `test/scheduler.test.ts` | 33 tests: the day arithmetic, the scheduling arithmetic, then the database path against the real export |
 | `test/backtest.test.ts` | 38 tests: closed-form arithmetic, the upstream FSRS-6 fixture, then the real corpus; prints every table above, and asserts this document agrees with `dashboard.html` bucket for bucket |
 
 FSRS-6's formulas and defaults were transcribed on 2026-08-19 from
