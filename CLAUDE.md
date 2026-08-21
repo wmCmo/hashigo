@@ -161,7 +161,16 @@ commands.
    re-importing is not a one-off — Zach still reviews ~100 cards/day in Mochi, so
    every fresh export brings history worth having, and a repair that is needed
    once after an import is needed forever.
-10. **Links render PLAINLY, in place, on whatever side they are authored on.**
+10. **An explicit READING beats the head word as generator input.** Zach's
+   `器（うつわ）` parentheses were a Mochi TTS workaround — Mochi read 器 as キ, 革 as
+   カク, 的 as テキ. A `読み` field (`local = 1`) carries the intended reading, and
+   when present it is the input for BOTH speech generation and accent derivation,
+   and renders as furigana. His reason for the furigana part is the one that
+   settles it: the furigana generator would otherwise mis-read the same kanji.
+   The 13 parenthesis cards classify by a decidable rule — kanji-outside +
+   kana-inside is a reading (7), kana-outside + kanji-inside is kana-primary (5),
+   Latin inside is a gloss (1), zero unclassified. `notes/kana-primary-words.md`.
+11. **Links render PLAINLY, in place, on whatever side they are authored on.**
    Drafts 1-7 called the Jisho URL on 漢字's side 4 an answer leak and prescribed
    deferring link rendering in reverse mode. Zach overruled that on 2026-08-20:
    there is no hover on a phone, a long-press is deliberate, and he never checks a
@@ -195,6 +204,31 @@ It is pinned by tests with demonstrated teeth (integrator, 2026-08-20): adding
 sweep (450 violations); adding an `autoplay` attribute in `src/render/nodes.ts`
 turns 8 tests red across three files. If you change either file, re-run that
 experiment rather than trusting a green suite.
+
+## Ratified 2026-08-22 — small calls an agent had made without authority
+
+`OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach
+took the remaining five, all as recommended, so they are no longer open questions:
+
+* **A `---` inside a field value stays a horizontal rule**, not a side break. Only
+  card `EPp9rse6` does it. He wrote those five sides deliberately to partition ten
+  clozes, and then reconsidered: *"it doesn't matter if I divide a card, I still
+  have to remember all of them anyway, and If i fail one, i fail the whole card"* —
+  so the better fix is splitting the CARD, which is authoring, not parsing.
+* **The CommonMark emphasis deviations stay.** They exist because his corpus broke
+  the standard rule: `\*` jisho wildcards, underscores in filenames, and `路_線_図`
+  being italicised.
+* **The dashboard keeps zero JavaScript** (SPEC problem #1, battery). But that is
+  not a reason to leave data unreachable — see the heatmap item below.
+* **The heatmap keeps 4 colour bins.** A 5-step ramp failed the contrast check, and
+  contrast wins in an app where every grey carries a reading.
+* **`tags` keeps 20 rows for 19 real tags** — `Dialect` is a childless ancestor so
+  `Dialect/Kansai` has a parent. Any count filters `cards_direct > 0`; the
+  dashboard's tag count needs that filter, which is a fix and not a decision.
+
+`orphanFieldValues` reports **235** with the 137-real-text figure broken out and the
+card ids listed — the same treatment the 3,159-card stale-`content` case gets. The
+143 definition silently skips the 92 template-less cards.
 
 ## The four problems this exists to solve
 

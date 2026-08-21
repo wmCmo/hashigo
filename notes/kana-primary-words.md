@@ -118,14 +118,35 @@ The working form, markers each alone on their own line:
 Verified nested inside the real template: `true` renders the label, `false` renders
 nothing, and the only warning left is the expected `generator-pending`.
 
+## DECIDED 2026-08-22 — the `読み` field
+
+Zach identified the cause, and it reframes the whole thing:
+
+> i needed to label them because in mochi flashcard, they would generate 器 as キ and
+> 革 as カク, 的 as テキ, adding parenthesis help the TTS in mochi, but i don't know if
+> we need this in hashigo, i want hashigo to solve this natively
+
+**The parenthesis was a TTS workaround, not a display choice.** And `Reference` is not
+where the reading lives — measured, it holds the kanji breakdown as wiki-links (`器` →
+`[[器|E9hblUmS]]`), so the reading exists nowhere but inside the parentheses.
+
+**Green-lit:**
+
+* a **`読み` field**, `local = 1`, holding the intended reading
+* when present it is the input for **both** speech generation and accent derivation,
+  instead of the head word
+* it **renders as furigana** — his reason, and it is the decisive one: *"otherwise
+  furigana engine might also get confused about it, too"*. The furigana generator would
+  mis-read 器 exactly as the TTS did.
+* populated once by parsing the parenthesis with the rule above, with the 13 before/after
+  rows shown for approval. No hand-editing.
+
+This generalises past the 7: any kanji with several readings can carry the one meant.
+
 ## Still to decide
 
 * ~~Which side the label renders on~~ — **DECIDED**: side 1, inside `<<#Reading>>`.
   See the section above.
-* **The exact label text.** `◎かな主流` as proposed, or shorter. Argument for shorter:
-  it sits beside dense Japanese, the meaning is learned once, and `型` is also a pill —
-  they should read as one family. `かな` or `◎かな`. Not in the accent colour: the accent
-  is green and grades are binary, so every green pixel is focus or "remembered".
-* **B's mechanism** — a `reading-hint` field, or lean on the existing `Reference` and
-  furigana.
+* ~~The exact label text~~ — **DECIDED: `かな`**, and not in the accent colour.
+* ~~B's mechanism~~ — **DECIDED: the `読み` field**, above.
 * Editing the 13 cards is authoring work: stage 10, or a one-off script.
