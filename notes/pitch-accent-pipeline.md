@@ -1742,6 +1742,91 @@ annotating 8,392 clips.
 than by accident. `load_cards` also normalises the head word the way `accentKey` does;
 it previously fed raw values to the analyser, the same defect §3 describes.
 
+## §10. Blind A/B, and the first validation of the derivation against audio
+
+### The "fuzzy" impression did not survive a blind test
+
+Zach compared the kanji-content and kana-content clip sets knowing which was which and
+reported the notated arm sounded "more fuzzy", the kanji arm "more concise" — then added
+*"maybe it's just me"*.
+
+**Four gross acoustic measures over 20 paired words** (`tools/ab_clips.py`): duration
++1.5%, loudness −0.2%, voiced fraction −0.5%, robust F0 range +6.1%. Not loudness, not
+length, not breathiness. Also **not** the long-vowel notation: 8 of the 20 contain `ー`
+and those changed *less* than the rest (+0.25 vs +0.68 st).
+
+**A first pass overstated the pitch figure and it was caught.** With a max/min range it
+read +19.0%, with individual clips at 22–28 semitones. 12 st is exactly an octave, so
+those were the tracker halving or doubling single frames; the giveaway was that the same
+words showed large values in *both* arms. p10–p90 took it to +6.1%.
+
+**Blind, 40 clips, opaque names, verdict recorded as `crisp` / `fuzzy` / `same`:**
+
+```
+           crisp   fuzzy    same
+kanji         11       7       2
+notated       13       6       1
+
+of 13 clips marked FUZZY, 6 were the notated arm — 46%
+one-sided binomial p = 0.709   (not distinguishable from chance)
+```
+
+Of the 12 words where the two versions got different verdicts, 5 went kanji=fuzzy and 4
+went notated=fuzzy, the rest involving `same` — symmetric, which is what noise looks
+like. **The impression was framing.** Which is the useful answer: the notation carries no
+audible quality penalty, so it is safe to use at scale.
+
+**But it settles the wrong half.** "Does not sound worse" is not "is correct".
+
+### Does the audio put the downstep where the derivation said?
+
+`tools/accent_verify.py`. For each word the derivation claims a downstep after mora N
+(or none, for 平板); the clip is sliced into (moras + 1) equal parts over its voiced
+frames and the largest fall between adjacent slice medians is located.
+
+**A SYSTEMATIC +1 OFFSET, measured not assumed.** Every matching nucleus word came back
+at exactly `accent + 1`: 係数 4 vs 3, 捜査 2 vs 1, 取り戻す 5 vs 4, 使命 2 vs 1, 覚える
+4 vs 3, タンパク質 5 vs 4. Six for six is not noise. Two real causes: the F0 fall in
+Japanese is realised late, over the transition into the following mora rather than at the
+boundary; and slices are cut over VOICED frames, which excludes unvoiced consonants and
+shifts every boundary rightward. The comparison now subtracts the offset and demands an
+EXACT hit, rather than keeping a ±1 tolerance that silently absorbed it.
+
+| | matched | |
+|---|---|---|
+| nucleus (頭高 / 中高 / 尾高) | **6 / 8** | exact, after the offset |
+| 平板 | 5 / 12 | see below — this is the method, not the accent |
+
+**The 平板 failures are the instrument.** Split by whether the reading contains a special
+mora — long vowel `ー`, geminate `っ`, or moraic `ん`:
+
+```
+with a special mora   7/9 missed
+all light moras       0/3 missed
+```
+
+Zero misses among all-light-mora words. Equal-width slicing assumes equal-duration
+moras, and a long vowel is a single continuous F0 glide cut in half — which reads as a
+fall that is really within-vowel declination. 欲求 (よっきゅー), 精巧 (せーこー), 発注
+(はっちゅー), 乾燥 (かんそー), 平静 (へーせー) are all of that shape. **So this is not
+evidence of wrong accents; it is a known limit of the method, and the split is clean
+enough to say so.**
+
+### What this establishes, and what is still open
+
+**Established, for the first time:** the notation demonstrably moves the downstep to
+where the derivation asks, on 6 of 8 words that have one. Combined with §7 (the notation
+is honoured with kana content) and §9 (the unaided frontend is good on kanji-written
+words), the annotated path is now known to work rather than assumed to.
+
+**Two words to actually listen to:** 気遣い (derivation 中高 2, observed 3) and 覚悟
+(derivation 頭高 1, observed 2). Both are all-light-mora, so the slicing should be
+reliable — but both also begin with unvoiced consonants, which is exactly what perturbs
+voiced-frame slicing. Too coarse to call them wrong; worth an ear.
+
+**Still open:** 20 words, coarse slicing, and no independent ground truth for the
+accents themselves beyond §8's dictionary agreement and the 33 OJAD adjudications.
+
 ## What is settled, and what is not
 
 **Settled by this investigation**

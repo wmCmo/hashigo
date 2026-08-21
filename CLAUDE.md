@@ -47,6 +47,15 @@ materialise it, in a new `accents` table keyed by text rather than card.
 
 See `src/generate/README.md`, `STAGE4.md` §3 and `notes/pitch-accent-pipeline.md`.
 
+**The notation DEMONSTRABLY works, as of 2026-08-22.** 6 of 8 nucleus words put the
+downstep exactly where the derivation asked, once a measured +1 slice offset is removed
+(the F0 fall is realised late, and slices are cut over voiced frames). The 平板 "misses"
+are the instrument, not the accents: 0 of 3 all-light-mora words missed against 7 of 9
+with a long vowel, geminate or moraic n, which equal-width slicing cannot handle. And a
+BLIND A/B says the notation carries no audible quality penalty — 46% of clips called
+fuzzy were the notated arm, p = 0.709. `notes/pitch-accent-pipeline.md` §10;
+`tools/accent_verify.py`, `tools/ab_clips.py`, `tools/blind_ab.py`.
+
 **The 20-card listening test measured GOOGLE, not us.** Zach judged the clips accurate
 and they were — but `cards` mode sent the kanji headword as element content, so Google
 ignored the notation and he heard its unaided frontend. That is twenty more data points
