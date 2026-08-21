@@ -26,6 +26,12 @@ METHOD, with its limits stated because they are large:
   LIMIT 2: the tracker occasionally octave-jumps. Slice MEDIANS rather than
   extremes absorb most of that.
   LIMIT 3: 20 words is 20 words.
+  LIMIT 4, and it is the one that bit: AN UNVOICED ONSET PRODUCES A FALSE MISS.
+  Slices are cut over VOICED frames, so a word starting き or か has its onset
+  missing from the span and every boundary shifts. Both words this flagged --
+  気遣い and 覚悟 -- were re-synthesised at both candidate accents and Zach picked
+  the DERIVED one both times. The derivation was right and this file was wrong,
+  so the nucleus score is 8/8 rather than the 6/8 printed below.
 
 So a mismatch here is a POINTER at a word to listen to, not a verdict. A high
 match rate is meaningful; a single miss is not.

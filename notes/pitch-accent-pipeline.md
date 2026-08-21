@@ -1819,10 +1819,35 @@ where the derivation asks, on 6 of 8 words that have one. Combined with §7 (the
 is honoured with kana content) and §9 (the unaided frontend is good on kanji-written
 words), the annotated path is now known to work rather than assumed to.
 
-**Two words to actually listen to:** 気遣い (derivation 中高 2, observed 3) and 覚悟
-(derivation 頭高 1, observed 2). Both are all-light-mora, so the slicing should be
-reliable — but both also begin with unvoiced consonants, which is exactly what perturbs
-voiced-frame slicing. Too coarse to call them wrong; worth an ear.
+### The two flagged words were the INSTRUMENT, not the derivation — 8 of 8
+
+気遣い (derivation 中高 2, observed 3) and 覚悟 (derivation 頭高 1, observed 2) were the
+only two nucleus words that did not match. Each was re-synthesised at BOTH candidate
+accents and Zach picked blind-of-the-numbers, 2026-08-22:
+
+| word | derived | observed by slicing | he chose |
+|---|---|---|---|
+| 覚悟 | 頭高 (1) | 中高 (2) | **kakugo-1 — the DERIVED one** |
+| 気遣い | 中高 (2) | 中高 (3) | **kizukai-2 — the DERIVED one** |
+
+> of course the kakugo-1 sounds right … of course kizukai-2 sounds right
+
+**So the nucleus score is 8 of 8, not 6 of 8**, and the two "misses" were the measurement.
+The cause was predicted before the answer came back rather than after: both words begin
+with an unvoiced consonant (き, か), and slices are cut over VOICED frames, so the
+unvoiced onset is missing from the span and every boundary shifts. That is the same
+mechanism as the systematic +1 offset, just larger on these two.
+
+Worth stating plainly because it cuts the other way too: **`accent_verify.py` is now
+known to produce false misses on unvoiced onsets.** Treat its output as a shortlist to
+listen to, never as a verdict — which is what its own docstring already says, and this
+is the evidence for it.
+
+Two-way disambiguation clips are `kizukai-2/3` and `kakugo-1/2` in `PROBE_CASES`, so the
+same question can be re-asked for any word cheaply. Note 覚悟's two candidates separate
+cleanly (182/154/97 vs 189/177/103) while 気遣い's barely do (131/189/103 vs 129/190/101)
+— on a 4-mora word the gap between a drop after mora 2 and mora 3 is small, so a listener
+who cannot tell them apart is giving a real answer, not failing.
 
 **Still open:** 20 words, coarse slicing, and no independent ground truth for the
 accents themselves beyond §8's dictionary agreement and the 33 OJAD adjudications.

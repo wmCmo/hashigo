@@ -47,9 +47,13 @@ materialise it, in a new `accents` table keyed by text rather than card.
 
 See `src/generate/README.md`, `STAGE4.md` §3 and `notes/pitch-accent-pipeline.md`.
 
-**The notation DEMONSTRABLY works, as of 2026-08-22.** 6 of 8 nucleus words put the
-downstep exactly where the derivation asked, once a measured +1 slice offset is removed
-(the F0 fall is realised late, and slices are cut over voiced frames). The 平板 "misses"
+**The notation DEMONSTRABLY works, as of 2026-08-22.** **8 of 8** nucleus words put the
+downstep where the derivation asked, once a measured +1 slice offset is removed (the F0
+fall is realised late, and slices are cut over voiced frames). The two that first looked
+like misses were the INSTRUMENT: re-synthesised at both candidate accents, Zach picked
+the derived one both times. Both begin with an unvoiced consonant, and slices are cut
+over voiced frames — so `accent_verify.py` produces false misses on unvoiced onsets and
+its output is a shortlist to listen to, never a verdict. The 平板 "misses"
 are the instrument, not the accents: 0 of 3 all-light-mora words missed against 7 of 9
 with a long vowel, geminate or moraic n, which equal-width slicing cannot handle. And a
 BLIND A/B says the notation carries no audible quality penalty — 46% of clips called
