@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
-import { MEMORY, openDatabase } from "../src/db/index.js";
+import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 import {
   OJAD_ADJUDICATIONS,
   accentLabel,
@@ -379,17 +379,35 @@ describe("materialising <<型>>", () => {
   });
 });
 
+/**
+ * GREEN MUST NOT MEAN "THE TABLE WAS EMPTY".
+ *
+ * Loading accents is a manual step -- it needs the Python analyser -- so an
+ * un-loaded database is a legitimate state. Two tests below handled that by
+ * PASSING anyway, which is the wrong answer: one asserted `expect(0).toBe(0)`
+ * and returned, and the other asserted `COUNT(*) = 0` over constraint violations,
+ * which is trivially true of an empty table. Both reported green while checking
+ * nothing, and both are corpus assertions someone would rely on.
+ *
+ * `requireAccents` makes the empty case report as SKIPPED instead. A skip is
+ * visible in the summary; a vacuous pass is indistinguishable from a real one.
+ */
+function requireAccents(db: Db, ctx: { skip: (note?: string) => void }): number {
+  const total = db.prepare("SELECT COUNT(*) FROM accent_resolved").pluck().get() as number;
+  if (total === 0) {
+    ctx.skip(
+      "accent_resolved is empty — run `accent/cli.ts load` first. Skipped rather " +
+        "than passed, because every assertion below is vacuous on an empty table.",
+    );
+  }
+  return total;
+}
+
 describe.runIf(haveCorpus)("the real corpus", () => {
-  it("has an accent for essentially every head word, and refuses a handful", () => {
+  it("has an accent for essentially every head word, and refuses a handful", (ctx) => {
     const db = openDatabase(DB, { readOnly: true });
     try {
-      const total = db.prepare("SELECT COUNT(*) FROM accent_resolved").pluck().get() as number;
-      if (total === 0) {
-        // The load is a manual step (it needs the Python analyser), so an
-        // un-loaded database is a legitimate state rather than a failure.
-        expect(total).toBe(0);
-        return;
-      }
+      const total = requireAccents(db, ctx);
       const labelled = db
         .prepare("SELECT COUNT(*) FROM accent_resolved WHERE type IS NOT NULL")
         .pluck()
@@ -430,11 +448,13 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     }
   });
 
-  it("never stores a type without an accent position, or vice versa", () => {
+  it("never stores a type without an accent position, or vice versa", (ctx) => {
     const db = openDatabase(DB, { readOnly: true });
     try {
       // The CHECK constraints say this, and asserting it over the real load is
-      // what proves the loader honours them rather than working around them.
+      // what proves the loader honours them rather than working around them --
+      // which an empty table cannot prove, hence the skip.
+      requireAccents(db, ctx);
       expect(
         db
           .prepare(
@@ -451,9 +471,13 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     }
   });
 
-  it("stored no key carrying a wiki-link, an invisible mark, or a raw tilde", () => {
+  it("stored no key carrying a wiki-link, an invisible mark, or a raw tilde", (ctx) => {
     const db = openDatabase(DB, { readOnly: true });
     try {
+      // Vacuous on an empty table: every "no row matches" assertion below is
+      // trivially satisfied by having no rows. Found by emptying `accents` and
+      // watching this stay green.
+      requireAccents(db, ctx);
       const bad = db
         .prepare(
           `SELECT text FROM accents
@@ -511,9 +535,12 @@ describe("the OJAD adjudications", () => {
 });
 
 describe.runIf(haveCorpus)("adjudication against the real database", () => {
-  it("resolves every adjudicated word as manual, and empties them from the queue", () => {
+  it("resolves every adjudicated word as manual, and empties them from the queue", (ctx) => {
     const db = openDatabase(DB, { readOnly: true });
     try {
+      // Same reason: an empty `accents` means an empty queue, which satisfies
+      // "the queue no longer contains them" for free.
+      requireAccents(db, ctx);
       const queued = new Set(
         (db.prepare("SELECT text FROM accent_disagreements").all() as { text: string }[]).map(
           (r) => r.text,
