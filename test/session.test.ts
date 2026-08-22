@@ -413,6 +413,34 @@ describe("the session state machine", () => {
     }
   });
 
+  it("does NOT advance past a card whose grade threw — no silent skip", () => {
+    // The property: `gradeTrack` is called BEFORE the cursor moves, so a track
+    // that has gone dormant under a long session leaves the SAME card current and
+    // the caller can retry or skip deliberately. If the cursor moved first, the
+    // card would be silently dropped from the session and its review lost — the
+    // failure mode you would never notice, because the queue just gets shorter.
+    const { db, dueIds } = fixture(2, 0);
+    try {
+      const s = buildSession(db, { now: AT, newLimit: 0 });
+      const stuck = s.current()!.trackId;
+      db.prepare("UPDATE card_tracks SET dormant = 1 WHERE id = ?").run(stuck);
+
+      expect(() => s.answer(true, { at: AT })).toThrow();
+      // Still here, still unanswered, and nothing was written.
+      expect(s.current()?.trackId).toBe(stuck);
+      expect(s.progress().answered).toBe(0);
+      expect(counts(db).local).toBe(0);
+
+      // And it recovers: un-dormant it and the same call succeeds.
+      db.prepare("UPDATE card_tracks SET dormant = 0 WHERE id = ?").run(stuck);
+      expect(s.answer(true, { at: AT }).graded).toBe(true);
+      expect(s.current()?.trackId).toBe(dueIds.find((id) => id !== stuck));
+      expect(counts(db).local).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
   it("throws rather than returning null once finished", () => {
     const { db } = fixture(1, 0);
     try {
