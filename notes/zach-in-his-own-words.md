@@ -60,4 +60,36 @@ His own words explaining WHY are not derivable from the code or from git.
 - **Links render plainly, in place.** I overruled seven drafts of spec on this.
 - Keys in `.env`, gitignored, never opened by Claude. Google's is `GOOGLE_TTS_SECRET`.
 
+- **The review screen — choosing direction A, 2026-08-22.** Shown three mockups over
+  the same real cards:
+  > i think `a` is the closest to what im aiming at, it looks fun, it looks new (as in
+  > novel), it looks like we've put thoughts into it, but the only thing that's hurting
+  > is the replay button, i would prefer `c`'s replay button, because im using my right
+  > hand, and my thumb would have to reach all the way
+
+- **On the keycap hints** — he proposed hover tooltips and asked rather than asserted:
+  > i think words hinting about which key to use is a good try, but you can actually
+  > hide them behind tool tips, when you hover with mouse, that would be more friendly
+  > for mobile you think?
+
+  Answered with his OWN decision 19 (*"there is no hover on a phone"*): a tooltip needs
+  the one input the phone lacks, so it would hide the hints on the device that matters
+  and keep them where they are least needed. Built as a `(hover: hover) and
+  (pointer: fine)` media query instead; he accepted the result — *"the mock up is
+  amazing, i like it"*. **The diagnosis was his and it was right; only the mechanism
+  changed.**
+
+- **Commit authority, handed over 2026-08-22** — the grant and its reason in one
+  breath:
+  > you don't have to wait for my instructions to commit, you know when to commit, make
+  > it clean and deliberate, no permission needed, commit is always revertible, and it's
+  > your job now […] this should be instruction for any agent from now on
+
+  *"commit is always revertible"* is the whole argument, and it is worth keeping in his
+  words: the grant is scoped to the operation that can be undone. He did not say push.
+
+- **He is RIGHT-HANDED and reviews one-handed.** Stated in passing while rejecting a
+  native `<audio controls>`, and it is a layout constraint for every screen after this
+  one: primary actions belong bottom-RIGHT.
+
 ---

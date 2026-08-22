@@ -20,7 +20,38 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 
 ---
 
-## STATE RIGHT NOW — 2026-08-22, tree clean, everything committed
+## STATE RIGHT NOW — 2026-08-22, tree clean, four commits landed
+
+**D1 IS DECIDED and stage 7 is unblocked.** The review screen is **direction A2** —
+direction A's terminal look with direction C's hand — chosen from four mockups built over
+four real cards with real audio. `DECISIONS.md` **decision 23** is the specification and
+is explicit about the three things it does NOT settle. **Table B's B1 is no longer "do not
+start without him"; it is the next thing to build, against a written spec.**
+
+**Agents now commit their own work — `DECISIONS.md` decision 24**, a standing grant:
+*"no permission needed, commit is always revertible, and it's your job now."* Gates green
+first, scoped commits, and this heading is part of the last commit of a run rather than a
+follow-up. Pushing is still not authorised, and there is no remote.
+
+What the four commits contain:
+
+    feat(vite)  the mockups served at /mock/, fs.allow narrowed off the corpus,
+                the ngrok host allowed, and the generator promoted to scripts/
+    docs        the seven point-in-time reports moved under notes/archive/
+    docs        BACKTEST.md's withdrawn 454-day argument, corrected where it was
+                still stated as live in the Recommendation
+    docs        CLAUDE.md 717 -> 333 lines, DECISIONS.md split out, decisions 23 & 24
+
+**The security fix is the one to know about.** `server.fs.allow` was `[root]`, so Vite's
+`/@fs/` route served `build/hashigo.db` (74,465,280 bytes) and the blob store
+(673,554,432) to anything that could reach the dev server. Harmless on localhost, not
+harmless behind the public tunnel the same config authorises. Now 403. `.env` and `.git/`
+were refused before and after, so **no credential was ever exposed** — source, notes and
+databases were.
+
+**Tunnelling needs `npm run spike:dev -- --host ::`, not `--host 127.0.0.1`.** The
+IPv4-only bind cost a 502: ngrok forwards to `localhost`, Windows resolves that to `::1`
+first, and ngrok does not fall back to IPv4 the way PowerShell does.
 
 > [!warning] **`git status` FIRST, always — and if you change the state, change this
 > heading in the SAME edit.** It has been wrong in both directions in one day: commit
@@ -33,10 +64,20 @@ and heatmap tables, the cap/relearning derivations, the ratifications, the
 browser-portability split, schema **v8**, a correctness sweep, and the dashboard in
 English. `git log --oneline -20` is the list; do not rebuild any of it.
 
-Gates, and **re-run them rather than repeating these**: `npm test` → 20 files / 697 passed
-/ 1 skipped · `npm run typecheck` → 0 · `npm run build` → OK, 24 export subpaths ·
-`npm run spike:check` → clean. The suite also prints `Timeout calling "onTaskUpdate"` under
-load — that is Vitest's reporter RPC, not a failing test. Read the pass count.
+Gates, **all five re-run 2026-08-22 and all five green**, not repeated from a paste:
+`npm test` → 20 files / 697 passed / 1 skipped, 77.0 s · `npm run typecheck` → 0 ·
+`npm run build` → OK, **70 modules**, 48 dist targets, 24 export subpaths ·
+`npm run spike:check` → 0 · `blobs … paths` → 0, "NO absolute path … anywhere".
+
+> [!warning] **`npm test` EXITS 1 ON A FULLY PASSING RUN, and the exit code is the thing
+> that lies.** Both this file and CLAUDE.md said "that is Vitest's reporter RPC, not a
+> failing test — read the pass count", which is correct and incomplete: the two
+> `Timeout calling "onTaskUpdate"` unhandled errors are counted as `Errors 2` and the
+> process exits **1** with `697 passed | 1 skipped` right above it. So "read the pass
+> count" is not merely advice about where to look — it is necessary because
+> `$LASTEXITCODE` is wrong. Anything that chains on `npm test` succeeding (a CI step, a
+> pre-commit hook, a `;`-joined PowerShell line that checks the code) will report a break
+> that is not there. Measured on the clean tree at `fdbb00c` with zero edits applied.
 
 **THE CARD LOADER LANDED 2026-08-22** — `src/cards`, a card id in, a renderable card out,
 24th export subpath, browser-portable and pinned as such. It is what joins
@@ -56,7 +97,9 @@ forbids it. `src/cards/README.md` has both.
 
 **THE DECISION QUEUE IS NO LONGER EMPTY — it has five items, and they are HIS, in his
 planner.** He rewrote that file on 2026-08-22 to exactly two sections: what he has to
-decide (**D1–D5**) and what is left before he can use the app. **D1 — what the review
+decide (**D2–D5**) and what is left before he can use the app. **D1 IS NOW DECIDED —
+see decision 23; the review screen is direction A2.** Historical note, because the
+sentence below is what this file said for most of 2026-08-22: **D1 — what the review
 screen looks like — is the only thing blocking the project.** Do not open by asking him
 to re-decide anything else; the four he cleared earlier that day are below, and every one
 is a settled decision in `CLAUDE.md`. Do NOT reopen these; the last session that assumed
@@ -102,7 +145,7 @@ of what was done and why, not as a queue.
 
 **So the correct response to a bare "proceed" is to say that, and to offer him the
 choice** — not to invent a task, and not to start stage 7 on your own judgement. His
-planner's **D1** is the blocker and it is a taste decision about the screen he lives in;
+planner's **D1** WAS the blocker and it is a taste decision about the screen he lives in;
 an agent that designs it produces work he rejects. That has been written down three
 separate times on this project.
 
@@ -111,6 +154,34 @@ Two things that ARE safe and useful without him, if he wants something done:
 * **Verify rather than extend.** Re-run the gates, re-run a fault injection against a test
   you doubt, or check a number in a doc against the code. Three of the last two sessions'
   reported claims turned out wrong, and each was one command away from being caught.
+
+**That lane was run on 2026-08-22 and it was not empty — it found three stale claims, one
+of them load-bearing.** Recorded here so the next session knows the sweep happened and what
+shape the misses take, because all three were docs drifting behind code that had already
+moved:
+
+1. **BACKTEST.md's Recommendation §3 was still giving the WITHDRAWN 454-day argument as
+   the reason for the 365-day cap** — the exact basis error decision 6 forbids, in the
+   section of a "live and current" document that a reader trusts most. `policy.ts` had
+   already been corrected; the Recommendation had not. Its second half
+   (*"365 keeps every interval the app issues inside the range"*) had also become plainly
+   false, because fuzz-after-cap issues up to **383**. Corrected in place, with the
+   withdrawn wording quoted so the correction is auditable.
+2. **CLAUDE.md decision 16 said the re-import guard "needs a guard … cheap to build now"**
+   when it had shipped in `0e04a10` with a test at `test/roundtrip.test.ts:550`. A cold
+   session reading that decision would have rebuilt a guard that exists — the exact
+   failure mode the "Built but NOT WIRED UP" heading was added to prevent, in the opposite
+   direction.
+3. **This file's own second gate block** carried 19 files / 672 passed / 67 modules while
+   its first block said 20 / 697. Two gate blocks in one file disagreeing means one of
+   them is a paste.
+
+**The generalisable bit: every one of the three was a doc that had been correct when
+written.** Nobody pasted a wrong number. The code moved and the prose did not, and in case
+1 the stale prose survived precisely because the *same file* had been carefully corrected
+elsewhere — the "THE 454 IS CENSORED" note is 200 lines above the Recommendation that
+contradicts it. Grepping the retracted claim (`grep -rn 454`) is what finds this class;
+reading the file top to bottom is what misses it.
 
 He has cleared every open decision that is not in his planner, so **do not open by asking
 him to re-decide something** — check `CLAUDE.md` "Decisions that are settled" and
@@ -175,7 +246,7 @@ fill and the per-grade OPFS write — are still unmeasured.
 
 | | what | why |
 |---|---|---|
-| **B1** | **Stage 7 — Review UI** | it is the critical path AND the screen he lives in. His planner files it under "needs my taste", and an agent inventing his review interface produces work he will reject. The hard constraint if you ever do touch it: **audio fires on cloze reveal, NEVER on side entry** — `src/render/reveal.ts` and the autoplay section of CLAUDE.md |
+| ~~**B1**~~ | **Stage 7 — Review UI** — **UNBLOCKED 2026-08-22** | The taste question is answered: **decision 23**, direction A2. It is no longer "do not start without him" — it is the next thing to build, against a written spec. What exists is a MOCKUP in `build/mock/out/` (three directions plus the chosen A2), served at `/mock/` by `vite.config.ts` middleware; it has no scheduler, no grading and writes nothing. The build is wiring `hashigo/scheduler` → `hashigo/cards` → `hashigo/render` behind that layout. Two constraints, both non-negotiable: **audio fires on cloze reveal, NEVER on side entry** (`src/render/reveal.ts`, and the autoplay section of CLAUDE.md), and the keycap hints must stay behind `@media (hover: hover) and (pointer: fine)` rather than any hover affordance — decision 19 is why. Decision 23 lists what it does NOT settle; do not decide those for him |
 | **B2** | Design tokens → `spike/viewer/` | 3 named fixes exist in `notes/design-tokens.md`, but he judges the result on his own phone. Propose, do not decide |
 | **B3** | Nested-tag sidebar · Ctrl+K palette | query layers are done; the UI is taste |
 | **B4** | Stage 10 Editor · Stage 11 Sync | both large, both unspecified in shape |
@@ -249,7 +320,10 @@ statement makes `pauseVfs()` throw.
 
 | I want… | read |
 |---|---|
-| what a fresh session must know | `CLAUDE.md` — auto-loads, carries the settled decisions |
+| **the chosen review-screen direction, and why** | `DECISIONS.md` decision 23 — and the mockup at `/mock/` (`npm run spike:dev -- --host ::`) |
+| what a fresh session must know | `CLAUDE.md` — auto-loads; 328 lines, and the 22 decisions as a one-line index |
+| **why a decision is what it is** | `DECISIONS.md` — the full derivations, split out of CLAUDE.md 2026-08-22 |
+| a point-in-time report, treated as a sample | `notes/archive/` — and its `README.md` first |
 | what to do next, in dependency order | `NEXT.md` |
 | the design document | `SPEC.html` (draft 8) |
 | the accent pipeline, every measurement | `notes/pitch-accent-pipeline.md` |
@@ -328,11 +402,12 @@ state, not a gap.
 ## The gates, and the one chore that bites
 
 ```bash
-npm test          # 19 files, 672 passed, 1 skipped (gated FSRS refit). 33-88 s.
-                  # A "Timeout calling onTaskUpdate" line is Vitest's reporter under
-                  # load, not a failing test. Check the pass count.
+npm test          # 20 files, 697 passed, 1 skipped (gated FSRS refit). 33-88 s.
+                  # EXITS 1 ANYWAY when the "Timeout calling onTaskUpdate" reporter
+                  # errors appear -- everything passes and the code is still 1.
+                  # Check the pass count; do NOT trust $LASTEXITCODE here.
 npm run typecheck # exit 0
-npm run build     # VERIFIED 67 modules, 48 dist targets = 24 export subpaths
+npm run build     # VERIFIED 70 modules, 48 dist targets = 24 export subpaths
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 0
 npm run spike:check
 ```
@@ -397,13 +472,20 @@ itself rather than the code, and a verifier whose tolerance hid a systematic off
 
 ## Which docs are snapshots
 
-Live and current: `CLAUDE.md`, `SPEC.html` (draft 8), this file, every `src/*/README.md`,
+Live and current: `CLAUDE.md`, `DECISIONS.md`, `SPEC.html` (draft 8), this file, every `src/*/README.md`,
 `notes/pitch-accent-pipeline.md`, `notes/accent-ojad-adjudication.md`,
 `notes/kana-primary-words.md`, `notes/design-tokens.md`,
 `notes/dashboard-reconciliation.md`, `BACKTEST.md`.
 
-Bannered snapshots — kept as the record, not rewritten: `FIXES.md`, `OVERNIGHT.md`,
-`STAGE4.md`, `SPIKE.md`, `PHONE-TEST.md`, `notes/persistence.md`,
-`notes/browser-feasibility.md`. Every stale item in them is a number that got
-better-measured later, and in each case the earlier figure was somebody's most favourable
-observation. **Treat any single number in a bannered doc as a sample, not a fact.**
+Bannered snapshots — **all seven moved to `notes/archive/` on 2026-08-22**, so a grep hit
+labels itself by path: `FIXES.md`, `OVERNIGHT.md`, `STAGE4.md`, `SPIKE.md`,
+`PHONE-TEST.md`, `persistence.md`, `browser-feasibility.md`. Nothing was deleted and
+nothing in there should be edited — a snapshot that gets updated stops being a record of
+what was believed at the time. `notes/archive/README.md` says which two claims in them
+are known-wrong. Every stale item is a number that got better-measured later, and in each
+case the earlier figure was somebody's most favourable observation. **Treat any single
+number in an archived doc as a sample, not a fact.**
+
+They are still cited by ~40 comments across `src/`, `test/` and `spike/` — by bare
+filename, not by path, so the move broke no link (checked: zero markdown links pointed at
+them).
