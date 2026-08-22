@@ -426,10 +426,26 @@ export function gradeTrack(db: SqliteHandle, input: GradeTrackInput): GradedRevi
 // ─── the eager seed, for anyone who wants it ─────────────────────────────────
 
 export interface SeedReport {
+  /** Every row of `card_tracks`, dormant included. */
   readonly tracks: number;
   readonly seeded: number;
+  /**
+   * LIVE tracks that already carried usable state, so seeding skipped them.
+   *
+   * BASIS FIXED 2026-08-22. This was `tracks - ids.length`, which subtracts a
+   * `dormant = 0` count from an all-rows count — so every DORMANT track was
+   * reported as "already had state" when seeding had never considered it. Exactly
+   * right on this corpus, where dormant is 0, and wrong the first time a track
+   * goes dormant. That is the defect decision 6 exists for, in a report line.
+   */
   readonly alreadyStored: number;
   readonly withoutHistory: number;
+  /**
+   * Rows seeding never looked at, because `SELECT_SEEDABLE` filters
+   * `dormant = 0`. Broken out so the four numbers reconcile against `tracks`
+   * rather than being three numbers and a remainder.
+   */
+  readonly dormant: number;
 }
 
 const SELECT_SEEDABLE = `
@@ -476,11 +492,16 @@ export function seedTrackMemory(
       seeded += 1;
     }
     const total = db.prepare(`SELECT count(*) AS n FROM card_tracks`).get() as { n: number };
+    const dormant = db
+      .prepare(`SELECT count(*) AS n FROM card_tracks WHERE dormant <> 0`)
+      .get() as { n: number };
     return {
       tracks: total.n,
       seeded,
-      alreadyStored: total.n - ids.length,
+      // Same basis as `ids`: live tracks only, minus the ones seeding handled.
+      alreadyStored: total.n - dormant.n - ids.length,
       withoutHistory,
+      dormant: dormant.n,
     };
   });
   return run();

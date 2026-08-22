@@ -18,7 +18,7 @@
  */
 
 import { openDatabase } from "../db/index.js";
-import { PARAMETERS_ARE_PROVISIONAL, SCHEDULER_POLICY } from "./policy.js";
+import { PARAMETERS_ARE_PROVISIONAL, SCHEDULER_ALGORITHM, SCHEDULER_POLICY } from "./policy.js";
 import { dueTracks, newTracks, queueCounts, reviewForecast } from "./queue.js";
 import { nowInHostOffset } from "./tracks.js";
 import { seedTrackMemory } from "./tracks.js";
@@ -146,14 +146,40 @@ function main(): number {
     }
     if (command === "seed") {
       if (flag("dry-run")) {
-        const counts = queueCounts(db, opts);
-        console.log(`--dry-run: would replay history for every track without state; ${counts.due} due today is unaffected either way`);
+        // A dry run has to COMPUTE, or it is a sentence rather than a preview.
+        // This used to print only the due count -- which it then said was
+        // "unaffected either way", i.e. the one number that could not answer the
+        // question being asked. Both in-repo precedents (`blobs sweep --dry-run`,
+        // `accent materialise --dry-run`) do the real work and decline to write.
+        const seedable = db
+          .prepare(
+            `SELECT count(*) AS n FROM card_tracks
+              WHERE dormant = 0
+                AND (scheduler IS NULL OR scheduler <> ? OR scheduler_state IS NULL)`,
+          )
+          .get(SCHEDULER_ALGORITHM) as { n: number };
+        const withHistory = db
+          .prepare(
+            `SELECT count(*) AS n FROM card_tracks
+              WHERE dormant = 0 AND reps > 0
+                AND (scheduler IS NULL OR scheduler <> ? OR scheduler_state IS NULL)`,
+          )
+          .get(SCHEDULER_ALGORITHM) as { n: number };
+        console.log(
+          `--dry-run: ${seedable.n} live track(s) have no usable state; ` +
+            `${withHistory.n} of them have review history to replay, ` +
+            `${seedable.n - withHistory.n} are new cards and would stay unseeded`,
+        );
+        console.log("no due date would move — seeding is a statement about stability, not about when");
         return 0;
       }
       const report = seedTrackMemory(db);
+      // The four live figures reconcile against `tracks`, which is why `dormant`
+      // is printed rather than left as an unexplained remainder.
       console.log(
         `${report.seeded} seeded · ${report.alreadyStored} already had state · ` +
-          `${report.withoutHistory} have no history (new cards) · ${report.tracks} tracks`,
+          `${report.withoutHistory} have no history (new cards) · ` +
+          `${report.dormant} dormant (never considered) · ${report.tracks} tracks`,
       );
       console.log("no due date was moved — seeding is a statement about stability, not about when");
       return 0;

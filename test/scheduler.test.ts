@@ -6,7 +6,11 @@ import { describe, expect, it } from "vitest";
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 import { importExportDirs } from "../src/import/index.js";
 import { formatInstant as importerFormatInstant } from "../src/import/reviews.js";
-import { FSRS6_DEFAULT_PARAMETERS } from "../src/scheduler/algorithms/fsrs6.js";
+import {
+  FSRS6_DEFAULT_PARAMETERS,
+  FSRS6_UNIDENTIFIABLE,
+  respectsFrozenWeights,
+} from "../src/scheduler/algorithms/fsrs6.js";
 import { GRADE_AGAIN, GRADE_GOOD, type ReviewObservation } from "../src/scheduler/algorithms/index.js";
 import {
   DormantTrackError,
@@ -257,6 +261,34 @@ describe("grading, as arithmetic", () => {
         expect(other.intervalDays).toBe(base.intervalDays);
       }
     }
+  });
+
+  /**
+   * `respectsFrozenWeights` DESCRIBES ITSELF AS "a runtime assertion target" and
+   * had ZERO call sites — in src/, in test/, anywhere. A predicate nobody
+   * evaluates is a comment.
+   *
+   * The test above proves the frozen weights are UNREACHABLE at grade time, which
+   * is the behavioural half. This is the other half and it is about the shipped
+   * vector: decision 2 says w[15] and w[16] are "frozen at their published
+   * defaults, permanently", and nothing checked that the fitted set actually
+   * leaves them there. A refit that moved them would produce a vector whose two
+   * unreachable weights are fitted noise — harmless today, and a lie in the file
+   * that says they are defaults.
+   */
+  it("ships a parameter vector that leaves every unreachable weight at its default", () => {
+    expect(respectsFrozenWeights(SCHEDULER_PARAMETERS)).toBe(true);
+    // Against the wider list the fitter freezes, not just the two the schema
+    // names: w[1] and w[3] are the initial stabilities for Hard and Easy and are
+    // unreachable for the same reason.
+    expect(respectsFrozenWeights(SCHEDULER_PARAMETERS, FSRS6_UNIDENTIFIABLE)).toBe(true);
+    expect([...FSRS6_UNIDENTIFIABLE].sort((a, b) => a - b)).toEqual([1, 3, 15, 16]);
+
+    // Teeth: the predicate must be capable of returning false, or the two
+    // assertions above are decoration.
+    const moved = [...SCHEDULER_PARAMETERS] as unknown as typeof SCHEDULER_PARAMETERS;
+    (moved as number[])[15] = 0.1234;
+    expect(respectsFrozenWeights(moved)).toBe(false);
   });
 
   it("treats a same-day re-review as elapsed 0, which is a different branch", () => {
@@ -794,7 +826,13 @@ describe("grading against the database", () => {
       due_at: string;
     };
     const report = seedTrackMemory(db);
-    expect(report).toEqual({ tracks: 1, seeded: 1, alreadyStored: 0, withoutHistory: 0 });
+    expect(report).toEqual({
+      tracks: 1,
+      seeded: 1,
+      alreadyStored: 0,
+      withoutHistory: 0,
+      dormant: 0,
+    });
     const after = db.prepare("SELECT due_at, scheduler, scheduler_state FROM card_tracks WHERE id = ?").get(
       trackId,
     ) as { due_at: string; scheduler: string; scheduler_state: string };
@@ -802,7 +840,51 @@ describe("grading against the database", () => {
     expect(after.scheduler).toBe("fsrs6");
     expect(parseMemory(after.scheduler_state)).toEqual(seedMemory(trackObservations(db, trackId)));
     // Idempotent: a second pass has nothing to do.
-    expect(seedTrackMemory(db)).toEqual({ tracks: 1, seeded: 0, alreadyStored: 1, withoutHistory: 0 });
+    expect(seedTrackMemory(db)).toEqual({
+      tracks: 1,
+      seeded: 0,
+      alreadyStored: 1,
+      withoutHistory: 0,
+      dormant: 0,
+    });
+    db.close();
+  });
+
+  /**
+   * `alreadyStored` MIXED TWO BASES, and the corpus hid it: it was
+   * `tracks - ids.length`, i.e. an all-rows count minus a `dormant = 0` count, so
+   * every dormant track was reported as "already had state" when seeding had
+   * never looked at it. Zero dormant tracks in the export, so the arithmetic was
+   * right by accident. This is the test that would have caught it, and the reason
+   * `dormant` is now reported: four numbers that reconcile beat three and a
+   * remainder.
+   */
+  it("reports dormant tracks separately instead of counting them as already seeded", () => {
+    const { db, trackId } = fixture({ history: MOCHI_HISTORY });
+    // A second track on the same card, dormant — the state seeding skips.
+    db.prepare(
+      `INSERT INTO card_tracks (card_id, kind, dormant, reps, lapses)
+       SELECT card_id, 'reverse', 1, 0, 0 FROM card_tracks WHERE id = ?`,
+    ).run(trackId);
+
+    const report = seedTrackMemory(db);
+    expect(report.tracks).toBe(2);
+    expect(report.dormant).toBe(1);
+    // The dormant one is NOT "already stored" — it was never considered.
+    expect(report.alreadyStored).toBe(0);
+    expect(report.seeded).toBe(1);
+
+    // And the four live figures reconcile against the total, which is the whole
+    // point of naming the basis.
+    expect(report.seeded + report.alreadyStored + report.withoutHistory + report.dormant).toBe(
+      report.tracks,
+    );
+
+    // Seeding did not touch it.
+    const dormantRow = db
+      .prepare("SELECT scheduler_state FROM card_tracks WHERE dormant <> 0")
+      .get() as { scheduler_state: string | null };
+    expect(dormantRow.scheduler_state).toBeNull();
     db.close();
   });
 });
