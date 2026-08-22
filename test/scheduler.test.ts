@@ -888,7 +888,7 @@ describe("the queue", () => {
     db.close();
   });
 
-  it("lists new tracks separately, in authoring order", () => {
+  it("lists new tracks separately", () => {
     const db = queueFixture();
     expect(newTracks(db, { now: NOW }).map((r) => r.cardId)).toEqual(["fresh"]);
     // A track with reps but no due date is NOT new — it is a data problem, and
@@ -918,6 +918,58 @@ describe("the queue", () => {
 const describeCorpus = HAVE_EXPORTS ? describe : describe.skip;
 
 describeCorpus("the real collection", () => {
+  /**
+   * DECISION 15, and the reason it needs a corpus-scale test rather than a
+   * fixture one: the defect it guards against is invisible at small n.
+   *
+   * `newTracks` used to `ORDER BY c.pos, c.id, t.id` and push `limit` into SQL.
+   * With one new card in a fixture that looks identical to the correct
+   * behaviour. Over the real 3,980 unlearned tracks it returned track ids
+   * `1, 2, 3, 8, 12, 20, 26, 28, 30, 34` — the front of the list — and the SAME
+   * TEN EVERY DAY, so the backlog would be worked in authoring order forever.
+   * The assertion that catches it is "a new day deals a new hand".
+   *
+   * A limit applied to a sorted query has already chosen the sample, so no
+   * amount of shuffling by the session layer recovers this. That is why the
+   * order moved into the function and the limit moved after it.
+   */
+  it("picks new tracks at random, unpaired, and stably within a day", () => {
+    const db = openDatabase(MEMORY);
+    importExportDirs(db, EXPORT_DIRS);
+
+    const morning = newTracks(db, { now: "2026-08-22T02:00:00+09:00", limit: 10 });
+    const evening = newTracks(db, { now: "2026-08-22T20:00:00+09:00", limit: 10 });
+    const tomorrow = newTracks(db, { now: "2026-08-23T10:00:00+09:00", limit: 10 });
+
+    expect(morning).toHaveLength(10);
+
+    // STABLE WITHIN A DAY. Re-reading the queue mid-session must not reshuffle
+    // it — that is why the key is hashed rather than Math.random().
+    expect(evening.map((t) => t.trackId)).toEqual(morning.map((t) => t.trackId));
+
+    // A NEW DAY DEALS A NEW HAND.
+    expect(tomorrow.map((t) => t.trackId)).not.toEqual(morning.map((t) => t.trackId));
+
+    // UNPAIRED: ten tracks must not be five cards twice over. HONEST LABEL —
+    // this is a GUARD, not a regression witness: measured, the old ordering also
+    // returned ten distinct cards, because a card's forward and reverse tracks
+    // are rarely both new. It passes before and after the fix. It is kept because
+    // decision 15 states the property, and a future ordering change could break
+    // it; it is not what caught the bug.
+    expect(new Set(morning.map((t) => t.cardId)).size).toBe(10);
+
+    // AND IT IS A SAMPLE OF THE WHOLE SET, not a prefix of it. Under the old
+    // ordering every id here came from the front of `c.pos`; now they are spread
+    // across the corpus, so the ten cannot all be in the first 10% of track ids.
+    const all = newTracks(db, {});
+    expect(all.length).toBeGreaterThan(3_000);
+    const ids = all.map((t) => t.trackId).sort((a, b) => a - b);
+    const cutoff = ids[Math.floor(ids.length * 0.1)] as number;
+    expect(morning.filter((t) => t.trackId <= cutoff).length).toBeLessThan(10);
+
+    db.close();
+  });
+
   it("REGRESSION: reports the queue the export actually implies", () => {
     const db = openDatabase(MEMORY);
     importExportDirs(db, EXPORT_DIRS);

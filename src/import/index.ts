@@ -263,7 +263,13 @@ export function importExports(
     // `deck_reverse_resolved` is read out of the database and the importer
     // cannot disagree with the view the app will use.
   });
-  phase("reviews", `${reviews.reviews} reviews across ${reviews.tracks} tracks`);
+  phase(
+    "reviews",
+    `${reviews.reviews} reviews across ${reviews.tracks} tracks` +
+      (reviews.tracksPreserved > 0
+        ? ` · ${reviews.tracksPreserved} locally-graded track(s) LEFT ALONE`
+        : ""),
+  );
 
   const tags = importTags(db, cards as unknown as MochiTaggedCard[]);
   phase("tags", `${tags.tags} tag paths, ${tags.cardTags} card tags`);

@@ -50,6 +50,7 @@
 import type { SqliteHandle } from "../db/browser.js";
 
 import { localDate, localDayNumber } from "./day.js";
+import { dailyOrderKey } from "./schedule.js";
 import { nowInHostOffset } from "./tracks.js";
 
 /** One row of the queue: a track, with everything the UI needs to name it. */
@@ -214,23 +215,66 @@ export function dueTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
 
 /**
  * Tracks that have never been reviewed — SPEC's `new?`, derived rather than
- * stored.
+ * stored. Returned in a RANDOM but STABLE order, and `limit` is applied to that
+ * order rather than in SQL.
  *
- * Ordered by the card's `pos` then track id, which is the order he authored
- * them in: a new card's siblings are usually related, and shuffling them is a
- * choice the review screen can make later rather than one baked in here.
+ * DECISION 15, AND THE TRAP IT CLOSES. Zach wants 10 new TRACKS a day, picked at
+ * random, with a card's forward and reverse not paired: "both forward and reverse
+ * doesn't have to be studied on the same day because it's random from the cards i
+ * haven't learned".
+ *
+ * This used to order by `c.pos, c.id, t.id` — authoring order — and its docstring
+ * said shuffling was "a choice the review screen can make later". **That is false
+ * the moment a `limit` exists.** A `LIMIT 10` on a sorted query has already chosen
+ * WHICH ten; the caller can only permute what it was handed. Taking the first ten
+ * of an authored list and shuffling them is not taking ten at random from 3,980.
+ *
+ * WHAT THE OLD BEHAVIOUR ACTUALLY DID, measured rather than reasoned: it returned
+ * track ids `1, 2, 3, 8, 12, 20, 26, 28, 30, 34` — the literal front of the list —
+ * and **the same ten every single day**, so the backlog would have been worked in
+ * authoring order forever. An earlier version of this comment also claimed it
+ * delivered "~5 cards as forward/reverse pairs". That was wrong: measured, those
+ * ten tracks span ten DISTINCT cards, because a card's two tracks are rarely both
+ * new. The pairing risk decision 15 rules out does not occur in this corpus; the
+ * no-randomness defect is the whole of the real bug.
+ *
+ * So the order is decided HERE, and the limit is applied after it. The key is
+ * `dailyOrderKey(localDay, trackId)`, not `Math.random()`: one day gives one
+ * order, so re-reading the queue mid-session does not reshuffle it, and a new day
+ * deals a new hand. Same reasoning as interval fuzz being keyed rather than
+ * random.
+ *
+ * THE COST, MEASURED, because the limit no longer reaches the database. Against
+ * the real 74 MB corpus, 3,980 unlearned tracks, Node and better-sqlite3, median
+ * of seven runs:
+ *
+ *     unlimited (3,980 rows)   14.8 ms
+ *     limit 10                 13.9 ms
+ *     limit 1                  12.2 ms      was 0.2 ms when LIMIT was in SQL
+ *
+ * The limit barely matters now, which is the point: the whole set is read and
+ * ordered either way. 13.9 ms once per session for a day's new cards is paid
+ * where it does not matter. If it ever does, the fix is a keyed order expression
+ * in SQL — but that means reimplementing `hash32` in two dialects and keeping
+ * them identical, which is a worse trade than 14 ms.
  */
 export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedTrack[] {
   const now = options.now ?? nowInHostOffset();
   const deck = deckFilter(options);
   const kind = kindFilter(options);
-  const cap = limitClause(options);
   const sql =
     `${COLUMNS} WHERE ${LIVE} AND t.due_at IS NULL AND t.reps = 0` +
-    `${deck.sql}${kind.sql} ORDER BY c.pos, c.id, t.id${cap.sql}`;
-  const rows = db.prepare(sql).all(...deck.params, ...kind.params, ...cap.params) as RawQueueRow[];
+    `${deck.sql}${kind.sql} ORDER BY t.id`;
+  const rows = db.prepare(sql).all(...deck.params, ...kind.params) as RawQueueRow[];
   const todayNumber = localDayNumber(now);
-  return rows.map((row) => toQueued(row, todayNumber));
+  const shuffled = rows
+    .map((row) => ({ row, key: dailyOrderKey(todayNumber, row.track_id) }))
+    // `key` collisions are possible over 32 bits; `track_id` breaks the tie so
+    // the order is total and reproducible rather than dependent on sort stability.
+    .sort((a, b) => a.key - b.key || a.row.track_id - b.row.track_id);
+  const limited =
+    options.limit === undefined ? shuffled : shuffled.slice(0, Math.max(0, options.limit));
+  return limited.map(({ row }) => toQueued(row, todayNumber));
 }
 
 export interface QueueCounts {

@@ -174,6 +174,24 @@ function hash32(key: number): number {
   return (x ^ (x >>> 15)) >>> 0;
 }
 
+/**
+ * Deterministic order key for (local day, track). Same day, same order; a new
+ * day reshuffles.
+ *
+ * `newTracks` needs a random pick over ~3,980 unlearned tracks (decision 15) and
+ * `Math.random()` would reshuffle mid-session and on every re-render. Keyed the
+ * way `fuzzFactor` is keyed, and for the same reason: reproducibility is what
+ * makes the queue an answer rather than a roll.
+ *
+ * The day is mixed with a large odd constant before the XOR so that adjacent
+ * days do not produce correlated orders — track ids are dense small integers, so
+ * `day ^ id` alone would leave the low bits of the order almost unchanged from
+ * one day to the next.
+ */
+export function dailyOrderKey(dayNumber: number, trackId: number): number {
+  return hash32(Math.imul(dayNumber, 0x9e3779b1) ^ trackId);
+}
+
 /** Uniform in [-width, +width), from a 32-bit key. */
 export function fuzzFactor(key: number, width: number = INTERVAL_FUZZ): number {
   return (hash32(key) / 0x1_0000_0000) * 2 * width - width;

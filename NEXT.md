@@ -20,7 +20,7 @@ live here. Preserve his wording if you edit it; don't paraphrase him away.
 (`b7794a9` fuzz + the cap's basis fix · `0e24ca2` forecast tile + heatmap tables ·
 `7709b41` the cap and relearning derivations · `b124dd0` the ratifications), then the
 browser-portability split. Gates: **18 files / 652 tests / 1 skipped, typecheck 0, build
-OK (17 export subpaths), `spike:check` clean.**
+OK (17 export subpaths), `spike:check` clean.** Re-check these figures rather than repeating them.
 
 **THE DECISION QUEUE IS EMPTY. Zach cleared all four questions on 2026-08-22** and every
 one is now written into `CLAUDE.md` as a settled decision. Do NOT reopen these; the last
@@ -158,7 +158,7 @@ state, not a gap.
 ## The gates, and the one chore that bites
 
 ```bash
-npm test          # 18 files, 652 passed, 1 skipped (gated FSRS refit). 33-88 s.
+npm test          # 18 files, 654 passed, 1 skipped (gated FSRS refit). 33-88 s.
                   # A "Timeout calling onTaskUpdate" line is Vitest's reporter under
                   # load, not a failing test. Check the pass count.
 npm run typecheck # exit 0

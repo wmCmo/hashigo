@@ -240,6 +240,14 @@ export interface ImportReviewsResult {
   readonly cards: number;
   readonly tracks: number;
   readonly tracksByKind: Readonly<Record<string, number>>;
+  /**
+   * Tracks whose SCHEDULING state this import declined to overwrite because the
+   * app had already graded them — see `INSERT_TRACK`. Zero on every import that
+   * has ever run, and it must stay reported rather than inferred: a re-import
+   * that quietly left 400 tracks alone is not the same event as one that
+   * rewrote them, and "imported cleanly" must not mean "imported everything".
+   */
+  readonly tracksPreserved: number;
   readonly reviews: number;
   readonly reviewsByKind: Readonly<Record<string, number>>;
   readonly passed: number;
@@ -564,6 +572,37 @@ export function planCardTracks(
 
 // ─── writing ─────────────────────────────────────────────────────────────────
 
+/**
+ * A RE-IMPORT MUST NOT REVERT A TRACK THIS APP HAS GRADED.
+ *
+ * Zach's decision 16 is "one last import when the app is finished, then never
+ * again -- unless the app breaks something and we have to re-import". The escape
+ * hatch is the destructive case: it fires precisely when local grades exist, and
+ * the unguarded upsert reverted `due_at`, `scheduled_days`, `reps`, `lapses`,
+ * `last_reviewed_at` and `scheduler` to Mochi's values -- silently losing every
+ * local review's effect on the schedule while the `reviews` rows themselves
+ * survived, so the log and the track would disagree.
+ *
+ * WHY CASE PER COLUMN AND NOT `DO UPDATE ... WHERE`. SQLite accepts a WHERE on
+ * the conflict clause, but when it excludes the row the `RETURNING` yields
+ * nothing -- and the caller throws on a missing id, because a track with no id
+ * cannot receive its reviews. Guarding each assignment keeps the row, keeps the
+ * id, and keeps the import idempotent.
+ *
+ * WHAT MOCHI STILL OWNS: `dormant` and `needs_rereview`. Those are card
+ * CONFIGURATION -- whether a reverse track should exist at all -- not scheduling
+ * state, and letting a locally-graded track ignore a reverse mode he turned off
+ * in Mochi would orphan history the app then refuses to schedule
+ * (`assertNoOrphanedReverseHistory` below is the invariant that would fail).
+ *
+ * Today `SELECT count(*) FROM reviews WHERE source = 'local'` is 0, so this
+ * changes nothing about any import that has ever run. It is cheap now and a
+ * data-loss bug the first time stage 7 writes a grade.
+ */
+const LOCALLY_GRADED = `EXISTS (
+  SELECT 1 FROM reviews r WHERE r.track_id = card_tracks.id AND r.source = 'local'
+)`;
+
 const INSERT_TRACK = `
 INSERT INTO card_tracks
   (card_id, kind, dormant, needs_rereview, due_at, scheduled_days, reps, lapses,
@@ -572,14 +611,20 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
 ON CONFLICT (card_id, kind) DO UPDATE SET
   dormant          = excluded.dormant,
   needs_rereview   = excluded.needs_rereview,
-  due_at           = excluded.due_at,
-  scheduled_days   = excluded.scheduled_days,
-  reps             = excluded.reps,
-  lapses           = excluded.lapses,
-  last_reviewed_at = excluded.last_reviewed_at,
-  scheduler        = excluded.scheduler,
+  due_at           = CASE WHEN ${LOCALLY_GRADED} THEN card_tracks.due_at
+                          ELSE excluded.due_at END,
+  scheduled_days   = CASE WHEN ${LOCALLY_GRADED} THEN card_tracks.scheduled_days
+                          ELSE excluded.scheduled_days END,
+  reps             = CASE WHEN ${LOCALLY_GRADED} THEN card_tracks.reps
+                          ELSE excluded.reps END,
+  lapses           = CASE WHEN ${LOCALLY_GRADED} THEN card_tracks.lapses
+                          ELSE excluded.lapses END,
+  last_reviewed_at = CASE WHEN ${LOCALLY_GRADED} THEN card_tracks.last_reviewed_at
+                          ELSE excluded.last_reviewed_at END,
+  scheduler        = CASE WHEN ${LOCALLY_GRADED} THEN card_tracks.scheduler
+                          ELSE excluded.scheduler END,
   updated_at       = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-RETURNING id`;
+RETURNING id, ${LOCALLY_GRADED} AS preserved`;
 
 // import_key makes this idempotent. DO NOTHING rather than DO UPDATE because
 // reviews is append-only and its BEFORE UPDATE trigger would abort the import.
@@ -601,11 +646,15 @@ ON CONFLICT (import_key) DO NOTHING`;
 export function insertPlannedTracks(
   db: Db,
   plans: Iterable<PlannedTrack>,
-): { tracks: number; reviews: number } {
+): { tracks: number; reviews: number; tracksPreserved: number } {
   const insertTrack = db.prepare(INSERT_TRACK);
   const insertReview = db.prepare(INSERT_REVIEW);
   let tracks = 0;
   let reviews = 0;
+  // Counted, not silent: this project's rule is that anything a write DECLINED
+  // to do has to be reportable, or "imported cleanly" reads as "imported
+  // everything".
+  let tracksPreserved = 0;
 
   for (const plan of plans) {
     const row = insertTrack.get(
@@ -619,11 +668,12 @@ export function insertPlannedTracks(
       plan.lapses,
       plan.lastReviewedAt,
       plan.scheduler,
-    ) as { id: number } | undefined;
+    ) as { id: number; preserved: number } | undefined;
     if (row === undefined) {
       throw new Error(`card_tracks upsert returned no id for ${plan.cardId} ${plan.kind}`);
     }
     tracks += 1;
+    if (row.preserved === 1) tracksPreserved += 1;
     for (const review of plan.reviews) {
       const result = insertReview.run(
         row.id,
@@ -644,7 +694,7 @@ export function insertPlannedTracks(
     }
   }
 
-  return { tracks, reviews };
+  return { tracks, reviews, tracksPreserved };
 }
 
 /**
@@ -771,6 +821,7 @@ export function importReviews(
     cards: cardCount,
     tracks: written.tracks,
     tracksByKind,
+    tracksPreserved: written.tracksPreserved,
     reviews: written.reviews,
     reviewsByKind,
     passed,

@@ -139,7 +139,7 @@ for day — 108 due at the as-of date plus 39+86+95+115 is the 443 the scheduler
 reports four days later.
 
 ```bash
-npm test                # 18 files, 652 passed, 1 skipped (the FSRS refit, gated)
+npm test                # 18 files, 654 passed, 1 skipped (the FSRS refit, gated)
                         # 32.7-87.7 s over six runs. Under load it can also emit
                         # "Timeout calling onTaskUpdate" — that is Vitest's reporter
                         # RPC, not a failure. Check the pass count, not the error line.
@@ -356,7 +356,61 @@ commands.
    worth a migration that rewrites due dates Mochi set. His reasoning: *"are we saying
    that, on some day, i have to review 3650 in a single day? if not then we don't have
    to touch it, no reason to."* No, and correct.
-15. **Links render PLAINLY, in place, on whatever side they are authored on.**
+15. **New cards are 10 TRACKS a day, chosen at RANDOM, and forward/reverse are not
+   paired.** Decided 2026-08-22, and it is narrower than decision 12 alone. Zach:
+   *"10 new tracks … 1 forward and 1 reverse counts as 2 tracks … both forward and
+   reverse doesn't have to be studied on the same day because it's random from the cards
+   i haven't learned."* Basis matters here (decision 6): 3,980 new **tracks** over 2,577
+   distinct **cards**, so tracks means ~398 days to clear the backlog and cards would
+   mean ~258.
+   **BUILT 2026-08-22, and the bug it closed is worth knowing.** `newTracks` used to
+   order by `c.pos, c.id, t.id` — authoring order — and push `limit` into SQL, with a
+   docstring saying shuffling was "a choice the review screen can make later". That is
+   false once a `LIMIT` exists: a limit applied to a sorted query has already CHOSEN the
+   sample, so no shuffling by the session layer recovers it. Measured, the old path
+   returned track ids `1, 2, 3, 8, 12, 20, 26, 28, 30, 34` — the front of the list — and
+   **the same ten every day**, so the backlog would have been worked in authoring order
+   forever. (It did NOT pair forward with reverse; an earlier version of this line said
+   it did. Those ten span ten DISTINCT cards, because a card's two tracks are rarely both
+   new. The pairing this decision rules out does not occur in the corpus. The missing
+   randomness was the whole bug.) The order now lives in `newTracks` and the limit is
+   applied after it, keyed by `dailyOrderKey(localDay, trackId)` — the `hash32` precedent
+   `fuzzFactor` uses, never `Math.random()`, so one day gives one order and re-reading
+   the queue mid-session does not reshuffle it. Costs 13.9 ms for a day's ten against
+   0.2 ms when the LIMIT was in SQL; paid once a session.
+16. **ONE final import from Mochi, then never again.** Decided 2026-08-22: *"after our
+   app is finish … ill do one last import, and that's it, there should be no import,
+   unless the app breaks something and we have to re import."*
+   **The escape hatch is the dangerous case and it needs a guard.** `INSERT_TRACK`'s
+   `ON CONFLICT … DO UPDATE` (`src/import/reviews.ts:569-583`) reverts a locally-graded
+   track's due date, reps and lapses to Mochi's. That is harmless for the planned final
+   import, because there are no local grades before it. It is destructive for exactly the
+   case he named — re-importing to recover from a bug, when local history exists. So the
+   importer must refuse, or preserve, a track carrying `reviews.source = 'local'`, rather
+   than trusting that nobody re-imports. Today `SELECT count(*) FROM reviews WHERE
+   source = 'local'` is 0, so this is cheap to build now and a data-loss bug later.
+17. **A local export/backup is NOT day one — but it is required before he trusts the
+   app, and decision 16 is why.** He pushed back correctly: *"local backup? i thought
+   everything is already on the local…? and why do we need to backup on day 1??"* Day one
+   does not need it. The reason it cannot be dropped: OPFS is browser-owned storage —
+   clearing site data or a browser eviction takes it — and TODAY that is survivable
+   because every review is reconstructible from `exports/`. After decision 16's final
+   import, it is not: from the first local grade onward, `exports/` no longer receives his
+   history and the OPFS database is the ONLY copy. `notes/persistence.md:204` already
+   prescribes the one-tap export; measured 2026-08-22, **no code path gets a database
+   out** of either half (0 matches for export/download in `src/` and `spike/`). Schedule
+   it with the cutover, not with day one.
+18. **The TTS key NEVER goes in the client.** Decided 2026-08-22: *"we have to find a way
+   that will not leak my key."* So the provider call is proxied through the Cloudflare
+   Worker that stage 11 needs anyway; the PWA holds no credential. This is free to decide
+   now and a rewrite after stage 9 ships, and a client-side PWA cannot hold a key
+   privately at all — anything the page can read, a reader can read.
+   Correcting the record: `SETTING_KEYS` has four members and none is a credential, and
+   nothing under `src/` has ever made a billable call — but `tools/accent_probe.py:48`
+   reads `.env` and the 22 synthesis calls behind the TTS decision DID spend his quota.
+   That script loads the file by NAME ONLY and prints nothing from it, which is the
+   pattern to keep. An audit statement scoped to `src/` is not a statement about `tools/`.
+19. **Links render PLAINLY, in place, on whatever side they are authored on.**
    Drafts 1-7 called the Jisho URL on 漢字's side 4 an answer leak and prescribed
    deferring link rendering in reverse mode. Zach overruled that on 2026-08-20:
    there is no hover on a phone, a long-press is deliberate, and he never checks a

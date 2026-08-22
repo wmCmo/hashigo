@@ -533,6 +533,80 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
 
   // ── 2. idempotence ─────────────────────────────────────────────────────────
 
+  /**
+   * DECISION 16'S ESCAPE HATCH, which is the destructive case.
+   *
+   * "One last import, then never again -- unless the app breaks something and we
+   * have to re-import." That recovery re-import happens precisely when local
+   * grades exist, and the unguarded upsert reverted the track's whole scheduling
+   * state to Mochi's: due date, reps, lapses, last_reviewed_at, scheduler. The
+   * `reviews` rows survive (they are append-only and keyed on `import_key`), so
+   * the log and the track would silently DISAGREE -- the worst shape for this
+   * bug, because nothing looks lost.
+   *
+   * Fabricates the local grade rather than waiting for stage 7: this must be
+   * guarded before the first real one exists, not after.
+   */
+  it("does NOT revert a locally-graded track on re-import, and says so", () => {
+    const track = db
+      .prepare(
+        `SELECT id, card_id, kind FROM card_tracks
+          WHERE due_at IS NOT NULL AND reps > 0 ORDER BY id LIMIT 1`,
+      )
+      .get() as { id: number; card_id: string; kind: string };
+    expect(track).toBeDefined();
+
+    // What the app would write: a local review, and the track moved on from it.
+    db.prepare(
+      `INSERT INTO reviews
+         (track_id, reviewed_at, tz_offset_minutes, time_unknown, remembered,
+          elapsed_days, scheduled_days, next_scheduled_days, due_at, duration_ms,
+          rereview, source, import_key)
+       VALUES (?, '2026-08-22T09:00:00Z', 540, 0, 1, 3, 3, 40, '2026-10-01T15:00:00Z',
+               4200, 0, 'local', NULL)`,
+    ).run(track.id);
+    db.prepare(
+      `UPDATE card_tracks
+          SET due_at = '2099-01-01T15:00:00Z', scheduled_days = 4242,
+              reps = 999, lapses = 42, scheduler = 'fsrs6'
+        WHERE id = ?`,
+    ).run(track.id);
+
+    const again = importExports(db, sources, {});
+
+    // The count is REPORTED, not inferred. A re-import that quietly left tracks
+    // alone must not read the same as one that rewrote them.
+    expect(again.reviews.tracksPreserved).toBe(1);
+
+    const after = db
+      .prepare(
+        `SELECT due_at, scheduled_days, reps, lapses, scheduler FROM card_tracks WHERE id = ?`,
+      )
+      .get(track.id) as Record<string, unknown>;
+    expect(after).toEqual({
+      due_at: "2099-01-01T15:00:00Z",
+      scheduled_days: 4242,
+      reps: 999,
+      lapses: 42,
+      scheduler: "fsrs6",
+    });
+
+    // AND EVERY OTHER TRACK IS STILL UPSERTED NORMALLY. A guard that froze the
+    // whole table would pass the assertion above and be a worse bug.
+    const others = db
+      .prepare("SELECT count(*) AS n FROM card_tracks WHERE scheduler = 'mochi'")
+      .get() as { n: number };
+    expect(others.n).toBeGreaterThan(9_000);
+
+    // Put the corpus back: the suite's later tests assert corpus-wide figures.
+    db.prepare("DELETE FROM reviews WHERE source = 'local'").run();
+    db.prepare(
+      `UPDATE card_tracks SET due_at = NULL, scheduled_days = NULL, reps = 0,
+              lapses = 0, scheduler = 'mochi' WHERE id = ?`,
+    ).run(track.id);
+    importExports(db, sources, {});
+  });
+
   it("re-imports with no duplication and no drift", () => {
     const before = tableCounts();
     const refcounts = count("SELECT COALESCE(sum(refcount), 0) FROM blobs");
