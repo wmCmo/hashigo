@@ -24,12 +24,13 @@
  *      is not what `stabilityShortTerm` is there for. `reviews.elapsed_days`
  *      still stores the exact fractional measurement — see `./day.ts`, and
  *      decision 6 in CLAUDE.md.
- *   2. THE INTERVAL IS ROUNDED ONCE, HERE. `intervalDays` is a whole number,
- *      clamped by `clampInterval`, and it is what both the due date and
+ *   2. THE INTERVAL IS ROUNDED, CLAMPED AND FUZZED ONCE, HERE. `intervalDays` is
+ *      a whole number and it is what BOTH the due date and
  *      `reviews.next_scheduled_days` are computed from. Rounding at two call
  *      sites is how a planned interval and a due date drift apart, and
  *      `review_interval_audit` would then report a chain break on data that is
- *      merely inconsistently rounded.
+ *      merely inconsistently rounded. Fuzz has the same property and a sharper
+ *      failure: computed at READ time instead, a due date jitters on every query.
  *   3. GRADES ARE BINARY. `gradeFor` is the only mapping, and it is imported
  *      rather than restated. w[15] and w[16] cannot be reached from here, which
  *      is the point.
@@ -47,6 +48,7 @@ import { gradeFor, type BinaryGrade } from "../schema/index.js";
 import type { ReviewObservation } from "./algorithms/index.js";
 import { fsrs6, type Fsrs6Parameters, type Fsrs6State } from "./algorithms/fsrs6.js";
 import {
+  INTERVAL_FUZZ,
   MAX_INTERVAL_DAYS,
   SCHEDULER_PARAMETERS,
   TARGET_RETENTION,
@@ -85,6 +87,16 @@ export interface GradeRequest {
   readonly maxIntervalDays?: number;
   /** Defaults to `SCHEDULER_PARAMETERS`. Tests and a refit pass their own. */
   readonly parameters?: Fsrs6Parameters;
+  /**
+   * The track id, which is what interval fuzz is keyed on. Omit and NO FUZZ is
+   * applied — which is right for the pure arithmetic tests below and wrong for
+   * anything that writes a due date, so `gradeTrack` always passes it.
+   *
+   * It must be the TRACK and nothing coarser. See `fuzzInterval`.
+   */
+  readonly fuzzKey?: number;
+  /** Fuzz width. Defaults to the settled `INTERVAL_FUZZ` (±5%). 0 disables it. */
+  readonly fuzzWidth?: number;
 }
 
 export interface GradeResult {
@@ -98,11 +110,20 @@ export interface GradeResult {
    * was surprised.
    */
   readonly retrievability: number | null;
-  /** WHOLE days, at least 1, at most `maxIntervalDays`. What ships. */
+  /**
+   * WHOLE days, at least 1. What ships — and note that it can exceed
+   * `maxIntervalDays` by up to the fuzz width, because fuzz is applied AFTER the
+   * cap. That is deliberate and measured: 99.2% of the tracks this scheduler
+   * would cap want an interval past 384 days, so fuzzing before the cap moves
+   * none of them. `FUZZ_MAY_EXCEED_MAX_INTERVAL` in `./policy.ts` has the
+   * numbers and the conservative alternative.
+   */
   readonly intervalDays: number;
+  /** `intervalDays` before fuzz: rounded, clamped, and the model's own answer. */
+  readonly cappedIntervalDays: number;
   /** Before rounding and clamping. Kept so a clip is visible, not implied. */
   readonly rawIntervalDays: number;
-  /** True when the 365-day ceiling, not the model, chose `intervalDays`. */
+  /** True when the 365-day ceiling, not the model, chose `cappedIntervalDays`. */
   readonly clippedByCap: boolean;
   /** True when this review created the memory rather than testing it. */
   readonly firstReview: boolean;
@@ -130,6 +151,52 @@ function intervalOf(
     throw new TypeError(`${model.id} returned no interval, which FSRS-6 cannot do`);
   }
   return raw;
+}
+
+// ─── interval fuzz ───────────────────────────────────────────────────────────
+
+/**
+ * splitmix32's finalizer: two multiply-xorshift rounds over a 32-bit key.
+ *
+ * DETERMINISTIC ON PURPOSE, and not `Math.random()`. Three things follow from
+ * that and each of them is worth more than the randomness would be:
+ *
+ *   * a track's due date is a pure function of its state, so a schedule can be
+ *     recomputed, diffed and tested rather than only observed;
+ *   * sync cannot produce two devices that disagree about when a card is due;
+ *   * the tests below can assert an exact interval instead of a range, which is
+ *     what let the cohort-versus-track keying question be settled by a number.
+ */
+function hash32(key: number): number {
+  let x = (key + 0x9e3779b9) | 0;
+  x = Math.imul(x ^ (x >>> 16), 0x21f0aaad);
+  x = Math.imul(x ^ (x >>> 15), 0x735a2d97);
+  return (x ^ (x >>> 15)) >>> 0;
+}
+
+/** Uniform in [-width, +width), from a 32-bit key. */
+export function fuzzFactor(key: number, width: number = INTERVAL_FUZZ): number {
+  return (hash32(key) / 0x1_0000_0000) * 2 * width - width;
+}
+
+/**
+ * Spread an interval by ±`width`, keyed on `key`.
+ *
+ * `key` MUST identify the track and nothing coarser. Keying it on the interval
+ * value, or on the due date, translates a clump instead of spreading it and
+ * measures WORSE than no fuzz at all — see `INTERVAL_FUZZ` in `./policy.ts` for
+ * the table.
+ *
+ * One and two days are returned unchanged: ±5% of them rounds to zero anyway,
+ * and saying so is cheaper than a reader wondering whether a lapse gets jittered.
+ */
+export function fuzzInterval(
+  intervalDays: number,
+  key: number,
+  width: number = INTERVAL_FUZZ,
+): number {
+  if (intervalDays <= 2) return intervalDays;
+  return Math.max(1, Math.round(intervalDays * (1 + fuzzFactor(key, width))));
 }
 
 function observation(elapsedDays: number, grade: BinaryGrade): ReviewObservation {
@@ -188,13 +255,20 @@ export function gradeMemory(request: GradeRequest): GradeResult {
   }
 
   const rawIntervalDays = intervalOf(model, memory, targetRetention);
-  const intervalDays = Math.round(clampInterval(rawIntervalDays, maxIntervalDays));
+  const cappedIntervalDays = Math.round(clampInterval(rawIntervalDays, maxIntervalDays));
+  // ONCE, HERE, AT GRADE TIME. The other place this could go is the queue, and
+  // putting it there makes a due date jitter on every read — see policy.ts.
+  const intervalDays =
+    request.fuzzKey === undefined
+      ? cappedIntervalDays
+      : fuzzInterval(cappedIntervalDays, request.fuzzKey, request.fuzzWidth);
 
   return {
     memory: { stability: memory.stability, difficulty: memory.difficulty },
     grade,
     retrievability,
     intervalDays,
+    cappedIntervalDays,
     rawIntervalDays,
     clippedByCap: rawIntervalDays > maxIntervalDays,
     firstReview,

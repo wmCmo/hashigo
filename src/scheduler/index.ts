@@ -44,6 +44,8 @@ export {
 } from "./day.js";
 
 export {
+  FUZZ_MAY_EXCEED_MAX_INTERVAL,
+  INTERVAL_FUZZ,
   MAX_INTERVAL_DAYS,
   PARAMETERS_ARE_PROVISIONAL,
   SCHEDULER_ALGORITHM,
@@ -57,6 +59,8 @@ export {
 
 export {
   SchedulerStateError,
+  fuzzFactor,
+  fuzzInterval,
   gradeMemory,
   intervalForMemory,
   parseMemory,

@@ -10,6 +10,8 @@ import { FSRS6_DEFAULT_PARAMETERS } from "../src/scheduler/algorithms/fsrs6.js";
 import { GRADE_AGAIN, GRADE_GOOD, type ReviewObservation } from "../src/scheduler/algorithms/index.js";
 import {
   DormantTrackError,
+  FUZZ_MAY_EXCEED_MAX_INTERVAL,
+  INTERVAL_FUZZ,
   InstantFormatError,
   MAX_INTERVAL_DAYS,
   PARAMETERS_ARE_PROVISIONAL,
@@ -22,6 +24,8 @@ import {
   dueTracks,
   exactDaysBetween,
   formatInstant,
+  fuzzFactor,
+  fuzzInterval,
   gradeMemory,
   gradeTrack,
   intervalForMemory,
@@ -293,6 +297,90 @@ describe("grading, as arithmetic", () => {
     );
   });
 
+  it("spreads an interval by ±5%, keyed on the track and nothing coarser", () => {
+    // THE PROPERTY THE DECISION IS ABOUT. 3,650 of the 8,518 live scheduled
+    // tracks sit on exactly 365 days, so the thing fuzz has to do is give two
+    // tracks that agree on everything DIFFERENT due dates. Keyed on the interval
+    // instead, they would all agree and the clump would merely translate —
+    // measured at worst-day 295 against a no-fuzz baseline of 188.
+    const shipped = new Set<number>();
+    for (let trackId = 1; trackId <= 200; trackId += 1) {
+      shipped.add(fuzzInterval(365, trackId));
+    }
+    expect(shipped.size).toBeGreaterThan(20);
+    // What keying it per COHORT would produce, as one line: one value, 200 times.
+    const cohortKeyed = new Set([...Array(200)].map(() => fuzzInterval(365, 365)));
+    expect(cohortKeyed.size).toBe(1);
+
+    // Inside the width, and never outside it.
+    for (const interval of shipped) {
+      expect(interval).toBeGreaterThanOrEqual(Math.floor(365 * (1 - INTERVAL_FUZZ)));
+      expect(interval).toBeLessThanOrEqual(Math.ceil(365 * (1 + INTERVAL_FUZZ)));
+    }
+    // Deterministic: the same track always lands on the same day, which is what
+    // lets two synced devices agree without exchanging a random seed.
+    expect(fuzzInterval(365, 42)).toBe(fuzzInterval(365, 42));
+  });
+
+  it("keeps the fuzz factor centred and bounded over many keys", () => {
+    let low = 1;
+    let high = -1;
+    let sum = 0;
+    const N = 20_000;
+    for (let key = 0; key < N; key += 1) {
+      const f = fuzzFactor(key);
+      expect(f).toBeGreaterThanOrEqual(-INTERVAL_FUZZ);
+      expect(f).toBeLessThan(INTERVAL_FUZZ);
+      low = Math.min(low, f);
+      high = Math.max(high, f);
+      sum += f;
+    }
+    // Centred: a biased hash would lengthen or shorten every interval he has.
+    expect(Math.abs(sum / N)).toBeLessThan(0.001);
+    // And it actually reaches the ends rather than hugging the middle.
+    expect(low).toBeLessThan(-INTERVAL_FUZZ * 0.99);
+    expect(high).toBeGreaterThan(INTERVAL_FUZZ * 0.99);
+  });
+
+  it("leaves one and two days alone, and never returns less than a day", () => {
+    for (let key = 0; key < 50; key += 1) {
+      expect(fuzzInterval(1, key)).toBe(1);
+      expect(fuzzInterval(2, key)).toBe(2);
+      expect(fuzzInterval(3, key)).toBeGreaterThanOrEqual(1);
+    }
+    // Width 0 is the off switch a measurement uses; it must be exact, not close.
+    expect(fuzzInterval(365, 7, 0)).toBe(365);
+  });
+
+  it("applies fuzz AFTER the cap, which is the only order that moves anything", () => {
+    // Measured, and the reason this order was chosen: seeding every live track
+    // and asking the fitted model what it wants at 0.90 gives a MEDIAN raw
+    // interval of 988 days, and 6,617 of the 6,669 tracks over the cap (99.2%)
+    // want more than 365/0.95 = 384 days. Fuzz applied before the cap cannot
+    // pull any of those under 365 — they clamp straight back onto it.
+    const strong = { stability: 20_000, difficulty: 2 };
+    const shipped = new Set<number>();
+    for (let trackId = 1; trackId <= 100; trackId += 1) {
+      const result = gradeMemory({ memory: strong, elapsedDays: 1, remembered: 1, fuzzKey: trackId });
+      expect(result.cappedIntervalDays).toBe(MAX_INTERVAL_DAYS);
+      expect(result.clippedByCap).toBe(true);
+      shipped.add(result.intervalDays);
+    }
+    // The cap cohort is spread, not pinned.
+    expect(shipped.size).toBeGreaterThan(10);
+    expect(Math.min(...shipped)).toBeLessThan(MAX_INTERVAL_DAYS);
+    expect(Math.max(...shipped)).toBeGreaterThan(MAX_INTERVAL_DAYS);
+    // And the overshoot is bounded by the width, not open-ended. 383 < 454, the
+    // longest gap ever observed, which is what the cap exists to stay inside.
+    expect(Math.max(...shipped)).toBeLessThanOrEqual(383);
+    expect(FUZZ_MAY_EXCEED_MAX_INTERVAL).toBe(true);
+  });
+
+  it("is off unless a key is given, so the pure tests stay exact", () => {
+    const unfuzzed = gradeMemory({ memory: { stability: 100, difficulty: 5 }, elapsedDays: 30, remembered: 1 });
+    expect(unfuzzed.intervalDays).toBe(unfuzzed.cappedIntervalDays);
+  });
+
   it("replays a history into a state, and returns null for no history", () => {
     expect(seedMemory([])).toBeNull();
     const seeded = seedMemory(observations([0, 1], [3, 1], [10, 1], [30, 0], [1, 1]));
@@ -503,8 +591,12 @@ describe("grading against the database", () => {
     expect(a.elapsedDaysWhole).toBe(40);
     expect(b.elapsedDaysWhole).toBe(40);
     expect(a.memory).toEqual(b.memory);
-    expect(a.intervalDays).toBe(b.intervalDays);
     expect(a.retrievability).toBe(b.retrievability);
+    // `cappedIntervalDays`, not `intervalDays`: the claim here is about the
+    // MODEL, and fuzz is keyed on the track id, so comparing the shipped
+    // interval would only agree because both fixtures happen to number their
+    // one track the same.
+    expect(a.cappedIntervalDays).toBe(b.cappedIntervalDays);
 
     // The MEASURED column is the other number, and it does differ — which is the
     // whole reason both exist.
@@ -517,6 +609,61 @@ describe("grading against the database", () => {
     expect(stored.elapsed_days).toBeCloseTo(40.0833, 3);
     early.db.close();
     late.db.close();
+  });
+
+  it("fuzzes with the TRACK ID, so two identical cards do not stack on one day", () => {
+    // End to end, through the write path. Two tracks on two cards with byte-
+    // identical histories, graded at the same instant: everything the model sees
+    // is the same, so the only thing that can separate their due dates is the
+    // fuzz key — and it has to, or a heavy study day returns as a spike a year
+    // later. Today that spike is real and measured: worst future day 188.
+    const db = openDatabase(MEMORY);
+    db.prepare("INSERT INTO decks (id, name) VALUES ('d', '日本語')").run();
+    const dueDates = new Set<string>();
+    const intervals = new Set<number>();
+    const preFuzz = new Set<number>();
+    for (let i = 0; i < 40; i += 1) {
+      const cardId = `c${i}`;
+      db.prepare("INSERT INTO cards (id, deck_id, name) VALUES (?, 'd', '橋')").run(cardId);
+      const track = db
+        .prepare("INSERT INTO card_tracks (card_id, kind) VALUES (?, 'forward') RETURNING id")
+        .get(cardId) as { id: number };
+      // Two graded reviews each, identical timing, so they reach a long interval.
+      gradeTrack(db, { trackId: track.id, remembered: 1, reviewedAt: "2026-01-01T20:00:00+09:00" });
+      const second = gradeTrack(db, {
+        trackId: track.id,
+        remembered: 1,
+        reviewedAt: "2026-03-01T20:00:00+09:00",
+      });
+      dueDates.add(second.dueAt);
+      intervals.add(second.intervalDays);
+      preFuzz.add(second.cappedIntervalDays);
+    }
+    // Every card had an identical history, so the model's own answer is ONE
+    // value for all forty — which is precisely the stacking fuzz has to break.
+    expect(preFuzz.size).toBe(1);
+    expect(intervals.size).toBeGreaterThan(5);
+    expect(dueDates.size).toBeGreaterThan(5);
+    expect(auditRows(db)).toEqual([]);
+    db.close();
+  });
+
+  it("stores the FUZZED interval, which is what keeps the audit honest", () => {
+    // The fuzzed value is what was PLANNED, so it is what belongs in
+    // reviews.next_scheduled_days — and the next review's scheduled_days must
+    // then match it. Storing the unfuzzed value instead would break the chain on
+    // every single review, which is exactly the invariant review_interval_audit
+    // exists to catch.
+    const { db, trackId } = fixture({ history: MOCHI_HISTORY });
+    const first = gradeTrack(db, { trackId, remembered: 1, reviewedAt: "2026-03-12T20:00:00+09:00" });
+    const stored = db.prepare("SELECT next_scheduled_days FROM reviews WHERE id = ?").get(first.reviewId) as {
+      next_scheduled_days: number;
+    };
+    expect(stored.next_scheduled_days).toBe(first.intervalDays);
+    const second = gradeTrack(db, { trackId, remembered: 1, reviewedAt: "2026-06-01T20:00:00+09:00" });
+    expect(second.scheduledDays).toBe(first.intervalDays);
+    expect(auditRows(db)).toEqual([]);
+    db.close();
   });
 
   it("takes the planned interval from the previous REVIEW, not from the track column", () => {
@@ -817,7 +964,13 @@ describeCorpus("the real collection", () => {
     });
     expect(graded.memorySource).toBe("seeded");
     expect(graded.intervalDays).toBeGreaterThanOrEqual(1);
-    expect(graded.intervalDays).toBeLessThanOrEqual(MAX_INTERVAL_DAYS);
+    // Fuzz is applied AFTER the cap, so the shipped interval may sit up to 5%
+    // past 365 — and on this card it does. The cap still binds the model's own
+    // answer, which is what `cappedIntervalDays` reports.
+    expect(graded.cappedIntervalDays).toBeLessThanOrEqual(MAX_INTERVAL_DAYS);
+    expect(graded.intervalDays).toBeLessThanOrEqual(
+      Math.round(MAX_INTERVAL_DAYS * (1 + INTERVAL_FUZZ)),
+    );
     expect(db.prepare("SELECT count(*) AS n FROM reviews").get()).toEqual({ n: 102_021 });
     expect(auditRows(db)).toEqual([]);
     db.close();

@@ -252,6 +252,12 @@ export interface GradeTrackInput {
   readonly targetRetention?: number;
   readonly maxIntervalDays?: number;
   readonly parameters?: Fsrs6Parameters;
+  /**
+   * Interval fuzz width, defaulting to the settled ±5%. The KEY is not settable:
+   * it is the track id, always, because that is the whole content of the
+   * decision. Pass 0 to switch fuzz off, which only a measurement should do.
+   */
+  readonly fuzzWidth?: number;
   /** 1 when this is a leech re-review rather than a scheduled one. */
   readonly rereview?: 0 | 1;
 }
@@ -355,6 +361,13 @@ export function gradeTrack(db: SqliteHandle, input: GradeTrackInput): GradedRevi
       remembered: input.remembered,
       targetRetention,
       maxIntervalDays: input.maxIntervalDays ?? MAX_INTERVAL_DAYS,
+      // KEYED PER TRACK. Not per cohort — keying the shift on the interval or on
+      // the due date translates a clump rather than spreading it, and measures
+      // worse than no fuzz at all (policy.ts, `INTERVAL_FUZZ`). Not optional
+      // either: every write path goes through here, so a due date this function
+      // produces is always fuzzed.
+      fuzzKey: input.trackId,
+      ...(input.fuzzWidth === undefined ? {} : { fuzzWidth: input.fuzzWidth }),
       ...(input.parameters === undefined ? {} : { parameters: input.parameters }),
     });
 

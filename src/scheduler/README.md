@@ -31,9 +31,9 @@ npx vite-node src/scheduler/cli.ts -- seed     --db build/hashigo.db   # writes 
 
 | file | what it owns | needs a database? |
 |---|---|---|
-| `policy.ts` | the settled configuration — FSRS-6, 365 days, 0.90, the fitted weights | no |
+| `policy.ts` | the settled configuration — FSRS-6, 365 days, 0.90, ±5% fuzz, the fitted weights | no |
 | `day.ts` | instants, local dates, whole-day arithmetic, due dates at local midnight | no |
-| `schedule.ts` | grade → next memory state → next interval | no |
+| `schedule.ts` | grade → next memory state → next interval, including fuzz | no |
 | `tracks.ts` | reading state, seeding from history, writing a review | yes |
 | `queue.ts` | what is due, what is new, how much, what is coming | yes |
 
@@ -46,7 +46,7 @@ get wrong (see below) is visible in a signature rather than buried in SQL.
 type-level guarantee only — every test here runs on better-sqlite3, and no
 function in this directory has yet executed against sqlite-wasm.
 
-## Four things worth knowing before changing anything here
+## Five things worth knowing before changing anything here
 
 **1. An imported Mochi track is SEEDED from its history, lazily.** 9,026 of the
 13,392 tracks carry `scheduler = 'mochi'` and `scheduler_state = NULL` — Mochi
@@ -85,6 +85,28 @@ writes indistinguishable in shape from one the importer wrote. My first version
 of that comment claimed midnight was what prevented the learn-ahead defect;
 breaking `dueInstant` on purpose showed the queue test staying green, so the
 claim was wrong and is corrected in the file.
+
+**5. Interval fuzz is ±5%, keyed on the TRACK ID, applied AFTER the cap.** All
+three of those are load-bearing and all three are measured (`scripts/fuzz-load.ts`,
+which re-runs every number in `INTERVAL_FUZZ`'s comment).
+
+* Keyed on anything coarser — the interval value, the due date — it TRANSLATES the
+  clump instead of spreading it. Worst future day: 188 with no fuzz, 71 keyed per
+  track, **295** keyed per due-date cohort. Getting the key wrong is worse than
+  not doing it.
+* After the cap, because 42.9% of live scheduled tracks sit on exactly 365 days
+  and 99.2% of the tracks this scheduler would cap want more than 384 days —
+  fuzz before the cap clamps every one of them straight back onto 365 and moves
+  nothing. The price is that an issued interval can reach 383 days;
+  `MAX_INTERVAL_DAYS` is a centre now, not a ceiling, and `cappedIntervalDays` on
+  the result is the model's own pre-fuzz answer.
+* At grade time, not read time. It is computed in `gradeMemory` and stored;
+  nothing in `queue.ts` knows fuzz exists. Computed on read, a due date would
+  jitter on every query.
+
+It is deterministic — `hash32` over the track id, not `Math.random()` — so a
+schedule can be diffed and tested, and two synced devices cannot disagree about
+when a card is due.
 
 ## What stage 6 is NOT
 
