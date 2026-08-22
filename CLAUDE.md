@@ -12,11 +12,10 @@ study, `src/cards` turns a card id into a rendered card and resolves its audio o
 617.9 MiB store. What does not exist is **the screen**: nothing mounts a card in a browser
 and nothing calls `play()`. That is stage 7.
 
-> [!warning] Two things to check before you touch anything
-> 1. **`git status` — the tree is NOT clean.** A batch of built, green, uncommitted work
->    is sitting in it. `NEXT.md`'s "STATE RIGHT NOW" block lists exactly what.
-> 2. **There is no unsupervised work left.** Table A in `NEXT.md` is empty and the
->    critical path is done. What remains is stage 7, and its shape is Zach's.
+> [!warning] Before you pick anything up
+> **There is no unsupervised work left.** Table A in `NEXT.md` is empty, the critical path
+> is done, and the tree is clean as of `a4e00b3`. What remains is stage 7, and its shape is
+> Zach's — so the correct answer to a bare "proceed" is to say so, not to invent a task.
 
 **Zach's decision queue is NOT empty — it has five items and they live in his planner**
 (`C:\DEV\obsidian\second-brain\PARA\1Projects\ハシゴ\Planner.md`, which no agent reads;

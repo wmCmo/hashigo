@@ -20,23 +20,18 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 
 ---
 
-## STATE RIGHT NOW — 2026-08-22, and the tree is NOT clean
+## STATE RIGHT NOW — 2026-08-22, tree clean, everything committed
 
-> [!warning] **RUN `git status` BEFORE ANYTHING ELSE.**
-> A later batch of work is built, green and **uncommitted**: `src/cards` (the card loader
-> and the audio resolver), `src/blobs/generation.ts` (the cache-key move),
-> `src/text/parenthesis.ts` + `scripts/reading-apply.ts` (the 13 `読み` rows, applied to
-> `build/hashigo.db`), and two new `notes/`. **Do not `git checkout`, `git stash` or
-> `git restore` anything.** The gate numbers below INCLUDE this work.
->
-> This heading has now been wrong in both directions in one day — commit `0477240` fixed
-> it saying NOTHING IS COMMITTED while the body said the opposite. If you change the state,
-> change this heading in the same edit.
+> [!warning] **`git status` FIRST, always — and if you change the state, change this
+> heading in the SAME edit.** It has been wrong in both directions in one day: commit
+> `0477240` fixed it claiming NOTHING IS COMMITTED while the body said the opposite, and
+> `a4e00b3` fixed it claiming the tree was clean when a day's work was unstaged. It is a
+> heading a cold session trusts before it has looked at anything.
 
-**Sixteen commits landed 2026-08-22** — the scheduler's interval fuzz, the forecast tile
+**Twenty commits landed 2026-08-22** — the scheduler's interval fuzz, the forecast tile
 and heatmap tables, the cap/relearning derivations, the ratifications, the
 browser-portability split, schema **v8**, a correctness sweep, and the dashboard in
-English. `git log --oneline -16` is the list; do not rebuild any of it.
+English. `git log --oneline -20` is the list; do not rebuild any of it.
 
 Gates, and **re-run them rather than repeating these**: `npm test` → 20 files / 697 passed
 / 1 skipped · `npm run typecheck` → 0 · `npm run build` → OK, 24 export subpaths ·
@@ -113,7 +108,6 @@ separate times on this project.
 
 Two things that ARE safe and useful without him, if he wants something done:
 
-* **Commit the working tree** (see the warning above) — it is built, green and unstaged.
 * **Verify rather than extend.** Re-run the gates, re-run a fault injection against a test
   you doubt, or check a number in a doc against the code. Three of the last two sessions'
   reported claims turned out wrong, and each was one command away from being caught.
