@@ -215,7 +215,10 @@ Two things the renderer deliberately leaves to the stylesheet:
 
 * **`<canvas>` carries no `width`/`height`.** A drawing surface has to be sized to
   `devicePixelRatio` at mount time or the strokes blur, and only the widget code
-  knows the device. `data-height="400px"` is the authored request.
+  knows the device. `data-height="400px"` is the authored request — 漢字 writes that
+  on all 1,662 cards. It is not the DEFAULT: `DRAW_DEFAULTS.height` is `300px`, used
+  only when nothing is authored. STAGE4.md ORPHAN 3 called these "two numbers for one
+  thing"; they are two numbers for two things, and saying which is which is the fix.
 * **Adjacent card links are DOM-adjacent, with no node between them** — that is
   what makes `[[引き|…]]<U+200E>[[換え|…]]` read as 引き換え, measured at a 0.000 px
   gap in Chrome. Whether a compound may break across lines is a

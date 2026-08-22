@@ -51,6 +51,30 @@
       "types": "./dist/render/index.d.ts",
       "default": "./dist/render/index.js"
     },
+    "./render/reveal": {
+      "types": "./dist/render/reveal.d.ts",
+      "default": "./dist/render/reveal.js"
+    },
+    "./render/audio": {
+      "types": "./dist/render/audio.d.ts",
+      "default": "./dist/render/audio.js"
+    },
+    "./render/ruby": {
+      "types": "./dist/render/ruby.d.ts",
+      "default": "./dist/render/ruby.js"
+    },
+    "./render/draw": {
+      "types": "./dist/render/draw.d.ts",
+      "default": "./dist/render/draw.js"
+    },
+    "./render/input": {
+      "types": "./dist/render/input.d.ts",
+      "default": "./dist/render/input.js"
+    },
+    "./render/math": {
+      "types": "./dist/render/math.d.ts",
+      "default": "./dist/render/math.js"
+    },
     "./accent": {
       "types": "./dist/accent/index.d.ts",
       "default": "./dist/accent/index.js"

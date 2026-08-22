@@ -555,6 +555,18 @@ for 単語 would catch that. Nothing asserts it today, because today the correct
 I own `STAGE4.md` only. I checked `git status` before and after every experiment; the tree was
 clean at both ends and I changed no tracked file.
 
+> [!note]
+> **ALL THREE ORPHANS APPLIED 2026-08-22.** Orphan 1's six subpaths are in `package.json`
+> (23 export subpaths, verified by the build). Orphan 2's figures are corrected in the
+> comment. Orphan 3 turned out **not to be a defect** — 400px is the AUTHORED value and
+> 300px is the default, two numbers for two things; the README now says which is which.
+> Also, while adding the subpaths: the `autoplay`/`.play(` source check covered a
+> HARDCODED four of the ten files in `src/render`, so `ruby.ts`, `draw.ts`, `input.ts` and
+> `math.ts` were escaping the project's most safety-critical invariant. It is now derived
+> from the directory with `audio.ts`/`reveal.ts` named as the two allowed exceptions, and
+> the count is asserted so neither list can drift. Verified by injecting `autoplay` into
+> `ruby.ts` — previously green, now red.
+
 **ORPHAN 1 — `package.json` (and `scripts/build.mjs`'s verify list): six `src/render` modules
 are unreachable from the published package.** Full evidence in §5. The compiled files exist in
 `dist/`; only the export map is missing. `hashigo/render/reveal` — the specifier `reveal.ts:5`

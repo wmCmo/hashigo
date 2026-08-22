@@ -31,7 +31,7 @@
  *    clean clone with no `exports/`.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -98,8 +98,38 @@ export const descriptorIsAGenerationRequest: GenerationRequest =
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-const RENDER_SOURCES = ["index.ts", "dom.ts", "nodes.ts", "sanitise.ts"] as const;
 const SRC_RENDER = resolve(import.meta.dirname, "..", "src", "render");
+
+/**
+ * The two modules ALLOWED to start a sound, named individually.
+ *
+ * `audio.ts` is the only code in Hashigo that calls `play()`, and `reveal.ts`
+ * calls into it — from `reveal()` and `play()`, never from `enter()`. Everything
+ * else in `src/render` must be unable to.
+ */
+const MAY_START_PLAYBACK = ["audio.ts", "reveal.ts"] as const;
+
+/**
+ * WHY THIS IS DERIVED AND NOT A LIST.
+ *
+ * This was `["index.ts", "dom.ts", "nodes.ts", "sanitise.ts"]` — hardcoded, and
+ * four of the ten files in `src/render`. The four were right, but the SHAPE was
+ * wrong: the no-autoplay rule is the project's most safety-critical invariant
+ * (CLAUDE.md: "autoplay is the default in most flashcard renderers and it does
+ * not degrade this exercise, it deletes it"), and a hardcoded allow-list means a
+ * NEW module added to this directory is unchecked by default. `ruby.ts`,
+ * `draw.ts`, `input.ts` and `math.ts` were already escaping it.
+ *
+ * Inverting it fixes the default: every file in the directory is checked unless
+ * it is explicitly named as allowed to play, and the count is asserted so the
+ * allow-list cannot quietly grow either.
+ */
+function renderSourcesThatMustNotPlay(): string[] {
+  return readdirSync(SRC_RENDER)
+    .filter((name) => name.endsWith(".ts"))
+    .filter((name) => !(MAY_START_PLAYBACK as readonly string[]).includes(name))
+    .sort();
+}
 
 const FIXTURES = resolve(import.meta.dirname, "fixtures", "render");
 const TEMPLATE_FIXTURES = resolve(import.meta.dirname, "fixtures", "templates");
@@ -475,7 +505,15 @@ describe("audio must never start on its own", () => {
   it("has no way to start playback: `autoplay` and `.play(` are not in the code", () => {
     // A source check, because the property is about what the module CANNOT do.
     // Comments are stripped first — the header of nodes.ts discusses both.
-    for (const name of RENDER_SOURCES) {
+    const sources = renderSourcesThatMustNotPlay();
+    // EVERY file in the directory bar the two named exceptions. Asserted, so
+    // that adding a module to src/render cannot silently escape this check and
+    // enlarging MAY_START_PLAYBACK cannot silently shrink it.
+    expect(sources.length).toBe(
+      readdirSync(SRC_RENDER).filter((n) => n.endsWith(".ts")).length - MAY_START_PLAYBACK.length,
+    );
+    expect(sources.length).toBeGreaterThanOrEqual(8);
+    for (const name of sources) {
       const code = stripComments(readFileSync(resolve(SRC_RENDER, name), "utf8"));
       expect(code, `${name} mentions autoplay`).not.toContain("autoplay");
       expect(code, `${name} calls play()`).not.toContain(".play(");
@@ -488,7 +526,7 @@ describe("audio must never start on its own", () => {
   });
 });
 
-/** Crude but sufficient for four files we own: drop block and line comments. */
+/** Crude but sufficient for files we own: drop block and line comments. */
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
@@ -925,7 +963,11 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
         for (const diagnostic of one.diagnostics) {
           diagnostics.set(diagnostic.kind, (diagnostics.get(diagnostic.kind) ?? 0) + 1);
           // Sub-kind too, for the report: "10,316 resolver warnings" says nothing,
-          // "7,368 empty sides and 2,948 ignored stale contents" says what happened.
+          // "7,156 empty sides and 3,159 ignored stale contents" says what
+          // happened. (This comment read 7,368 and 2,948, which reproduce as
+          // neither figure — and 3,159 is the number in CLAUDE.md's locked
+          // decision 5, so the wrong one contradicted a settled decision from
+          // inside a test. STAGE4.md ORPHAN 2.)
           const sub = `${diagnostic.kind}/${diagnostic.detail.split(":")[0] ?? ""}`;
           detail.set(sub, (detail.get(sub) ?? 0) + 1);
         }

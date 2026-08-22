@@ -272,7 +272,13 @@ export function importExports(
   );
 
   const tags = importTags(db, cards as unknown as MochiTaggedCard[]);
-  phase("tags", `${tags.tags} tag paths, ${tags.cardTags} card tags`);
+  phase(
+    "tags",
+    `${tags.tags} tag paths, ${tags.cardTags} card tags` +
+      (tags.cardTagsReplaced > tags.cardTags
+        ? ` · ${tags.cardTagsReplaced - tags.cardTags} REMOVED in Mochi since the last import`
+        : ""),
+  );
 
   const links = importLinks(db, cards as unknown as MochiLinkedCard[]);
   phase("links", `${links.links} wiki-links, ${links.unresolvedRows} unresolved`);

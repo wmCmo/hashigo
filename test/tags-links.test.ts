@@ -182,6 +182,78 @@ describe("mapCardTags", () => {
 });
 
 describe("importTags", () => {
+  /**
+   * A TAG REMOVED IN MOCHI WAS PERMANENT HERE until 2026-08-22. `src/import/tags.ts`
+   * had no DELETE at any line, while both siblings prune — so every fresh export
+   * was strictly additive, and Zach tags in Mochi daily.
+   *
+   * Three shapes, because only the first is obvious:
+   *   1. one of two tags removed
+   *   2. the LAST tag removed, so the card carries no `tags` array at all and is
+   *      absent from `mapped.cardTags` — the prune cannot be keyed on that list
+   *   3. `manual` demoted, which `max(manual, excluded.manual)` made monotonic
+   *      and therefore one-way
+   * And one negative: a card from an export NOT being re-read keeps its tags,
+   * or importing one of three exports would strip the other two.
+   */
+  it("removes a tag that Mochi no longer carries, including the last one", () => {
+    seedCards("c1", "c2", "c3");
+    importTags(db, [
+      { id: "c1", tags: ["Dialect/Kansai", "Buddhism"] },
+      { id: "c2", tags: ["Buddhism"], "manual-tags": ["Buddhism"] },
+      { id: "c3", tags: ["Buddhism"] },
+    ]);
+    const pathsFor = (card: string) =>
+      db
+        .prepare("SELECT tag_path, manual FROM card_tags WHERE card_id = ? ORDER BY tag_path")
+        .all(card);
+    expect(pathsFor("c1")).toEqual([
+      { tag_path: "Buddhism", manual: 0 },
+      { tag_path: "Dialect/Kansai", manual: 0 },
+    ]);
+    expect(pathsFor("c2")).toEqual([{ tag_path: "Buddhism", manual: 1 }]);
+
+    // Re-import: c1 loses one tag, c2 is demoted to non-manual, c3 loses its
+    // only tag and so carries no array at all. c3 is the case that fails if the
+    // prune is scoped to the cards that still have tags.
+    const again = importTags(db, [
+      { id: "c1", tags: ["Buddhism"] },
+      { id: "c2", tags: ["Buddhism"] },
+      { id: "c3" },
+    ]);
+
+    expect(pathsFor("c1")).toEqual([{ tag_path: "Buddhism", manual: 0 }]);
+    expect(pathsFor("c2")).toEqual([{ tag_path: "Buddhism", manual: 0 }]);
+    expect(pathsFor("c3")).toEqual([]);
+
+    // Reported, not inferred: 4 rows removed, 2 written back.
+    expect(again.cardTagsReplaced).toBe(4);
+    expect(again.cardTags).toBe(2);
+
+    // The `tags` rows survive losing their last card — `parent_path` is a
+    // foreign key and the synthesised ancestor has no cards of its own.
+    const kept = db.prepare("SELECT count(*) AS n FROM tags").get() as { n: number };
+    expect(kept.n).toBe(3);
+    expect(
+      db.prepare("SELECT count(*) AS n FROM tag_usage WHERE cards_direct > 0").get(),
+    ).toEqual({ n: 1 });
+  });
+
+  it("leaves a card alone when its export is not the one being re-read", () => {
+    seedCards("c1", "c2");
+    importTags(db, [
+      { id: "c1", tags: ["Buddhism"] },
+      { id: "c2", tags: ["Dialect/Kansai"] },
+    ]);
+    // Only c1's export is re-read. c2 is untouched, tags intact.
+    const again = importTags(db, [{ id: "c1", tags: ["Buddhism"] }]);
+    expect(again.cardTagsReplaced).toBe(1);
+    expect(
+      db.prepare("SELECT tag_path FROM card_tags WHERE card_id = 'c2'").all(),
+    ).toEqual([{ tag_path: "Dialect/Kansai" }]);
+    db.prepare("DELETE FROM card_tags").run();
+  });
+
   it("writes the tree, satisfies the parent foreign key, and is idempotent", () => {
     seedCards("c1", "c2");
     const first = importTags(db, [

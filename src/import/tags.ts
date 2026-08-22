@@ -91,6 +91,20 @@ export interface MappedTags {
   /** Parents before children, so `parent_path` inserts in one pass. */
   readonly tags: readonly TagRow[];
   readonly cardTags: readonly CardTagRow[];
+  /**
+   * Every card id this mapping SAW, tagged or not, collected on the same pass.
+   *
+   * `importTags` needs it to scope its prune, and it must come from here rather
+   * than from a second walk of the caller's iterable: the parameter is typed
+   * `Iterable`, so a generator would be exhausted by then and the delete would
+   * silently match nothing — a prune that quietly does nothing is worse than no
+   * prune, because it looks done.
+   *
+   * It cannot be derived from `cardTags` either. A card whose LAST tag was
+   * removed in Mochi carries no `tags` array at all, so it is absent from that
+   * list — and it is exactly the card the prune exists for.
+   */
+  readonly cardIds: readonly string[];
   readonly notes: TagNotes;
 }
 
@@ -159,8 +173,11 @@ export function mapCardTags(cards: Iterable<MochiTaggedCard>): MappedTags {
   const perCard = new Map<string, Map<string, 0 | 1>>();
   let rawPairs = 0;
 
+  const cardIds: string[] = [];
+
   for (const card of cards) {
     if (!card.id) continue;
+    cardIds.push(card.id);
     for (const [manual, list] of [
       [0, card.tags],
       [1, card["manual-tags"]],
@@ -208,6 +225,7 @@ export function mapCardTags(cards: Iterable<MochiTaggedCard>): MappedTags {
   return {
     tags: orderTags([...paths].map(tagRow)),
     cardTags,
+    cardIds,
     notes: {
       rawTags: rawTags.size,
       normalisedTags: used.size,
@@ -242,11 +260,46 @@ const INSERT_CARD_TAG = `
 INSERT INTO card_tags (card_id, tag_path, manual) VALUES (?, ?, ?)
 ON CONFLICT (card_id, tag_path) DO UPDATE SET manual = max(manual, excluded.manual)`;
 
+/**
+ * A TAG REMOVED IN MOCHI MUST BE REMOVED HERE. It was permanent until 2026-08-22.
+ *
+ * This module had no `DELETE` at all, while both of its siblings prune with a
+ * written rationale — `pruneFieldValues` (src/import/index.ts) and
+ * `DELETE_CARD_LINKS` (src/import/links.ts). The asymmetry was undocumented and
+ * untested, and it matters because re-importing is not a one-off: Zach reviews
+ * and tags in Mochi daily, so every fresh export was strictly ADDITIVE. Untag a
+ * card there and the tag stayed here forever, indexed in `card_fts.tags` and
+ * feeding the tag sidebar.
+ *
+ * The `manual` column had the same shape: `max(manual, excluded.manual)` is
+ * monotonic, so a card promoted to a manual tag once could never go back.
+ * Deleting the card's rows first makes both fall correctly.
+ *
+ * SCOPED TO THE CARDS IN THIS IMPORT, exactly as `pruneFieldValues` is. A card
+ * that came from an export not being re-read must keep its tags — otherwise
+ * importing one of the three exports would strip the other two.
+ *
+ * NOT A TOMBSTONE, and it does not need to be: `tags` rows are left alone even
+ * when they lose their last card. That keeps `parent_path`'s foreign key intact
+ * (the synthesised `Dialect` ancestor has no cards of its own and must survive),
+ * and it is why every count of "tags he actually uses" filters `cards_direct > 0`
+ * rather than counting rows.
+ */
+const DELETE_CARD_TAGS = "DELETE FROM card_tags WHERE card_id = ?";
+
 export interface ImportTagsResult extends TagNotes {
   /** Rows written to `tags`, synthesised ancestors included. 20 in the corpus. */
   readonly tags: number;
   /** Rows written to `card_tags`. */
   readonly cardTags: number;
+  /**
+   * `card_tags` rows deleted first, i.e. what a re-import replaced. 0 on a fresh
+   * database, and on a re-import it equals `cardTags` when nothing changed in
+   * Mochi. Reported rather than inferred: the difference between this and
+   * `cardTags` is exactly the tags he removed there, and that is the number
+   * worth seeing.
+   */
+  readonly cardTagsReplaced: number;
 }
 
 /**
@@ -261,13 +314,26 @@ export function importTags(db: Db, cards: Iterable<MochiTaggedCard>): ImportTags
   const mapped = mapCardTags(cards);
   const insertTag = db.prepare(INSERT_TAG);
   const insertCardTag = db.prepare(INSERT_CARD_TAG);
+  const deleteCardTags = db.prepare(DELETE_CARD_TAGS);
 
+  // EVERY card in this import, not only the tagged ones — see MappedTags.cardIds
+  // for why this comes from the mapping rather than from a second walk of the
+  // caller's iterable.
+  const cardIds = new Set(mapped.cardIds);
+
+  let cardTagsReplaced = 0;
   db.transaction(() => {
+    for (const id of cardIds) cardTagsReplaced += deleteCardTags.run(id).changes;
     for (const tag of mapped.tags) insertTag.run(tag.path, tag.parent_path, tag.name);
     for (const link of mapped.cardTags) {
       insertCardTag.run(link.card_id, link.tag_path, link.manual);
     }
   })();
 
-  return { ...mapped.notes, tags: mapped.tags.length, cardTags: mapped.cardTags.length };
+  return {
+    ...mapped.notes,
+    tags: mapped.tags.length,
+    cardTags: mapped.cardTags.length,
+    cardTagsReplaced,
+  };
 }
