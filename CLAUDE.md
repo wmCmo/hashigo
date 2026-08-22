@@ -13,12 +13,24 @@ importer, dashboard, template engine, renderer (`src/render`), scheduler backtes
 the scheduler itself (`src/scheduler`), search, the content-addressed blob store, the
 browser database handle (`src/db/browser.ts`, sqlite-wasm on OPFS), `src/text`, the
 field binding (`src/generate`), the card loader (`src/cards`) with its audio
-resolver, and — as of 2026-08-22 — the **review session** (`src/session`).
+resolver, and — as of 2026-08-22 — the **review session** (`src/session`) and the
+**card mount** (`src/review`).
 
-**What is left is now genuinely only the SCREEN.** `src/session` holds the queue,
-interleaves new with due, and implements decision 13's ungraded re-ask; the thing
-that does not exist is the code that mounts a rendered card in a browser, calls
-`play()` on reveal, and wires two buttons to `answer()`. Design settled: decision
+**`play()` IS NOW CALLED, and the shipping reveal loop has run over real cards for
+the first time.** `src/review`'s `mountCard` drives the whole path — `loadCard` →
+render → `expandGeneratorFields` → `renderSides` → `audioController` →
+`shadowingLoop` — and `test/review.test.ts` measures the hard rule over it:
+
+    mount + enter, 120 単語 cards   120 clip mounts · 0 resolve calls · 0 play() calls
+    reveal, 40 単語 cards            39 cards played · 39 play() calls
+
+That closes a real gap. `spike/viewer/` had proved Chromium does not autoplay, but
+its own README says it hand-rolls its reveal sequencing rather than importing
+`shadowingLoop`, so the green panel was evidence about the BROWSER and never about
+the shipping code.
+
+**What is left is the CHROME: CSS, the two buttons, and the app shell.** The
+session, the mount, the audio and the loop all exist and are pinned. Design settled: decision
 23, direction A2. Also missing: the app shell, editor and sync (stages 9, 10, 11).
 `spike/viewer/` is a THROWAWAY harness, not that shell.
 
@@ -89,6 +101,10 @@ npm run spike:check     # the browser contract; spike/ is excluded from tsconfig
 npx vite-node src/scheduler/cli.ts -- counts   --db build/hashigo.db
 npx vite-node src/scheduler/cli.ts -- queue    --db build/hashigo.db --limit 20
 npx vite-node src/scheduler/cli.ts -- forecast --db build/hashigo.db --days 14
+
+# The card mount. `src/review` is the first thing in src/ to drive shadowingLoop,
+# the reveal loop that SHIPS. See src/review/README.md for the sharp edge:
+# `loadRenderedCard` cannot reach the audio, and fails silently on 5,664 cards.
 
 # The session. READ-ONLY: there is no `grade` command, on purpose -- grading from
 # a terminal would write real reviews with no card in front of you.

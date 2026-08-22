@@ -20,13 +20,24 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 
 ---
 
-## STATE RIGHT NOW — 2026-08-22, tree clean, five commits landed
+## STATE RIGHT NOW — 2026-08-22 (overnight), tree clean, seven commits landed
 
-**The newest commit is the session layer (`src/session`), so B1 is now ONLY the
-screen.** Gates after it: **21 files / 716 passed / 1 skipped**, typecheck 0, build 0
-(72 modules, **25** export subpaths), spike:check 0. See "The session layer landed"
-below — including the two pieces of dead code that fault injection deleted, and the one
-small thing that needs Zach (the interleave default).
+**`play()` IS NOW CALLED.** The two newest commits are the session layer
+(`src/session`) and the card mount (`src/review`), and between them B1 is reduced to
+the CHROME: CSS, two buttons, and the app shell. Gates after them: **22 files / 723
+passed / 1 skipped**, typecheck 0, build 0 (74 modules, **26** export subpaths),
+spike:check 0.
+
+The headline measurement, because it closes the project's biggest unproven claim —
+`src/review` is the first thing in `src/` to drive `shadowingLoop`, the reveal loop
+that ships:
+
+    mount + enter, 120 単語 cards   120 clip mounts · 0 resolve calls · 0 play() calls
+    reveal, 40 単語 cards            39 cards played · 39 play() calls
+
+See the two sections below. **One small thing needs Zach: the interleave default**
+(`new-first` vs `spread`) — both are built and tested, and the reasoning is in
+"The session layer landed".
 
 **D1 IS DECIDED and stage 7 is unblocked.** The review screen is **direction A2** —
 direction A's terminal look with direction C's hand — chosen from four mockups built over
@@ -277,6 +288,34 @@ is the test that owns the formula.
 > option value away and both are implemented and tested. **Ask him; do not quietly
 > switch it.**
 
+### `src/review` landed 2026-08-22 — `play()` is called, over real cards
+
+`mountCard` is the whole path in one call: `loadCard` → `renderLoadedCard` →
+`expandGeneratorFields` → `renderSides` → `audioController` → `shadowingLoop`. 26th
+export subpath, browser-portable and pinned.
+
+**It is the first thing in `src/` to drive `shadowingLoop`, the reveal loop that
+ships**, and that closes a gap `spike/viewer/README.md` named itself: that harness
+hand-rolls `revealSide()`/`armSide()`, so its green no-autoplay panel was evidence about
+Chromium and never about the shipping code. Measured now, over the corpus:
+
+    mount + enter, 120 単語 cards   120 clip mounts · 0 resolve calls · 0 play() calls
+    reveal, 40 単語 cards            39 cards played · 39 play() calls
+
+Teeth, with the exact mutation used on 2026-08-20: `audio?.play(side.audio)` inside
+`enter()` turns **2** of the new tests red — printing *120 resolve calls, 119 play()
+calls* — plus **9** in `test/reveal.test.ts`. 39 of 40 is not a miss: 35 slots in the
+corpus were never generated and 159 are unbuildable, so some cards have no clip and the
+session simply continues.
+
+> [!warning] **A SHARP EDGE WORTH KNOWING BEFORE YOU WRITE THE SCREEN.**
+> **`loadRenderedCard` cannot reach the audio, and it is the documented entry point** —
+> it is the example in `src/cards/README.md`. `expandGeneratorFields` needs the template
+> FIELDS and card VALUES, and `loadRenderedCard` returns neither. Follow that example and
+> you get a card that renders perfectly and is **silent**, with no error, on all 5,664
+> cards carrying speech. Use `hashigo/review`, which does it correctly, or replicate all
+> six steps.
+
 ### Table B — do NOT start these without him
 
 | | what | why |
@@ -356,6 +395,7 @@ statement makes `pauseVfs()` throw.
 | I want… | read |
 |---|---|
 | **the session layer: the queue, and decision 13's re-ask** | `src/session/README.md` — including the two pieces of dead code injection found |
+| **the card mount, and the first real-browser evidence for the shipping reveal loop** | `src/review/README.md` |
 | **the chosen review-screen direction, and why** | `DECISIONS.md` decision 23 — and the mockup at `/mock/` (`npm run spike:dev -- --host ::`) |
 | what a fresh session must know | `CLAUDE.md` — auto-loads; 328 lines, and the 22 decisions as a one-line index |
 | **why a decision is what it is** | `DECISIONS.md` — the full derivations, split out of CLAUDE.md 2026-08-22 |
