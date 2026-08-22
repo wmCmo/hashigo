@@ -288,14 +288,18 @@ expensive, and it is free.**
 > the offending import was in none of the files the claim is about.
 >
 > **One exception, found by that same test and not by the audit that prompted it:
-> `src/generate` is still Node-bound**, and not for this reason.
-> `src/generate/store.ts:30` value-imports `generationKey` from
-> `src/import/blobs.ts`, whose sha256 is `node:crypto` and **synchronous** — which
-> is the change section 5 below already calls "the one genuinely invasive change".
-> Making it `crypto.subtle.digest` makes the cache key async, so the resolver and
-> everything above it change signature, up to whatever the review UI calls to get
-> a clip. That is a design decision about the resolver's shape, not a port, and it
-> is a prerequisite of the audio path nobody had scheduled.
+> `src/generate` was still Node-bound**, and not for this reason.
+> `src/generate/store.ts:30` value-imported `generationKey` from
+> `src/import/blobs.ts`, whose sha256 is `node:crypto` and **synchronous**.
+>
+> **FIXED 2026-08-22, and the prediction attached to it was WRONG — see the
+> correction on section 5 below.** This paragraph used to continue: "making it
+> `crypto.subtle.digest` makes the cache key async, so the resolver and everything
+> above it change signature… a design decision about the resolver's shape, not a
+> port". None of that happened. The key moved to `src/blobs/generation.ts` and
+> hashes through `src/blobs/sha256.ts` — synchronous, dependency-free — with **no
+> signature changed anywhere**. `src/generate/index.ts` is now a browser entry
+> point and `KNOWN_NODE_BOUND` is empty.
 
 ### Needs an adapter — 7 files, 3,039 lines (23%)
 
@@ -303,11 +307,38 @@ expensive, and it is free.**
 |---|--:|---|---|
 | `src/schema/index.ts` | 403 | `node:fs` | **smallest, highest value.** One `readFileSync(new URL(...))` at line ~347. Replace with a bundler text import (`import sql from "./schema.sql?raw"`). Kills OVERNIGHT §2.2's whole class of bug at the same time. |
 | `src/db/open.ts` | 133 | `better-sqlite3`, `node:fs/path` | the real work: a sibling `open.browser.ts` returning the same `Db` shape over `OpfsSAHPoolDb`. Note better-sqlite3 is **synchronous**, and so is sahpool once installed — the API shape survives. Install is the only async step. |
-| `src/import/blobs.ts` | 1,177 | `better-sqlite3`, `node:crypto`, `node:fs`, `node:path` | `node:crypto` → `crypto.subtle.digest` (async — this is the one genuinely invasive change). Much of this file may become redundant if `src/blobs/` supersedes it. |
+| `src/import/blobs.ts` | 1,177 | `better-sqlite3`, `node:crypto`, `node:fs`, `node:path` | ~~`node:crypto` → `crypto.subtle.digest` (async — the one genuinely invasive change)~~ **RESOLVED 2026-08-22 without going async — see the correction below.** Much of this file may become redundant if `src/blobs/` supersedes it. |
 | `src/blobs/node.ts` | 239 | `node:crypto/fs/path` | **already the intended seam** — write `src/blobs/opfs.ts` beside it. No change to `node.ts`. |
 | `src/import/transit.ts` | 263 | `node:fs`, `node:path` | takes a path; needs to take bytes. Mechanical. |
 | `src/import/index.ts` | 649 | `node:path` | only `basename`. Trivial to inline. |
 | `src/dashboard/cli.ts` | 175 | `node:fs`, `node:path` | **leave it Node-only.** It is a CLI. Nothing to port. |
+
+### ⚠️ CORRECTION 2026-08-22 — "the one genuinely invasive change" was neither
+
+This document called `node:crypto` → `crypto.subtle.digest` **the one genuinely
+invasive change**, twice, on the grounds that `digest` returns a Promise and would
+therefore change the signature of the cache key, the resolver, and everything
+above them. That phrase propagated: into a repo audit, into
+`test/browser-portable.test.ts`'s `KNOWN_NODE_BOUND` comment, into two session
+handoffs, and into Zach's planner, where it was scheduled at 1–2 days as "bigger
+than the audit said".
+
+**It was already obsolete when this was written.** `src/blobs/sha256.ts` — a
+synchronous, dependency-free SHA-256 — exists precisely so this change would not
+be invasive, is already the default digest of `SqliteBlobStore`, already runs in
+the browser, and already agrees with `node:crypto` bit for bit on all 10,816
+corpus payloads. **Its own header says all of that.**
+
+The actual fix, done in an afternoon: move the key to `src/blobs/generation.ts`,
+swap `createHash` for `sha256Hex(new TextEncoder().encode(…))`, change nothing
+else. Pinned by recomputing all **36,398 distinct corpus identities** under both
+digests — 32,465 of them non-ASCII — with **0 differing**, plus three real keys
+as hex literals.
+
+**Why this correction is here rather than only in the code:** four documents
+agreed with each other because all four were quoting this one, and nobody re-read
+the file the claim was about. A stale note in a bannered document is not inert —
+it gets promoted into plans.
 
 ### Must be rewritten
 

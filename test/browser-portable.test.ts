@@ -40,6 +40,8 @@ const BROWSER_ENTRY_POINTS = [
   "src/render/index.ts",
   "src/render/reveal.ts",
   "src/render/audio.ts",
+  "src/blobs/generation.ts",
+  "src/generate/index.ts",
   "src/scheduler/index.ts",
   "src/scheduler/policy.ts",
   "src/dashboard/metrics.ts",
@@ -52,31 +54,26 @@ const BROWSER_ENTRY_POINTS = [
 /**
  * STILL NODE-BOUND, KNOWN, AND PINNED SO THE LIST CANNOT GROW QUIETLY.
  *
- * `src/generate` is on the critical path — it is what turns a valueless generator
- * field into a resolvable audio identity — and it CANNOT load in a worker today.
- * Found by this test, 2026-08-22, and not by the audit that prompted it.
+ * EMPTY as of 2026-08-22, and the entry that used to be here is worth keeping in
+ * the record because the fix was not the one three documents predicted.
  *
- * The chain is short and the cause is not the schema split: `src/generate/store.ts:30`
- * value-imports `generationIdentity`, `generationKey` and `lookupGeneration` from
- * `src/import/blobs.ts`, which is 1,177 lines of Node I/O and whose
- * `createHash` at line 120 is the actual dependency — the cache key is a
- * SYNCHRONOUS sha256.
+ * `src/generate/index.ts` was listed, because `src/generate/store.ts`
+ * value-imported `generationKey` from `src/import/blobs.ts`, whose digest was
+ * `node:crypto`. `notes/browser-feasibility.md` §5 called the remedy "the one
+ * genuinely invasive change" — `crypto.subtle.digest` is ASYNC, so the key, the
+ * resolver and everything above them would change signature — and two sessions
+ * carried that forward as the plan.
  *
- * This is exactly the change `notes/browser-feasibility.md` section 5 singles out
- * as "the one genuinely invasive change": `node:crypto` → `crypto.subtle.digest`
- * is ASYNC, so `generationKey` and everything above it changes signature, up to
- * and including whatever the review UI calls to get a clip. That is a design
- * decision about the resolver's shape, not a mechanical port, which is why this
- * test records the fact instead of asserting a fix.
+ * It was obsolete. `src/blobs/sha256.ts` is a synchronous, dependency-free
+ * SHA-256 written for exactly this, already the default digest of
+ * `SqliteBlobStore`, already agreeing with `node:crypto` bit for bit on all
+ * 10,816 corpus payloads. So the key moved to `src/blobs/generation.ts`, kept
+ * its signature, and nothing above it changed at all.
  *
- * Shrink this list deliberately. Never extend it to make a failure go away.
+ * If something has to be added back here, say WHY in the same detail — the
+ * entry above cost more to believe than it did to fix.
  */
-const KNOWN_NODE_BOUND: readonly { entry: string; because: string }[] = [
-  {
-    entry: "src/generate/index.ts",
-    because: "src/generate/store.ts imports generationKey from src/import/blobs.ts, whose sha256 is node:crypto and synchronous",
-  },
-];
+const KNOWN_NODE_BOUND: readonly { entry: string; because: string }[] = [];
 
 /**
  * `import ... from "x"`, `export ... from "x"`, and bare `import "x"`.

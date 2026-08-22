@@ -26,8 +26,15 @@
  * field per card — not cards and not blobs; three different numbers.
  */
 
-import type { Db } from "../db/index.js";
-import { generationIdentity, generationKey, lookupGeneration } from "../import/blobs.js";
+import type { SqliteHandle } from "../db/browser.js";
+// `src/blobs/generation.ts`, NOT `src/import/blobs.ts`. That one import is what
+// made this whole module unloadable in a browser, and the review screen runs in
+// one — see the header of the module it now points at.
+import {
+  generationIdentity,
+  generationKey,
+  lookupGeneration,
+} from "../blobs/generation.js";
 import type { BlobKind } from "../schema/index.js";
 import type { FieldGenerationRequest } from "./fields.js";
 
@@ -92,7 +99,7 @@ export interface ResolveOptions {
  * `src/render/reveal.ts` for why nothing here may reach an `<audio>` element.
  */
 export function resolveFieldGeneration(
-  db: Db,
+  db: SqliteHandle,
   request: FieldGenerationRequest,
   options: ResolveOptions = {},
 ): ResolvedFieldGeneration {
@@ -126,7 +133,7 @@ export function resolveFieldGeneration(
 
 /** Resolve several, and tally them. The tally is the diagnostic. */
 export function resolveFieldGenerations(
-  db: Db,
+  db: SqliteHandle,
   requests: readonly FieldGenerationRequest[],
   options: ResolveOptions = {},
 ): {
@@ -158,7 +165,7 @@ export function resolveFieldGenerations(
 const TEXT_KINDS: ReadonlySet<BlobKind> = new Set(["ai", "translate", "furigana", "dictionary"]);
 
 export function storeTextResolver(
-  db: Db,
+  db: SqliteHandle,
   options: ResolveOptions = {},
 ): (request: FieldGenerationRequest) => string | null {
   const read = db.prepare("SELECT bytes FROM blobs WHERE hash = ?");

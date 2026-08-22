@@ -58,6 +58,7 @@ import {
   type BlobStore,
   type OpenedSqliteStore,
 } from "../src/blobs/index.js";
+import { GENERATION_KEY_SCHEME } from "../src/blobs/generation.js";
 import { MEMORY, checkIntegrity, openDatabase, type Db } from "../src/db/index.js";
 import {
   addBlobRef,
@@ -1387,6 +1388,126 @@ function walkCards(root: Record<string, unknown>): Record<string, unknown>[] {
   visit(root);
   return out;
 }
+
+describe.skipIf(!existsSync(join("build", "hashigo.db")))(
+  "the generation key after the move to src/blobs/generation.ts",
+  () => {
+    it("is BYTE-IDENTICAL to the node:crypto digest it replaced, over the whole corpus", async () => {
+      // THE ASSERTION THE MOVE RESTS ON. `generationKey` used to hash through
+      // `createHash("sha256").update(string)`; it now hashes
+      // `new TextEncoder().encode(string)` through the portable `sha256Hex`,
+      // which is what let `src/generate` become browser-loadable without any
+      // signature changing.
+      //
+      // A one-bit difference here raises NO error anywhere. It turns every
+      // cached generation into a permanent miss and re-bills the corpus — 617.9
+      // MiB of speech, generated once. So this recomputes both digests over
+      // every distinct identity the real database holds and demands they agree.
+      // ASCII agreeing proves nothing: the inputs are Japanese head words, and
+      // the two paths differ precisely in how a string becomes bytes.
+      const { createHash } = await import("node:crypto");
+      const db = openDatabase(join("build", "hashigo.db"), {
+        readOnly: true,
+        applySchema: false,
+      });
+      try {
+        const rows = db
+          .prepare(
+            `SELECT DISTINCT kind, source_text, voice, lang, options FROM blobs
+              WHERE source_text IS NOT NULL`,
+          )
+          .all() as {
+          kind: string;
+          source_text: string;
+          voice: string | null;
+          lang: string | null;
+          options: string;
+        }[];
+
+        let checked = 0;
+        let nonAscii = 0;
+        const differing: string[] = [];
+        for (const row of rows) {
+          const identity = {
+            kind: row.kind as Parameters<typeof generationKey>[0]["kind"],
+            sourceText: row.source_text,
+            voice: row.voice,
+            lang: row.lang,
+            options: row.options,
+          };
+          const joined = [
+            // The LITERAL, not the imported constant. Using
+            // `GENERATION_KEY_SCHEME` here made this test compare the new
+            // implementation against itself: changing the constant moved both
+            // sides and the test stayed green. Caught by injecting exactly that
+            // fault. The scheme is versioned so it CAN be changed — but then
+            // this literal is what forces the change to be deliberate.
+            "hashigo/blob-identity/1",
+            identity.kind,
+            identity.sourceText,
+            identity.voice ?? "",
+            identity.lang ?? "",
+            identity.options,
+          ].join(" ");
+          const legacy = createHash("sha256").update(joined).digest("hex");
+          const current = generationKey(identity);
+          if (legacy !== current) differing.push(`${row.kind}/${row.source_text}`);
+          // eslint-disable-next-line no-control-regex
+          if (/[^ -]/.test(joined)) nonAscii += 1;
+          checked += 1;
+        }
+
+        // Three real keys, pinned as literals. The sweep above proves the two
+        // implementations agree with EACH OTHER; these prove the answer is the
+        // one the 42,569 existing cache rows were filed under. A change to the
+        // separator, the field order, the scheme or the encoding moves them.
+        expect(
+          generationKey({
+            kind: "speech",
+            sourceText: "...にも程がある",
+            voice: "ja-JP-NanamiNeural",
+            lang: "ja-JP",
+            options: "{}",
+          }),
+        ).toBe("311fe0e387af929523ddd37d1ae37b0b3b2073fedbb1812132ff3c98c55b4f0f");
+        expect(
+          generationKey({
+            kind: "speech",
+            sourceText: "...は...に限る",
+            voice: "ja-JP-NanamiNeural",
+            lang: "ja-JP",
+            options: "{}",
+          }),
+        ).toBe("5c89f47bd2fab7dbcb0b67cca2aadf5e01defbfdf945334f4310a7e659b92b26");
+        expect(
+          generationKey({
+            kind: "speech",
+            sourceText: "124,652,706",
+            voice: null,
+            lang: "ja-JP",
+            options: '{"gender":"female"}',
+          }),
+        ).toBe("9aa722e3b08f3e708ab9787652ae950e48802aded4af7abe233976df8a86c2c0");
+
+        // eslint-disable-next-line no-console
+        console.log(
+          `generation key: ${checked} distinct identities, ${nonAscii} with non-ASCII text, ` +
+            `${differing.length} differing`,
+        );
+        expect(differing.slice(0, 5)).toEqual([]);
+        // The constant is still exported and still versioned; asserting it here
+        // is what ties the literal above to it, so changing one without the
+        // other fails rather than silently diverging.
+        expect(GENERATION_KEY_SCHEME).toBe("hashigo/blob-identity/1");
+        // The corpus has to actually contain the hard case, or agreeing is cheap.
+        expect(nonAscii).toBeGreaterThan(1_000);
+        expect(checked).toBeGreaterThan(30_000);
+      } finally {
+        db.close();
+      }
+    }, 120_000);
+  },
+);
 
 describe.skipIf(!haveCorpus)("the real export", () => {
   const sources: MochiMediaSource[] = DECKS.map((deck) => {
