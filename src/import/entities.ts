@@ -126,8 +126,44 @@ export interface MappingNotes {
   readonly templateIdConflicts: readonly string[];
   /** Card ids forced to reverse `on` to keep a reverse track (SPEC's rule). */
   readonly reverseForcedCardIds: readonly string[];
-  /** `card_id/field_id` pairs whose field is not on the card's template. */
+  /**
+   * Field values that no template field claims — `card_id/field_id` pairs.
+   *
+   * **235, not 143.** WIDENED 2026-08-22, per CLAUDE.md's ratified treatment.
+   * The old definition was guarded by `row.template_id &&`, so it counted only
+   * cards that HAVE a template and silently skipped the 92 values sitting on
+   * cards with no template at all. Those are orphans by the same definition —
+   * nothing renders them, nothing can find them through a field — and the guard
+   * excluded exactly the harder half. Measured on the corpus:
+   *
+   *     143   field is not on the card's template
+   *      92   the card has no template (370 such cards; 92 carry values)
+   *     ---
+   *     235   of which 137 carry real text
+   *
+   * WHY THE BREAKOUT MATTERS. 98 of the 235 are empty strings, which are debris
+   * and not lost authoring. The 137 that carry text are the ones a person might
+   * want back, and collapsing them into one number is what made this look
+   * ignorable. Same treatment as `staleContentCardIds`: every id is listed, the
+   * real-text count is separate, and nothing is discarded — these values are
+   * IMPORTED, they simply have no field to render them.
+   */
   readonly orphanFieldValues: readonly string[];
+  /**
+   * Of `orphanFieldValues`, how many carry a non-blank value. 137 on the corpus.
+   *
+   * A count with no basis is not a fact (decision 6): "235 orphans" and "137
+   * orphans with text" are both true and answer different questions.
+   */
+  readonly orphanFieldValuesWithText: number;
+  /**
+   * Of `orphanFieldValues`, how many are on a card with NO template. 92.
+   *
+   * Broken out because it is the half the old definition could not see, and
+   * because it has a different cause: a template-less card is a Mochi state, not
+   * a field that was deleted.
+   */
+  readonly orphanFieldValuesTemplateless: number;
   /** Cards whose `deck-id` names a deck absent from the export. */
   readonly unknownDeckCardIds: readonly string[];
   /** Field `type` values the schema's CHECK would reject; mapped to plain. */
@@ -245,6 +281,8 @@ export function mapExports(
   const templateIdConflicts: string[] = [];
   const reverseForcedCardIds: string[] = [];
   const orphanFieldValues: string[] = [];
+  let orphanFieldValuesWithText = 0;
+  let orphanFieldValuesTemplateless = 0;
   const unknownDeckCardIds: string[] = [];
   const unknownFieldTypes = new Set<string>();
   const staleContent: StaleContent[] = [];
@@ -310,14 +348,16 @@ export function mapExports(
     );
     for (const [fieldId, field] of Object.entries(asRecord(walked.card["fields"]))) {
       if (!fieldId) continue;
-      if (row.template_id && !templateFieldIds.has(fieldId)) {
+      const value = fieldValueText(isRecord(field) ? field["value"] : field);
+      // NO `row.template_id &&` GUARD. A value on a template-less card is an
+      // orphan by the same definition and used to be invisible here; see
+      // MappingNotes.orphanFieldValues.
+      if (!row.template_id || !templateFieldIds.has(fieldId)) {
         orphanFieldValues.push(`${row.id}/${fieldId}`);
+        if (value.trim() !== "") orphanFieldValuesWithText += 1;
+        if (!row.template_id) orphanFieldValuesTemplateless += 1;
       }
-      cardFieldValues.push({
-        card_id: row.id,
-        field_id: fieldId,
-        value: fieldValueText(isRecord(field) ? field["value"] : field),
-      });
+      cardFieldValues.push({ card_id: row.id, field_id: fieldId, value });
     }
   }
 
@@ -340,6 +380,8 @@ export function mapExports(
       templateIdConflicts,
       reverseForcedCardIds,
       orphanFieldValues,
+      orphanFieldValuesWithText,
+      orphanFieldValuesTemplateless,
       unknownDeckCardIds,
       unknownFieldTypes: [...unknownFieldTypes],
       staleContentCardIds: staleContent.map((entry) => entry.cardId),

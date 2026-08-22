@@ -461,8 +461,12 @@ took the remaining five, all as recommended, so they are no longer open question
   sidebar counts rows.
 
 `orphanFieldValues` reports **235** with the 137-real-text figure broken out and the
-card ids listed — the same treatment the 3,159-card stale-`content` case gets. The
-143 definition silently skips the 92 template-less cards.
+card ids listed — the same treatment the 3,159-card stale-`content` case gets. **BUILT
+2026-08-22.** The old 143 definition was guarded by `row.template_id &&`, so it could
+not see the 92 values on cards with no template — exactly the half a reader would not
+think to look for. Now 235 = 143 + 92, of which **137 carry real text** and 98 are
+empty strings; all three are asserted in `test/transit.test.ts` and printed by the
+import. The values are IMPORTED and stored, they simply have no field to render them.
 
 ## The hard rule: audio must never autoplay
 

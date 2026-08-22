@@ -223,6 +223,17 @@ function summarise(db: Db, report: ImportReport): string {
   if (report.structure.fieldValuesRemoved > 0) {
     lines.push(`pruned ${report.structure.fieldValuesRemoved} field value(s) the export no longer has`);
   }
+  // IMPORTED, not discarded — but nothing renders them, so saying it out loud is
+  // the whole point. Both breakouts, because "235 orphans" and "137 orphans with
+  // text" answer different questions and only the second is lost authoring.
+  if (report.notes.orphanFieldValues.length > 0) {
+    lines.push(
+      `${report.notes.orphanFieldValues.length} field value(s) no template field claims — ` +
+        `${report.notes.orphanFieldValuesWithText} carry real text, ` +
+        `${report.notes.orphanFieldValuesTemplateless} sit on cards with no template. ` +
+        `Imported and stored, but unrenderable: ids in report.notes.orphanFieldValues`,
+    );
+  }
   lines.push(
     "",
     report.integrity.length === 0

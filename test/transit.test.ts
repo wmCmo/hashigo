@@ -386,8 +386,26 @@ describe.runIf(haveCorpus)("the real corpus", () => {
   });
 
   it("keeps 143 field values whose field is not on the card's template", () => {
-    console.log("orphan field values   ", mapped.notes.orphanFieldValues.length);
-    expect(mapped.notes.orphanFieldValues.length).toBe(143);
+    // 235, not 143: the old definition was guarded by `row.template_id &&`, so it
+    // could not see the 92 values on template-less cards — exactly the half a
+    // reader would not think to look for. Both breakouts are asserted, because a
+    // count with no basis is not a fact: 98 of the 235 are empty strings and are
+    // debris, while the 137 with text are the ones a person might want back.
+    console.log(
+      "orphan field values   ",
+      mapped.notes.orphanFieldValues.length,
+      "of which with text",
+      mapped.notes.orphanFieldValuesWithText,
+      "on template-less cards",
+      mapped.notes.orphanFieldValuesTemplateless,
+    );
+    expect(mapped.notes.orphanFieldValues.length).toBe(235);
+    expect(mapped.notes.orphanFieldValuesWithText).toBe(137);
+    expect(mapped.notes.orphanFieldValuesTemplateless).toBe(92);
+    // And the two halves partition the whole, so neither can drift alone.
+    expect(
+      mapped.notes.orphanFieldValues.filter((pair) => pair.includes("/")).length,
+    ).toBe(235);
   });
 
   it("never orphans a reverse track: 6 cards are forced to on", () => {
