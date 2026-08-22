@@ -69,32 +69,30 @@ worth knowing before changing it; CLAUDE.md has the three that would have been
 whole-subsystem defects if guessed. Today's queue is **443 due, 328 of them overdue,
 3,980 new** — `npx vite-node src/scheduler/cli.ts -- counts --db build/hashigo.db`.
 
-### ONE MEASURED-BUT-UNEXPLAINED THING, left deliberately unpinned
+### The composed audio pipeline is now pinned at corpus scale
 
-**A corpus-scale test of the COMPOSED audio pipeline still does not exist, and I stopped
-rather than write one I could not defend.** The audit asked for it (nothing pins
-resolve → expand → render at scale, which is the path stage 7 walks for every card).
+`resolve -> expand -> render`, the exact path stage 7 walks per card, had no
+corpus-scale test: the field-slot sweep never renders, and `test/render.test.ts`'s
+7,716-card sweep never calls `expandGeneratorFields`. Now pinned in
+`test/generate.test.ts`. Basis: forward direction, the cards that have a template,
+counting `GeneratorMount.name === "speech"`.
 
-What I measured, 2026-08-22, basis stated: forward direction only, the 7,716 cards with a
-template, counting `GeneratorMount.name === "speech"` from `renderSides` after
-`expandGeneratorFields`:
+    pendingGenerators: true   6,855 speech mounts over 5,664 cards · expanded 10,722
+    pendingGenerators: false     31 mounts                        · expanded 0
 
-    pendingGenerators: true   -> 6,855 speech mounts over 5,664 cards
-    pendingGenerators: false  ->    31 speech mounts over    31 cards
+**Three things worth knowing.** `pendingGenerators` is load-bearing — a caller that
+forgets it loses **99.5%** of the audio and sees no error, since the markers are
+substituted away and only inline `<speech>` elements survive. `divergent` is **0**, which
+`expandGeneratorFields` calls "the ONE way this module can go quietly wrong" and only
+claimed until now. And the lookup is by field NAME: swapping it to `f.id` turns this test
+and one unit test red.
 
-**Two things I cannot account for, and both must be resolved before this becomes a
-test.** First, `expandGeneratorFields` reports **`expanded: 0`** on every real card, while
-the same call on the unit fixture in `test/generate.test.ts:220` reports 1 — yet the
-mounts appear anyway, so something other than the expansion is producing them. Second, the
-audit reported **6,918 over 5,718** and **94 over 85** for these two cases; my numbers are
-close but not equal, so one of the two bases is wrong and I do not know which.
+**A note on how nearly this went wrong.** A first pass reported `expanded: 0` on a real
+card and I almost recorded that as a finding. It was an artifact of probing ONE arbitrary
+card with `LIMIT 1` — exactly **10 of the 7,716** templated cards carry no field values at
+all, and that was one of them. A count taken from a single row is not a measurement.
 
-The corpus markers carry SPACES (`<< Speech >>`, `<< 単語 >>` — the documented trap) and
-単語's Speech field has `source_field_id = 'name'`, so the obvious suspects are already
-ruled out. **Pinning either figure while `expanded: 0` is unexplained would pin a
-misunderstanding**, which is worse than the gap. Start by explaining the 0.
-
-### Table A — do these now, unsupervised. All decided, none need him.
+### Table A — do these now, unsupervised. All decided, none need him.### Table A — do these now, unsupervised. All decided, none need him.
 
 | | what | why it is safe |
 |---|---|---|
@@ -183,7 +181,7 @@ state, not a gap.
 ## The gates, and the one chore that bites
 
 ```bash
-npm test          # 19 files, 671 passed, 1 skipped (gated FSRS refit). 33-88 s.
+npm test          # 19 files, 672 passed, 1 skipped (gated FSRS refit). 33-88 s.
                   # A "Timeout calling onTaskUpdate" line is Vitest's reporter under
                   # load, not a failing test. Check the pass count.
 npm run typecheck # exit 0

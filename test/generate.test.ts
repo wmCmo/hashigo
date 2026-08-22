@@ -37,8 +37,8 @@ import {
   type GeneratorField,
 } from "../src/generate/index.js";
 import { GENERATOR_FIELD_TYPES, FIELD_TYPE_BLOB_KIND } from "../src/schema/index.js";
-import { resolveCard } from "../src/template/index.js";
-import { memoryDocument, renderResolvedCard, serialise } from "../src/render/index.js";
+import { orderSides, resolveCard, type TemplateInput } from "../src/template/index.js";
+import { memoryDocument, renderResolvedCard, renderSides, serialise } from "../src/render/index.js";
 
 const DB = "build/hashigo.db";
 const haveCorpus = existsSync(DB);
@@ -433,6 +433,128 @@ describe.runIf(haveCorpus)("the real export", () => {
       db.close();
     }
   });
+
+  /**
+   * THE COMPOSED PIPELINE, AT CORPUS SCALE. resolve -> expand -> render, which is
+   * the exact path stage 7 walks for every card, and which nothing tested end to
+   * end: the sweep above stops at the field-slot level and never renders, and
+   * `test/render.test.ts`'s 7,716-card sweep never calls `expandGeneratorFields`.
+   *
+   * BASIS, because three different numbers are available and only one is meant:
+   * forward direction only, the cards that HAVE a template, counting
+   * `GeneratorMount.name === "speech"` from `renderSides` after expansion. Not
+   * field slots (18,356), not blobs (10,791), not media mounts.
+   *
+   * A NOTE ON HOW THESE FIGURES WERE ARRIVED AT, because it nearly went wrong. A
+   * first attempt reported `expanded: 0` on a real card and I nearly recorded that
+   * as a finding. It was an artifact of probing ONE arbitrary card with `LIMIT 1`:
+   * exactly 10 of the 7,716 templated cards carry no field values at all, and that
+   * was one of them. Over the corpus the expansion fires 10,722 times. A count
+   * taken from a single row is not a measurement.
+   */
+  it("expands and renders every speech slot in the corpus, and diverges on none", () => {
+    const { db, byTemplate } = load();
+    try {
+      const templates = new Map<string, TemplateInput>();
+      for (const t of db
+        .prepare("SELECT id, content, reverse_permutation FROM templates")
+        .all() as { id: string; content: string; reverse_permutation: string | null }[]) {
+        templates.set(t.id, {
+          id: t.id,
+          content: t.content,
+          fields: (byTemplate.get(t.id) ?? []).map((f) => ({
+            id: f.id,
+            name: f.name,
+            type: f.type,
+          })),
+          reversePermutation:
+            t.reverse_permutation === null
+              ? null
+              : (JSON.parse(t.reverse_permutation) as number[]),
+        });
+      }
+      const cards = db
+        .prepare("SELECT id, content, template_id FROM cards WHERE template_id IS NOT NULL")
+        .all() as { id: string; content: string; template_id: string }[];
+      const valuesOf = db.prepare(
+        "SELECT field_id, value FROM card_field_values WHERE card_id = ?",
+      );
+
+      const sweep = (pendingGenerators: boolean) => {
+        let mounts = 0;
+        let expanded = 0;
+        let divergent = 0;
+        let noValues = 0;
+        const cardsWithMounts = new Set<string>();
+        for (const card of cards) {
+          const template = templates.get(card.template_id);
+          if (template === undefined) continue;
+          const values: Record<string, string> = {};
+          for (const row of valuesOf.all(card.id) as { field_id: string; value: string }[]) {
+            values[row.field_id] = row.value;
+          }
+          if (Object.keys(values).length === 0) noValues += 1;
+          const resolved = resolveCard(
+            { id: card.id, content: card.content, values },
+            template,
+            { pendingGenerators },
+          );
+          // The list `load()` already built — reusing it rather than re-shaping
+          // it keeps this sweep on the same field data as the slot sweep above.
+          const fields = byTemplate.get(card.template_id) ?? [];
+          const bound = expandGeneratorFields(resolved.sides, {
+            fields,
+            values: new Map(Object.entries(values)),
+          });
+          expanded += bound.expanded.length;
+          divergent += bound.divergent.length;
+          const out = renderSides(
+            orderSides(bound.sides, "forward", template.reversePermutation ?? null),
+            { document: memoryDocument() },
+          );
+          const speech = out.generations.filter((g) => g.name === "speech").length;
+          mounts += speech;
+          if (speech > 0) cardsWithMounts.add(card.id);
+        }
+        return { mounts, expanded, divergent, noValues, cards: cardsWithMounts.size };
+      };
+
+      const on = sweep(true);
+      const off = sweep(false);
+      // eslint-disable-next-line no-console
+      console.log(
+        `composed pipeline: pending=true ${on.mounts} speech mounts over ${on.cards} cards ` +
+          `(expanded ${on.expanded}) · pending=false ${off.mounts} over ${off.cards} ` +
+          `(expanded ${off.expanded})`,
+      );
+
+      expect(on).toEqual({
+        mounts: 6_855,
+        cards: 5_664,
+        expanded: 10_722,
+        divergent: 0,
+        noValues: 10,
+      });
+
+      // `pendingGenerators` IS LOAD-BEARING, and this is the number that says so.
+      // With it off the markers are substituted away, so the expansion has nothing
+      // to rewrite and the only speech left is the handful authored as inline
+      // `<speech>` elements. 31 against 6,855 — a caller that forgets the flag
+      // loses 99.5% of the audio and sees no error.
+      expect(off.expanded).toBe(0);
+      expect(off.mounts).toBe(31);
+
+      // DIVERGENT IS THE ONE THAT MATTERS MOST. `expandGeneratorFields` documents
+      // it as "the ONE way this module can go quietly wrong": a key option that
+      // cannot ride on the synthetic element makes the renderer hash a different
+      // key than the request beside it, and the two disagree with nothing to show.
+      // The module claims zero over the corpus; asserted here rather than claimed.
+      expect(on.divergent).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+
 });
 
 describe("voice — pain point #5, in code", () => {
