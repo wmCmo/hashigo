@@ -7,6 +7,7 @@ import { dueInstant } from "../src/scheduler/index.js";
 import {
   DEFAULT_INTERLEAVE,
   DEFAULT_NEW_LIMIT,
+  EXPECTED_SESSION_CARDS,
   SessionCompleteError,
   buildSession,
   interleaveTracks,
@@ -51,8 +52,11 @@ const fresh = (n: number): SessionItem[] =>
   Array.from({ length: n }, (_, i) => item(1000 + i, "new"));
 
 describe("interleaveTracks", () => {
-  it("puts new first by default, and that default is `new-first`", () => {
-    expect(DEFAULT_INTERLEAVE).toBe("new-first");
+  it("defaults to `spread` — Zach's choice, 2026-08-23", () => {
+    expect(DEFAULT_INTERLEAVE).toBe("spread");
+  });
+
+  it("still stacks new first when asked explicitly", () => {
     const out = interleaveTracks(due(3), fresh(2), "new-first");
     expect(out.map((i) => i.origin)).toEqual(["new", "new", "due", "due", "due"]);
   });
@@ -82,17 +86,35 @@ describe("interleaveTracks", () => {
     }
   });
 
-  it("spread actually spreads: 10 new across 443 due land far apart, not clustered", () => {
-    // The real session shape. `spread` exists to avoid new-first's cold start, so
-    // the test that matters is that no two new cards end up adjacent.
+  it("spread lands all ten new cards inside the WINDOW, not across the whole plan", () => {
+    // THE POINT OF THE WINDOW, and the reason Zach's `spread` is usable at all.
+    // Across the whole 453-card plan the new cards are so far apart he never
+    // reaches them: he does ~69-78 reviews a day against a 443-card due queue.
     const out = interleaveTracks(due(443), fresh(10), "spread");
-    const positions = out.flatMap((i, n) => (i.origin === "new" ? [n] : []));
-    expect(positions).toHaveLength(10);
-    const gaps = positions.slice(1).map((p, n) => p - positions[n]!);
-    expect(Math.min(...gaps)).toBeGreaterThan(30);
-    // And neither end, which is what the midpoint-of-share formula buys.
-    expect(positions[0]).toBeGreaterThan(0);
-    expect(positions.at(-1)).toBeLessThan(452);
+    const at = out.flatMap((i, n) => (i.origin === "new" ? [n] : []));
+    expect(at).toHaveLength(10);
+    expect(at.at(-1)).toBeLessThan(EXPECTED_SESSION_CARDS);
+
+    // Evenly, inside that window: step is 80/10 = 8.
+    const gaps = at.slice(1).map((p, n) => p - at[n]!);
+    expect(new Set(gaps)).toEqual(new Set([8]));
+
+    // And a warm-up: due cards come first, so the session does not open on a
+    // word he has never seen. floor(0.5 * 80 / 10) = 4.
+    expect(at[0]).toBe(4);
+  });
+
+  it("the window is what makes the ten reachable — measured against the naive spread", () => {
+    // The comparison that justified windowing rather than spreading over the plan.
+    const seenBy = (over: number, stop: number): number =>
+      interleaveTracks(due(443), fresh(10), "spread", over)
+        .slice(0, stop)
+        .filter((i) => i.origin === "new").length;
+
+    // Naive: the whole plan as the window.
+    expect([50, 80, 100, 150].map((s) => seenBy(453, s))).toEqual([1, 2, 2, 3]);
+    // Windowed, as shipped.
+    expect([50, 80, 100, 150].map((s) => seenBy(80, s))).toEqual([6, 10, 10, 10]);
   });
 
   it("spread is EVEN: with due >= new, no two new cards are ever adjacent", () => {
@@ -169,12 +191,16 @@ describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
     }
   });
 
-  it("puts all ten new tracks first under the default policy", () => {
+  it("mixes the ten new tracks through the first 80 cards, warm-up first", () => {
     const db = openDatabase(DB, { readOnly: true, applySchema: false });
     try {
       const plan = buildSession(db, { now: NOW }).planned();
-      expect(plan.slice(0, 10).every((i) => i.origin === "new")).toBe(true);
-      expect(plan[10]?.origin).toBe("due");
+      const at = plan.flatMap((i, n) => (i.origin === "new" ? [n] : []));
+      expect(at).toHaveLength(10);
+      // All reachable, none adjacent, and the session opens on a DUE card.
+      expect(at.at(-1)).toBeLessThan(EXPECTED_SESSION_CARDS);
+      expect(Math.min(...at.slice(1).map((p, n) => p - at[n]!))).toBeGreaterThan(1);
+      expect(plan[0]?.origin).toBe("due");
     } finally {
       db.close();
     }

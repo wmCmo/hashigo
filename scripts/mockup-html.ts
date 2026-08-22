@@ -28,6 +28,7 @@ interface Card {
   accentPos: number | null;
   reading: string | null;
   pending: string[];
+  newCard: boolean;
 }
 const cards: Card[] = JSON.parse(readFileSync("build/mock/out/cards.json", "utf-8"));
 
@@ -404,6 +405,11 @@ const A2 =
   "position:sticky;top:0;background:#111214;z-index:4}" +
   "main{padding:24px 16px 132px;max-width:720px;margin:0 auto;width:100%}" +
   ".deck{color:#9298a0;font-size:12px;margin-bottom:22px}" +
+  // Decision 25. Ink + border, NOT the accent green: green means `remembered`
+  // and nothing else. A second near-green reads as a bug.
+  ".newtag{display:inline-block;border:1px solid #4d5158;color:#e6e6e6;" +
+  "font-size:10px;letter-spacing:.14em;text-transform:uppercase;padding:2px 7px;" +
+  "margin-left:10px;vertical-align:1px}" +
   ".head{font-size:clamp(48px,16vw,86px);line-height:1.1;font-family:" +
   JP +
   ",serif;color:#f4f4f4;letter-spacing:.04em}" +
@@ -471,6 +477,7 @@ const A2 =
         '<section class="card" data-state="prompt"><main>' +
         '<div class="deck">' +
         c.deck +
+        (c.newCard ? '<span class="newtag">new card</span>' : "") +
         "</div>" +
         '<div class="head">' +
         c.head +

@@ -235,6 +235,12 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     the user asks" convention. Clean and deliberate: scoped commits with real messages,
     gates green first, never a commit that breaks a gate. He said COMMIT — there is no
     remote, and pushing is still not authorised.
+25. **New cards carry a `New Card` label, and it is PER TRACK — not per card.**
+    Mochi does it that way and Zach wants it kept: forward and reverse each get
+    their own, and they need not match. `SessionItem.origin` already carries it at
+    the right granularity. **Terminology trap:** he said the label is "per side",
+    meaning per DIRECTION; in this repo "side" means the parts of a card (side 1-4
+    of 単語), so read it as per TRACK or it lands in the wrong place.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

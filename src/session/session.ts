@@ -40,27 +40,41 @@
  * this passes `newLimit` and does not re-implement the order. `DEFAULT_NEW_LIMIT`
  * is 10 because that is Mochi's default and what he wants kept.
  *
- * ─── THE ORDER IS `new-first` BY DEFAULT, AND THAT IS AN ARGUMENT NOT A TASTE ──
+ * ─── THE ORDER IS `spread`, AND IT IS SPREAD OVER A WINDOW ───────────────────
  *
- * Interleaving is the one item `src/scheduler`'s header flags as "still his
- * taste", so it is a named, swappable policy. But the default is not arbitrary,
- * and the reason is a measurement rather than a preference:
+ * **Zach chose `spread` on 2026-08-23.** Interleaving was the one item
+ * `src/scheduler`'s header flagged as his taste, and he took it: new cards mixed
+ * through the session rather than stacked at the front, so he warms up on words he
+ * already knows instead of on ten he has never seen — which is the right call for
+ * a shadowing drill, where a new card has no accent to recall yet.
  *
- *   * The due queue is **443** and his sustained load is ~69-78 reviews a day
- *     (`BACKTEST.md` gives both bases). **He does not clear the due queue in one
- *     session.**
- *   * So under `due-first`, the ten new cards are never reached — not "reached
- *     late", never — and decision 12's dial becomes inert. That is a defect.
- *   * Under `spread` across the whole due queue, he sees roughly
- *     `10 x (done / 443)` new cards, so stopping at 100 yields two. Same defect,
- *     smaller.
- *   * Under `new-first` the ten happen, so the 3,980-track backlog actually
- *     moves at the rate the setting says it does.
+ * **The WINDOW is the implementation half, and without it his choice does not
+ * work.** Spread across the *whole* plan, the new cards are pushed so far apart
+ * that he never reaches most of them: the due queue is **443** and his sustained
+ * load is ~69-78 reviews a day (`BACKTEST.md` carries both bases), so he does not
+ * finish a session. Measured over a 453-card plan, new cards actually seen:
  *
- * The honest counter-argument, and the reason this is still HIS call: ten
- * unfamiliar words first means ten cards where there is no accent to recall yet,
- * which is a poor warm-up for a shadowing exercise. `spread` is one word away if
- * he prefers it. What is NOT defensible is `due-first`.
+ *     stopping after card             50    80   100   150
+ *     spread over the whole plan       1     2     2     3
+ *     spread over a window of 80       6    10    10    10
+ *
+ * So the slots are laid out over `min(total, max(spreadOver, 2 x new))` positions
+ * rather than over the whole plan. `EXPECTED_SESSION_CARDS` is 80 because that is
+ * just above both measured bases for his sustained load (77.5 per active day,
+ * 69.2 on `BACKTEST.md`'s basis) — a derived number, not a round one, and a
+ * setting rather than a constant.
+ *
+ * The `2 x new` floor is what keeps two new cards from ever landing adjacent: it
+ * forces the step to at least 2 whenever `due >= new`. Swept over 90,000
+ * `(due, new)` pairs, zero violations, and pinned by a test.
+ *
+ * The first new card lands at `floor(0.5 x window / new)` — card 4 of 80 with ten
+ * new — so a few due cards come first and the warm-up he asked for is real rather
+ * than nominal.
+ *
+ * `new-first` and `due-first` remain available. **`due-first` is a defect, not a
+ * preference**: the ten new cards are never reached at all, and decision 12's dial
+ * becomes inert.
  *
  * ─── DETERMINISM ─────────────────────────────────────────────────────────────
  *
@@ -103,7 +117,17 @@ export const DEFAULT_NEW_LIMIT = 10;
  */
 export type InterleavePolicy = "new-first" | "due-first" | "spread";
 
-export const DEFAULT_INTERLEAVE: InterleavePolicy = "new-first";
+export const DEFAULT_INTERLEAVE: InterleavePolicy = "spread";
+
+/**
+ * How many positions `spread` lays the new cards across, by default.
+ *
+ * DERIVED, not chosen: just above both measured bases for his sustained load —
+ * 77.5 reviews per ACTIVE day, and 69.2 on `BACKTEST.md`'s basis. Name the basis
+ * or the number is not a fact (decision 6). It is a default, not a constant: a
+ * caller passes `spreadOver` when it knows better.
+ */
+export const EXPECTED_SESSION_CARDS = 80;
 
 export interface SessionOptions {
   /** RFC 3339 with an offset. Only its LOCAL DATE selects the queue. */
@@ -113,6 +137,12 @@ export interface SessionOptions {
   /** Cap the due half. Absent means every due track, which is the real session. */
   readonly dueLimit?: number;
   readonly interleave?: InterleavePolicy;
+  /**
+   * `spread` only: how many positions to distribute the new cards across.
+   * Defaults to `EXPECTED_SESSION_CARDS`. Floored at `2 x new` so two new cards
+   * never land adjacent, and capped at the plan length.
+   */
+  readonly spreadOver?: number;
   readonly deckId?: string;
   readonly includeSubdecks?: boolean;
   readonly kinds?: readonly string[];
@@ -169,15 +199,16 @@ export class SessionCompleteError extends Error {
 /**
  * Mix new into due. Pure and total: every input appears exactly once.
  *
- * `spread` places the new items at evenly spaced positions across the combined
- * length rather than "every Nth due card", so a 3-new/400-due session and a
- * 10-new/10-due session both come out evenly distributed instead of the second
- * degenerating into new-first.
+ * `spread` places the new items at evenly spaced positions across a WINDOW of the
+ * plan — see the file header for why the window exists and what it is worth. A
+ * `spread` over the whole plan is the same policy with the window set to `total`,
+ * and it is measurably worse for the only session that matters.
  */
 export function interleaveTracks(
   due: readonly SessionItem[],
   fresh: readonly SessionItem[],
   policy: InterleavePolicy,
+  spreadOver: number = EXPECTED_SESSION_CARDS,
 ): SessionItem[] {
   if (fresh.length === 0) return [...due];
   if (due.length === 0) return [...fresh];
@@ -187,21 +218,25 @@ export function interleaveTracks(
   const total = due.length + fresh.length;
   // Position i of n new items goes at floor((i + 0.5) * total / n): the midpoint
   // of its share, which keeps one at neither end and spaces them evenly.
-  // Slot i is the MIDPOINT of new item i's share: floor((i + 0.5) * total / n).
+  // The window: never past the end of the plan, and never tighter than twice the
+  // number of new cards — that floor is what forces a step of at least 2, so two
+  // new cards cannot land adjacent while `due >= new`.
+  const window = Math.min(total, Math.max(spreadOver, 2 * fresh.length));
+
+  // Slot i is the MIDPOINT of new item i's share: floor((i + 0.5) * window / n).
   //
   // NO COLLISION HANDLING, and that is proved rather than hoped. Consecutive
-  // slots differ by total/n = 1 + due/n, which is >= 1 whenever `due >= 1` — and
-  // `due === 0` took the early return above — so the floors strictly increase.
-  // A guard walking forward to the next free slot was here; injection proved it
-  // unreachable, and a sweep of 90,000 (due, new) pairs over 1..300 found zero
-  // collisions. Removed rather than kept, for the same reason as the re-ask Set.
+  // slots differ by window/n, which the floor above keeps at >= 1, so the floors
+  // strictly increase. A guard walking forward to the next free slot was here;
+  // injection proved it unreachable, and a sweep of 90,000 (due, new) pairs over
+  // 1..300 — re-run after the window landed — found zero collisions and zero
+  // adjacent pairs. Removed rather than kept, like the re-ask Set.
   //
-  // The property a caller cares about is pinned in `test/session.test.ts`: for
-  // `due >= new`, no two new items are ever adjacent (minimum gap 2, swept). A
-  // new item CAN land at either end, so do not assert otherwise in general.
+  // A new item CAN land at position 0 or at the window's edge, so do not assert
+  // "never at either end" in general; `test/session.test.ts` pins what is true.
   const slots = new Set<number>();
   for (let i = 0; i < fresh.length; i += 1) {
-    slots.add(Math.floor(((i + 0.5) * total) / fresh.length));
+    slots.add(Math.floor(((i + 0.5) * window) / fresh.length));
   }
   const out: SessionItem[] = [];
   let d = 0;
@@ -344,6 +379,11 @@ export function buildSession(db: SqliteHandle, options: SessionOptions = {}): Re
   const fresh =
     newLimit <= 0 ? [] : newTracks(db, { ...shared, limit: newLimit }).map((t) => toItem(t, "new"));
 
-  const plan = interleaveTracks(due, fresh, options.interleave ?? DEFAULT_INTERLEAVE);
+  const plan = interleaveTracks(
+    due,
+    fresh,
+    options.interleave ?? DEFAULT_INTERLEAVE,
+    options.spreadOver ?? EXPECTED_SESSION_CARDS,
+  );
   return new ReviewSession(db, plan);
 }

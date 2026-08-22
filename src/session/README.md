@@ -6,15 +6,23 @@ something renderable, and this decides **what is in front of you now**.
 
 ```ts
 import { buildSession } from "hashigo/session";
-import { directionForTrackKind, loadRenderedCard } from "hashigo/cards";
+import { mountTrack } from "hashigo/review";
 
 const session = buildSession(db);              // 10 new + everything due
 for (let item = session.current(); item !== null; item = session.current()) {
-  const card = loadRenderedCard(db, item.cardId, directionForTrackKind(item.kind));
-  // ... draw it, wait for the human ...
+  const mounted = mountTrack({ db, track: item, document, store })!;
+  container.replaceChildren(mounted.result.root);
+  mounted.loop.enter(0);                       // on screen. SILENT, by design.
+  // ... he says the contour aloud, taps, hears it, and answers ...
   session.answer(remembered);
+  mounted.dispose();
 }
 ```
+
+**Use `hashigo/review`, not `loadRenderedCard`.** An earlier version of this example
+used the latter and was quietly wrong: it cannot reach the audio, because
+`expandGeneratorFields` needs the template fields and card values it does not
+return. See `src/review/README.md`.
 
 `src/scheduler`'s own header says it "does NOT hold a session, choose a
 new-cards-per-day number, interleave new with due, or undo a grade". This owns the
@@ -41,26 +49,37 @@ paired.** All of that already lives in `newTracks`, including the randomness, so
 this passes `newLimit` and does not re-implement the order. `DEFAULT_NEW_LIMIT` is
 10 because that is Mochi's default and what Zach wants kept.
 
-## The order is `new-first`, and that is an argument rather than a taste
+## The order is `spread`, over a window
 
-Interleaving is the one item `src/scheduler` flags as still Zach's taste, so it is
-a named, swappable policy — `new-first`, `due-first`, `spread`. The default is not
-arbitrary:
+Interleaving was the one item `src/scheduler` flagged as Zach's taste, and **he
+chose `spread` on 2026-08-23**: new cards mixed through the session rather than
+stacked at the front, so he warms up on words he knows instead of on ten he has
+never seen. For a shadowing drill that is the right call — a new card has no accent
+to recall yet.
 
-* The due queue is **443** and his sustained load is ~69–78 reviews a day
-  (`BACKTEST.md` carries both bases). **He does not clear it in one session.**
-* Under `due-first` the ten new cards are therefore never reached — not "reached
-  late", never — and decision 12's dial is inert. That is a defect, not a
-  preference.
-* Under `spread` across the whole queue he sees about `10 × (done / 443)` new
-  cards, so stopping at 100 yields two. The same defect, smaller.
-* Under `new-first` the ten happen, and the 3,980-track backlog moves at the rate
-  the setting claims.
+**The window is the half that makes his choice work.** Spread across the *whole*
+plan, the new cards are so far apart he never reaches them: 443 due against a
+sustained ~69–78 reviews a day (`BACKTEST.md` carries both bases) means he does not
+finish a session. Measured over the real 453-card plan — new cards actually seen:
 
-**The honest counter-argument, and why this is still his call:** ten unfamiliar
-words first means ten cards with no accent to recall yet, which is a poor warm-up
-for a shadowing exercise. `spread` is one option value away. What is not defensible
-is `due-first`.
+| stopping after card | 50 | 80 | 100 | 150 |
+|---|---|---|---|---|
+| spread over the whole plan | 1 | 2 | 2 | 3 |
+| **spread over a window of 80** | **6** | **10** | **10** | **10** |
+
+So slots are laid over `min(total, max(spreadOver, 2 × new))`.
+`EXPECTED_SESSION_CARDS` is **80** because that sits just above both measured bases
+for his sustained load (77.5 per *active* day; 69.2 on `BACKTEST.md`'s basis) — a
+derived number, and a setting rather than a constant.
+
+The `2 × new` floor is what stops two new cards landing adjacent: it forces a step
+of at least 2 whenever `due ≥ new`. Swept over 90,000 `(due, new)` pairs, zero
+violations. And the first new card lands at `floor(0.5 × window / new)` — card 4 of
+80 with ten new — so the warm-up is real rather than nominal.
+
+`new-first` and `due-first` are still available. **`due-first` is a defect rather
+than a preference:** the ten new cards are never reached at all, and decision 12's
+dial becomes inert.
 
 ## What fault injection found — two pieces of dead code, both mine
 
@@ -76,9 +95,10 @@ never fire.
 
 **A collision walk in the `spread` slot arithmetic** (`while (slots.has(slot))
 slot += 1`). Removing it also changed nothing. Consecutive slots differ by
-`total/n = 1 + due/n ≥ 1` whenever `due ≥ 1`, and `due === 0` takes an early
-return, so the floors strictly increase and two new items cannot claim one slot. A
-sweep of **90,000 `(due, new)` pairs** over 1..300 found **zero** collisions.
+`window/n`, which the `2 × new` floor keeps at ≥ 1, so the floors strictly increase
+and two new items cannot claim one slot. A sweep of **90,000 `(due, new)` pairs**
+over 1..300 — re-run after the window landed — found **zero** collisions and zero
+adjacent pairs.
 
 Both were removed rather than kept as belt-and-braces. Code that reads as
 load-bearing and is not is the trap this repo files under "built but NOT WIRED UP".

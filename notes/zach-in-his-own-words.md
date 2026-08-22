@@ -79,6 +79,21 @@ His own words explaining WHY are not derivable from the code or from git.
   amazing, i like it"*. **The diagnosis was his and it was right; only the mechanism
   changed.**
 
+- **`spread`, and the `New Card` label, 2026-08-23.** Asked which interleave order
+  he wanted:
+  > im leaning towards choice 2, but on mochi flashcard, if the card is new, you get
+  > the label `New Card`, and the label is per side, so for forward and reverse, they
+  > could have its own `New Card` tag and it doesn't have to match
+
+  Choice 2 was `spread`. Note "per side" means per DIRECTION here — see decision 25
+  for why that distinction matters in a repo where "side" means something else.
+
+- **On the division of labour**, same day:
+  > I'll let you decide the best choice, this is `how`, and I'm trusting you on `how`
+
+  He picks WHAT; the implementation is mine. The windowed spread is exactly that
+  split: his policy, my window.
+
 - **Commit authority, handed over 2026-08-22** — the grant and its reason in one
   breath:
   > you don't have to wait for my instructions to commit, you know when to commit, make

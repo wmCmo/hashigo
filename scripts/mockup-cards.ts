@@ -38,6 +38,13 @@ interface Card {
   audio: string | null; audioKiB: number;
   accentType: string | null; accentPos: number | null; reading: string | null;
   pending: string[];
+  /**
+   * Decision 25's `New Card` label. DEMONSTRATIVE here: this mockup picks its four
+   * cards for accent variety rather than from a real session, so there is no real
+   * `origin` to read. Set on one card to show both states of the label. In the
+   * app it is `SessionItem.origin === "new"`, which is per TRACK.
+   */
+  newCard: boolean;
 }
 
 const cards: Card[] = [];
@@ -70,6 +77,8 @@ for (const id of IDS) {
   ).get(loaded.name) as { accent_type: number; reading: string; type: string } | undefined;
 
   cards.push({
+    // Demonstrative only — see the `newCard` doc comment above.
+    newCard: cards.length === 3,
     id, head: loaded.name, deck: loaded.deckPath,
     sides: out.sides.map((s) => ({ index: s.index, empty: s.empty, html: serialise(s.element as never) })),
     audio, audioKiB,

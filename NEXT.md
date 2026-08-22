@@ -20,7 +20,7 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 
 ---
 
-## STATE RIGHT NOW — 2026-08-22 (overnight), tree clean, seven commits landed
+## STATE RIGHT NOW — 2026-08-23, tree clean, eight commits landed
 
 **`play()` IS NOW CALLED.** The two newest commits are the session layer
 (`src/session`) and the card mount (`src/review`), and between them B1 is reduced to
@@ -35,9 +35,9 @@ that ships:
     mount + enter, 120 単語 cards   120 clip mounts · 0 resolve calls · 0 play() calls
     reveal, 40 単語 cards            39 cards played · 39 play() calls
 
-See the two sections below. **One small thing needs Zach: the interleave default**
-(`new-first` vs `spread`) — both are built and tested, and the reasoning is in
-"The session layer landed".
+See the two sections below. **The interleave question is now CLOSED** — Zach chose
+`spread` on 2026-08-23 and it ships windowed over 80 cards; decision 25 (the per-track
+`New Card` label) landed with it.
 
 **D1 IS DECIDED and stage 7 is unblocked.** The review screen is **direction A2** —
 direction A's terminal look with direction C's hand — chosen from four mockups built over
@@ -279,14 +279,26 @@ collisions are provably impossible (90,000 pairs swept, zero found). Both remove
 **the totality test passes with the slot formula completely broken**, so `spread is EVEN`
 is the test that owns the formula.
 
-> [!important] **ONE THING NEEDS ZACH, and it is small.** The interleave default is
-> `new-first`. That is defended by measurement rather than taste — with 443 due and a
-> sustained ~69-78/day he never reaches the end of the queue, so `due-first` means the
-> ten new cards are reached NEVER and decision 12's dial is inert. But the honest
-> counter-argument is his to weigh: ten unfamiliar words first is a cold start for a
-> shadowing exercise, where `spread` would warm up on cards he knows. `spread` is one
-> option value away and both are implemented and tested. **Ask him; do not quietly
-> switch it.**
+**SETTLED 2026-08-23: the order is `spread`, over a window of 80.** Zach chose
+`spread` — warm up on cards he knows rather than open on ten he has never seen, which
+is the right call for a shadowing drill. The WINDOW is the implementation half and it
+is not optional: spread across the whole 453-card plan he would see **two** of his ten
+new cards before stopping, because 443 due against ~69-78 reviews a day means he never
+finishes. Windowed to 80 he sees all ten, still never adjacent, with four due cards as
+warm-up first.
+
+    stopping after card             50    80   100   150
+    spread over the whole plan       1     2     2     3
+    spread over a window of 80       6    10    10    10
+
+`EXPECTED_SESSION_CARDS = 80` is derived, not round: just above both measured bases for
+his sustained load (77.5/active day, 69.2 on `BACKTEST.md`'s basis). It is a setting.
+`due-first` remains available and remains a **defect** — the ten are never reached.
+
+**Decision 25 landed with it:** new cards carry a `New Card` label and it is **per
+TRACK**, from how Mochi does it. Watch the terminology — he said "per side" meaning per
+DIRECTION, and "side" means something else in this repo (the parts of a card). It needs
+no new state: `SessionItem.origin` is already per-track.
 
 ### `src/review` landed 2026-08-22 — `play()` is called, over real cards
 

@@ -408,6 +408,31 @@ right**: it holds his verbatim reasoning and this quotes it.
    from the current run, and `git reset --hard` over work that was never committed.
    Reverting is the safe direction and it is the reason he gave for trusting this at all.
 
+25. **New cards carry a `New Card` label, and it is PER TRACK — not per card.**
+   Decided 2026-08-23, from how Mochi already does it: *"on mochi flashcard, if the
+   card is new, you get the label `New Card`, and the label is per side, so for
+   forward and reverse, they could have its own `New Card` tag and it doesn't have
+   to match."*
+
+   **A TERMINOLOGY TRAP, recorded because it would put the label in the wrong
+   place.** He said "per side" and meant per DIRECTION. In this repo **"side" is a
+   part of a card** — 単語 has four, and decision 20 is about which of them `型`
+   renders on — while forward/reverse are **tracks** (`card_tracks.kind`). So this
+   decision is per TRACK. Read it as "per side" in this repo's vocabulary and the
+   label ends up on side 2 of every card instead of on the track being reviewed.
+
+   **It is already at the right granularity and needs no new state.**
+   `SessionItem.origin` is `"due" | "new"` and comes from which queue the track was
+   read out of — `newTracks` selects `due_at IS NULL AND reps = 0`, which is a
+   per-track predicate. So the label is a render of `origin === "new"`, not a new
+   column, and it is automatically unmatched between a card's two tracks whenever
+   only one of them is new. Measured on the live queue: the ten new tracks on
+   2026-08-22 spanned ten DISTINCT cards, mixed forward and reverse — decision 15's
+   claim that the two are not paired, holding in real data.
+
+   Consistent with decision 15 and with `newTracks`' own docstring, which corrected
+   an earlier claim that the queue delivered forward/reverse pairs.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach
