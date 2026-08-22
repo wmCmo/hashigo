@@ -18,6 +18,7 @@ import { basename, resolve } from "node:path";
 
 import { openDatabase } from "../db/index.js";
 import { collect } from "./metrics.js";
+import type { Locale } from "./labels.js";
 import { renderDashboard } from "./render.js";
 
 interface Args {
@@ -28,6 +29,7 @@ interface Args {
   json: boolean;
   quiet: boolean;
   help: boolean;
+  locale: Locale;
 }
 
 const USAGE = `
@@ -38,6 +40,8 @@ usage: vite-node src/dashboard/cli.ts -- [options]
   --year <n>      calendar year for the Mochi comparison tile (default 2026)
   --as-of <date>  YYYY-MM-DD "today" for the elapsed-day count
                   (default: the last review date in the log)
+  --locale <l>    en (default) or ja. Deck, template and field names stay
+                  Japanese in both — they are identifiers, not labels.
   --json          print the headline figures as JSON instead of a summary
   --quiet         write the file and say nothing
   --help
@@ -52,6 +56,7 @@ function parse(argv: readonly string[]): Args {
     json: false,
     quiet: false,
     help: false,
+    locale: "en",
   };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
@@ -74,6 +79,16 @@ function parse(argv: readonly string[]): Args {
       case "--as-of":
         args.asOf = next();
         break;
+      case "--locale": {
+        const value = next();
+        // Refused rather than silently defaulted: a typo in a locale flag would
+        // otherwise write the wrong language and say nothing.
+        if (value !== "en" && value !== "ja") {
+          throw new Error(`--locale must be en or ja, got ${JSON.stringify(value)}`);
+        }
+        args.locale = value;
+        break;
+      }
       case "--json":
         args.json = true;
         break;
@@ -109,7 +124,7 @@ function main(argv: readonly string[]): void {
       comparisonYear: args.year,
       asOf: args.asOf,
     });
-    const html = renderDashboard(data);
+    const html = renderDashboard(data, { locale: args.locale });
     const elapsed = ((Date.now() - started) / 1000).toFixed(1);
 
     if (args.out === "-") {

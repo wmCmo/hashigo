@@ -35,6 +35,7 @@
  */
 
 import { TARGET_RETENTION as TARGET_RETENTION_SETTING } from "../scheduler/policy.js";
+import { LOCALES, type Labels, type Locale } from "./labels.js";
 import {
   BEYOND_YEAR_LABEL,
   MOCHI_INTERVAL_CAP_DAYS,
@@ -129,11 +130,7 @@ const CELL = 10;
 const PITCH = 13;
 const HEAT_GUTTER = 26;
 const MONTH_BAND = 14;
-const WEEKDAY_LABELS: readonly (readonly [number, string])[] = [
-  [1, "月"],
-  [3, "水"],
-  [5, "金"],
-];
+
 
 function heatBin(reviews: number, thresholds: readonly [number, number, number]): number {
   if (reviews <= 0) return 0;
@@ -148,6 +145,7 @@ function heatmapYear(
   byDate: Map<string, DayActivity>,
   thresholds: readonly [number, number, number],
   lastDate: string,
+  lab: Labels,
 ): string {
   const start = dayMs(`${year}-01-01`);
   const yearEnd = dayMs(`${year}-12-31`);
@@ -166,8 +164,8 @@ function heatmapYear(
     const x = HEAT_GUTTER + col * PITCH;
     const y = MONTH_BAND + weekday(ms) * PITCH;
     const tip = day
-      ? `${date} · ${int(day.reviews)}回 · 定着率 ${pct(day.retention, 0)} · ${dec(day.minutes, 0)}分`
-      : `${date} · 学習なし`;
+      ? lab.heatDay(date, int(day.reviews), pct(day.retention, 0), dec(day.minutes, 0))
+      : lab.heatDayEmpty(date);
     cells.push(
       `<rect x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="2" ` +
         `fill="var(--heat-${heatBin(reviews, thresholds)})"><title>${esc(tip)}</title></rect>`,
@@ -180,11 +178,11 @@ function heatmapYear(
     if (first > end) break;
     const col = Math.floor((first - firstSunday) / (7 * DAY_MS));
     months.push(
-      `<text class="ax" x="${HEAT_GUTTER + col * PITCH}" y="10">${m}月</text>`,
+      `<text class="ax" x="${HEAT_GUTTER + col * PITCH}" y="10">${esc(lab.month(m))}</text>`,
     );
   }
 
-  const weekdays = WEEKDAY_LABELS.map(
+  const weekdays = lab.weekdays.map(
     ([row, label]) =>
       `<text class="ax" x="0" y="${MONTH_BAND + row * PITCH + 8}">${label}</text>`,
   );
@@ -192,7 +190,7 @@ function heatmapYear(
   const summary = byDate.size;
   return (
     `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" ` +
-    `role="img" aria-label="${esc(`${year}年の活動ヒートマップ。1日1マス、色は復習数の四分位。`)}">` +
+    `role="img" aria-label="${esc(lab.heatAria(year))}">` +
     `${months.join("")}${weekdays.join("")}${cells.join("")}` +
     `</svg><!-- ${summary} active days in the map -->`
   );
@@ -207,7 +205,7 @@ function heatmapYear(
  * their tooltip says 学習なし and nothing else, so a row for them would add
  * length without adding a value.  That is the whole of what stays hover-only.
  */
-function heatmapYearTable(year: string, byDate: Map<string, DayActivity>): string {
+function heatmapYearTable(year: string, byDate: Map<string, DayActivity>, lab: Labels): string {
   const rows = [...byDate.values()]
     .filter((d) => d.date.startsWith(`${year}-`) && d.reviews > 0)
     .sort((a, b) => (a.date < b.date ? -1 : 1))
@@ -219,30 +217,27 @@ function heatmapYearTable(year: string, byDate: Map<string, DayActivity>): strin
       dec(d.minutes, 0),
       int(d.newCards),
     ]);
-  return details(
-    `${year}年の1日ごとの数字を表で見る（${rows.length}日）`,
-    table(["日付", "復習数", "カード数", "定着率", "分", "新規"], rows),
-  );
+  return details(lab.yearTableSummary(year, rows.length), table(lab.yearTableHead, rows));
 }
 
-function heatLegend(thresholds: readonly [number, number, number]): string {
+function heatLegend(thresholds: readonly [number, number, number], lab: Labels): string {
   const labels = [
     "0",
     `1–${int(thresholds[0])}`,
     `${int(thresholds[0] + 1)}–${int(thresholds[1])}`,
     `${int(thresholds[1] + 1)}–${int(thresholds[2])}`,
-    `${int(thresholds[2] + 1)}+`,
+    `${int(thresholds[2] + 1)}${lab.heatLegendMore}`,
   ];
   const swatches = labels
     .map((label, i) => `<span><i style="background:var(--heat-${i})"></i> ${esc(label)}</span>`)
     .join("");
-  return `<div class="heat-legend"><span>1日の復習数</span>${swatches}</div>`;
+  return `<div class="heat-legend"><span>${esc(lab.heatLegendTitle)}</span>${swatches}</div>`;
 }
 
 // ─── 累計学習カード数 ────────────────────────────────────────────────────────
 
-function cumulativeChart(days: readonly DayActivity[]): string {
-  if (days.length === 0) return '<p class="def">データなし</p>';
+function cumulativeChart(days: readonly DayActivity[], lab: Labels): string {
+  if (days.length === 0) return `<p class="def">${esc(lab.noData)}</p>`;
   const W = 720;
   const H = 190;
   const L = 46;
@@ -286,7 +281,7 @@ function cumulativeChart(days: readonly DayActivity[]): string {
 
   return (
     `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(
-      `累計学習カード数の推移。${first.date} の 0 枚から ${last.date} の ${int(last.cumulativeCards)} 枚まで。`,
+      lab.cumulativeAria(first.date, last.date, int(last.cumulativeCards)),
     )}">` +
     `${ticks.join("")}${yearMarks.join("")}` +
     `<path d="${area}" fill="var(--series-1)" fill-opacity="0.12"/>` +
@@ -295,7 +290,7 @@ function cumulativeChart(days: readonly DayActivity[]): string {
     `<circle cx="${round(x(dayMs(last.date)))}" cy="${round(y(last.cumulativeCards))}" r="4" ` +
     `fill="var(--series-1)" stroke="var(--surface)" stroke-width="2"/>` +
     `<text class="val" x="${W - R + 8}" y="${round(y(last.cumulativeCards)) }" dy="4">` +
-    `${int(last.cumulativeCards)}枚</text>` +
+    `${esc(lab.cumulativeCap(int(last.cumulativeCards)))}</text>` +
     `<line class="axis-line" x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}"/>` +
     `</svg>`
   );
@@ -311,8 +306,8 @@ function niceCeil(value: number): number {
   return 10 * magnitude;
 }
 
-function monthlyCardsChart(months: readonly MonthActivity[]): string {
-  if (months.length === 0) return '<p class="def">データなし</p>';
+function monthlyCardsChart(months: readonly MonthActivity[], lab: Labels): string {
+  if (months.length === 0) return `<p class="def">${esc(lab.noData)}</p>`;
   const W = 720;
   const H = 130;
   const L = 46;
@@ -344,7 +339,7 @@ function monthlyCardsChart(months: readonly MonthActivity[]): string {
     bars.push(
       `<rect x="${round(xx)}" y="${round(H - B - h)}" width="${round(barW)}" height="${round(h)}" ` +
         `rx="2" fill="var(--series-1)"><title>${esc(
-          `${m.month} · ${int(m.cardsSeen)}枚 · 新規 ${int(m.newCards)}枚 · ${int(m.reviews)}回`,
+          lab.monthlyTip(m.month, int(m.cardsSeen), int(m.newCards), int(m.reviews)),
         )}</title></rect>`,
     );
     const year = m.month.slice(0, 4);
@@ -358,7 +353,7 @@ function monthlyCardsChart(months: readonly MonthActivity[]): string {
   const peakX = L + peakIndex * pitch + pitch / 2;
   return (
     `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(
-      "月ごとに学習したカード数。最大は " + peak.month + " の " + int(peak.cardsSeen) + " 枚。",
+      lab.monthlyAria(peak.month, int(peak.cardsSeen)),
     )}">` +
     `${ticks.join("")}${bars.join("")}${yearTicks.join("")}` +
     `<text class="val" x="${round(peakX)}" y="${round(y(peak.cardsSeen)) - 6}" text-anchor="middle">` +
@@ -401,6 +396,7 @@ const TARGET_LABEL = `${Math.round(TARGET_RETENTION * 100)}%`;
 function intervalRetentionChart(
   buckets: readonly IntervalBucket[],
   scheduled: readonly IntervalBucket[],
+  lab: Labels,
 ): string {
   const W = 720;
   const H = 210;
@@ -430,7 +426,7 @@ function intervalRetentionChart(
   const targetY = round(y(TARGET_RETENTION * 100));
   const target =
     `<line class="axis-line" x1="${L}" y1="${targetY}" x2="${W - R}" y2="${targetY}"/>` +
-    `<text class="ax" x="${W - R}" y="${targetY + 13}" text-anchor="end">目標 ${TARGET_LABEL}</text>`;
+    `<text class="ax" x="${W - R}" y="${targetY + 13}" text-anchor="end">${esc(lab.targetLine(TARGET_LABEL))}</text>`;
 
   let best = observed[0];
   let worst = observed[0];
@@ -449,7 +445,7 @@ function intervalRetentionChart(
       `<circle cx="${round(cx)}" cy="${round(cy)}" r="4" fill="none" ` +
         `stroke="var(--series-2)" stroke-width="2" stroke-dasharray="2 2">` +
         `<title>${esc(
-          `${b.label}（予定 scheduled）· 定着率 ${pct(b.retention)} · ${int(b.reviews)}回`,
+          lab.bucketScheduledTip(b.label, pct(b.retention), int(b.reviews)),
         )}</title></circle>`,
     );
   });
@@ -462,7 +458,7 @@ function intervalRetentionChart(
     );
     if (b.retention === null) {
       marks.push(
-        `<text class="ax" x="${round(cx)}" y="${targetY - 10}" text-anchor="middle">観測なし</text>`,
+        `<text class="ax" x="${round(cx)}" y="${targetY - 10}" text-anchor="middle">${esc(lab.noObservation)}</text>`,
       );
       return;
     }
@@ -472,7 +468,7 @@ function intervalRetentionChart(
         `stroke="var(--series-1)" stroke-width="2"/>` +
         `<circle cx="${round(cx)}" cy="${round(cy)}" r="5" fill="var(--series-1)" ` +
         `stroke="var(--surface)" stroke-width="2"><title>${esc(
-          `${b.label} · 定着率 ${pct(b.retention)} · ${int(b.reviews)}回 · 失敗 ${int(b.lapses)}`,
+          lab.bucketElapsedTip(b.label, pct(b.retention), int(b.reviews), int(b.lapses)),
         )}</title></circle>`,
     );
     if (b === best || b === worst) {
@@ -485,7 +481,7 @@ function intervalRetentionChart(
 
   return (
     `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(
-      `直前の復習間隔ごとの定着率。実測(elapsed)と予定(scheduled)の2系列。目標 ${TARGET_LABEL} の線からの高さが余剰。`,
+      lab.retentionAria(TARGET_LABEL),
     )}">${ticks.join("")}${target}${planned.join("")}${marks.join("")}</svg>`
   );
 }
@@ -493,6 +489,7 @@ function intervalRetentionChart(
 function intervalVolumeChart(
   buckets: readonly IntervalBucket[],
   scheduled: readonly IntervalBucket[],
+  lab: Labels,
 ): string {
   const W = 720;
   const H = 110;
@@ -544,21 +541,21 @@ function intervalVolumeChart(
         b.reviews,
         "series-1",
         "0.55",
-        `${b.label}（実測 elapsed）· ${int(b.reviews)}回`,
+        lab.volumeElapsedTip(b.label, int(b.reviews)),
       ) +
       bar(
         cx + barW / 2 + 1,
         other?.reviews ?? 0,
         "series-2",
         "0.35",
-        `${b.label}（予定 scheduled）· ${int(other?.reviews ?? 0)}回`,
+        lab.volumeScheduledTip(b.label, int(other?.reviews ?? 0)),
       )
     );
   });
 
   const peakX = L + pitch * (buckets.indexOf(peak) + 0.5);
   return (
-    `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc("復習間隔ごとの復習回数。")}">` +
+    `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(lab.volumeAria)}">` +
     `${ticks.join("")}${bars.join("")}` +
     `<text class="val" x="${round(peakX)}" y="${round(y(peak.reviews)) - 6}" text-anchor="middle">` +
     `${int(peak.reviews)}</text>` +
@@ -571,8 +568,8 @@ function intervalVolumeChart(
 /** Below this many reviews a retention figure is drawn hollow, not solid. */
 export const SMALL_SAMPLE = 100;
 
-function deckRetentionChart(decks: readonly DeckRetention[]): string {
-  if (decks.length === 0) return '<p class="def">データなし</p>';
+function deckRetentionChart(decks: readonly DeckRetention[], lab: Labels): string {
+  if (decks.length === 0) return `<p class="def">${esc(lab.noData)}</p>`;
   const W = 720;
   const GUT = 168;
   const R = 54;
@@ -598,7 +595,7 @@ function deckRetentionChart(decks: readonly DeckRetention[]): string {
         value: d.directForwardRetention,
         reviews: d.directForwardReviews,
         token: "--series-1",
-        name: "順方向",
+        name: lab.forward,
       });
     }
     if (d.directReverseRetention !== null) {
@@ -607,7 +604,7 @@ function deckRetentionChart(decks: readonly DeckRetention[]): string {
         value: d.directReverseRetention,
         reviews: d.directReverseReviews,
         token: "--series-2",
-        name: "逆方向",
+        name: lab.reverse,
       });
     }
   });
@@ -670,8 +667,7 @@ function deckRetentionChart(decks: readonly DeckRetention[]): string {
           ? `fill="var(--surface)" stroke="var(${dot.token})" stroke-width="2"`
           : `fill="var(${dot.token})" stroke="var(--surface)" stroke-width="2"`) +
         `><title>${esc(
-          `${deck.path} · ${dot.name} ${pct(dot.value)} · ${int(dot.reviews)}回` +
-            (small ? "（標本が小さい）" : ""),
+          lab.deckDotTip(deck.path, dot.name, pct(dot.value), int(dot.reviews), small),
         )}</title></circle>`,
     );
     if (dot === hi || dot === lo) {
@@ -685,18 +681,27 @@ function deckRetentionChart(decks: readonly DeckRetention[]): string {
 
   return (
     `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(
-      `デッキごとの順方向・逆方向の定着率。${TARGET_LABEL} の線が目標。最高と最低に値を表示。`,
+      lab.deckAria(TARGET_LABEL),
     )}">${ticks.join("")}${parts.join("")}</svg>`
   );
 }
 
 // ─── デッキの進捗 ───────────────────────────────────────────────────────────
 
-const PROGRESS_SEGMENTS: readonly (readonly [keyof DeckProgress, string, string])[] = [
-  ["directNewTracks", "--ord-1", "未学習"],
-  ["directYoungTracks", "--ord-2", "学習中"],
-  ["directMatureTracks", "--ord-3", "定着"],
-];
+/**
+ * The three track states, in order. The NAME comes from the locale, so this is a
+ * function rather than a constant — the key and the colour token are structural,
+ * the label is not.
+ */
+function progressSegments(
+  lab: Labels,
+): readonly (readonly [keyof DeckProgress, string, string])[] {
+  return [
+    ["directNewTracks", "--ord-1", lab.progressNew],
+    ["directYoungTracks", "--ord-2", lab.progressYoung],
+    ["directMatureTracks", "--ord-3", lab.progressMature],
+  ];
+}
 
 /**
  * Proportional bars, not absolute ones. 単語 has 7,404 tracks and 基本情報/第10章
@@ -704,8 +709,8 @@ const PROGRESS_SEGMENTS: readonly (readonly [keyof DeckProgress, string, string]
  * sliver and the tile answers nothing. The question here is "how far along is
  * this deck", which is a share — the absolute total is printed at the row end.
  */
-function deckProgressChart(decks: readonly DeckProgress[]): string {
-  if (decks.length === 0) return '<p class="def">データなし</p>';
+function deckProgressChart(decks: readonly DeckProgress[], lab: Labels): string {
+  if (decks.length === 0) return `<p class="def">${esc(lab.noData)}</p>`;
   const W = 720;
   const GUT = 168;
   const R = 62;
@@ -723,7 +728,7 @@ function deckProgressChart(decks: readonly DeckProgress[]): string {
     ];
     const total = Math.max(1, d.directTracks);
     let cursor = 0;
-    for (const [key, token, name] of PROGRESS_SEGMENTS) {
+    for (const [key, token, name] of progressSegments(lab)) {
       const value = d[key] as number;
       if (value <= 0) continue;
       const left = x0 + (cursor / total) * span;
@@ -733,7 +738,7 @@ function deckProgressChart(decks: readonly DeckProgress[]): string {
       parts.push(
         `<rect x="${round(left)}" y="${y}" width="${round(w)}" height="${BAR}" rx="2" ` +
           `fill="var(${token})"><title>${esc(
-            `${d.path} · ${name} ${int(value)} / ${int(d.directTracks)}トラック ` +
+            lab.progressTip(d.path, name, int(value), int(d.directTracks)) +
               `(${pct(value / total, 0)})`,
           )}</title></rect>`,
       );
@@ -750,7 +755,7 @@ function deckProgressChart(decks: readonly DeckProgress[]): string {
 
   return (
     `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(
-      "デッキごとのトラックの状態の割合。未学習・学習中・定着。行末は総トラック数。",
+      lab.progressAria,
     )}">${rows.join("")}${scale.join("")}</svg>`
   );
 }
@@ -783,9 +788,9 @@ interface Tile {
  *     provenance line under the chart counts both, and the ratio moves one card
  *     per review.
  */
-function forecastChart(report: ForecastReport): string {
+function forecastChart(report: ForecastReport, lab: Labels): string {
   const days = report.days;
-  if (days.length === 0) return '<p class="def">データなし</p>';
+  if (days.length === 0) return `<p class="def">${esc(lab.noData)}</p>`;
   const W = 720;
   const H = 132;
   const L = 46;
@@ -808,7 +813,7 @@ function forecastChart(report: ForecastReport): string {
   const bars = days.map((day, i) => {
     const cx = L + pitch * (i + 0.5);
     const h = H - B - y(day.tracks);
-    const title = `${day.date} · ${int(day.tracks)}件`;
+    const title = lab.forecastTip(day.date, int(day.tracks));
     if (day.tracks === 0) {
       // Drawn as a baseline stub rather than nothing: an empty day is a fact,
       // and a gap in a bar row reads as missing data instead of as zero.
@@ -843,86 +848,90 @@ function forecastChart(report: ForecastReport): string {
 
   return (
     `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(
-      `${report.asOf} の翌日から ${report.horizonDays} 日間に予定されている復習件数。` +
-        `当日以前の ${report.backlog} 件は含まない。`,
+      lab.forecastAria(report.asOf, String(report.horizonDays), String(report.backlog)),
     )}">${ticks.join("")}${bars.join("")}${labels.join("")}${peakLabel}` +
     `<line class="axis-line" x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}"/></svg>`
   );
 }
 
-function tile(t: Tile): string {
+function tile(t: Tile, lab: Labels): string {
   return (
-    `<div class="tile"><div class="k">${esc(t.key)} <span class="latin">${esc(t.latin)}</span></div>` +
+    // `section` RETURNS MARKUP, so the escaping goes on its inputs — wrapping the
+    // result escaped the <span> itself and printed it as text.
+    `<div class="tile"><div class="k">${lab.section(esc(t.key), esc(t.latin))}</div>` +
     `<div class="v">${esc(t.value)}${t.unit ? `<span class="u">${esc(t.unit)}</span>` : ""}</div>` +
     `<div class="s">${esc(t.sub)}</div></div>`
   );
 }
 
-function tilesFor(totals: Totals, cardsTotal: number, activeSpan: number): string {
+function tilesFor(
+  totals: Totals,
+  cardsTotal: number,
+  activeSpan: number,
+  lab: Labels,
+): string {
   const tiles: Tile[] = [
     {
-      key: "復習数",
+      key: lab.tileReviews,
       latin: "reviews",
       value: int(totals.reviews),
-      sub: `採点イベント、全トラック（順方向 ${int(totals.forwardReviews)} / 逆方向 ${int(
-        totals.reverseReviews,
-      )}）`,
+      sub: lab.tileReviewsSub(int(totals.forwardReviews), int(totals.reverseReviews)),
     },
     {
-      key: "定着率",
+      key: lab.tileRetention,
       latin: "retention",
       value: pct(totals.retention),
-      sub: `合格 ${int(totals.passed)} / 失敗 ${int(totals.lapses)} · 目標 ${TARGET_LABEL} に対して ${signed(
-        (totals.retention ?? 0) * 100 - TARGET_RETENTION * 100,
-        2,
-      )} ポイント`,
+      sub: lab.tileRetentionSub(
+        int(totals.passed),
+        int(totals.lapses),
+        TARGET_LABEL,
+        signed((totals.retention ?? 0) * 100 - TARGET_RETENTION * 100, 2),
+      ),
     },
     {
-      key: "復習時間",
+      key: lab.tileStudyTime,
       latin: "study time",
       value: dec(totals.hours, 1),
-      unit: "時間",
-      sub: `${dec(totals.hours / 24, 1)}日ぶん · 所要時間を持つ復習 ${int(
-        totals.timedReviews,
-      )} / ${int(totals.reviews)}`,
+      unit: lab.unitHours,
+      sub: lab.tileStudyTimeSub(
+        dec(totals.hours / 24, 1),
+        `${int(totals.timedReviews)} / ${int(totals.reviews)}`,
+      ),
     },
     {
-      key: "学習カード数",
+      key: lab.tileCardsStudied,
       latin: "cards studied",
       value: int(totals.cardsStudied),
-      sub: `1回以上採点されたカード。全カード ${int(cardsTotal)} 枚のうち`,
+      sub: lab.tileCardsStudiedSub(int(cardsTotal)),
     },
     {
-      key: "活動日数",
+      key: lab.tileActiveDays,
       latin: "active days",
       value: int(totals.activeDays),
-      sub: `1回以上採点した日 / 経過 ${int(activeSpan)}日（両端を含む）`,
+      sub: lab.tileActiveDaysSub(int(activeSpan)),
     },
     {
-      key: "失敗",
+      key: lab.tileLapses,
       latin: "lapses",
       value: int(totals.lapses),
-      sub: `「覚えていない」と採点した回数。${pct(
-        totals.lapses / Math.max(1, totals.reviews),
-        2,
-      )}`,
+      sub: lab.tileLapsesSub(pct(totals.lapses / Math.max(1, totals.reviews), 2)),
     },
     {
-      key: "1日あたり",
+      key: lab.tilePerDay,
       latin: "per active day",
       value: dec(totals.reviewsPerActiveDay, 1),
-      unit: "回",
-      sub: `活動日で割った値。休んだ日は含めない`,
+      unit: lab.unitTimes,
+      sub: lab.tilePerDaySub,
     },
     {
-      key: "1回あたり",
+      key: lab.tilePerReview,
       latin: "per review",
       value: dec(totals.medianSeconds, 0),
-      unit: "秒",
-      sub: `中央値。平均は ${dec(totals.meanSeconds, 1)}秒 — 裾が長い`,
+      unit: lab.unitSeconds,
+      sub: lab.tilePerReviewSub(dec(totals.meanSeconds, 1)),
     },
   ];
-  return `<div class="tiles">${tiles.map(tile).join("")}</div>`;
+  return `<div class="tiles">${tiles.map((t) => tile(t, lab)).join("")}</div>`;
 }
 
 function table(head: readonly string[], rows: readonly (readonly string[])[]): string {
@@ -1083,9 +1092,16 @@ footer ul { padding-left: 18px; margin: 6px 0; }
 footer code { font-size: 11.5px; }
 `;
 
-function head(title: string): string {
+/**
+ * `lang` MUST FOLLOW THE LOCALE. It was hardcoded `ja`, so the English page
+ * declared itself Japanese — not cosmetic: a screen reader picks its voice from
+ * this attribute, and it is also what CSS `:lang()` and the browser's own font
+ * fallback key off. Caught by a test asserting the English headings, whose
+ * failure message printed `<html lang="ja">`.
+ */
+function head(title: string, locale: Locale): string {
   return (
-    `<!doctype html>\n<html lang="ja">\n<head>\n<meta charset="utf-8">\n` +
+    `<!doctype html>\n<html lang="${locale}">\n<head>\n<meta charset="utf-8">\n` +
     `<meta name="viewport" content="width=device-width, initial-scale=1">\n` +
     `<title>${esc(title)}</title>\n` +
     `<!-- Generated by src/dashboard/render.ts. No script, no network requests: every\n` +
@@ -1102,6 +1118,16 @@ export interface RenderOptions {
   readonly deckChartMinReviews?: number;
   /** Minimum tracks for a deck to appear in the progress chart. */
   readonly progressChartMinTracks?: number;
+  /**
+   * Which language the page is written in. Default `en` — Zach's decision.
+   *
+   * `ja` is not a legacy path, it is the PROOF: every Japanese string in
+   * `./labels.ts` is a byte-identical copy of what this renderer emitted before
+   * the extraction, so rendering with `ja` and diffing against
+   * `test/fixtures/dashboard/ja.golden.html` is what shows nothing was mangled on
+   * the way into the table. Deleting it would delete the check.
+   */
+  readonly locale?: Locale;
 }
 
 export function renderDashboard(data: DashboardData, options: RenderOptions = {}): string {
@@ -1114,6 +1140,16 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
   const lastDate = totalsAll.lastDate ?? isoDate(Date.now());
   const deckMin = options.deckChartMinReviews ?? 300;
   const progressMin = options.progressChartMinTracks ?? 40;
+  // ENGLISH BY DEFAULT — Zach's decision. `ja` is not a legacy path: rendering
+  // with it must stay byte-identical to test/fixtures/dashboard/ja.golden.html,
+  // captured before these strings moved into ./labels.ts. That check is what says
+  // the extraction lost nothing across all 460 KB, and it is why the Japanese is
+  // kept rather than deleted.
+  //
+  // Named `lab`, not `L`: every chart helper below already uses `const L = 46`
+  // for its left margin, and shadowing that would be a silent layout bug rather
+  // than a compile error in the ones that only read it.
+  const lab = LOCALES[options.locale ?? "en"];
 
   const chartDecks = primary.decks
     .filter((d) => d.directReviews >= deckMin)
@@ -1123,50 +1159,39 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     .sort((a, b) => b.directTracks - a.directTracks);
 
   const out: string[] = [];
-  out.push(head("Hashigo · 学習ダッシュボード"));
+  out.push(head(lab.pageTitle, lab.locale));
 
   // ── header
   out.push(
-    `<p class="eyebrow">Hashigo 梯子 · Stage 2 · read-only</p>`,
-    `<h1>学習ダッシュボード</h1>`,
-    `<p class="lede">インポート済みの復習ログだけを読む静的ページ。すべての数字は生成時に確定` +
-      `していて、スクリプトも外部リクエストもない。これは同時にインポータの受け入れテストで` +
-      `もある — Mochi 自身のダッシュボードが既知の正解を持っているので、一致すればインポート` +
-      `は正しい。</p>`,
+    `<p class="eyebrow">${esc(lab.eyebrow)}</p>`,
+    `<h1>${esc(lab.h1)}</h1>`,
+    `<p class="lede">${esc(lab.lede)}</p>`,
     `<dl class="meta">` +
-      `<div><dt>データ元</dt><dd>${esc(data.source)}</dd></div>` +
-      `<div><dt>生成</dt><dd>${esc(data.generatedAt)}</dd></div>` +
-      `<div><dt>スキーマ</dt><dd>v${int(data.schemaVersion)}</dd></div>` +
-      `<div><dt>期間</dt><dd>${esc(totalsAll.firstDate ?? DASH)} … ${esc(
+      `<div><dt>${esc(lab.metaSource)}</dt><dd>${esc(data.source)}</dd></div>` +
+      `<div><dt>${esc(lab.metaGenerated)}</dt><dd>${esc(data.generatedAt)}</dd></div>` +
+      `<div><dt>${esc(lab.metaSchema)}</dt><dd>v${int(data.schemaVersion)}</dd></div>` +
+      `<div><dt>${esc(lab.metaSpan)}</dt><dd>${esc(totalsAll.firstDate ?? DASH)} … ${esc(
         totalsAll.lastDate ?? DASH,
       )}</dd></div>` +
-      `<div><dt>タイムゾーン</dt><dd>各復習の tz_offset で日付を切る（UTC ではない）</dd></div>` +
+      `<div><dt>${esc(lab.metaTimezone)}</dt><dd>${esc(lab.metaTimezoneValue)}</dd></div>` +
       `</dl>`,
   );
 
   // ── totals
   out.push(
-    `<section class="card"><h2>全期間の合計 <span class="latin">all time</span></h2>`,
-    `<p class="def">窓 = ${esc(totalsAll.windowStart ?? DASH)} 〜 ${esc(
-      totalsAll.windowEnd ?? DASH,
-    )}（両端を含む ${int(totalsAll.daysElapsed)}日）。復習数は採点イベント数で、` +
-      `1枚のカードの順方向と逆方向は別に数える。定着率 = 合格 / 全採点イベント。` +
-      `復習時間 = duration の合計で、${int(
-        totalsAll.reviews - totalsAll.timedReviews,
-      )}件は所要時間を持たないため時間には寄与しない。</p>`,
-    tilesFor(totalsAll, cardsTotal, totalsAll.daysElapsed),
-    `<p class="read">読み: <b>96% を超える定着率は、間隔が必要より短いという意味</b>。` +
-      `設定した目標は ${TARGET_LABEL}（FSRS 既定の 90% ではなく、Zach が決めた値）で、` +
-      `いまの位置はそれより ${signed(
-        (totalsAll.retention ?? 0) * 100 - TARGET_RETENTION * 100,
-        2,
-      )} ポイント上にある。すでに持っている定着率のために毎日の復習を払っている、` +
-      `というのが SPEC の指摘で、下の「定着率 × 復習間隔」がその payment を可視化する。</p>`,
-    `<p class="def">時刻について: ${int(
-      totalsAll.reviewsTimeUnknown,
-    )}件すべてが time_unknown = 1。Mochi は日付だけを保存し JST 深夜を書いていたので、` +
-      `時刻帯別の分析は原理的に不可能。だから 00:00 の偽のピークを作らず、` +
-      `retention_by_hour は空のままにしてある。</p>`,
+    `<section class="card"><h2>${lab.section("全期間の合計", "all time")}</h2>`,
+    `<p class="def">${lab.totalsDef(
+      esc(totalsAll.windowStart ?? DASH),
+      esc(totalsAll.windowEnd ?? DASH),
+      int(totalsAll.daysElapsed),
+      int(totalsAll.reviews - totalsAll.timedReviews),
+    )}</p>`,
+    tilesFor(totalsAll, cardsTotal, totalsAll.daysElapsed, lab),
+    `<p class="read">${lab.totalsRead(
+      TARGET_LABEL,
+      signed((totalsAll.retention ?? 0) * 100 - TARGET_RETENTION * 100, 2),
+    )}</p>`,
+    `<p class="def">${lab.totalsClock(int(totalsAll.reviewsTimeUnknown))}</p>`,
     `</section>`,
   );
 
@@ -1174,34 +1199,33 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
   const yearStrips = data.years
     .map(
       (y) =>
-        `<div class="year"><h3>${esc(y.year)}年 · ${int(y.reviews)}回 · ${int(
-          y.activeDays,
-        )}日 · 定着率 ${pct(y.retention, 1)}</h3>${heatmapYear(
+        `<div class="year"><h3>${esc(
+          lab.yearStrip(y.year, int(y.reviews), int(y.activeDays), pct(y.retention, 1)),
+        )}</h3>${heatmapYear(
           y.year,
           byDate,
           data.heat,
           lastDate,
-        )}${heatmapYearTable(y.year, byDate)}</div>`,
+          lab,
+        )}${heatmapYearTable(y.year, byDate, lab)}</div>`,
     )
     .join("");
   out.push(
-    `<section class="card"><h2>活動 <span class="latin">activity · reviews per day</span></h2>`,
-    `<p class="def">1マスが1日。色は復習数の四分位で、全期間で共通のしきい値を使うので年どうしを` +
-      `比較できる。学習しなかった日は 0 の独立した色 — 「1回だけやった日」と同じ色にしない。` +
-      `日付は各復習の tz_offset で切る。</p>`,
-    heatLegend(data.heat),
+    `<section class="card"><h2>${lab.section("活動", "activity · reviews per day")}</h2>`,
+    `<p class="def">${esc(lab.activityDef)}</p>`,
+    heatLegend(data.heat, lab),
     `<div class="years">${yearStrips}</div>`,
-    `<p class="read">全期間で <b>${int(totalsAll.activeDays)}日</b>が活動日、` +
-      `経過 ${int(totalsAll.daysElapsed)}日のうち ${pct(
-        totalsAll.activeDays / Math.max(1, totalsAll.daysElapsed),
-        0,
-      )}。</p>`,
+    `<p class="read">${lab.activityRead(
+      int(totalsAll.activeDays),
+      int(totalsAll.daysElapsed),
+      pct(totalsAll.activeDays / Math.max(1, totalsAll.daysElapsed), 0),
+    )}</p>`,
     details(
-      "年ごとの数字を表で見る",
+      lab.yearsTableSummary,
       table(
-        ["年", "復習数", "活動日数", "学習カード数", "定着率", "時間"],
+        lab.yearsTableHead,
         data.years.map((y) => [
-          esc(`${y.year}年`),
+          esc(lab.yearRow(y.year)),
           int(y.reviews),
           int(y.activeDays),
           int(y.cardsStudied),
@@ -1215,23 +1239,23 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
 
   // ── cards studied / cumulative
   out.push(
-    `<section class="card"><h2>学習カード数と累計 <span class="latin">cards studied · cumulative</span></h2>`,
-    `<p class="def">累計 = その日までに1回以上採点されたカードの実数（重複なし）。` +
-      `最終値 ${int(totalsAll.cardsStudied)} は全期間の学習カード数と定義上一致する。` +
-      `月ごとの棒はその月に採点されたカードの実数で、月をまたぐと同じカードが再度数えられる` +
-      `ため合計しても累計にはならない。</p>`,
-    cumulativeChart(primary.days),
-    `<h3>月ごとの学習カード数</h3>`,
-    monthlyCardsChart(primary.months),
-    `<p class="read">全 ${int(cardsTotal)} 枚のうち <b>${int(
-      totalsAll.cardsStudied,
-    )} 枚</b>が一度でも採点されている。残り ${int(
-      cardsTotal - totalsAll.cardsStudied,
-    )} 枚は未着手（reps = 0）。</p>`,
+    `<section class="card"><h2>${lab.section(
+      "学習カード数と累計",
+      "cards studied · cumulative",
+    )}</h2>`,
+    `<p class="def">${lab.cumulativeDef(int(totalsAll.cardsStudied))}</p>`,
+    cumulativeChart(primary.days, lab),
+    `<h3>${esc(lab.monthlyHeading)}</h3>`,
+    monthlyCardsChart(primary.months, lab),
+    `<p class="read">${lab.cumulativeRead(
+      int(cardsTotal),
+      int(totalsAll.cardsStudied),
+      int(cardsTotal - totalsAll.cardsStudied),
+    )}</p>`,
     details(
-      "月ごとの数字を表で見る",
+      lab.monthsTableSummary,
       table(
-        ["月", "復習数", "学習カード数", "新規カード", "定着率", "時間"],
+        lab.monthsTableHead,
         primary.months.map((m) => [
           esc(m.month),
           int(m.reviews),
@@ -1266,57 +1290,45 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
   const scheduledYear = beyondYear(scheduled);
   const lift = data.longIntervals;
   out.push(
-    `<section class="card"><h2>定着率 × 復習間隔 ` +
-      `<span class="latin">retention vs interval — Mochi にはないタイル</span></h2>`,
-    `<p class="def">横軸は<strong>直前の</strong>復習間隔。境界は views.sql の ` +
-      `review_log_bucketed で一度だけ定義され、ここでは名前を並べるだけ。` +
-      `<strong>「間隔」には2つの定義があり、この図は両方を描く</strong>：` +
-      `<b>実測 elapsed</b>（<code>reviews.elapsed_days</code>＝実際に空いた日数、塗りつぶし）と、` +
-      `<b>予定 scheduled</b>（<code>reviews.scheduled_days</code>＝スケジューラが空けるつもりだった日数、破線の中抜き）。` +
-      `unknown はその定義での直前間隔が存在しない復習。線は目標 ${TARGET_LABEL}。</p>`,
-    intervalRetentionChart(elapsed, scheduled),
-    `<h3>各バケットの復習回数（実測 / 予定）</h3>`,
-    intervalVolumeChart(elapsed, scheduled),
-    `<div class="legend"><span><i style="background:var(--series-1)"></i>実測 elapsed（実際に空いた日数）</span>` +
-      `<span><i style="background:var(--series-2)"></i>予定 scheduled（予定していた日数）</span>` +
-      `<span>横の実線 = 目標 ${TARGET_LABEL}</span></div>`,
-    `<p class="read">読み: 目標 ${TARGET_LABEL} を下回るのは実測で` +
-      `${below.length === 0 ? "どのバケットでもない" : `<b>${below.map((b) => esc(b.label)).join("・")}</b> の${int(below.length)}帯だけ`}` +
-      `、最も悪い${worst ? ` <b>${esc(worst.label)} で ${pct(worst.retention, 2)}</b>` : ""}。` +
-      `それ以外の帯は目標より上、すなわち<b>必要より短い間隔で復習している</b>。` +
-      `最長の観測帯 ${longest ? esc(longest.label) : DASH} でも ${pct(longest?.retention ?? null, 2)} で、` +
-      `これが「間隔を伸ばす余地がある」という主張の実データ。</p>`,
-    `<p class="def"><b>2つの定義が ${esc(BEYOND_YEAR_LABEL)} で完全に食い違う理由</b>。` +
-      `実測では ${int(elapsedYear.reviews)}回 / 定着率 ${pct(elapsedYear.retention, 2)}、` +
-      `予定では ${int(scheduledYear.reviews)}回。予定が0なのは Mochi が1年より先を予定しなかったからではなく` +
-      `（${int(lift.plannedBeyondYear)}回予定しており、最長 ${int(lift.maxPlannedDays)}日）、` +
-      `<code>scheduled_days</code> は「直前の復習が予定した間隔」なので、` +
-      `<strong>その予定に対応する復習がまだ行われていない</strong>ぶんは集計に現れないため。` +
-      `${int(lift.tracksBeyondYear)}件のトラックが1年超で予定されているが、期日は ` +
-      `${esc((lift.firstDueAt ?? DASH).slice(0, 10))} 〜 ${esc((lift.lastDueAt ?? DASH).slice(0, 10))} で1件も来ていない。` +
-      `だからこのページは<strong>実測を観測値として読む</strong>。BACKTEST.md も同じ基準で採点しており、` +
-      `${esc(BEYOND_YEAR_LABEL)} の件数は両方で ${int(elapsedYear.reviews)} で一致する。</p>`,
-    `<p class="def"><b>365日の上限は${lift.capLiftedOn === null ? "解除されていない" : `${esc(lift.capLiftedOn)} に解除された`}</b>。` +
-      `${lift.capLiftedOn === null ? "" : `それ以前に1年超を予定した復習は0件、以後は ${int(lift.plannedBeyondYear)}件（最長 ${int(lift.maxPlannedDays)}日）。`}` +
-      `いま上限ちょうど（${int(MOCHI_INTERVAL_CAP_DAYS)}日）に止まっているトラックは ` +
-      `${int(lift.tracksAtCap)} / ${int(lift.tracksWithPlan)}件 = ${pct(lift.tracksAtCap / Math.max(1, lift.tracksWithPlan), 2)}。` +
-      `${lift.capLiftedOn === null ? "" : `うち <b>${int(lift.tracksOnStaleCap)}件</b>は最後の復習が解除より前で、` +
-        `解除後の Mochi なら選ばなかったはずの古い予定のまま止まっている — これが実際に残っている制約。`}` +
-      `ただし実際に経過した最長間隔は ${int(lift.maxObservedElapsedDays)}日なので、` +
-      `そこから先はどちらにせよ観測の外側（外挿）になる。</p>`,
+    `<section class="card"><h2>${lab.headingIntervalRetention}</h2>`,
+    `<p class="def">${lab.intervalDef(TARGET_LABEL)}</p>`,
+    intervalRetentionChart(elapsed, scheduled, lab),
+    `<h3>${esc(lab.intervalVolumeHeading)}</h3>`,
+    intervalVolumeChart(elapsed, scheduled, lab),
+    `<div class="legend">${lab.intervalLegend(TARGET_LABEL)}</div>`,
+    `<p class="read">${lab.intervalRead(
+      TARGET_LABEL,
+      below.map((b) => esc(b.label)),
+      worst ? { label: esc(worst.label), pct: pct(worst.retention, 2) } : null,
+      longest ? esc(longest.label) : DASH,
+      pct(longest?.retention ?? null, 2),
+    )}</p>`,
+    `<p class="def">${lab.beyondYearDef(
+      esc(BEYOND_YEAR_LABEL),
+      int(elapsedYear.reviews),
+      pct(elapsedYear.retention, 2),
+      int(scheduledYear.reviews),
+      int(lift.plannedBeyondYear),
+      int(lift.maxPlannedDays),
+      int(lift.tracksBeyondYear),
+      esc((lift.firstDueAt ?? DASH).slice(0, 10)),
+      esc((lift.lastDueAt ?? DASH).slice(0, 10)),
+    )}</p>`,
+    `<p class="def">${lab.capDef(
+      lift.capLiftedOn === null ? null : esc(lift.capLiftedOn),
+      int(lift.plannedBeyondYear),
+      int(lift.maxPlannedDays),
+      int(MOCHI_INTERVAL_CAP_DAYS),
+      int(lift.tracksAtCap),
+      int(lift.tracksWithPlan),
+      pct(lift.tracksAtCap / Math.max(1, lift.tracksWithPlan), 2),
+      int(lift.tracksOnStaleCap),
+      int(lift.maxObservedElapsedDays),
+    )}</p>`,
     details(
-      "バケットごとの数字を表で見る（実測と予定を並べて）",
+      lab.bucketsTableSummary,
       table(
-        [
-          "直前の間隔",
-          "実測 復習数",
-          "実測 失敗",
-          "実測 定着率",
-          "実測 平均日数",
-          "予定 復習数",
-          "予定 定着率",
-          "予定 平均日数",
-        ],
+        lab.bucketsTableHead,
         elapsed.map((b, i) => {
           const other = scheduled[i] as IntervalBucket | undefined;
           return [
@@ -1348,44 +1360,23 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     null,
   );
   out.push(
-    `<section class="card"><h2>デッキ別定着率 ` +
-      `<span class="latin">retention by deck — Mochi にはないタイル</span></h2>`,
-    `<p class="def">全体 ${pct(
-      totalsAll.retention,
-    )} は変動を隠す。ここは直接カードを持つデッキ（そのデッキ自身の復習 ${int(
-      deckMin,
-    )}回以上）を復習数の多い順に並べ、順方向と逆方向を別の点で描いたもの。` +
-      `点も選抜も<strong>そのデッキ自身の復習だけ</strong>で、子デッキを含む小計は表の側にある` +
-      `（同じ行に2つの分母を混ぜないため）。2点を結ぶ細線がその差。</p>`,
-    `<div class="legend"><span><i style="background:var(--series-1)"></i>順方向 forward</span>` +
-      `<span><i style="background:var(--series-2)"></i>逆方向 reverse</span>` +
-      `<span>縦の実線 = 目標 ${TARGET_LABEL}</span>` +
-      `<span>中抜きの点 = ${int(SMALL_SAMPLE)}回未満（標本が小さい）</span></div>`,
-    deckRetentionChart(chartDecks),
+    `<section class="card"><h2>${lab.headingDeckRetention}</h2>`,
+    `<p class="def">${lab.deckDef(pct(totalsAll.retention), int(deckMin))}</p>`,
+    `<div class="legend">${lab.deckLegend(TARGET_LABEL, int(SMALL_SAMPLE))}</div>`,
+    deckRetentionChart(chartDecks, lab),
     highest && lowest && highest !== lowest
-      ? `<p class="read">復習500回以上のデッキで、<b>${esc(highest.path)} ${pct(
-          highest.directRetention,
-          2,
-        )}</b> から <b>${esc(lowest.path)} ${pct(lowest.directRetention, 2)}</b> まで ` +
-        `${dec(
-          ((highest.directRetention ?? 0) - (lowest.directRetention ?? 0)) * 100,
-          2,
-        )} ポイントの幅がある。目標定着率がデッキごとの設定であるべき理由がこれ。</p>`
+      ? `<p class="read">${lab.deckRead(
+          esc(highest.path),
+          pct(highest.directRetention, 2),
+          esc(lowest.path),
+          pct(lowest.directRetention, 2),
+          dec(((highest.directRetention ?? 0) - (lowest.directRetention ?? 0)) * 100, 2),
+        )}</p>`
       : "",
     details(
-      "全デッキを表で見る",
+      lab.decksTableSummary,
       table(
-        [
-          "デッキ",
-          "復習数（小計）",
-          "復習数（自身）",
-          "失敗",
-          "定着率（自身）",
-          "順方向（自身）",
-          "逆方向（自身）",
-          "定着率（小計）",
-          "時間（小計）",
-        ],
+        lab.decksTableHead,
         primary.decks.map((d) => [
           esc(d.path),
           int(d.reviews),
@@ -1411,22 +1402,18 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
   const tracksTotal = rootProgress.reduce((sum, d) => sum + d.tracks, 0);
   const dormantTotal = rootProgress.reduce((sum, d) => sum + d.dormantTracks, 0);
   out.push(
-    `<section class="card"><h2>デッキの進捗 <span class="latin">deck progress</span></h2>`,
-    `<p class="def">数えているのはカードではなく<strong>トラック</strong>: 逆方向が有効な` +
-      `カードは2トラック。全 ${int(tracksTotal)} トラック。` +
-      `未学習 = reps 0、学習中 = 現在の間隔 21日未満、定着 = 21日以上（views.sql の` +
-      ` deck_progress の定義そのまま）。休眠（逆方向を後から切ったトラック）は ${int(
-        dormantTotal,
-      )}件なので描いていない。この図は直接カードを持つデッキのみ、` +
-      `トラック ${int(progressMin)}件以上。</p>`,
-    `<div class="legend"><span><i style="background:var(--ord-1)"></i>未学習 new</span>` +
-      `<span><i style="background:var(--ord-2)"></i>学習中 young &lt; 21d</span>` +
-      `<span><i style="background:var(--ord-3)"></i>定着 mature ≥ 21d</span></div>`,
-    deckProgressChart(chartProgress),
+    `<section class="card"><h2>${lab.section("デッキの進捗", "deck progress")}</h2>`,
+    `<p class="def">${lab.progressDef(
+      int(tracksTotal),
+      int(dormantTotal),
+      int(progressMin),
+    )}</p>`,
+    `<div class="legend">${lab.progressLegend}</div>`,
+    deckProgressChart(chartProgress, lab),
     details(
-      "全デッキを表で見る（小計込み）",
+      lab.progressTableSummary,
       table(
-        ["デッキ", "カード", "トラック", "未学習", "学習中", "定着", "休眠", "失敗回数"],
+        lab.progressTableHead,
         data.progress.map((d) => [
           esc(d.path),
           int(d.cards),
@@ -1447,22 +1434,26 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
   const fcTotal = fc.days.reduce((sum, day) => sum + day.tracks, 0);
   const fcOwn = fc.provenance.mochi + fc.provenance.hashigo;
   out.push(
-    `<section class="card"><h2>復習予測 <span class="latin">forecast</span></h2>`,
-    `<p class="def">${esc(fc.asOf)} 時点。翌日から ${fc.horizonDays} 日間で ` +
-      `<strong>${int(fcTotal)}</strong> 件（1日あたり ${dec(fcTotal / fc.horizonDays, 1)} 件）。` +
-      `当日以前に期限が来ている <strong>${int(fc.backlog)}</strong> 件` +
-      `（うち ${int(fc.overdue)} 件は前日以前）は棒グラフに含まない — ` +
-      `それは予測ではなく残務だから。未学習の ${int(fc.fresh)} 件も予定日を持たないため含まない。</p>`,
-    forecastChart(fc),
-    `<p class="def"><strong>この棒の出どころ。</strong> 期限が先の ${int(fcOwn)} 件のうち、` +
-      `Mochi から取り込んだ予定日が <strong>${int(fc.provenance.mochi)}</strong> 件、` +
-      `Hashigo が出した予定日が <strong>${int(fc.provenance.hashigo)}</strong> 件。` +
-      `取り込んだトラックは、ここで採点されるまで Mochi の予定日を保持する（意図的）。` +
-      `したがってこのグラフは、採点のたびに1件ずつ Hashigo のものになる。</p>`,
+    `<section class="card"><h2>${lab.section("復習予測", "forecast")}</h2>`,
+    `<p class="def">${lab.forecastDef(
+      esc(fc.asOf),
+      String(fc.horizonDays),
+      int(fcTotal),
+      dec(fcTotal / fc.horizonDays, 1),
+      int(fc.backlog),
+      int(fc.overdue),
+      int(fc.fresh),
+    )}</p>`,
+    forecastChart(fc, lab),
+    `<p class="def">${lab.forecastProvenance(
+      int(fcOwn),
+      int(fc.provenance.mochi),
+      int(fc.provenance.hashigo),
+    )}</p>`,
     details(
-      `日ごとの内訳（${fc.days.length} 日）`,
+      lab.forecastTableSummary(String(fc.days.length)),
       table(
-        ["日付", "件数"],
+        lab.forecastTableHead,
         fc.days.map((day) => [esc(day.date), int(day.tracks)]),
       ),
     ),
@@ -1485,11 +1476,11 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     const shown = ref.key === "retention" ? pct((value ?? 0) / 100) : int(value);
     const delta = value === null ? DASH : signed(value - ref.mochi, ref.key === "retention" ? 2 : 0);
     return [
-      esc(ref.label),
+      esc(lab.mochiRowLabel(ref.key)),
       ref.key === "retention" ? `${int(ref.mochi)}%` : int(ref.mochi),
       shown,
       delta,
-      exact ? "一致" : esc(ref.note),
+      exact ? lab.match : esc(lab.mochiRowNote(ref.key)),
     ];
   });
   // Mochi's review count comes from data.mochi, never a second literal: the
@@ -1499,59 +1490,40 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
   const reviewGap = mochiReviews === null ? null : comparison.totals.reviews - mochiReviews;
   const cardDayGap = mochiReviews === null ? null : comparison.totals.cardDays - mochiReviews;
   out.push(
-    `<section class="card"><h2>Mochi との照合 ` +
-      `<span class="latin">acceptance test · ${esc(comparison.totals.window.label)}</span></h2>`,
-    `<p class="def">Mochi 側の数字はユーザのダッシュボードのスクリーンショットから` +
-      `（notes/dashboard-reconciliation.md）。<strong>こちらの数字を Mochi に合わせて調整は` +
-      `していない。</strong>活動日数と定着率が完全一致することは、窓の取り方とトラックの` +
-      `選び方が正しいことを示す。ただし<strong>タイムゾーンの受け入れシグナルではない</strong>` +
-      `— この窓では 2026-01-01 と 2025-12-31 のどちらにも復習がないので、日付を JST で切っても` +
-      `UTC で切っても 2026 年の数字は 14,420 回 / 211 日で変わらない（測定済み）。JST を実際に` +
-      `固定しているのは全期間の初日 ${esc(totalsAll.firstDate ?? DASH)} と最終日 ${esc(
-        totalsAll.lastDate ?? DASH,
-      )} で、UTC で切ると両方とも1日ずれる。</p>`,
-    table(["指標", "Mochi", "Hashigo", "差", "判定"], mochiRows),
-    `<p class="read">復習数の差 ${reviewGap === null ? DASH : signed(reviewGap)} 件` +
-      `（Mochi 側がこちらより ${
-        reviewGap === null ? DASH : pct(reviewGap / comparison.totals.reviews, 1)
-      } 少ない）は、インポートの誤りではない — インポートは ${int(
-        totalsAll.reviews,
-      )} 件でエクスポートとバイト一致している。` +
-      `候補となる定義を8つ試して却下した記録が notes/dashboard-reconciliation.md にある。` +
-      `最有力は「1日1カード1回として数える」で、この窓では <b>${int(
-        comparison.totals.cardDays,
-      )}</b> 件 — Mochi の ${int(mochiReviews)} とは ${
-        cardDayGap === null ? DASH : signed(cardDayGap)
-      } 件ずれる。${
-        cardDayGap === null || mochiReviews === null
-          ? ""
-          : `${pct(Math.abs(cardDayGap) / mochiReviews, 2)} の差を説明できないので、`
-      }仮説として書いておくだけにして、` +
-      `表示する数字は定義がはっきりしている採点イベント数のままにした。</p>`,
+    `<section class="card"><h2>${lab.section(
+      "Mochi との照合",
+      `acceptance test · ${esc(
+        lab.windowLabel(comparison.totals.window.id, comparison.totals.window.label),
+      )}`,
+    )}</h2>`,
+    `<p class="def">${lab.mochiDef(
+      esc(totalsAll.firstDate ?? DASH),
+      esc(totalsAll.lastDate ?? DASH),
+    )}</p>`,
+    table(lab.mochiTableHead, mochiRows),
+    `<p class="read">${lab.mochiRead(
+      reviewGap === null ? DASH : signed(reviewGap),
+      reviewGap === null ? DASH : pct(reviewGap / comparison.totals.reviews, 1),
+      int(totalsAll.reviews),
+      int(comparison.totals.cardDays),
+      int(mochiReviews),
+      cardDayGap === null ? DASH : signed(cardDayGap),
+      cardDayGap === null || mochiReviews === null
+        ? null
+        : pct(Math.abs(cardDayGap) / mochiReviews, 2),
+    )}</p>`,
     `</section>`,
   );
 
   // ── footer
   out.push(
     `<footer>`,
-    `<h2>この表の言葉の定義</h2>`,
+    `<h2>${esc(lab.glossaryHeading)}</h2>`,
     `<ul>` +
-      `<li><b>復習数</b> — 採点イベントの数。全トラック（順方向・逆方向・cloze）を数える。</li>` +
-      `<li><b>学習カード数</b> — 窓の中で1回以上採点されたカードの実数。</li>` +
-      `<li><b>活動日数</b> — 1回以上採点した日の数。日付は各復習の tz_offset で切る（UTC ではない）。</li>` +
-      `<li><b>日数</b> — 両端を含む。窓の終わりは最後の復習日で止める。</li>` +
-      `<li><b>定着率</b> — 合格 / 全採点イベント。</li>` +
-      `<li><b>復習時間</b> — duration の合計。所要時間を持たない復習は寄与しない。</li>` +
-      `<li><b>直前の間隔</b> — その復習が何日ぶりだったか。Mochi の <code>interval</code> は` +
-      `<em>次の</em>間隔なので、インポート時に前のレコードから導出している。</li>` +
+      lab.glossary.map(([term, meaning]) => `<li><b>${esc(term)}</b> — ${meaning}</li>`).join("") +
       `</ul>`,
-    `<h2>このページについて</h2>`,
-    `<p>src/dashboard/render.ts が生成。スクリプトなし、外部リクエストなし、フォント読み込み` +
-      `なし — 電波を切った端末で file:// から開ける。集計図にはすべて対応する表が付いている` +
-      `（年別・月別・バケット別・デッキ別）。<b>例外は活動ヒートマップの日ごとの値で、` +
-      `${int(totalsAll.activeDays)}日ぶんあるため表にはせずマスの <code>title</code> に置いた` +
-      `— 年別・月別の表がその要約にあたる。</b>色はライト・ダークで別々に選び、` +
-      `data-viz バリデータを通してある。</p>`,
+    `<h2>${esc(lab.aboutHeading)}</h2>`,
+    `<p>${lab.about(int(totalsAll.activeDays))}</p>`,
     `</footer>`,
     `</main>\n</body>\n</html>\n`,
   );

@@ -139,14 +139,14 @@ for day — 108 due at the as-of date plus 39+86+95+115 is the 443 the scheduler
 reports four days later.
 
 ```bash
-npm test                # 19 files, 672 passed, 1 skipped (the FSRS refit, gated)
+npm test                # 19 files, 674 passed, 1 skipped (the FSRS refit, gated)
                         # 32.7-87.7 s over six runs. Under load it can also emit
                         # "Timeout calling onTaskUpdate" — that is Vitest's reporter
                         # RPC, not a failure. Check the pass count, not the error line.
 npm run typecheck       # exit 0
 npm run build           # refuses to exit 0 unless dist/ actually imports (17 export subpaths)
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
-npm run dashboard -- --db build/hashigo.db --out dashboard.html
+npm run dashboard -- --db build/hashigo.db --out dashboard.html   # English; --locale ja for the other
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 1 on any location
 npm run spike:check     # the browser contract; spike/ is excluded from tsconfig.json
 
