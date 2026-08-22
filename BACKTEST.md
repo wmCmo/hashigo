@@ -437,9 +437,18 @@ cards get long intervals".
 | Reviews ever scheduled beyond it | 1,356 |
 | Longest interval ever planned | **2,707d**, due 2033-10-17 |
 | **Longest interval ever actually elapsed** | **454d** |
+| …of those 3,009 over-a-year gaps, how many came from a plan **over** 365d | **0** |
 
 This was found, not assumed: 365 is the modal value of `card_tracks.scheduled_days`
 by a factor of 88 over the next most common (3,874 tracks at 365 days, 44 at 362).
+
+**THE 454 IS CENSORED, AND THE NEW ROW ABOVE IS WHY** (measured 2026-08-22,
+`scripts/cap-derive.ts`). Every one of the 3,009 gaps past a year came from a plan of
+<= 365 days; not one came from a longer plan. So 454 days is Mochi's cap plus this
+user's lateness, and it is **not** an observation about memory at 454 days. Wherever
+this document or `policy.ts` treated 454 as the edge of observed support, the honest
+edge on the PLANNED basis is **365** — name the basis (decision 6) or the boundary is
+wrong. `notes/max-interval-and-relearning.md` carries the consequence for the cap.
 
 **But the cap is not operating any more, and an earlier draft of this section
 implied it was.** Measured on local (JST) dates: not one review planned beyond
