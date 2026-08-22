@@ -41,8 +41,11 @@ Three things that are built and do NOTHING, which is the opposite trap to rebuil
 * **`<<型>>` has never been written to a card.** `materialiseAccents` iterates
   `template_fields WHERE type = 'accent'` and there are **zero such rows**, so it has
   been a no-op reporting 0 every time it ran. The template body edit is Zach's.
-* **No code path gets a database OUT.** Decision 17 is why that has to change before
-  he trusts the app.
+* **The UI half of decision 17's backup.** The MECHANISM landed 2026-08-23
+  (`src/backup`, 2,674 bytes over the real corpus) but nothing calls it from a
+  screen: the persistent banner when `persisted()` is false, the "add to home
+  screen" prompt beside it, and detecting an eviction that already happened all
+  belong to the app shell.
 
 The accent pipeline is **DONE and VALIDATED** — do not redo it.
 `notes/pitch-accent-pipeline.md` §7-§10 has every measurement, including the two that
@@ -101,6 +104,11 @@ npm run spike:check     # the browser contract; spike/ is excluded from tsconfig
 npx vite-node src/scheduler/cli.ts -- counts   --db build/hashigo.db
 npx vite-node src/scheduler/cli.ts -- queue    --db build/hashigo.db --limit 20
 npx vite-node src/scheduler/cli.ts -- forecast --db build/hashigo.db --days 14
+
+# Decision 17's backup. `export` is read-only; `apply` writes in one transaction and
+# is idempotent, and `--dry` does the real inserts, reports, then rolls back.
+npx vite-node src/backup/cli.ts -- export --db build/hashigo.db --out backup.json
+npx vite-node src/backup/cli.ts -- apply  --db build/hashigo.db --in backup.json --dry
 
 # The card mount. `src/review` is the first thing in src/ to drive shadowingLoop,
 # the reveal loop that SHIPS. See src/review/README.md for the sharp edge:

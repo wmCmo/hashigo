@@ -20,7 +20,7 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 
 ---
 
-## STATE RIGHT NOW — 2026-08-23, tree clean, eight commits landed
+## STATE RIGHT NOW — 2026-08-23, tree clean, ten commits landed
 
 **`play()` IS NOW CALLED.** The two newest commits are the session layer
 (`src/session`) and the card mount (`src/review`), and between them B1 is reduced to
@@ -328,6 +328,37 @@ session simply continues.
 > cards carrying speech. Use `hashigo/review`, which does it correctly, or replicate all
 > six steps.
 
+### `src/backup` landed 2026-08-23 — decision 17's mechanism, not its UI
+
+**2,674 bytes** over the real corpus, against a 74 MB database and a 617.9 MiB blob
+store. It archives exactly what `exports/` cannot rebuild: local reviews, the scheduling
+state of any track that has one, decision 9's local fields and their values, and
+settings. Everything else rebuilds in fifteen seconds.
+
+**It archives ROWS, not the file**, because a binary SQLite copy is only restorable into
+the schema version it came from and `applySchema` refuses any other — so a bump would
+strand every older backup, and `SCHEMA_VERSION` has moved eight times.
+
+**The key is `(card_id, kind)`, never `track_id`.** `card_tracks.id` is a rowid alias
+handed out at insert time; after a rebuild it is whatever the insert order gives. It
+would very probably come out identical, **which is worse than if it obviously did not** —
+an id-keyed archive restores cleanly, reports success, and attaches his history to the
+wrong cards. The test builds the destination with the cards inserted in the opposite
+order so the ids genuinely swap; simulating an id-keyed resolve turns 3 tests red and
+says `card_id: 'cardB'` where `cardA` was expected.
+
+**Two defects found by testing, not reasoning**, both mine and both fixed:
+`template_fields.pos` is a fractional-index TEXT (`'ab'`, `'ac'`) and `Number(pos)` was
+writing NaN; and a single deleted card made the whole restore throw
+`FOREIGN KEY constraint failed` — losing the archive at the one moment it is the only
+copy — because `card_field_values` has an FK to `cards`. Orphans are now probed and
+counted, never fatal. This corpus has **8,958 tombstones**, so it would have happened.
+
+> [!warning] **The UI half of decision 17 is NOT built and belongs to the shell.**
+> `notes/archive/persistence.md` prescribes a persistent, non-dismissible banner when
+> `persisted()` is false, an "add to home screen" prompt beside it, and detection of an
+> eviction that already happened. Nothing calls `exportLocalArchive` from a screen.
+
 ### Table B — do NOT start these without him
 
 | | what | why |
@@ -408,6 +439,7 @@ statement makes `pauseVfs()` throw.
 |---|---|
 | **the session layer: the queue, and decision 13's re-ask** | `src/session/README.md` — including the two pieces of dead code injection found |
 | **the card mount, and the first real-browser evidence for the shipping reveal loop** | `src/review/README.md` |
+| **decision 17's backup: what it archives, and why not the database file** | `src/backup/README.md` |
 | **the chosen review-screen direction, and why** | `DECISIONS.md` decision 23 — and the mockup at `/mock/` (`npm run spike:dev -- --host ::`) |
 | what a fresh session must know | `CLAUDE.md` — auto-loads; 328 lines, and the 22 decisions as a one-line index |
 | **why a decision is what it is** | `DECISIONS.md` — the full derivations, split out of CLAUDE.md 2026-08-22 |
