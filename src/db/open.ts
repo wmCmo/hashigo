@@ -30,7 +30,8 @@ import { dirname, resolve } from "node:path";
 
 import Database from "better-sqlite3";
 
-import { SCHEMA_SOURCES, SCHEMA_VERSION } from "../schema/index.js";
+import { SCHEMA_VERSION } from "../schema/index.js";
+import { SCHEMA_SOURCES } from "../schema/sources.js";
 
 export type Db = Database.Database;
 

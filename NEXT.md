@@ -16,9 +16,11 @@ live here. Preserve his wording if you edit it; don't paraphrase him away.
 
 ## STATE RIGHT NOW — 2026-08-22, and NOTHING IS COMMITTED
 
-**There is uncommitted work in the tree, from two sessions.** 18 modified files plus
-five new `scripts/`, one new `notes/`. Gates pass — **17 files / 636 tests, typecheck 0,
-build OK**. Do not re-implement any of it, and do not commit without Zach saying so.
+**Everything is COMMITTED and the tree is clean.** Four commits landed 2026-08-22
+(`b7794a9` fuzz + the cap's basis fix · `0e24ca2` forecast tile + heatmap tables ·
+`7709b41` the cap and relearning derivations · `b124dd0` the ratifications), then the
+browser-portability split. Gates: **18 files / 652 tests / 1 skipped, typecheck 0, build
+OK (17 export subpaths), `spike:check` clean.**
 
 **THE DECISION QUEUE IS EMPTY. Zach cleared all four questions on 2026-08-22** and every
 one is now written into `CLAUDE.md` as a settled decision. Do NOT reopen these; the last
@@ -75,7 +77,7 @@ whole-subsystem defects if guessed. Today's queue is **443 due, 328 of them over
 | ~~A2~~ | ~~The `復習予測` forecast tile on the dashboard~~ | **DONE 2026-08-22.** Bars for 30 days, zero JavaScript, with the table twin the page's own convention requires. It states whose plans it is charting — **8,853 Mochi / 0 Hashigo** today — because having a scheduler did not reschedule anything, which was the original reason the tile was blank. A test reconciles it against `queueCounts` day for day: 108 due at 2026-08-18 plus bars of 39+86+95+115 is the 443 the scheduler CLI reports for 2026-08-22 |
 | ~~**A3**~~ | ~~Heatmap `<details>` table~~ — **DONE 2026-08-22.** Each year strip now carries a per-day table: 176 + 362 + 348 + 220 + 211 = **1,317 rows, exactly `activeDays`**. Zero-review days get no row on purpose — their tooltip says 学習なし and carries no number. `dashboard.html` regenerated (345 KB → 460 KB) and a test asserts the per-year sums, proven against two injected faults |
 | — | ~~dashboard tag count filters `cards_direct > 0`~~ — **NOT A TASK.** There is no tag count on the dashboard (0 occurrences of タグ in `dashboard.html`), and the only tag count in the code — the importer's `20 tag paths` phase line — already names its basis. `tag_usage` already exposes `cards_direct`, and `test/roundtrip.test.ts:361` already asserts the filtered count is **19** and names `Dialect` as the childless ancestor. The trap is real; it is pinned. It becomes live again only when **B3** builds a tag sidebar |
-| **A4** | `読み` field + parse the 13 parenthesis cards | **ROWS PRODUCED 2026-08-22, nothing written.** `npx vite-node scripts/reading-parse.ts -- --db build/hashigo.db` prints all 13 before/after rows: **7 読み / 5 かな主流 / 1 意味, zero unclassified**, matching decision 10 exactly. Read-only by construction (`readOnly: true`). **One row needs one word from Zach** — `（おす）雄` vs its twin `めす（雌）`, see `notes/kana-primary-words.md`. Do not write to `card_field_values` until he has answered |
+| **A4** | `読み` field + parse the 13 parenthesis cards | **ROWS PRODUCED 2026-08-22, nothing written.** `npx vite-node scripts/reading-parse.ts -- --db build/hashigo.db` prints all 13 before/after rows: **7 読み / 5 かな主流 / 1 意味, zero unclassified**, matching decision 10 exactly. Read-only by construction (`readOnly: true`). **ANSWERED** — `（おす）雄` is kana-primary (one ratified override, decision 10), so the final split is **6 読み / 6 かな主流 / 1 意味**. What still blocks the WRITE is that no `読み` field exists yet: `template_fields` has 0 rows with `local = 1`, so this needs the field created first — a schema bump, hence re-import and dashboard regen |
 | **A5** | Dashboard in English | 369 Japanese strings. A `LABELS` table, English default. Deck/template/field names stay Japanese — they are identifiers. Regenerate `dashboard.html`; a test compares it byte-for-byte |
 
 ### Table B — do NOT start these without him
@@ -87,7 +89,7 @@ whole-subsystem defects if guessed. Today's queue is **443 due, 328 of them over
 | **B3** | Nested-tag sidebar · Ctrl+K palette | query layers are done; the UI is taste |
 | **B4** | Stage 10 Editor · Stage 11 Sync | both large, both unspecified in shape |
 
-### The one stage-7 question still open
+### ~~The one stage-7 question still open~~ — CLOSED by decision 13
 
 **Should a forgotten card come back before the session ends?** `clampInterval` already
 floors a lapse at one day, so this is a session-buffer question, not a scheduling one.
@@ -156,7 +158,7 @@ state, not a gap.
 ## The gates, and the one chore that bites
 
 ```bash
-npm test          # 17 files, 625 passed, 1 skipped (gated FSRS refit). 32.7-87.7 s.
+npm test          # 18 files, 652 passed, 1 skipped (gated FSRS refit). 33-88 s.
                   # A "Timeout calling onTaskUpdate" line is Vitest's reporter under
                   # load, not a failing test. Check the pass count.
 npm run typecheck # exit 0

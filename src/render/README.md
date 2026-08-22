@@ -21,10 +21,20 @@ tree back with `serialise(result.root)`.
 1. **Audio never starts by itself.** The corpus's audio exists for 高低アクセント
    shadowing: Zach reads the kanji, recalls whether each mora is high or low, says
    it aloud, and only then hears the clip. So media elements are created with
-   `controls preload="none"`, **no `src`, no `autoplay`, no `loop`**, and there is
-   no call to `play()` anywhere in this directory. Playback belongs in a
-   `ClozeMount.onReveal` listener that the review UI registers, because that is the
-   only place that knows he has produced an answer.
+   `controls preload="none"`, **no `src`, no `autoplay`, no `loop`**. Playback
+   belongs in a `ClozeMount.onReveal` listener that the review UI registers,
+   because that is the only place that knows he has produced an answer.
+
+   **CORRECTED 2026-08-22.** This paragraph used to say "there is no call to
+   `play()` anywhere in this directory", which is false and dangerously so:
+   `audio.ts:399` is `result = element.play()`. The rule is not that the call does
+   not exist — it has to exist somewhere — it is **where the call is reachable
+   from**. `index.ts:19` states it correctly, and that is the wording to trust:
+   playback is reachable from exactly two entry points, `reveal()` and `play()`,
+   and `reveal.ts`'s `enter()` does nothing but record that a side is on screen.
+   Read as written, the old sentence invites a future reader to "fix" `audio.ts`
+   by adding the call they were told was missing, or to conclude the invariant
+   lives somewhere it does not.
 2. **No string ever becomes markup.** `createTextNode` and `setAttribute` are the
    only two ways authored data reaches the DOM — see `dom.ts` for why a five-call
    port instead of an HTML string, and `sanitise.ts` for the policy on top.

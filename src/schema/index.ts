@@ -2,18 +2,21 @@
  * Stage 1 — the schema, as SQL text plus the handful of TypeScript types and
  * transforms that mirror its CHECK constraints.
  *
- * `schema.sql` and `views.sql` are the authority; this module loads them, names
- * their enumerations so the rest of the codebase cannot invent a fourth reverse
- * state or a review track Mochi never had, and owns the two derivations the SQL
- * cannot express — `buildSearchText` and `searchPlan`.
+ * `schema.sql` and `views.sql` are the authority; this module names their
+ * enumerations so the rest of the codebase cannot invent a fourth reverse state
+ * or a review track Mochi never had, and owns the two derivations the SQL cannot
+ * express — `buildSearchText` and `searchPlan`.
  *
- * The SQL is read from disk relative to this module. That works under Node and
- * vitest (import, backtest, tests). The browser/OPFS build has no filesystem,
- * so whatever bundles the PWA must inline these two files — either a text
- * loader or a copy step into `dist/schema/`; `tsc` alone does not copy .sql.
+ * THIS FILE HAS NO NODE IMPORTS, AND MUST NOT ACQUIRE ANY. It used to read the
+ * DDL off disk with `node:fs` at module scope, which meant every one of the
+ * eleven value importers of this module — `src/template/resolve.ts`,
+ * `src/scheduler/policy.ts`, `src/scheduler/schedule.ts`, `src/generate/fields.ts`,
+ * `src/generate/voice.ts`, `src/dashboard/metrics.ts` among them — threw at module
+ * load in a browser worker, for a filesystem read none of them asked for. The DDL
+ * text now lives in `./sources.ts`, which is Node-only by design; put anything
+ * that touches I/O there. `test/schema.test.ts` pins the absence, so this cannot
+ * regress quietly.
  */
-
-import { readFileSync } from "node:fs";
 
 import { renderPlainTextParts, stripInvisible } from "../text/index.js";
 
@@ -386,37 +389,6 @@ export const VIEWS = [
   "deck_progress",
   "lapse_distribution",
 ] as const;
-
-function readSql(fileName: string): string {
-  const url = new URL(fileName, import.meta.url);
-  try {
-    return readFileSync(url, "utf8");
-  } catch (cause) {
-    // Loud on purpose. `tsc` does not copy .sql files, so `dist/schema/` has the
-    // compiled index.js and no SQL beside it. Whatever builds for distribution
-    // must copy src/schema/*.sql next to the emitted module (or inline them with
-    // a text loader for the browser/OPFS build, which has no filesystem at all).
-    throw new Error(
-      `schema source ${fileName} not found next to this module (${url.pathname}). ` +
-        `The build must copy src/schema/*.sql alongside the emitted JS, or inline it.`,
-      { cause },
-    );
-  }
-}
-
-export const SCHEMA_SQL = readSql("schema.sql");
-export const VIEWS_SQL = readSql("views.sql");
-
-/** In application order: tables and triggers first, then the views over them. */
-export const SCHEMA_SOURCES: readonly { readonly name: string; readonly sql: string }[] = [
-  { name: "schema.sql", sql: SCHEMA_SQL },
-  { name: "views.sql", sql: VIEWS_SQL },
-];
-
-/** The whole schema as one script, for tooling that wants a single string. */
-export function schemaSql(): string {
-  return SCHEMA_SOURCES.map((source) => source.sql).join("\n");
-}
 
 /** `cloze:3`. Indexed clozes are unused in the corpus but the tracks exist. */
 export function clozeTrack(index: number): TrackKind {

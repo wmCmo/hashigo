@@ -563,6 +563,9 @@ check as it lands.
 **SUPERSEDED 2026-08-20 — the target is 0.90, not 0.95.** When this was written the
 settled target was 0.95, and the argument below was that 0.95 is the only row landing
 inside the observed range (median 355–416 days against a 454-day ceiling on anything ever
+observed — but see "THE 454 IS CENSORED" above: that ceiling is Mochi's own 365-day cap
+plus this user's lateness, so on the PLANNED basis the edge is 365 and this parenthesis
+overstates the support it claims
 observed). That reasoning was sound but incomplete: it ignored the interaction with
 `MAX_INTERVAL_DAYS`. Measured under the 365-day cap that actually ships
 (`scripts/capped-load.ts`), 0.95 asks for **130–204 reviews/day against a realised 69.2**,

@@ -19,6 +19,10 @@
       "types": "./dist/schema/index.d.ts",
       "default": "./dist/schema/index.js"
     },
+    "./schema/sources": {
+      "types": "./dist/schema/sources.d.ts",
+      "default": "./dist/schema/sources.js"
+    },
     "./db": {
       "types": "./dist/db/index.d.ts",
       "default": "./dist/db/index.js"

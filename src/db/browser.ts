@@ -313,14 +313,26 @@ export async function openDatabaseBrowser(options: BrowserOpenOptions = {}): Pro
 /**
  * The schema version this adapter stamps and accepts.
  *
- * DUPLICATED, deliberately and visibly, from `SCHEMA_VERSION` in
- * `src/schema/index.ts`: that module cannot be imported here (node:fs at module
- * load), and inventing a shared constants module would mean editing a file this
- * change does not own. `vite.config.ts` reads the real value out of
- * `src/schema/index.ts` at build time and the spike page asserts the two agree,
- * so drift is caught by a build rather than by a corrupt database.
+ * NO LONGER DUPLICATED, as of 2026-08-22. It was a hardcoded `2` against a real
+ * `SCHEMA_VERSION` of 7 -- five versions of drift -- and the comment here claimed
+ * the drift was "caught by a build rather than by a corrupt database". It was
+ * not: `vite.config.ts:106` does inject the Node-side value and
+ * `spike/db.worker.ts:202-207` does compare all three, but it only PRINTS
+ * `<- DRIFT` to a page a human has to be looking at. Nothing failed. `npm run
+ * spike:check` is `tsc` over a type-only file and never evaluated it.
+ *
+ * Live only because both spikes open an existing database with
+ * `applySchema: false`; it would have corrupted the first database the shell
+ * created from DDL, by stamping `user_version = 2` on a version-7 schema and
+ * then refusing to open it.
+ *
+ * The reason it was duplicated is gone: `src/schema/index.ts` no longer imports
+ * `node:fs` (the DDL text moved to `src/schema/sources.ts`), so this module can
+ * import the real constant and cannot disagree with it. `test/browser-portable.ts`
+ * pins that the schema module stays importable here.
  */
-export const SCHEMA_VERSION = 2;
+export { SCHEMA_VERSION } from "../schema/index.js";
+import { SCHEMA_VERSION } from "../schema/index.js";
 
 /** `PRAGMA user_version`: 0 on a database this code has never touched. */
 export function schemaVersion(db: SqliteHandle): number {

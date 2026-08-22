@@ -133,7 +133,11 @@ for (const js of emitted) {
 }
 
 // ─── F. the schema module hands back the schema ──────────────────────────────
-const schemaModule = join(distDir, "schema", "index.js");
+//
+// The DDL lives in schema/sources.js, not schema/index.js: index.ts is kept free
+// of every Node import so the eleven subsystems that import its enumerations can
+// load in a browser worker. See src/schema/sources.ts for why.
+const schemaModule = join(distDir, "schema", "sources.js");
 if (!existsSync(schemaModule)) {
   fail("F", `${posix(schemaModule)} does not exist.`);
 } else {

@@ -274,6 +274,29 @@ The FSRS-6 port, the whole template engine, the whole renderer pipeline and all
 the metrics are already browser-ready. **This is the part that would have been
 expensive, and it is free.**
 
+> **This sentence was FALSE from commit `e35258a` until 2026-08-22, and nothing
+> noticed.** `src/schema/index.ts` acquired `import { readFileSync } from "node:fs"`
+> and called it at module scope. Because that module is where the enumerations
+> live, eleven value imports reach it — `src/template/resolve.ts`,
+> `src/scheduler/policy.ts`, `src/scheduler/schedule.ts`, `src/generate/fields.ts`,
+> `src/generate/voice.ts`, `src/dashboard/metrics.ts` among them — so template,
+> renderer, scheduler and metrics were all unimportable in a worker, for a
+> filesystem read none of them wanted. Fixed by moving the DDL text to
+> `src/schema/sources.ts`; the claim is true again and now PINNED by
+> `test/browser-portable.test.ts`, which walks the transitive closure rather than
+> checking one file — a single-file assertion would not have caught this, because
+> the offending import was in none of the files the claim is about.
+>
+> **One exception, found by that same test and not by the audit that prompted it:
+> `src/generate` is still Node-bound**, and not for this reason.
+> `src/generate/store.ts:30` value-imports `generationKey` from
+> `src/import/blobs.ts`, whose sha256 is `node:crypto` and **synchronous** — which
+> is the change section 5 below already calls "the one genuinely invasive change".
+> Making it `crypto.subtle.digest` makes the cache key async, so the resolver and
+> everything above it change signature, up to whatever the review UI calls to get
+> a clip. That is a design decision about the resolver's shape, not a port, and it
+> is a prerequisite of the audio path nobody had scheduled.
+
 ### Needs an adapter — 7 files, 3,039 lines (23%)
 
 | file | lines | node dependency | what it needs |

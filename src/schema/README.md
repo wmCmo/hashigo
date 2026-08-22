@@ -43,3 +43,22 @@ hazard so it is not discovered in the search box. Query through `searchPlan()`,
 which routes 1–2 character queries to a LIKE scan over `card_search_index`
 because the trigram index cannot serve them at all.
 
+## `sources.ts` — the DDL text, and the one rule about this directory
+
+`schema.sql` and `views.sql` are loaded by **`sources.ts`**, not by `index.ts`, and that
+split is load-bearing rather than tidiness. `index.ts` is where the enumerations live, so
+eleven modules value-import it — template, renderer, scheduler, generate, dashboard
+metrics among them. While the `node:fs` read sat in `index.ts` and ran at module scope,
+**every one of those subsystems threw at module load in a browser worker**, for a
+filesystem read none of them asked for.
+
+So: **`index.ts` has no Node imports and must never acquire any. Anything touching I/O
+goes in `sources.ts`.** `test/browser-portable.test.ts` walks the transitive closure and
+fails on the first `node:` specifier, so this cannot regress quietly.
+
+`src/db/open.ts` is the only consumer of `SCHEMA_SOURCES`. A browser build needs DDL only
+when it CREATES a database — both spikes open an existing file with
+`applySchema: false` — and when it does, the seam is a sibling `sources.browser.ts` using
+the `?raw` text import already in production in `spike/db.worker.ts`. That specifier is a
+Vite-ism and cannot go in a shared path, because `dist/` is plain `tsc` output that Node
+imports directly.
