@@ -22,13 +22,21 @@ And what he actually wants from it:
 ## MEASURED: the workaround is 13 cards, and it is TWO problems
 
 Basis: `card_field_values.value` for `field_id = 'name'` on templates 単語 and 言葉,
-n = 3,858, matched against `[（(][^）)]*[）)]`.
+**n = 3,860** as re-measured 2026-08-22 by `scripts/reading-parse.ts`, matched against
+`[（(][^）)]*[）)]`. (This line read 3,858; the hit count is 13 either way.)
 
 | | cards | examples | what it needs |
 |---|--:|---|---|
-| **A. kana-primary word** | 6, all 言葉 | `かく(搔く)` `めす（雌）` `なす（茄子）` `あり(蟻)` `あく（灰汁）` `（おす）雄` | the ◎かな主流 flag |
-| **B. kanji with an ambiguous READING** | 7, all 単語 | `器（うつわ）` `空く（すく）` `革（かわ）` `的（まと）` `主語（しゅご）` `日向　(ひなた)` | a reading hint — NOT a kana flag |
+| **A. kana-primary word** | 5, all 言葉 | `かく(搔く)` `めす（雌）` `なす（茄子）` `あり(蟻)` `あく（灰汁）` | the かな flag |
+| **B. kanji with an ambiguous READING** | 7 — 6 in 単語, 1 in 言葉 | `器（うつわ）` `空く（すく）` `革（かわ）` `的（まと）` `主語（しゅご）` `日向　(ひなた)` `（おす）雄` | a reading hint — NOT a kana flag |
 | C. an English gloss | 1 | `はたち (as in 20 years old)` | belongs in 意味 |
+
+**CORRECTED 2026-08-22.** This table read 6 / 7 / 1, which sums to 14 against a
+measured 13. `（おす）雄` was counted in A and belongs in B: the decidable rule reads
+SCRIPT POSITION, and that row puts the kanji outside. Re-measured by
+`scripts/reading-parse.ts`, the split is **7 読み / 5 かな主流 / 1 意味, zero
+unclassified** — which is what CLAUDE.md decision 10 says. Take the numbers from the
+script, not from this table.
 
 **These want opposite treatment and the workaround hides that.** In A the parenthesis
 holds the KANJI and the head word is kana; in B it holds the READING and the head word
@@ -150,3 +158,19 @@ This generalises past the 7: any kanji with several readings can carry the one m
 * ~~The exact label text~~ — **DECIDED: `かな`**, and not in the accent colour.
 * ~~B's mechanism~~ — **DECIDED: the `読み` field**, above.
 * Editing the 13 cards is authoring work: stage 10, or a one-off script.
+* ~~**ONE ROW WHERE THE RULE AND THE INTENT COME APART**~~ — **ANSWERED 2026-08-22:
+  おす is kana-primary, like its twin.** `Ufs9lMJR` is an OVERRIDE on top of the rule,
+  not an amendment to it — the rule still reads script position for every other row.
+  Final split: **6 読み / 6 かな主流 / 1 意味.** The detail that makes this cheap: the
+  head word (`雄`) and the `読み` (`おす`) come out identical either way, so the whole
+  consequence is whether the かな label shows on that one card.
+
+  The original framing, kept because the reasoning is the reusable part:
+  `scripts/reading-parse.ts` (read-only, writes nothing) produces all 13 rows, and 12
+  are unambiguous. The exception is `Ufs9lMJR` **`（おす）雄`**, whose 意味 is
+  *"male (animal, plant)"*. Its twin `vim2i4A9` **`めす（雌）`** is *"female (animal,
+  plant)"* — one pair, authored together. The rule reads script position, so the twin
+  is **かな主流** (kana outside) and this one is **読み** (kanji outside), purely
+  because of which side the bracket landed on. Not special-cased: a heuristic that
+  overrides a ratified rule on a hunch is worse than one row he looks at. If he says
+  it is kana-primary, the fix is one row, not a rule change.

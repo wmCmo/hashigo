@@ -8,11 +8,18 @@ user's Japanese study. Built because Mochi's developer stopped fixing reported b
 **9 of 11 stages plus stage 1.5 are built and tested against the real export.** The
 audio is BOUND, the accent pipeline is VALIDATED, and the **scheduler now runs**
 (stage 6 landed 2026-08-22). What is missing is the **review UI (stage 7)**, which is
-the only reason nothing plays yet. **Zach's decision queue is EMPTY** — do not open by
-asking him to decide something, the answer is very likely in "Decisions that are
-settled" or "Ratified" below. **`NEXT.md` has the build order** — read it second. If you were told only "proceed",
-**Table A** in it is the work that is safe to do unsupervised and **Table B** is what
-needs Zach at the keyboard. Do not start Table B on your own.
+the only reason nothing plays yet.
+
+**`NEXT.md` has the build order** — read it second, and read its "STATE RIGHT NOW"
+block before touching anything: there is uncommitted work in the tree. If you were told
+only "proceed", **Table A** there is safe to do unsupervised and **Table B** needs Zach
+at the keyboard.
+
+**Zach's decision queue is EMPTY.** Do not open by asking him to decide something —
+the answer is very likely in "Decisions that are settled" or "Ratified 2026-08-22"
+below. Decisions 1 and 11 carried a NOT-RATIFIED warning for part of 2026-08-22;
+**he ratified both that day** and the warning is gone because it is answered, not
+because it was dropped.
 
 **Read [SPEC.html](SPEC.html) first** — it is the authoritative design document
 (build spec, **draft 8**). Every figure in it is measured from the real export in
@@ -118,7 +125,18 @@ whole-subsystem defect if guessed, and `src/scheduler/README.md` has the reasoni
   by construction rather than only while the cache happens to be right.
 
 It does NOT hold a session, choose a new-cards-per-day number, interleave new with
-due, or undo a grade. Those are stage 7's and two of them are his taste.
+due, or undo a grade. Those are stage 7's and one of them is still his taste
+(decision 12 settled the other: 10 new cards a day, as a setting).
+
+**Interval fuzz is live** — ±5%, keyed per track, applied AFTER the cap, which means
+an issued interval can reach 383 days. Decision 11 has the measurements and the one
+consequence worth his eye. `scripts/fuzz-load.ts` regenerates every figure in it.
+
+**復習予測 is no longer blank.** The dashboard's forecast tile landed with stage 6 and
+states whose plans it charts: **8,853 Mochi / 0 Hashigo** on the day it shipped, because
+having a scheduler rescheduled nothing. A test reconciles it against `queueCounts` day
+for day — 108 due at the as-of date plus 39+86+95+115 is the 443 the scheduler CLI
+reports four days later.
 
 ```bash
 npm test                # 17 files, 625 passed, 1 skipped (the FSRS refit, gated)
@@ -170,8 +188,23 @@ commands.
 ## Decisions that are settled — do not relitigate these
 
 1. **FSRS-6**, max interval **365 days**, target retention **0.90**.
+   **RE-RATIFIED 2026-08-22, and this time the 365 IS derived.** Zach reopened it —
+   *"365 days was a default number from mochi flashcards … but I didn't derive it"* —
+   and he was right twice over: Mochi itself **lifted that cap on 2026-02-22** and now
+   plans out to 2,707 days, and the reason on record here was **wrong**. See decision
+   11 and `notes/max-interval-and-relearning.md`. The derived reason a cap exists at
+   all: the fit's opinion about long intervals is manufactured by the scheduler that
+   trained it — observed retention RISES through the tail (94.35% → 96.40% → 98.16%),
+   which memory does not do, and the fitted decay ran to its floor asking for flatter
+   still. A cap bounds how far that bias runs; it is not a claim about how long a
+   memory lasts. 365 specifically, because the PLANNED support ends exactly there.
+   Priced, so nobody has to re-derive it: 365 costs **+33.3% more reviews a year**
+   than no cap (17,314 vs 12,986, ~11.9/day), and 365 → 454 would buy back 3.5/day
+   for 89 days of extrapolation. He kept 365.
    `src/scheduler/policy.ts` holds them (`TARGET_RETENTION = 0.9`); `BACKTEST.md`
-   holds the measurements. It was 0.95 until 2026-08-19 and this file said so for
+   holds the measurements. Since 2026-08-22 the 365 is the **centre of a ±5% band,
+   not a ceiling** — interval fuzz is applied after the cap, so an issued interval
+   can reach 383 days. That is forced by measurement; decision 11 has the why. It was 0.95 until 2026-08-19 and this file said so for
    a day after the code stopped agreeing: 0.95 asks for 1.9-3.0x his sustained
    daily load, 0.90 reproduces it.
 2. **Binary grades only** — remembered / forgot. Anki's four-button scale was
@@ -217,26 +250,113 @@ commands.
    The 13 parenthesis cards classify by a decidable rule — kanji-outside +
    kana-inside is a reading (7), kana-outside + kanji-inside is kana-primary (5),
    Latin inside is a gloss (1), zero unclassified. `notes/kana-primary-words.md`.
+   **ONE RATIFIED EXCEPTION, 2026-08-22.** The rule reads script POSITION, so
+   `（おす）雄` came out a reading while its twin `めす（雌）` came out kana-primary —
+   one pair (*"male (animal, plant)"* / *"female (animal, plant)"*), authored
+   together, split by which side the bracket landed on. Zach ruled **おす is
+   kana-primary, like its twin.** So the final split is **6 読み / 6 かな主流 /
+   1 意味**, and card `Ufs9lMJR` is an override, not a rule change: the head word
+   and `読み` are identical either way, and only the かな label differs.
+   `scripts/reading-parse.ts` carries the override with its reason.
 11. **Interval fuzz is ±5%, applied ONCE at grade time, keyed PER TRACK.** Zach
-   raised it; it was missing entirely. It matters here more than in general because
-   **43.2% of the scheduled tracks — 3,746 of 8,666 — sit at exactly 365 days**, the
-   cap, so any heavy study day becomes a spike a year later. Measured: fuzz takes
-   the worst single day from **188 to 70** and the CV from 2.49 to 1.91.
+   raised it; it was missing entirely. **BUILT 2026-08-22** — `INTERVAL_FUZZ` in
+   `src/scheduler/policy.ts`, applied in `gradeMemory`, keyed on the track id by
+   `gradeTrack`. It matters here more than in general because **42.9% of the live
+   scheduled tracks — 3,650 of 8,518 — sit at exactly 365 days**, the cap, so any
+   heavy study day becomes a spike a year later. Re-measured on the real export by
+   `scripts/fuzz-load.ts`, and every figure below came back:
+
+   ```plaintext
+   keying                      worst day    CV
+   none (today)                      188   2.48
+   per TRACK                          71   1.94
+   downward only at the cap          104   2.05
+   per COHORT, by due date           295   2.84   <- WORSE than none
+   per COHORT, by interval           180   2.49   <- no better than none
+   ```
+
    The width was DERIVED, not copied from Anki: the smallest width whose worst day
    fits inside the realised sustained load is 4% on a per-active-day basis (77.5) and
-   6% on `BACKTEST.md`'s 69.2 basis, so 5% sits between two defensible bases.
+   6% on `BACKTEST.md`'s 69.2 basis, so 5% sits between two defensible bases. The
+   return flattens right there — ±4% gives 78, ±5% gives 71, ±6% gives 73.
    **Two ways to build it wrong.** Keying the shift per COHORT rather than per track
-   translates the clump instead of spreading it and makes things worse (CV 2.49 ->
-   2.83, worst day 109 -> 207) — measured, by getting it wrong first. And computing it
-   when READING the queue rather than at grade time makes the due date jitter on every
-   query. It does not invalidate `BACKTEST.md`: that measured which scheduler ranks
-   best, and the fuzzed value is what was planned, so it lands in
-   `reviews.scheduled_days` and `review_interval_audit` still passes.
+   translates the clump instead of spreading it and makes things worse — measured, by
+   getting it wrong first. And computing it when READING the queue rather than at
+   grade time makes the due date jitter on every query. It does not invalidate
+   `BACKTEST.md`: that measured which scheduler ranks best, and the fuzzed value is
+   what was planned, so it lands in `reviews.scheduled_days` and
+   `review_interval_audit` still passes — pinned by a test.
+
+   **THE ONE CONSEQUENCE THAT CHANGES DECISION 1: the fuzz goes on AFTER the cap, so
+   an issued interval can reach 383 days.** `MAX_INTERVAL_DAYS` is now the centre of
+   a ±5% band rather than a hard ceiling. That is forced, not preferred. Seeding every
+   live track and asking the fitted model what it wants at 0.90: the **median raw
+   interval is 988 days**, 6,669 of 8,961 tracks (74.4%) exceed the cap, and **6,617
+   of those — 99.2% — want more than 384 days**, which is 365/0.95. Fuzz applied
+   before the cap cannot pull a single one of them under 365; they clamp straight back
+   onto it and the spike is untouched. Fuzz-before-cap is not the conservative choice,
+   it is the inert one.
+   **THE "383 < 454" ARGUMENT IS WITHDRAWN, 2026-08-22.** It said the overshoot stays
+   inside observed support because the longest observed gap is 454 days. That mixes the
+   two interval bases, which is exactly what decision 6 forbids: 454 is the ELAPSED
+   edge, and `scripts/cap-derive.ts` measures that **all 3,009 gaps past a year came
+   from a plan of <= 365 days — not one from a longer plan.** So 454 is Mochi's own cap
+   plus how late Zach runs, not evidence about memory at 454 days. On the PLANNED basis,
+   which is the one a cap constrains, 383 is 18 days past anything ever issued. Small,
+   but an extrapolation.
+   Zach's `Math.min(fuzzed, 365)` variant is measured and is the weakest of the three:
+   it shoves every upward-fuzzed track back onto exactly the cap, so **1,892 of 3,650 —
+   52% — land on one day again**, worst day 113 against downward-only-10%'s 73.
+   **RATIFIED 2026-08-22: two-sided, after the cap. The issued maximum is 383 days.**
+   Zach was shown the alternative and chose this. The alternative was real, not a straw
+   man — the earlier dichotomy ("383, or accept a worst day of 104") was false, because
+   downward-only had been tested at one width. Swept properly (`scripts/fuzz-load.ts`):
+
+       two-sided +/-5%              worst 71   CV 1.94   issued max 383d   <- CHOSEN
+       downward-only, 5% width      worst 104  CV 2.05   issued max 365d
+       downward-only, 10% width     worst  73  CV 1.91   issued max 365d
+
+   Downward-only at 10% would have given the same 36-day window and the same spread —
+   73 against 71 — while leaving 365 an absolute ceiling, for about 2% more reviews.
+   **He took the two-sided form knowing that.**
+
+   **THE ONE TENSION, RECORDED BECAUSE IT WAS ACCEPTED AND NOT OVERLOOKED.** Decision 1
+   keeps 365 because that is where the PLANNED support ends. Two-sided fuzz then issues
+   up to 383, which is 18 days past it. That is a real extrapolation, just a small and
+   deliberate one — 4.9% past the edge, on the 42.9% of tracks that sit at the cap. Do
+   not "fix" it by reordering the fuzz and the cap: fuzz-before-cap is INERT (99.2% of
+   over-cap tracks want more than 384 days and clamp straight back onto 365), and
+   `Math.min(fuzzed, 365)` is worse still — it puts **1,892 of 3,650 at-cap tracks, 52%,
+   back onto one day**, worst day 113. Both are measured.
 12. **New cards default to 10/day and are a SETTING.** Mochi's default, and Zach wants
    the same. At 10/day the 3,980 waiting take ~398 days, so it is the dial that decides
    how fast the backlog moves. `newTracks` is already returned separately from
    `dueTracks` so the session layer owns this.
-13. **Links render PLAINLY, in place, on whatever side they are authored on.**
+13. **A forgotten card is SHOWN again at the end of the session, and NOT GRADED.**
+   Decided 2026-08-22, and it settles stage 7's last open question. Measured, because
+   the intuition here was wrong twice: Mochi does **not** do same-day relearning — 98.5%
+   of the 6,996 same-day reviews follow a PASS and 6,895 are the second time a card was
+   ever seen, so those are new-card learning steps. Mochi's real lapse behaviour is
+   next-day (504 retries, 83.3% recovered). And **0 of 103** same-day-after-failure
+   reviews were ever remembered, so this corpus contains no evidence either way.
+   Grading a same-day re-ask would take FSRS-6's short-term branch and move the next
+   interval by a flat **3.50× on a pass, 0.173× on a second failure** — flat at every
+   stability because w19 fitted to 0.000053, its floor — and that multiplier is
+   calibrated on new-card second looks with **zero** post-lapse observations. So: show
+   it, do not grade it. He gets the card back, the schedule stays put, nothing is fed to
+   the model where it is guessing, and it CREATES the data that would later justify
+   grading it. Implementation is a session-local list: no review rows, no scheduler
+   change. `notes/max-interval-and-relearning.md` §2, `scripts/relearn-cost.ts`.
+14. **NO one-off respread of the existing due dates.** Decided 2026-08-22, and the
+   measurement is why: 3,650 tracks share an INTERVAL, not a due date. The heaviest
+   single day in the entire future schedule is **188 on 2027-01-03**, and only 24 of
+   1,194 scheduled days exceed his sustained 77.5/day. He has already done more than 188
+   on **six** separate days, peaking at **229**. So the pile-up is a day he has survived
+   six times, not a wall — and grade-time fuzz brings future plans down anyway. Not
+   worth a migration that rewrites due dates Mochi set. His reasoning: *"are we saying
+   that, on some day, i have to review 3650 in a single day? if not then we don't have
+   to touch it, no reason to."* No, and correct.
+15. **Links render PLAINLY, in place, on whatever side they are authored on.**
    Drafts 1-7 called the Jisho URL on 漢字's side 4 an answer leak and prescribed
    deferring link rendering in reverse mode. Zach overruled that on 2026-08-20:
    there is no hover on a phone, a long-press is deliberate, and he never checks a
@@ -257,12 +377,21 @@ took the remaining five, all as recommended, so they are no longer open question
   the standard rule: `\*` jisho wildcards, underscores in filenames, and `路_線_図`
   being italicised.
 * **The dashboard keeps zero JavaScript** (SPEC problem #1, battery). But that is
-  not a reason to leave data unreachable — see the heatmap item below.
+  not a reason to leave data unreachable, and **as of 2026-08-22 nothing on the page
+  is hover-only**: each activity-heatmap year strip carries a `<details>` table with
+  one row per day that has reviews — 176 + 362 + 348 + 220 + 211 = **1,317 rows,
+  exactly `activeDays`**. Zero-review days are the one thing with no row anywhere,
+  because their tooltip says 学習なし and carries no number. Phrase it that way: "no
+  *value* is hover-only" is true, "no *cell* is hover-only" is not.
 * **The heatmap keeps 4 colour bins.** A 5-step ramp failed the contrast check, and
   contrast wins in an app where every grey carries a reading.
 * **`tags` keeps 20 rows for 19 real tags** — `Dialect` is a childless ancestor so
-  `Dialect/Kansai` has a parent. Any count filters `cards_direct > 0`; the
-  dashboard's tag count needs that filter, which is a fix and not a decision.
+  `Dialect/Kansai` has a parent. Any count filters `cards_direct > 0`. This was
+  carried as a pending fix; **checked 2026-08-22, it is not one.** The dashboard has
+  no tag count at all, the importer's phase line already says `20 tag paths` rather
+  than `20 tags`, and `test/roundtrip.test.ts:361` already asserts the filtered count
+  is 19 and names the ancestor. The trap goes live again the first time a tag
+  sidebar counts rows.
 
 `orphanFieldValues` reports **235** with the 137-real-text figure broken out and the
 card ids listed — the same treatment the 3,159-card stale-`content` case gets. The

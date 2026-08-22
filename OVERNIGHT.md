@@ -295,6 +295,9 @@ before.
 * The dashboard has **no JavaScript at all** — native SVG `<title>` for hover,
   `<details>` tables under 6 of 11 charts. Justified by SPEC problem #1 (battery),
   but it means the heatmap's 1,317 daily values are hover-only.
+  **FIXED 2026-08-22** — each year strip now carries a `<details>` table, 1,317 rows
+  across five years, still with zero JavaScript. Nothing on the page is hover-only
+  except the zero-review cells, whose tooltip carries no number.
 * Heatmap uses 4 quartile bins (a 5-bin ramp failed the contrast validator).
 * `tags` holds 20 rows for 19 real tags — `Dialect` is a childless ancestor row so
   that `Dialect/Kansai` can satisfy `parent_path`. Any query counting tags must
