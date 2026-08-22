@@ -200,6 +200,17 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
 
 ## Decisions that are settled — do not relitigate these
 
+> [!IMPORTANT]
+> **THIS LIST IS THE ONLY PLACE A DECISION COUNTS AS RECORDED.** Zach also keeps a planner
+> in Obsidian, and it is genuinely useful — it holds his reasoning in his own words — but
+> **no agent reads it.** Four decisions lived only there until 2026-08-22 and one of them
+> (`型` placement, now decision 20) was duly reopened by an audit as an "open question"
+> weeks after he had settled it. Nobody was careless: the decision was invisible to the
+> people who needed it.
+>
+> So: if it is settled in conversation and it is not here, it is not settled. Write it
+> here first, then anywhere else.
+
 1. **FSRS-6**, max interval **365 days**, target retention **0.90**.
    **RE-RATIFIED 2026-08-22, and this time the 365 IS derived.** Zach reopened it —
    *"365 days was a default number from mochi flashcards … but I didn't derive it"* —
@@ -429,6 +440,29 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
    there is no hover on a phone, a long-press is deliberate, and he never checks a
    URL before answering. No direction-dependent deferral, no defanged `href`, no
    state for it. Deleting that machinery was the correct outcome.
+
+20. **`型` renders on side 2, immediately above `<<Speech>>`. `かな主流` renders on side 1,
+   inside the `<<#Reading>>` gate.** Both from the 単語 template Zach pasted 2026-08-21.
+   The asymmetry is the exercise, not an inconsistency: `型` is the ANSWER — the accent
+   pattern he is trying to recall — so putting it on side 1 would hand him the thing he is
+   meant to produce. `かな主流` is not an answer, and side 1 already reveals `Reference`
+   when `Reading` is true, so the label is not a spoiler there.
+   **MIGRATED FROM THE PLANNER 2026-08-22, and its absence here caused a real failure.**
+   This decision lived only in his Obsidian planner, which no agent reads. An audit
+   flagged `型` placement as an open question; it was settled weeks earlier and nothing
+   in the repo said so. A decision recorded only outside the repo is a decision agents
+   will reopen — that is the lesson, not "someone should have checked".
+21. **Fields are MOVABLE between templates, from the UI.** Add, delete and move, landing
+   with stage 10. `template_fields.local = 1` (decision 9) already makes a moved or added
+   field survive a re-import, so the storage half exists and what is missing is the editor.
+   Also migrated from the planner.
+22. **The 6 truly ambiguous words stay UNLABELLED.** `まく` has three different accents
+   across 巻く / 撒く / 幕, so no single label is correct for the string. Resolving them
+   needs the card's `意味` to disambiguate, which makes it a review-UI question rather
+   than a pipeline one — the derivation cannot see meaning. `OJAD_AMBIGUOUS` in
+   `src/accent/ojad.ts` holds them, deliberately without labels. This is the same
+   principle as decision 8: a wrong accent drilled through spaced repetition is worse
+   than no accent. Also migrated from the planner.
 
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
