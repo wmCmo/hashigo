@@ -27,6 +27,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
+import { classifyParenthesis, hasParenthesis, parseReading } from "../src/text/index.js";
 
 import { fieldValueText } from "../src/import/entities.js";
 import {
@@ -1501,5 +1502,71 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     for (const latex of new Set(fragments)) {
       expect(parseMath(latex).kind, latex).toBe("typeset");
     }
+  });
+});
+
+// ─── decision 10: the parenthesis workaround ─────────────────────────────────
+
+describe("parsing Zach's parenthesis workaround", () => {
+  it("keys on SCRIPT, not on which side the bracket is", () => {
+    // The failure this exists to prevent, and it was a live bug: keying on
+    // POSITION emits head=おす, 読み=雄 for `（おす）雄` — a kana head word with a
+    // kanji reading, backwards, and it would have been written to his cards.
+    const outside = parseReading("x", "器（うつわ）");
+    const inside = parseReading("x", "めす（雌）");
+    expect(outside?.head).toBe("器");
+    expect(outside?.yomi).toBe("うつわ");
+    expect(outside?.verdict).toBe("読み");
+    expect(inside?.head).toBe("雌");
+    expect(inside?.yomi).toBe("めす");
+    expect(inside?.verdict).toBe("かな主流");
+
+    // The bracket on the OTHER side, same script layout as its twin above.
+    const flipped = parseReading("other-card", "（おす）雄");
+    expect(flipped?.head).toBe("雄");
+    expect(flipped?.yomi).toBe("おす");
+  });
+
+  it("applies the one ratified override, and only to its own card", () => {
+    // `（おす）雄` is kanji-outside, so the rule says 読み; Zach ruled it
+    // kana-primary like its twin めす（雌）. Listed by card id so it cannot
+    // generalise — the same string on another card still follows the rule.
+    const overridden = parseReading("Ufs9lMJR", "（おす）雄");
+    expect(overridden?.ruled).toBe("読み");
+    expect(overridden?.verdict).toBe("かな主流");
+    expect(overridden?.overridden).toBe(true);
+    expect(overridden?.kanaPrimary).toBe(1);
+
+    const same = parseReading("some-other-id", "（おす）雄");
+    expect(same?.verdict).toBe("読み");
+    expect(same?.overridden).toBe(false);
+    // Either way the head word and the reading are identical — only the label
+    // differs, which is why the override is safe to carry as one row.
+    expect(same?.head).toBe(overridden?.head);
+    expect(same?.yomi).toBe(overridden?.yomi);
+  });
+
+  it("treats a Latin gloss as 意味 and writes no reading for it", () => {
+    const gloss = parseReading("x", "はたち (as in 20 years old)");
+    expect(gloss?.verdict).toBe("意味");
+    expect(gloss?.head).toBe("はたち");
+    // Empty, not the gloss: writing a 読み here would make `<<#Reading>>` look
+    // answered when it is not.
+    expect(gloss?.yomi).toBe("");
+  });
+
+  it("handles both bracket widths and a full-width space separator", () => {
+    expect(parseReading("x", "日向　(ひなた)")?.head).toBe("日向");
+    expect(parseReading("x", "日向　(ひなた)")?.yomi).toBe("ひなた");
+    expect(parseReading("x", "あり(蟻)")?.head).toBe("蟻");
+    expect(hasParenthesis("普通")).toBe(false);
+    expect(parseReading("x", "普通")).toBeNull();
+  });
+
+  it("returns ? rather than guessing when the rule does not decide", () => {
+    // Kana both sides: nothing distinguishes a reading from a kana-primary form,
+    // and every writer in this repo refuses to write on a ?.
+    expect(classifyParenthesis("かな", "かな")).toBe("?");
+    expect(classifyParenthesis("漢字", "漢字")).toBe("?");
   });
 });
