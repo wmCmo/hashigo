@@ -6,20 +6,25 @@ user's Japanese study. Built because Mochi's developer stopped fixing reported b
 ## Where this is, right now (2026-08-22)
 
 **9 of 11 stages plus stage 1.5 are built and tested against the real export.** The
-audio is BOUND, the accent pipeline is VALIDATED, and the **scheduler now runs**
-(stage 6 landed 2026-08-22). What is missing is the **review UI (stage 7)**, which is
-the only reason nothing plays yet.
+scheduler runs, the accent pipeline is validated, and as of 2026-08-22 **the whole path
+from "what is due" to "these bytes" exists in `src/`** — `src/scheduler` says what to
+study, `src/cards` turns a card id into a rendered card and resolves its audio out of the
+617.9 MiB store. What does not exist is **the screen**: nothing mounts a card in a browser
+and nothing calls `play()`. That is stage 7.
 
-**`NEXT.md` has the build order** — read it second, and read its "STATE RIGHT NOW"
-block before touching anything: there is uncommitted work in the tree. If you were told
-only "proceed", **Table A** there is safe to do unsupervised and **Table B** needs Zach
-at the keyboard.
+> [!warning] Two things to check before you touch anything
+> 1. **`git status` — the tree is NOT clean.** A batch of built, green, uncommitted work
+>    is sitting in it. `NEXT.md`'s "STATE RIGHT NOW" block lists exactly what.
+> 2. **There is no unsupervised work left.** Table A in `NEXT.md` is empty and the
+>    critical path is done. What remains is stage 7, and its shape is Zach's.
 
-**Zach's decision queue is EMPTY.** Do not open by asking him to decide something —
-the answer is very likely in "Decisions that are settled" or "Ratified 2026-08-22"
-below. Decisions 1 and 11 carried a NOT-RATIFIED warning for part of 2026-08-22;
-**he ratified both that day** and the warning is gone because it is answered, not
-because it was dropped.
+**Zach's decision queue is NOT empty — it has five items and they live in his planner**
+(`C:\DEV\obsidian\second-brain\PARA\1Projects\ハシゴ\Planner.md`, which no agent reads;
+it is two sections and nothing else). **D1 — what the review screen looks like — is the
+only thing blocking the project.** Do not ask him to re-decide anything in the numbered
+list below; decisions 1 and 11 carried a NOT-RATIFIED warning for part of 2026-08-22 and
+**he ratified both that day**, so the warning is gone because it is answered, not because
+it was dropped.
 
 **Read [SPEC.html](SPEC.html) first** — it is the authoritative design document
 (build spec, **draft 8**). Every figure in it is measured from the real export in
@@ -58,9 +63,22 @@ key is `データ` where the value is `{{データ}}` — worth 471 cards); only
 `gender` / `from` / `to` / `language` are part of the key, never `ai-custom-prompt`; and
 prompt markers carry spaces (`<< 言葉 >>`). See `src/generate/README.md`.
 
-**WHAT STILL DOES NOT PLAY.** Binding is not playback. Nothing mounts a rendered card and
-nothing calls `play()`, because that is the review UI (stage 7) and it does not exist. The
-audio is now findable, not audible. `<<型>>` goes the other way from all of this —
+**WHAT STILL DOES NOT PLAY.** Binding is not playback. Nothing calls `play()`, because
+that is the review UI (stage 7) and it does not exist. As of 2026-08-22 something DOES
+mount a rendered card: `src/cards` is the loader — a card id in, a renderable card out —
+and it regenerates the corpus figure through its own path (6,855 speech mounts over 5,664
+cards, expanded 10,722, divergent 0) rather than repeating it. As of the same day `src/generate` also loads in a
+browser: its cache key moved to `src/blobs/generation.ts` and now hashes through the
+portable synchronous SHA-256, so `KNOWN_NODE_BOUND` is empty. **That fix was not the one
+three documents predicted** — they called `crypto.subtle` "the one genuinely invasive
+change" on the grounds that it is async; `src/blobs/sha256.ts` had already made that
+false, and nothing changed signature. Pinned by 36,398 corpus identities hashing
+identically under both digests. And the resolver's second half landed the same day:
+`cardAudioResolver` in `src/cards/audio.ts` reads real payloads out of the 617.9 MiB
+store — 361 of 373 speech mounts over a 400-card sample, 16.2 MiB of `audio/mpeg`. So the
+whole path from "what is due" to "these bytes" now exists. What does not exist is the
+SCREEN: nothing mounts a card in a browser and nothing calls `play()`, because that is
+stage 7. `<<型>>` goes the other way from all of this —
 materialise it, in a new `accents` table keyed by text rather than card.
 
 See `src/generate/README.md`, `STAGE4.md` §3 and `notes/pitch-accent-pipeline.md`.
@@ -139,12 +157,12 @@ for day — 108 due at the as-of date plus 39+86+95+115 is the 443 the scheduler
 reports four days later.
 
 ```bash
-npm test                # 19 files, 674 passed, 1 skipped (the FSRS refit, gated)
+npm test                # 20 files, 697 passed, 1 skipped (the FSRS refit, gated)
                         # 32.7-87.7 s over six runs. Under load it can also emit
                         # "Timeout calling onTaskUpdate" — that is Vitest's reporter
                         # RPC, not a failure. Check the pass count, not the error line.
 npm run typecheck       # exit 0
-npm run build           # refuses to exit 0 unless dist/ actually imports (17 export subpaths)
+npm run build           # refuses to exit 0 unless dist/ actually imports (24 export subpaths)
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
 npm run dashboard -- --db build/hashigo.db --out dashboard.html   # English; --locale ja for the other
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 1 on any location
@@ -191,7 +209,13 @@ npx vite-node src/accent/cli.ts -- words --db build/hashigo.db --out build/head-
 npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accents.jsonl
 npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accents-unidic.jsonl
 npx vite-node src/accent/cli.ts -- ojad  --db build/hashigo.db
+npx vite-node scripts/reading-apply.ts -- --db build/hashigo.db --apply   # the 13 読み rows
 ```
+
+**The last line is the LOCAL FIELDS, and it belongs to the rebuild, not to the accents.**
+A rebuild starts from `rm build/hashigo.db`, so it takes every locally-authored field and
+value with it — `読み`, `かな主流`, and the `型` field when it exists. The script is
+idempotent and self-erasing: run twice and the second run says "ALREADY APPLIED".
 
 **Do not skip the second `load`.** The UniDic cross-check is a separate file, and without
 it `accent/cli.ts queue` reports **0 disputed instead of 57** — which reads as "nothing
@@ -265,6 +289,24 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
    re-importing is not a one-off — Zach still reviews ~100 cards/day in Mochi, so
    every fresh export brings history worth having, and a repair that is needed
    once after an import is needed forever.
+   **MEASURED END TO END 2026-08-22, and the result is only three-quarters good.**
+   The first local fields were finally created (`読み` and `かな主流`, ids
+   `local-yomi` / `local-kana-primary`, on 単語 and 言葉) — before that day
+   `template_fields` held **zero** rows with `local = 1`, so this whole mechanism
+   was built, tested and never once exercised. Applying the 13 rows and then
+   re-importing all three exports into the SAME database:
+
+       local field rows      4 of 4 survive     template_fields is UPSERT-only; nothing deletes a field
+       読み values          12 of 12 survive    pruneFieldValues exempts local = 1
+       かな主流 values        6 of 6 survive     same clause
+       head words           12 of 12 REVERT     `name` is MOCHI's field, and Mochi still holds 器（うつわ）
+
+   **So `local = 1` protects a field we ADDED; it cannot protect an EDIT to a
+   field Mochi owns.** The half-applied state is worse than either end — the card
+   would carry `器（うつわ）` as its head AND `うつわ` as its 読み — so
+   `scripts/reading-apply.ts` is idempotent and re-running it repairs it. Decision
+   16 is what makes this finite: one final import, then never again, and the
+   reverting stops.
 10. **An explicit READING beats the head word as generator input.** Zach's
    `器（うつわ）` parentheses were a Mochi TTS workaround — Mochi read 器 as キ, 革 as
    カク, 的 as テキ. A `読み` field (`local = 1`) carries the intended reading, and
@@ -529,6 +571,17 @@ It is pinned by tests with demonstrated teeth (integrator, 2026-08-20): adding
 sweep (450 violations); adding an `autoplay` attribute in `src/render/nodes.ts`
 turns 8 tests red across three files. If you change either file, re-run that
 experiment rather than trusting a green suite.
+
+## Zach's own words are in the repo now, not only in Obsidian
+
+`notes/zach-in-his-own-words.md` holds the quotes the decisions below were written FROM,
+moved out of his Obsidian planner on 2026-08-22 at his instruction. **If that file and a
+decision here ever disagree, that file is right** — the direction is one-way: it is the
+source, this quotes it. It is also the lesson of decision 20 applied to itself, since a
+thing recorded only in Obsidian is a thing no agent can read.
+
+`notes/open-sourcing.md` holds the deferred open-sourcing decision and what was already
+checked for it, moved out of the same file for the same reason.
 
 ## The four problems this exists to solve
 

@@ -6,6 +6,24 @@ pipeline: **a wrong label is visible where a wrong contour is silently absorbed.
 He can hear that 橋 sounds slightly off; he can *see* that it says 平板 when he
 expects 尾高. That is the only cheap check on 3,850 derivations.
 
+> [!warning] **`<<型>>` HAS NEVER ACTUALLY BEEN WRITTEN TO A CARD, and it is one row away**
+> Discovered 2026-08-22 while creating the first local fields: `template_fields` contained
+> **zero rows with `type = 'accent'`** and zero with `local = 1`. `materialiseAccents`
+> iterates `WHERE f.type = 'accent'`, so it has been a **no-op every time it has ever
+> run** — it reports 0 written and that reads as "nothing to do" rather than "there is no
+> field to write into". The 3,850 derived accents are sitting in the `accents` table
+> unused.
+>
+> What is missing is not code. It is one `template_fields` row per template — `local = 1`,
+> `type = 'accent'`, `source_field_id` pointing at the head word — plus a `<<型>>`
+> reference in the template BODY, which changes what every 単語 card looks like and is
+> therefore Zach's call (**D3** in his planner; placement itself is settled by decision 20:
+> side 2, immediately above `<<Speech>>`).
+>
+> `scripts/reading-apply.ts` is the worked precedent for creating a local field
+> idempotently, and CLAUDE.md decision 9 records what survives a re-import and what does
+> not.
+
 ## The pipeline, and why it crosses two languages
 
 ```bash
