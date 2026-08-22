@@ -970,6 +970,62 @@ describe("the queue", () => {
     db.close();
   });
 
+  /**
+   * THE ARGUMENT `src/scheduler/queue.ts` MAKES AT THE TOP, TESTED.
+   *
+   * That header says due is compared by LOCAL DATE via `substr(due_at, 1, 10)`
+   * and not by instant, and gives the reason: comparing the raw strings lexically
+   * "is WRONG the moment two offsets are in play:
+   * `2026-08-22T00:00:00+09:00` sorts after `2026-08-22T00:00:00Z` although it is
+   * nine hours earlier. Every due date in the corpus carries +09:00 today, so a
+   * lexical comparison would work until the first review taken abroad and then
+   * quietly misjudge a day's worth of cards."
+   *
+   * Every fixture in this file wrote +09:00, so nothing put two offsets in play
+   * and the load-bearing claim was untested. The whole point is that it fails
+   * SILENTLY and only after he travels.
+   */
+  it("compares due dates by local date, so a second offset cannot misjudge a day", () => {
+    const db = queueFixture();
+    // Two tracks due on today's LOCAL date, written in different offsets. The
+    // UTC instants are 18 hours apart and straddle the boundary; both are still
+    // "due today" because a due date is local midnight by construction.
+    for (const [id, dueAt] of [
+      ["utc-today", "2026-08-22T00:00:00Z"],
+      ["tokyo-today", "2026-08-22T00:00:00+09:00"],
+      ["hawaii-today", "2026-08-22T00:00:00-10:00"],
+    ] as const) {
+      db.prepare("INSERT INTO cards (id, deck_id, name, archived, pos) VALUES (?, 'kid', ?, 0, ?)").run(
+        id,
+        id,
+        id,
+      );
+      db.prepare(
+        "INSERT INTO card_tracks (card_id, kind, due_at, reps) VALUES (?, 'forward', ?, 3)",
+      ).run(id, dueAt);
+    }
+
+    const due = dueTracks(db, { now: NOW }).map((row) => row.cardId);
+    // All three, regardless of offset — the property the substr comparison buys.
+    for (const id of ["utc-today", "tokyo-today", "hawaii-today"]) {
+      expect(due, `${id} should be due today`).toContain(id);
+    }
+
+    // And the counts agree with the list rather than being computed differently.
+    expect(queueCounts(db, { now: NOW }).due).toBe(due.length);
+
+    // A track due TOMORROW in any offset is still not due, so the fix did not
+    // simply widen the window: `2026-08-23T00:00:00-10:00` is only 14 h away in
+    // real time, which an instant comparison against a +09:00 "now" would include.
+    db.prepare("INSERT INTO cards (id, deck_id, name, archived, pos) VALUES ('hawaii-tmr', 'kid', 'x', 0, 'z')").run();
+    db.prepare(
+      "INSERT INTO card_tracks (card_id, kind, due_at, reps) VALUES ('hawaii-tmr', 'forward', '2026-08-23T00:00:00-10:00', 3)",
+    ).run();
+    expect(dueTracks(db, { now: NOW }).map((r) => r.cardId)).not.toContain("hawaii-tmr");
+
+    db.close();
+  });
+
   it("lists new tracks separately", () => {
     const db = queueFixture();
     expect(newTracks(db, { now: NOW }).map((r) => r.cardId)).toEqual(["fresh"]);

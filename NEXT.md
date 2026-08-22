@@ -69,6 +69,31 @@ worth knowing before changing it; CLAUDE.md has the three that would have been
 whole-subsystem defects if guessed. Today's queue is **443 due, 328 of them overdue,
 3,980 new** — `npx vite-node src/scheduler/cli.ts -- counts --db build/hashigo.db`.
 
+### ONE MEASURED-BUT-UNEXPLAINED THING, left deliberately unpinned
+
+**A corpus-scale test of the COMPOSED audio pipeline still does not exist, and I stopped
+rather than write one I could not defend.** The audit asked for it (nothing pins
+resolve → expand → render at scale, which is the path stage 7 walks for every card).
+
+What I measured, 2026-08-22, basis stated: forward direction only, the 7,716 cards with a
+template, counting `GeneratorMount.name === "speech"` from `renderSides` after
+`expandGeneratorFields`:
+
+    pendingGenerators: true   -> 6,855 speech mounts over 5,664 cards
+    pendingGenerators: false  ->    31 speech mounts over    31 cards
+
+**Two things I cannot account for, and both must be resolved before this becomes a
+test.** First, `expandGeneratorFields` reports **`expanded: 0`** on every real card, while
+the same call on the unit fixture in `test/generate.test.ts:220` reports 1 — yet the
+mounts appear anyway, so something other than the expansion is producing them. Second, the
+audit reported **6,918 over 5,718** and **94 over 85** for these two cases; my numbers are
+close but not equal, so one of the two bases is wrong and I do not know which.
+
+The corpus markers carry SPACES (`<< Speech >>`, `<< 単語 >>` — the documented trap) and
+単語's Speech field has `source_field_id = 'name'`, so the obvious suspects are already
+ruled out. **Pinning either figure while `expanded: 0` is unexplained would pin a
+misunderstanding**, which is worse than the gap. Start by explaining the 0.
+
 ### Table A — do these now, unsupervised. All decided, none need him.
 
 | | what | why it is safe |
