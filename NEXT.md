@@ -14,13 +14,23 @@ live here. Preserve his wording if you edit it; don't paraphrase him away.
 
 ---
 
-## STATE RIGHT NOW — 2026-08-22, and NOTHING IS COMMITTED
+## STATE RIGHT NOW — 2026-08-22, everything is COMMITTED
 
-**Everything is COMMITTED and the tree is clean.** Four commits landed 2026-08-22
-(`b7794a9` fuzz + the cap's basis fix · `0e24ca2` forecast tile + heatmap tables ·
-`7709b41` the cap and relearning derivations · `b124dd0` the ratifications), then the
-browser-portability split. Gates: **18 files / 652 tests / 1 skipped, typecheck 0, build
-OK (17 export subpaths), `spike:check` clean.** Re-check these figures rather than repeating them.
+**The tree is clean. Fourteen commits landed 2026-08-22** — the scheduler's interval fuzz,
+the forecast tile and heatmap tables, the cap/relearning derivations, the ratifications,
+the browser-portability split, schema **v8**, a correctness sweep, and the dashboard in
+English. `git log --oneline -14` is the list; do not rebuild any of it.
+
+Gates, and **re-run them rather than repeating these**: `npm test` → 19 files / 674 passed
+/ 1 skipped · `npm run typecheck` → 0 · `npm run build` → OK, 23 export subpaths ·
+`npm run spike:check` → clean.
+
+> [!IMPORTANT]
+> **A DECISION THAT IS NOT IN `CLAUDE.md` IS NOT RECORDED.** Zach keeps a planner in
+> Obsidian; no agent reads it. Four settled decisions lived only there until today and one
+> (`型` placement, now decision 20) was reopened by an audit as an "open question" weeks
+> after he had settled it. If you settle something with him, write it into CLAUDE.md's
+> numbered list first. There are 22 decisions; read them before proposing anything.
 
 **THE DECISION QUEUE IS EMPTY. Zach cleared all four questions on 2026-08-22** and every
 one is now written into `CLAUDE.md` as a settled decision. Do NOT reopen these; the last
