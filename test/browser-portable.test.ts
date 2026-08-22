@@ -42,6 +42,7 @@ const BROWSER_ENTRY_POINTS = [
   "src/render/audio.ts",
   "src/blobs/generation.ts",
   "src/cards/index.ts",
+  "src/session/index.ts",
   "src/generate/index.ts",
   "src/scheduler/index.ts",
   "src/scheduler/policy.ts",

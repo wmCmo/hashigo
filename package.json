@@ -87,6 +87,10 @@
       "types": "./dist/cards/index.d.ts",
       "default": "./dist/cards/index.js"
     },
+    "./session": {
+      "types": "./dist/session/index.d.ts",
+      "default": "./dist/session/index.js"
+    },
     "./scheduler": {
       "types": "./dist/scheduler/index.d.ts",
       "default": "./dist/scheduler/index.js"

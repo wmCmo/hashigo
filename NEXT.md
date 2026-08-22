@@ -20,7 +20,13 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 
 ---
 
-## STATE RIGHT NOW — 2026-08-22, tree clean, four commits landed
+## STATE RIGHT NOW — 2026-08-22, tree clean, five commits landed
+
+**The newest commit is the session layer (`src/session`), so B1 is now ONLY the
+screen.** Gates after it: **21 files / 716 passed / 1 skipped**, typecheck 0, build 0
+(72 modules, **25** export subpaths), spike:check 0. See "The session layer landed"
+below — including the two pieces of dead code that fault injection deleted, and the one
+small thing that needs Zach (the interleave default).
 
 **D1 IS DECIDED and stage 7 is unblocked.** The review screen is **direction A2** —
 direction A's terminal look with direction C's hand — chosen from four mockups built over
@@ -242,6 +248,35 @@ not exist is the SCREEN: nothing mounts a rendered card in a browser and nothing
 `play()`. That is **B1, and it is Zach's.** The two runs needing his handset — the 625 MB
 fill and the per-grade OPFS write — are still unmeasured.
 
+### The session layer landed 2026-08-22 — so B1 is now only the screen
+
+`src/session` is the state machine between `hashigo/scheduler` and the screen: it
+builds the plan, interleaves new with due, and implements **decision 13** — a forgotten
+card comes back at the end and is **NOT graded**. 25th export subpath, browser-portable
+and pinned as such, 18 tests, read-only CLI at `src/session/cli.ts`.
+
+Measured against the real corpus at 2026-08-22: **443 due + 10 new = a 453-card plan**,
+deterministic (two builds at the same instant are identical), and due/new provably
+disjoint.
+
+**Two things in it were found by breaking it, not by reasoning**, and both were dead
+code I had written myself — a `Set` meant to enforce "one re-ask per track" and a
+collision walk in the `spread` slot arithmetic. Deleting either changed **zero** tests,
+because termination actually comes from `answer()` returning early on a re-ask, and slot
+collisions are provably impossible (90,000 pairs swept, zero found). Both removed.
+`src/session/README.md` has the full injection table, including the uncomfortable one:
+**the totality test passes with the slot formula completely broken**, so `spread is EVEN`
+is the test that owns the formula.
+
+> [!important] **ONE THING NEEDS ZACH, and it is small.** The interleave default is
+> `new-first`. That is defended by measurement rather than taste — with 443 due and a
+> sustained ~69-78/day he never reaches the end of the queue, so `due-first` means the
+> ten new cards are reached NEVER and decision 12's dial is inert. But the honest
+> counter-argument is his to weigh: ten unfamiliar words first is a cold start for a
+> shadowing exercise, where `spread` would warm up on cards he knows. `spread` is one
+> option value away and both are implemented and tested. **Ask him; do not quietly
+> switch it.**
+
 ### Table B — do NOT start these without him
 
 | | what | why |
@@ -320,6 +355,7 @@ statement makes `pauseVfs()` throw.
 
 | I want… | read |
 |---|---|
+| **the session layer: the queue, and decision 13's re-ask** | `src/session/README.md` — including the two pieces of dead code injection found |
 | **the chosen review-screen direction, and why** | `DECISIONS.md` decision 23 — and the mockup at `/mock/` (`npm run spike:dev -- --host ::`) |
 | what a fresh session must know | `CLAUDE.md` — auto-loads; 328 lines, and the 22 decisions as a one-line index |
 | **why a decision is what it is** | `DECISIONS.md` — the full derivations, split out of CLAUDE.md 2026-08-22 |

@@ -12,10 +12,15 @@ Built and tested against the real export: stages **0-6 and 8, plus 1.5** — sch
 importer, dashboard, template engine, renderer (`src/render`), scheduler backtest,
 the scheduler itself (`src/scheduler`), search, the content-addressed blob store, the
 browser database handle (`src/db/browser.ts`, sqlite-wasm on OPFS), `src/text`, the
-field binding (`src/generate`), and the card loader (`src/cards`) with its audio
-resolver. Missing: the **review UI** — a session, grading buttons, and the app shell
-that mounts a rendered card (stages 7, 9, 10, 11). `spike/viewer/` is a THROWAWAY
-harness, not that shell.
+field binding (`src/generate`), the card loader (`src/cards`) with its audio
+resolver, and — as of 2026-08-22 — the **review session** (`src/session`).
+
+**What is left is now genuinely only the SCREEN.** `src/session` holds the queue,
+interleaves new with due, and implements decision 13's ungraded re-ask; the thing
+that does not exist is the code that mounts a rendered card in a browser, calls
+`play()` on reveal, and wires two buttons to `answer()`. Design settled: decision
+23, direction A2. Also missing: the app shell, editor and sync (stages 9, 10, 11).
+`spike/viewer/` is a THROWAWAY harness, not that shell.
 
 Three things that are built and do NOTHING, which is the opposite trap to rebuilding:
 
@@ -84,6 +89,11 @@ npm run spike:check     # the browser contract; spike/ is excluded from tsconfig
 npx vite-node src/scheduler/cli.ts -- counts   --db build/hashigo.db
 npx vite-node src/scheduler/cli.ts -- queue    --db build/hashigo.db --limit 20
 npx vite-node src/scheduler/cli.ts -- forecast --db build/hashigo.db --days 14
+
+# The session. READ-ONLY: there is no `grade` command, on purpose -- grading from
+# a terminal would write real reviews with no card in front of you.
+npx vite-node src/session/cli.ts -- plan --db build/hashigo.db --limit 14
+npx vite-node src/session/cli.ts -- plan --db build/hashigo.db --order spread
 
 # The accent pipeline. Python owns the analyser and NOTHING else -- see
 # src/accent/README.md for why that boundary is a bug fix, not tidiness.
