@@ -25,9 +25,17 @@
  * The ~69 MB bootstrap database is served by middleware from `build/spike/`
  * rather than out of a `public/` directory: copying it into the build output on
  * every `vite build` costs seconds and gains nothing.
+ *
+ *   5. THE STAGE-7 MOCKUPS ARE SERVED AT `/mock/`, by the same middleware trick
+ *      and for the same reason. They are generated into `build/mock/out/`, which
+ *      is gitignored and sits above the Vite root (`spike/`), so without this
+ *      they are unreachable from the dev server and reviewing them on a phone
+ *      needs a SECOND server and a SECOND tunnel. `allowedHosts` below is per
+ *      server, so a second server means a second host to authorise every time
+ *      the tunnel name changes. One server, one tunnel.
  */
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { defineConfig, type Plugin } from "vite";
@@ -97,11 +105,70 @@ function serveBootstrapDatabase(): Plugin {
   };
 }
 
+/**
+ * The stage-7 mockups, at `/mock/` — `/mock/` itself is the index.
+ *
+ * `.html` only, and the resolved path must stay inside the directory: this is
+ * reachable from a public tunnel whenever one is up, so it serves exactly the
+ * generated pages and nothing else on the disk.
+ */
+const MOCK_PREFIX = "/mock";
+const MOCK_DIR = resolve(root, "build/mock/out");
+
+function serveMockups(): Plugin {
+  const handler = (
+    request: { url?: string | undefined; },
+    response: {
+      statusCode: number;
+      setHeader(name: string, value: string | number): void;
+      end(body?: string): void;
+    },
+    next: () => void,
+  ): void => {
+    const url = (request.url ?? "").split("?")[0] ?? "";
+    if (url !== MOCK_PREFIX && !url.startsWith(`${MOCK_PREFIX}/`)) {
+      next();
+      return;
+    }
+    const rel = url.slice(MOCK_PREFIX.length).replace(/^\//, "") || "index.html";
+    const file = resolve(MOCK_DIR, rel);
+    // Containment by `relative`, not by string prefix: no separator to escape,
+    // and `..` is the only thing that can climb out.
+    const rel2 = relative(MOCK_DIR, file);
+    const inside = rel2 !== "" && !rel2.startsWith("..") && !isAbsolute(rel2);
+    if (!inside || !file.endsWith(".html") || !existsSync(file) || !statSync(file).isFile()) {
+      response.statusCode = 404;
+      response.setHeader("Content-Type", "text/plain; charset=utf-8");
+      response.end(
+        `No mockup at ${url}. Generate them with:\n` +
+          "  npx vite-node scripts/mockup-cards.ts\n" +
+          "  npx vite-node scripts/mockup-html.ts\n",
+      );
+      return;
+    }
+    response.statusCode = 200;
+    response.setHeader("Content-Type", "text/html; charset=utf-8");
+    response.setHeader("Content-Length", statSync(file).size);
+    response.setHeader("Cache-Control", "no-store");
+    createReadStream(file).pipe(response as unknown as NodeJS.WritableStream);
+  };
+
+  return {
+    name: "hashigo-mockups",
+    configureServer(server) {
+      server.middlewares.use(handler);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handler);
+    },
+  };
+}
+
 export default defineConfig({
   root: "spike",
   // The 69 MB database is middleware-served; there is nothing to copy.
   publicDir: false,
-  plugins: [serveBootstrapDatabase()],
+  plugins: [serveBootstrapDatabase(), serveMockups()],
   define: {
     __SCHEMA_VERSION_FROM_NODE__: JSON.stringify(schemaVersionFromNode()),
   },
@@ -113,15 +180,50 @@ export default defineConfig({
     format: "es",
   },
   server: {
-    allowedHosts: ["acids-viewed-sound-royal.trycloudflare.com"],
+    // Tunnel hostnames Zach reviews from on his phone. ADD THE NAME, never
+    // `allowedHosts: true` — the check is Vite's DNS-rebinding guard, and a
+    // wildcard hands any page he visits a route to this dev server.
+    // These are ephemeral: a free ngrok/cloudflared name is reassignable, so an
+    // entry here is a convenience for a live tunnel, not a durable grant. Prune
+    // dead ones.
+    allowedHosts: [
+      "acids-viewed-sound-royal.trycloudflare.com",
+      "crayfish-shorty-thinning.ngrok-free.dev",
+    ],
     port: 5273,
     strictPort: true,
     fs: {
-      // spike/ imports src/db/browser.ts, which is above the Vite root.
-      allow: [root],
+      // spike/ imports src/db/browser.ts, which is above the Vite root — so this
+      // has to reach outside `spike/`. It must NOT reach the whole repo.
+      //
+      // WHY THIS IS A LIST AND NOT `[root]`, MEASURED 2026-08-22. With `[root]`,
+      // Vite's `/@fs/<abs path>` route served **the entire corpus** to anyone who
+      // could reach the dev server: `build/hashigo.db` came back 200 at
+      // 74,465,280 bytes and `build/hashigo.db.blobs.db` at 673,554,432 — every
+      // card, all 102,020 reviews and all the audio. That is harmless on
+      // localhost and is NOT harmless behind the public tunnel this config
+      // authorises in `allowedHosts` above.
+      //
+      // Vite's own denylist already refused `.env` (403) and `.git/` (403), so no
+      // credential was ever exposed. Source, notes and databases were.
+      allow: [
+        resolve(root, "spike"),
+        resolve(root, "src"),
+        resolve(root, "node_modules"),
+      ],
+      // Belt and braces: even inside an allowed directory, never a database or an
+      // env file. `deny` is matched on the basename, so it survives a later
+      // widening of `allow`.
+      deny: [".env", ".env.*", "*.db", "*.db-wal", "*.db-shm", "*.pem", "*.key"],
     },
   },
   preview: {
+    // A separate server with a separate check — `spike:preview` would otherwise
+    // reject the same tunnel that `spike:dev` accepts.
+    allowedHosts: [
+      "acids-viewed-sound-royal.trycloudflare.com",
+      "crayfish-shorty-thinning.ngrok-free.dev",
+    ],
     port: 4273,
     strictPort: true,
   },
