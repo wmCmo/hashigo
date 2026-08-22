@@ -467,10 +467,14 @@ scheduler free to choose more — for them 365 is a measurement, not a ceiling.
 
 Consequence, and it is unchanged by the lift because it comes from the observed
 side rather than the planned one: **no gap longer than 454 days has ever
-elapsed**, so every projected interval past that is extrapolation off the end of
-the support, whatever Mochi has been planning since February. Hashigo's own
-maximum interval is set to 365 days (see [Recommendation](#recommendation)),
-which keeps every interval the app issues inside the observed range.
+elapsed**, whatever Mochi has been planning since February. **But do not read 454
+as the point where extrapolation starts** — an earlier draft of this sentence did,
+and that is the basis error above: on the PLANNED basis, which is the one a cap
+constrains, the support ends at **365**, so anything past 365 is already
+extrapolation and 454 is not a boundary about memory at all. Hashigo's own
+maximum interval is set to 365 days (see [Recommendation](#recommendation)) — but
+note that this does NOT mean every issued interval sits at or under it: interval fuzz
+is applied after the cap, so the issued maximum is **383 days**.
 
 ### 3. The scored population is not the schedulable population
 
@@ -651,12 +655,40 @@ live with.
    automatically once there is a year of reviews carrying real timestamps and
    real grades. The fitter is 30 seconds of arithmetic on the user's own machine;
    there is no reason to ship population defaults permanently.
-3. **Maximum interval: 365 days. SETTLED.** Keep it configurable, and raise it
-   deliberately in steps if ever — but the shipping value is one year. The reason
-   is the observed support, not Mochi's old cap: the longest gap ever actually
-   elapsed is 454 days, so 365 keeps every interval the app issues inside the
-   range the fit was measured on. Do not let a model schedule 1,000 days on the
-   strength of a curve fitted to a population filtered for being easy.
+3. **Maximum interval: 365 days. SETTLED**, and re-ratified 2026-08-22. Keep it
+   configurable, and raise it deliberately in steps if ever — but the shipping value
+   is one year.
+
+   **THE REASON THIS SECTION USED TO GIVE WAS WITHDRAWN ON 2026-08-22 AND IS
+   CORRECTED HERE.** It read: *"the longest gap ever actually elapsed is 454 days,
+   so 365 keeps every interval the app issues inside the range the fit was measured
+   on."* Both halves are wrong, and each is wrong in a way this document has a rule
+   against:
+
+   * **454 is the ELAPSED edge, used to bound a PLANNED quantity** — decision 6's
+     exact prohibition, and the same basis error corrected under "THE 454 IS
+     CENSORED" above and in `policy.ts`. `scripts/cap-derive.ts` measures that all
+     3,009 gaps past a year came from a plan of ≤ 365 days, **not one from a longer
+     plan**, so 454 is Mochi's own cap plus this user's lateness. On the planned
+     basis the edge is **365**.
+   * **"every interval the app issues" is no longer true.** Interval fuzz is applied
+     AFTER the cap (`INTERVAL_FUZZ = 0.05` in `policy.ts`, `fuzzInterval` in
+     `schedule.ts`), so the issued maximum is **383 days** — 18 past the planned
+     support. That is a deliberate, measured extrapolation, not an oversight:
+     fuzz-before-cap is inert because 99.2% of over-cap tracks want more than 384
+     days and clamp straight back on, and `Math.min(fuzzed, 365)` puts 52% of
+     at-cap tracks back onto one day. CLAUDE.md decision 11 carries the sweep.
+
+   **The derived reason a cap exists at all** is not about how long a memory lasts.
+   It is that the fit's opinion about long intervals is manufactured by the
+   scheduler that trained it: observed retention *rises* through the tail
+   (94.35% → 96.40% → 98.16%), which memory does not do, and the fitted decay ran
+   to its floor asking for flatter still. A cap bounds how far that bias runs. 365
+   specifically, because that is where the planned support ends. Priced, so nobody
+   re-derives it: 365 costs **+33.3% more reviews a year** than no cap (17,314 vs
+   12,986), and 365 → 454 would buy back ~3.5 reviews/day for 89 days of
+   extrapolation. Do not let a model schedule 1,000 days on the strength of a curve
+   fitted to a population filtered for being easy.
 
    Separately, this leaves **3,796 tracks parked on a 365-day plan set before
    Mochi's cap was lifted**. They are not a scheduling problem — they are simply
