@@ -7,14 +7,15 @@
  *   render.ts   one self-contained HTML file: inline CSS, inline SVG, no script,
  *               no network requests.
  *
- * 復習予測 (the forecast) is absent by design — it needs the scheduler, which is
- * stage 6. See FORECAST_UNAVAILABLE.
+ * 復習予測 (the forecast) was absent by design until the scheduler existed. Stage 6
+ * landed 2026-08-22 and the tile is real — see `forecast`, and read its comment
+ * before quoting the chart: most of the due dates in it are still Mochi's, and
+ * the tile counts the two provenances rather than implying they are ours.
  */
 
 export {
   ALL_TIME,
   BEYOND_YEAR_LABEL,
-  FORECAST_UNAVAILABLE,
   INTERVAL_BUCKETS,
   MOCHI_INTERVAL_CAP_DAYS,
   MAX_DATE,
@@ -26,7 +27,9 @@ export {
   calendarYear,
   collect,
   deckProgress,
+  forecast,
   heatThresholds,
+  resolveAsOf,
   longIntervalOutlook,
   beyondYear,
   retentionByDeck,
@@ -39,6 +42,8 @@ export {
   type DayActivity,
   type DeckProgress,
   type DeckRetention,
+  type ForecastDayCount,
+  type ForecastReport,
   type IntervalBucket,
   type IntervalsByBasis,
   type LongIntervalOutlook,

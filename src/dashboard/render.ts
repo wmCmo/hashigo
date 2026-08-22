@@ -24,23 +24,26 @@
  * between themes.
  *
  * NO DUAL AXES.  Retention and volume are two different scales, so they are two
- * charts sharing one category axis, never one plot with two y-axes.  Every
- * aggregate chart has a table twin under a <details>.  The one exception is a
- * single day's cell in the activity heatmap -- 1,317 rows is not a table -- so
- * that value is hover-only, and the per-year and per-month tables summarise it.
- * Do not restate this as "no value is hover-only"; that is not true.
+ * charts sharing one category axis, never one plot with two y-axes.
+ *
+ * EVERY VALUE HAS A TABLE, AS OF 2026-08-22.  Every aggregate chart has a table
+ * twin under a <details>, and so now does each activity-heatmap year strip --
+ * one row per day that has reviews, which is where the last hover-only numbers
+ * were.  Zero-review days are the one thing with no row, because their tooltip
+ * carries no number: it says 学習なし and stops.  Say it that way.  "No value is
+ * hover-only" is the claim to make; "no cell is hover-only" is still false.
  */
 
 import { TARGET_RETENTION as TARGET_RETENTION_SETTING } from "../scheduler/policy.js";
 import {
   BEYOND_YEAR_LABEL,
-  FORECAST_UNAVAILABLE,
   MOCHI_INTERVAL_CAP_DAYS,
   beyondYear,
   type DashboardData,
   type DayActivity,
   type DeckProgress,
   type DeckRetention,
+  type ForecastReport,
   type IntervalBucket,
   type MonthActivity,
   type Totals,
@@ -192,6 +195,33 @@ function heatmapYear(
     `role="img" aria-label="${esc(`${year}年の活動ヒートマップ。1日1マス、色は復習数の四分位。`)}">` +
     `${months.join("")}${weekdays.join("")}${cells.join("")}` +
     `</svg><!-- ${summary} active days in the map -->`
+  );
+}
+
+/**
+ * The table twin for one year's heatmap strip.
+ *
+ * The strip's per-day values were hover-only until 2026-08-22, and there is no
+ * hover on a phone -- which is the device this page is FOR.  So every day that
+ * carries a value gets a row.  Days with no reviews are deliberately absent:
+ * their tooltip says 学習なし and nothing else, so a row for them would add
+ * length without adding a value.  That is the whole of what stays hover-only.
+ */
+function heatmapYearTable(year: string, byDate: Map<string, DayActivity>): string {
+  const rows = [...byDate.values()]
+    .filter((d) => d.date.startsWith(`${year}-`) && d.reviews > 0)
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+    .map((d) => [
+      esc(d.date),
+      int(d.reviews),
+      int(d.cardsSeen),
+      pct(d.retention),
+      dec(d.minutes, 0),
+      int(d.newCards),
+    ]);
+  return details(
+    `${year}年の1日ごとの数字を表で見る（${rows.length}日）`,
+    table(["日付", "復習数", "カード数", "定着率", "分", "新規"], rows),
   );
 }
 
@@ -735,6 +765,91 @@ interface Tile {
   readonly sub: string;
 }
 
+// ─── 復習予測 ────────────────────────────────────────────────────────────────
+
+/**
+ * The forecast, as bars over the coming `horizonDays`.
+ *
+ * THREE THINGS IT REFUSES TO DO, each of which would make it read better and
+ * say less:
+ *
+ *   * It does not put the BACKLOG in the first bar. 443 cards due today or
+ *     earlier is a fact about the past; folding it into "tomorrow" draws a spike
+ *     that no scheduler planned. It is called out beside the chart instead.
+ *   * It does not drop empty days. A quiet fortnight compressed out of the axis
+ *     shows a workload that does not exist.
+ *   * It does not claim the bars are Hashigo's plan. Most of them are Mochi's,
+ *     because a track keeps its imported due date until it is graded here — the
+ *     provenance line under the chart counts both, and the ratio moves one card
+ *     per review.
+ */
+function forecastChart(report: ForecastReport): string {
+  const days = report.days;
+  if (days.length === 0) return '<p class="def">データなし</p>';
+  const W = 720;
+  const H = 132;
+  const L = 46;
+  const R = 16;
+  const T = 14;
+  const B = 30;
+  const pitch = (W - L - R) / days.length;
+  const barW = Math.max(2, Math.min(16, pitch - 3));
+  const top = niceCeil(Math.max(1, ...days.map((d) => d.tracks)));
+  const y = linear(0, top, H - B, T);
+
+  const ticks = [0, top / 2, top].map((value) => {
+    const yy = round(y(value));
+    return (
+      `<line class="grid-line" x1="${L}" y1="${yy}" x2="${W - R}" y2="${yy}"/>` +
+      `<text class="ax" x="${L - 6}" y="${yy + 3}" text-anchor="end">${int(value)}</text>`
+    );
+  });
+
+  const bars = days.map((day, i) => {
+    const cx = L + pitch * (i + 0.5);
+    const h = H - B - y(day.tracks);
+    const title = `${day.date} · ${int(day.tracks)}件`;
+    if (day.tracks === 0) {
+      // Drawn as a baseline stub rather than nothing: an empty day is a fact,
+      // and a gap in a bar row reads as missing data instead of as zero.
+      return (
+        `<rect x="${round(cx - barW / 2)}" y="${H - B - 1}" width="${round(barW)}" height="1" ` +
+        `fill="var(--muted)" fill-opacity="0.45"><title>${esc(title)}</title></rect>`
+      );
+    }
+    return (
+      `<rect x="${round(cx - barW / 2)}" y="${round(H - B - h)}" width="${round(barW)}" ` +
+      `height="${round(h)}" rx="2" fill="var(--series-1)" fill-opacity="0.75">` +
+      `<title>${esc(title)}</title></rect>`
+    );
+  });
+
+  // Weekly date labels only; thirty of them would collide at this width.
+  const labels = days
+    .map((day, i) =>
+      i % 7 === 0
+        ? `<text class="ax" x="${round(L + pitch * (i + 0.5))}" y="${H - 8}" text-anchor="middle">` +
+          `${esc(day.date.slice(5))}</text>`
+        : "",
+    )
+    .filter((t) => t !== "");
+
+  const peak = report.peak;
+  const peakLabel =
+    peak === null
+      ? ""
+      : `<text class="val" x="${round(L + pitch * (days.indexOf(peak) + 0.5))}" ` +
+        `y="${round(y(peak.tracks)) - 6}" text-anchor="middle">${int(peak.tracks)}</text>`;
+
+  return (
+    `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(
+      `${report.asOf} の翌日から ${report.horizonDays} 日間に予定されている復習件数。` +
+        `当日以前の ${report.backlog} 件は含まない。`,
+    )}">${ticks.join("")}${bars.join("")}${labels.join("")}${peakLabel}` +
+    `<line class="axis-line" x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}"/></svg>`
+  );
+}
+
 function tile(t: Tile): string {
   return (
     `<div class="tile"><div class="k">${esc(t.key)} <span class="latin">${esc(t.latin)}</span></div>` +
@@ -958,6 +1073,7 @@ rect:hover, circle:hover { fill-opacity: 1; }
 .years { display: grid; gap: 10px; }
 .year { display: grid; gap: 2px; }
 .year h3 { margin: 4px 0 0; }
+.year details { margin-top: 6px; }
 .placeholder { border: 1px solid var(--axis); border-radius: 8px; padding: 22px 20px;
   color: var(--ink-2); background: var(--page); font-size: 13px; }
 .placeholder strong { color: var(--ink); }
@@ -1065,7 +1181,7 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
           byDate,
           data.heat,
           lastDate,
-        )}</div>`,
+        )}${heatmapYearTable(y.year, byDate)}</div>`,
     )
     .join("");
   out.push(
@@ -1326,14 +1442,30 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     `</section>`,
   );
 
-  // ── forecast placeholder
+  // ── 復習予測
+  const fc = data.forecast;
+  const fcTotal = fc.days.reduce((sum, day) => sum + day.tracks, 0);
+  const fcOwn = fc.provenance.mochi + fc.provenance.hashigo;
   out.push(
-    `<section class="card"><h2>復習予測 <span class="latin">forecast — 未実装</span></h2>`,
-    `<div class="placeholder"><strong>このタイルは意図的に空。</strong> ${esc(
-      FORECAST_UNAVAILABLE,
-    )}</div>`,
-    `<p class="def">SPEC.html のビルド順: Stage 5 バックテスト → Stage 6 スケジューラ →` +
-      ` そこで復習 UI と一緒にこのタイルが入る。</p>`,
+    `<section class="card"><h2>復習予測 <span class="latin">forecast</span></h2>`,
+    `<p class="def">${esc(fc.asOf)} 時点。翌日から ${fc.horizonDays} 日間で ` +
+      `<strong>${int(fcTotal)}</strong> 件（1日あたり ${dec(fcTotal / fc.horizonDays, 1)} 件）。` +
+      `当日以前に期限が来ている <strong>${int(fc.backlog)}</strong> 件` +
+      `（うち ${int(fc.overdue)} 件は前日以前）は棒グラフに含まない — ` +
+      `それは予測ではなく残務だから。未学習の ${int(fc.fresh)} 件も予定日を持たないため含まない。</p>`,
+    forecastChart(fc),
+    `<p class="def"><strong>この棒の出どころ。</strong> 期限が先の ${int(fcOwn)} 件のうち、` +
+      `Mochi から取り込んだ予定日が <strong>${int(fc.provenance.mochi)}</strong> 件、` +
+      `Hashigo が出した予定日が <strong>${int(fc.provenance.hashigo)}</strong> 件。` +
+      `取り込んだトラックは、ここで採点されるまで Mochi の予定日を保持する（意図的）。` +
+      `したがってこのグラフは、採点のたびに1件ずつ Hashigo のものになる。</p>`,
+    details(
+      `日ごとの内訳（${fc.days.length} 日）`,
+      table(
+        ["日付", "件数"],
+        fc.days.map((day) => [esc(day.date), int(day.tracks)]),
+      ),
+    ),
     `</section>`,
   );
 

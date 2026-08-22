@@ -28,6 +28,7 @@ import {
 import { importExports, readSource, type ImportSource } from "../src/import/index.js";
 import { INTERVAL_BASES } from "../src/schema/index.js";
 import { TARGET_RETENTION } from "../src/scheduler/policy.js";
+import { queueCounts } from "../src/scheduler/queue.js";
 
 /**
  * Stage 2 acceptance. The dashboard is the IMPORTER's acceptance test, so this
@@ -568,6 +569,56 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
 
   // ── 8. the rendered page ───────────────────────────────────────────────────
 
+  it("RECONCILES the forecast against the queue, day for day", () => {
+    // The strongest check available on this tile, and it is exact rather than
+    // approximate: what is due on a later date must equal what was due on the
+    // as-of date plus every forecast bar in between. Both sides are read by
+    // different code — `forecast` walks card_tracks by due date, `queueCounts`
+    // counts them with a different predicate — so agreement is not tautological.
+    //
+    // Measured on the real export: 108 due at 2026-08-18, then bars of
+    // 39 + 86 + 95 + 115 through 2026-08-22, which is the 443 the scheduler CLI
+    // reports for that day.
+    const report = data.forecast;
+    expect(report.asOf).toBe("2026-08-18");
+    expect(report.backlog).toBe(108);
+
+    let running = report.backlog;
+    for (const day of report.days.slice(0, 8)) {
+      running += day.tracks;
+      const live = queueCounts(db, { now: `${day.date}T00:00:00Z` });
+      expect({ date: day.date, due: live.due }).toEqual({ date: day.date, due: running });
+    }
+
+    // And the horizon is complete: nothing scheduled inside the window is
+    // missing from a bar.
+    const inWindow = db
+      .prepare(
+        `SELECT count(*) AS n FROM card_tracks t JOIN cards c ON c.id = t.card_id
+          WHERE t.dormant = 0 AND c.archived = 0 AND t.due_at IS NOT NULL
+            AND substr(t.due_at, 1, 10) > ? AND substr(t.due_at, 1, 10) <= ?`,
+      )
+      .get(report.asOf, report.days.at(-1)?.date ?? report.asOf) as { n: number };
+    expect(report.days.reduce((sum, day) => sum + day.tracks, 0)).toBe(inWindow.n);
+  });
+
+  it("says whose plans the forecast is charting, and today they are all Mochi's", () => {
+    // The reason this tile was blank until stage 6 was that plotting
+    // card_tracks.due_at would be "a chart of Mochi's scheduling decisions
+    // wearing Hashigo's label". Having a scheduler did not fix that — nothing
+    // was rescheduled — so the tile counts the two provenances instead.
+    const { provenance } = data.forecast;
+    expect(provenance.hashigo).toBe(0);
+    expect(provenance.mochi).toBeGreaterThan(8_000);
+    // Every day in the window is present, zeroes included.
+    expect(data.forecast.days.length).toBe(data.forecast.horizonDays);
+    expect(new Set(data.forecast.days.map((d) => d.date)).size).toBe(data.forecast.horizonDays);
+    // The backlog is NOT folded into the first bar.
+    const first = data.forecast.days[0];
+    expect(first).toBeDefined();
+    expect((first as { date: string }).date > data.forecast.asOf).toBe(true);
+  });
+
   it("renders a self-contained page carrying the real numbers", () => {
     const html = renderDashboard(data);
 
@@ -614,16 +665,53 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("Infinity");
 
-    // The forecast tile is a marked placeholder, not a chart and not a guess.
+    // The forecast tile is real as of stage 6 — and it says whose plans it is
+    // charting, because on the day it shipped every one of them was Mochi's.
     expect(html).toContain("復習予測");
-    expect(html).toContain("このタイルは意図的に空");
-    expect(html).toContain("スケジューラ未実装");
+    expect(html).not.toContain("このタイルは意図的に空");
+    expect(html).not.toContain("スケジューラ未実装");
+    expect(html).toContain("この棒の出どころ");
 
     // Every chart has a table twin, so nothing is hover-only.
     const charts = html.match(/<svg /g)?.length ?? 0;
     const tables = html.match(/<table>/g)?.length ?? 0;
     expect(charts).toBeGreaterThan(5);
     expect(tables).toBeGreaterThanOrEqual(5);
+  });
+
+  /**
+   * The heatmap's per-day values were hover-only until 2026-08-22, and this page
+   * is read on a phone, where there is no hover. So every day that carries a
+   * number now has a row. Zero-review days are excluded on purpose — their
+   * tooltip says 学習なし and carries no number — which is exactly why the row
+   * total must equal activeDays and not daysElapsed. Asserting the sum, rather
+   * than the presence of a <details>, is what makes this catch a partial year.
+   */
+  it("gives every day that has reviews a table row, not just a tooltip", () => {
+    const html = renderDashboard(data);
+
+    const counts = [...html.matchAll(/(\d{4})年の1日ごとの数字を表で見る（([\d,]+)日）/g)].map(
+      (m) => [m[1] as string, Number((m[2] as string).replace(/,/g, ""))] as const,
+    );
+    // One table per year strip, and the strips are the years the corpus has.
+    expect(counts.map(([year]) => year)).toEqual(data.years.map((y) => y.year));
+    for (const [year, rows] of counts) {
+      const summary = data.years.find((y) => y.year === year);
+      expect(rows, `${year} row count`).toBe(summary?.activeDays);
+    }
+    // And they account for every active day in the corpus — 1,317 of 1,798
+    // elapsed. The gap is the zero days, which is the only thing left with no
+    // row anywhere on the page.
+    const total = counts.reduce((sum, [, rows]) => sum + rows, 0);
+    expect(total).toBe(data.primary.totals.activeDays);
+    expect(total).toBeLessThan(data.primary.totals.daysElapsed);
+
+    // The rows are real cells, not just a summary line: a day with a known
+    // value appears with its review count inside the same <details>.
+    const busiest = [...data.primary.days].sort((a, b) => b.reviews - a.reviews)[0];
+    expect(busiest).toBeDefined();
+    const day = busiest as { date: string; reviews: number };
+    expect(html).toContain(`<td>${day.date}</td>`);
   });
 
   /**

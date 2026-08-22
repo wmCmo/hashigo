@@ -46,6 +46,7 @@
 
 import type { Db } from "../db/index.js";
 import { INTERVAL_BASES, type IntervalBasis } from "../schema/index.js";
+import { queueCounts, reviewForecast } from "../scheduler/queue.js";
 
 // ─── windows ────────────────────────────────────────────────────────────────
 
@@ -956,19 +957,105 @@ export function deckProgress(db: Db): DeckProgress[] {
   }));
 }
 
-// ─── 復習予測 — deliberately absent ─────────────────────────────────────────
+// ─── 復習予測 ────────────────────────────────────────────────────────────────
 
 /**
- * 復習予測 needs to know when each track falls due under a scheduler we have
- * not chosen yet (SPEC build order: backtest at stage 5, scheduler at stage 6).
- * card_tracks.due_at does hold Mochi's dates, so a forecast could be drawn
- * today — and it would be a chart of Mochi's scheduling decisions wearing
- * Hashigo's label. The renderer prints this sentence instead of a chart.
+ * The forecast tile. SPEC deferred it until the scheduler existed; stage 6
+ * landed 2026-08-22 and this is it.
+ *
+ * WHAT IT IS HONESTLY A CHART OF, which is the whole reason the tile was blank
+ * rather than approximated. The old `FORECAST_UNAVAILABLE` text said: due dates
+ * could be plotted from `card_tracks.due_at` today, "and it would be a chart of
+ * Mochi's scheduling decisions wearing Hashigo's label". THAT IS STILL TRUE OF
+ * MOST OF THE ROWS. Having a scheduler did not retroactively reschedule
+ * anything: a track keeps the due date Mochi gave it until it is graded here
+ * (deliberately — see `src/scheduler/README.md` note 1), so on the day this
+ * shipped essentially every bar was Mochi's.
+ *
+ * So the tile counts the two provenances and prints them, instead of choosing
+ * between a blank panel and a mislabelled one. `card_tracks.scheduler` is the
+ * discriminator: `'mochi'` for an imported plan, `'fsrs6'` for one this app
+ * issued. The mix moves toward Hashigo one card per review, and the tile shows
+ * the mix rather than implying an answer.
  */
-export const FORECAST_UNAVAILABLE =
-  "スケジューラ未実装のため空欄。Stage 5 のバックテストが方式を決め、Stage 6 で実装される。" +
-  "card_tracks.due_at には Mochi の予定日が入っているので描くことはできるが、" +
-  "それは Mochi のスケジューラのグラフであって Hashigo のものではない。";
+export interface ForecastDayCount {
+  /** Local date, `2026-08-22`. */
+  readonly date: string;
+  readonly tracks: number;
+}
+
+export interface ForecastReport {
+  /** The local date the forecast was taken against. */
+  readonly asOf: string;
+  /** Days AFTER `asOf`, one entry each, zeroes included. */
+  readonly days: readonly ForecastDayCount[];
+  readonly horizonDays: number;
+  /** Due on or before `asOf` — the backlog, deliberately not the first bar. */
+  readonly backlog: number;
+  /** Of the backlog, due strictly before `asOf`. */
+  readonly overdue: number;
+  /** Never reviewed. Not scheduled, so not in any bar. */
+  readonly fresh: number;
+  /** Scheduled and not yet due, in total — the window shows part of this. */
+  readonly scheduled: number;
+  /** Whose plan the bars are: an imported Mochi due date, or one we issued. */
+  readonly provenance: { readonly mochi: number; readonly hashigo: number };
+  /** The busiest day in the window, for the callout. */
+  readonly peak: ForecastDayCount | null;
+}
+
+const FORECAST_PROVENANCE_SQL = `
+SELECT sum(CASE WHEN t.scheduler = 'fsrs6' THEN 1 ELSE 0 END) AS hashigo,
+       sum(CASE WHEN t.scheduler IS NULL OR t.scheduler <> 'fsrs6' THEN 1 ELSE 0 END) AS mochi
+  FROM card_tracks t JOIN cards c ON c.id = t.card_id
+ WHERE t.dormant = 0 AND c.archived = 0 AND t.due_at IS NOT NULL
+   AND substr(t.due_at, 1, 10) > :as_of`;
+
+/**
+ * `asOf` resolves the same way every other figure on the page does — the last
+ * review date in the log, not the wall clock — so `dashboard.html` is
+ * reproducible and its byte-identity test means something.
+ */
+export function resolveAsOf(db: Db, asOf: string | null = null): string {
+  const row = one<{ as_of: string | null }>(
+    db,
+    `SELECT coalesce(:as_of, max(local_date)) AS as_of FROM review_log`,
+    { as_of: asOf },
+  );
+  // An empty review log leaves max(local_date) NULL, which is a real state — a
+  // database imported with cards and no history. MIN_DATE then means "nothing
+  // has happened yet", and every count below comes out zero rather than throwing.
+  return row?.as_of ?? asOf ?? MIN_DATE;
+}
+
+export function forecast(db: Db, asOf: string | null = null, horizonDays = 30): ForecastReport {
+  const on = resolveAsOf(db, asOf);
+  // Only the local DATE of this instant is read; see src/scheduler/queue.ts.
+  const now = `${on}T00:00:00Z`;
+  const counts = queueCounts(db, { now });
+  const days = reviewForecast(db, { now, days: horizonDays }).map((day) => ({
+    date: day.date,
+    tracks: day.count,
+  }));
+  const rawProvenance = one<{ hashigo: number | null; mochi: number | null }>(
+    db,
+    FORECAST_PROVENANCE_SQL,
+    { as_of: on },
+  );
+  let peak: ForecastDayCount | null = null;
+  for (const day of days) if (peak === null || day.tracks > peak.tracks) peak = day;
+  return {
+    asOf: on,
+    days,
+    horizonDays,
+    backlog: counts.due,
+    overdue: counts.overdue,
+    fresh: counts.fresh,
+    scheduled: counts.scheduled,
+    provenance: { mochi: rawProvenance?.mochi ?? 0, hashigo: rawProvenance?.hashigo ?? 0 },
+    peak: peak === null || peak.tracks === 0 ? null : peak,
+  };
+}
 
 // ─── Mochi's own figures, for the acceptance test ───────────────────────────
 
@@ -1023,8 +1110,8 @@ export interface DashboardData {
   readonly progress: readonly DeckProgress[];
   readonly longIntervals: LongIntervalOutlook;
   readonly mochi: readonly MochiReference[];
-  /** Always null at stage 2. See FORECAST_UNAVAILABLE. */
-  readonly forecast: null;
+  /** Stage 6 made this real. See `forecast`. */
+  readonly forecast: ForecastReport;
 }
 
 export interface CollectOptions extends TotalsOptions {
@@ -1061,6 +1148,6 @@ export function collect(db: Db, options: CollectOptions = {}): DashboardData {
     progress: deckProgress(db),
     longIntervals: longIntervalOutlook(db),
     mochi: MOCHI_2026,
-    forecast: null,
+    forecast: forecast(db, asOf),
   };
 }

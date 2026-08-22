@@ -165,7 +165,9 @@ function main(argv: readonly string[]): void {
       `${args.year}      reviews ${year.reviews} | retention ${((year.retention ?? 0) * 100).toFixed(2)}% | ` +
         `active days ${year.activeDays} | cards studied ${year.cardsStudied} | ` +
         `days ${year.daysElapsed} | card-days ${year.cardDays}`,
-      `forecast tile: not built (needs the scheduler, stage 6)`,
+      `forecast  ${data.forecast.horizonDays}d ahead ${data.forecast.days.reduce((n, d) => n + d.tracks, 0)} ` +
+        `| backlog ${data.forecast.backlog} (${data.forecast.overdue} overdue) | new ${data.forecast.fresh} ` +
+        `| plans: ${data.forecast.provenance.mochi} mochi / ${data.forecast.provenance.hashigo} hashigo`,
     ];
     process.stdout.write(`${lines.join("\n")}\n`);
   } finally {
