@@ -168,7 +168,7 @@ npm run spike:dev -- --host 127.0.0.1   # bind IPv4: a server on ::1 refuses 127
 
 ## A schema bump means RE-IMPORT, not migrate
 
-`SCHEMA_VERSION` is **7** and `applySchema` refuses any other version outright.
+`SCHEMA_VERSION` is **8** and `applySchema` refuses any other version outright.
 That is deliberate — every database here rebuilds from `exports/` in about
 fifteen seconds and the reviews still come from the export — but it means a
 schema change is a three-step chore, and skipping the third breaks a test:
@@ -182,8 +182,21 @@ npm run dashboard -- --db build/hashigo.db --out dashboard.html   # asserts byte
 The dashboard prints the schema version, and `test/dashboard.test.ts` compares
 the committed file byte-for-byte, so a bump without a regenerate fails there with
 a one-line diff. This happened three times in one session. It is the workflow,
-not a surprise. The accent data also has to be reloaded — `NEXT.md` has the four
-commands.
+not a surprise. The accent data also has to be reloaded. `NEXT.md` lists six commands; **four of them
+are the fast path**, because the derived `.jsonl` files live in `build/` and survive the
+rebuild — Python is only needed when the head words themselves change:
+
+```bash
+npx vite-node src/accent/cli.ts -- words --db build/hashigo.db --out build/head-words.txt
+npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accents.jsonl
+npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accents-unidic.jsonl
+npx vite-node src/accent/cli.ts -- ojad  --db build/hashigo.db
+```
+
+**Do not skip the second `load`.** The UniDic cross-check is a separate file, and without
+it `accent/cli.ts queue` reports **0 disputed instead of 57** — which reads as "nothing
+left to adjudicate" rather than "the cross-check is missing". Verified on the v8 rebuild:
+3,850 openjtalk + 3,015 unidic + 33 manual, `accent_resolved` 3,850, queue 57.
 
 ## Decisions that are settled — do not relitigate these
 

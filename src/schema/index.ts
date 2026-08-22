@@ -64,7 +64,7 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
  * longer exist and every database in the project is rebuildable from
  * `exports/` in about fifteen seconds. Re-import rather than migrate.
  */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 /**
  * Three-state, on both cards and decks. `inherit` resolves up the deck tree and

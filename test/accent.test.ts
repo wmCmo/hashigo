@@ -104,6 +104,74 @@ describe("the accents table", () => {
     }
   });
 
+  /**
+   * AN ANALYSER UPGRADE MUST WIN, AND UNDER `version DESC` IT DID NOT.
+   *
+   * `accents` keys on (text, analyser, version, probe), so a new analyser build
+   * genuinely ADDS a row -- `loadAccents`' docstring promises "re-deriving with a
+   * NEW version adds a row the view will prefer". `accent_resolved` ordered by
+   * `version DESC`, and `version` is the free-text provenance string the deriver
+   * writes. Measured in SQLite:
+   *
+   *     SELECT 'pyopenjtalk-plus/0.4.10' > 'pyopenjtalk-plus/0.4.9';   ->  0
+   *
+   * So 0.4.10 LOSES to 0.4.9 and `created_at` is never consulted, because
+   * `version` already decided. Latent on the corpus (one openjtalk version), and
+   * it matters because decision 8's premise is that a wrong accent drilled
+   * through spaced repetition is worse than none -- this view is the only place
+   * "which derivation wins" is answered.
+   *
+   * Fixed in schema v8 by dropping the version compare entirely: newest ROW wins.
+   * These two version strings are chosen so the test fails under the old rule.
+   */
+  it("prefers the NEWEST row when an analyser is upgraded, not the highest string", () => {
+    const db = scratch();
+    try {
+      loadAccents(db, [
+        row({ version: "pyopenjtalk-plus/0.4.9", type: "頭高", accentType: 1 }),
+      ]);
+      expect(accentFor(db, "橋")?.type).toBe("頭高");
+
+      // The upgrade. 0.4.10 sorts BELOW 0.4.9 as a string, which is the trap.
+      db.prepare("UPDATE accents SET created_at = '2020-01-01T00:00:00.000Z'").run();
+      loadAccents(db, [
+        row({ version: "pyopenjtalk-plus/0.4.10", type: "尾高", accentType: 2 }),
+      ]);
+
+      // Two rows kept, so the old answer stays auditable rather than destroyed.
+      const rows = db
+        .prepare("SELECT count(*) AS n FROM accents WHERE text = '橋'")
+        .get() as { n: number };
+      expect(rows.n).toBe(2);
+
+      // And the NEWER one resolves. Under `version DESC` this was 頭高.
+      expect(accentFor(db, "橋")?.type).toBe("尾高");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("still lets a manual override beat any derivation, however new", () => {
+    const db = scratch();
+    try {
+      loadAccents(db, [row({ type: "尾高", accentType: 2 })]);
+      loadAccents(db, [
+        { ...row(), analyser: "manual", version: "", type: "平板", accentType: 0 },
+      ]);
+      // Manual is first in the ORDER BY and must stay there: the newest-row rule
+      // must not let a re-derivation silently overturn an OJAD adjudication.
+      expect(accentFor(db, "橋")?.type).toBe("平板");
+
+      // Even when a derivation is inserted AFTER it.
+      loadAccents(db, [
+        row({ version: "pyopenjtalk-plus/9.9.9", type: "中高", accentType: 1 }),
+      ]);
+      expect(accentFor(db, "橋")?.type).toBe("平板");
+    } finally {
+      db.close();
+    }
+  });
+
   it("keys by TEXT, so one word has one accent across every card", () => {
     const db = scratch();
     try {

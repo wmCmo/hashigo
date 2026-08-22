@@ -129,6 +129,31 @@ SELECT c.id AS card_id,
 -- against 'unidic/2.3.0' as strings, so which one won depended on the letter u
 -- sorting after p. That is not a rule, it is an accident.
 --
+-- AND `version DESC` WAS STILL WRONG *WITHIN* ONE ANALYSER (fixed 2026-08-22,
+-- schema v8).  Restricting the WHERE to manual/openjtalk fixed the cross-analyser
+-- half and left the lexical compare in place, which is a different bug with the
+-- same cause.  `version` is the free-text provenance string the deriver writes
+-- (`pyopenjtalk-plus/{importlib.metadata.version}`, tools/accent_derive.py), and
+-- MEASURED in SQLite:
+--
+--     SELECT 'pyopenjtalk-plus/0.4.10' > 'pyopenjtalk-plus/0.4.9';   ->  0
+--
+-- So an analyser UPGRADE loses to the build it replaced, and `created_at` never
+-- gets consulted because `version` already decided.  `src/accent/store.ts`
+-- promises the opposite in as many words: "re-deriving with a NEW version adds a
+-- row the view will prefer".  It is latent today -- one openjtalk version in the
+-- table, 3,850 rows -- and it matters because decision 8's whole premise is that
+-- a wrong accent drilled through spaced repetition is worse than none, and this
+-- is the only place "which derivation wins" is answered.
+--
+-- The fix is to stop parsing a version string at all.  NEWEST ROW WINS:
+-- `created_at DESC, rowid DESC`.  That is what the promise above actually means,
+-- it needs no version grammar, and `rowid` breaks the tie when a load writes many
+-- rows inside one timestamp -- insertion order, which is the later derivation.
+-- Anything that wants semantic version ordering has to store the parts as
+-- integers; a TEXT column cannot do it, and pretending otherwise is how this
+-- looked correct for two schema versions.
+--
 -- `basis = 'guarded'` rows are KEPT and surfaced rather than filtered out. They
 -- are the manual-review queue -- 34 of 3,850 words on this corpus -- and a view
 -- that hid them would turn "the rule refused" into "no data", which is the same
@@ -141,7 +166,7 @@ SELECT text, analyser, version, probe, phrases, type, accent_type, reading,
    AND a.rowid = (
    SELECT b.rowid FROM accents b
     WHERE b.text = a.text AND b.analyser IN ('manual', 'openjtalk')
-    ORDER BY (b.analyser = 'manual') DESC, b.version DESC, b.created_at DESC
+    ORDER BY (b.analyser = 'manual') DESC, b.created_at DESC, b.rowid DESC
     LIMIT 1
  );
 

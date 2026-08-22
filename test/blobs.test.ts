@@ -1102,6 +1102,43 @@ describe("refcounts, not tombstones", () => {
     expect(retargetBlobRef(db, { cardId: "c1", fieldId: "spk", refKey: "nope" }, to)).toBe(false);
   });
 
+  /**
+   * `refcount = 0` WITH `unreferenced_at` NULL IS IMMEDIATELY ELIGIBLE, AND THAT
+   * IS DELIBERATE. Pinned because it looks like an oversight and is not.
+   *
+   * The triggers stamp `unreferenced_at` only on a 1 -> 0 refcount transition, so
+   * a row that started at 0 keeps NULL, and the eligibility test requires a
+   * non-NULL stamp to hold anything back. On the real store 48 rows are in that
+   * state, and they are permanently unreferenced rather than mid-write -- see the
+   * corpus test below and the note in `src/blobs/db.ts`.
+   *
+   * A session tried making eligibility fall back to `created_at` on the theory
+   * that a just-inserted row might be mid-write. It is not: rows and refs are
+   * written in one transaction. The change held genuine debris for a week and
+   * turned the corpus assertion red. This test exists so the next reader sees the
+   * property is chosen, not accidental.
+   */
+  it("treats a blob that was NEVER referenced as immediately reclaimable", () => {
+    const db = fresh(["c1"]);
+    const store = openBlobStore(join(scratchDir("store-never-ref"), "blobs"));
+    const bytes = mp3("nothing ever pointed at this");
+    store.write(sha256Hex(bytes), bytes);
+    db.prepare(
+      "INSERT INTO blobs (hash, kind, mime, byte_size) VALUES (?, 'speech', 'audio/mpeg', ?)",
+    ).run(sha256Hex(bytes), bytes.length);
+
+    const row = db
+      .prepare("SELECT refcount, unreferenced_at FROM blobs WHERE hash = ?")
+      .get(sha256Hex(bytes)) as { refcount: number; unreferenced_at: string | null };
+    expect(row).toEqual({ refcount: 0, unreferenced_at: null });
+
+    // Swept even with a long grace period, BECAUSE the stamp is absent. Contrast
+    // the test above, where a blob that LOST its last reference is held.
+    const swept = sweepUnreferenced(db, store, { graceDays: 3_650 });
+    expect(swept.heldByGrace).toBe(0);
+    expect(swept.rowsDeleted).toBe(1);
+  });
+
   it("audits both sides, and says which missing payloads can regenerate themselves", () => {
     const db = fresh(["c1"]);
     const store = openBlobStore(join(scratchDir("store-audit"), "blobs"));

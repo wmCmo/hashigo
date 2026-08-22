@@ -2,7 +2,7 @@
 
 ## The contract, v7
 
-Four other stages code against these names. `PRAGMA user_version` is **7**; any
+Four other stages code against these names. `PRAGMA user_version` is **8**; any
 other version is refused rather than migrated, because every database here is
 rebuildable from `exports/` in about fifteen seconds. `SCHEMA_VERSION` in
 `index.ts` carries the changelog for every bump — read that, not this line, for

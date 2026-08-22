@@ -175,7 +175,7 @@ of those four found nothing the first time and the tests were strengthened until
 did — including one comment in `day.ts` that the injection proved OVERCLAIMED. If you
 change `src/scheduler`, re-run that experiment rather than trusting a green suite.
 
-**A schema bump means RE-IMPORT, not migrate.** `SCHEMA_VERSION` is **7** and
+**A schema bump means RE-IMPORT, not migrate.** `SCHEMA_VERSION` is **8** and
 `applySchema` refuses anything else. Three steps, and skipping the third fails a test:
 
 ```bash

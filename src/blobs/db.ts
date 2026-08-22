@@ -235,9 +235,34 @@ export interface SweepOptions {
  *
  * `unreferenced_at` rather than `created_at` decides eligibility. Using
  * `created_at` would sweep a clip generated a year ago and dereferenced a minute
- * ago, which is exactly the case the grace period exists for. A blob whose
- * `unreferenced_at` is NULL while `refcount = 0` predates the column and is
- * treated as eligible; nothing in the corpus is in that state after a re-import.
+ * ago, which is exactly the case the grace period exists for.
+ *
+ * THE NULL CASE: THE COMMENT WAS WRONG, THE BEHAVIOUR IS RIGHT. Corrected
+ * 2026-08-22 after trying to "fix" the behaviour and finding there was nothing to
+ * fix.
+ *
+ * This said a blob with `unreferenced_at` NULL and `refcount = 0` "predates the
+ * column" and that "nothing in the corpus is in that state after a re-import".
+ * Both halves are false. MEASURED: **48 such rows** -- 41 `translate`, 5 `ai`,
+ * 2 `furigana`, 0 `speech`. They do not predate anything, and the triggers are
+ * why they exist: `unreferenced_at` is stamped only on a 1 -> 0 refcount
+ * transition (`schema.sql:588-589`, `:602-603`), never on a row that started at 0.
+ *
+ * SO WHY DO THEY DESERVE NO GRACE? Because they are not mid-write, they are
+ * permanently unreferenced -- `test/blobs.test.ts` already explains them: where
+ * ONE card cached two different outputs under the same normalised generation key,
+ * the second reference is absorbed by `blob_refs_scope` and its blob lands at
+ * refcount 0 forever. 45 of the 48 have an identity sibling that IS referenced.
+ * Nothing will ever reference them, so the grace period has nothing to protect.
+ *
+ * The plausible-sounding alternative -- fall back to `created_at`, on the grounds
+ * that a row inserted a minute ago and not yet referenced might be mid-write --
+ * was implemented, measured, and reverted. That window does not exist: blob rows
+ * and their refs are written in ONE transaction (`src/import/blobs.ts`, "phase 4:
+ * write. One transaction."). All it did was hold 778 bytes of genuine debris for
+ * a week after every import, and turn the corpus assertion red. Do not re-apply
+ * it without first finding a writer that inserts a row outside its ref's
+ * transaction.
  */
 export function sweepUnreferenced(
   db: SqliteHandle,
