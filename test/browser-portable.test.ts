@@ -44,6 +44,7 @@ const BROWSER_ENTRY_POINTS = [
   "src/cards/index.ts",
   "src/session/index.ts",
   "src/review/index.ts",
+  "src/backup/index.ts",
   "src/generate/index.ts",
   "src/scheduler/index.ts",
   "src/scheduler/policy.ts",

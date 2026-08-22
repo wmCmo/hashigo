@@ -95,6 +95,10 @@
       "types": "./dist/review/index.d.ts",
       "default": "./dist/review/index.js"
     },
+    "./backup": {
+      "types": "./dist/backup/index.d.ts",
+      "default": "./dist/backup/index.js"
+    },
     "./scheduler": {
       "types": "./dist/scheduler/index.d.ts",
       "default": "./dist/scheduler/index.js"
