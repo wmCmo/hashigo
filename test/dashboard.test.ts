@@ -773,6 +773,14 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
    * `section()`'s markup so the `<span>` printed as text, and a Japanese clause
    * being built at the call site instead of inside the locale.
    *
+   * PROVENANCE, because it is no longer purely the pre-extraction capture. ONE
+   * string has been changed since: the footer's `about` paragraph claimed the
+   * heatmap's daily values were hover-only, which stopped being true when the
+   * per-year tables landed in 0e24ca2. Re-baselining moved exactly one line of
+   * this 428 KB file, and that diff is the audit trail. Any future re-baseline
+   * should be the same shape — a visible one-line diff with a stated reason, in
+   * its own commit — never a wholesale regenerate that hides what moved.
+   *
    * This is why the Japanese is KEPT rather than deleted. Delete it and this
    * check goes with it.
    */
