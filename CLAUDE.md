@@ -139,7 +139,7 @@ for day — 108 due at the as-of date plus 39+86+95+115 is the 443 the scheduler
 reports four days later.
 
 ```bash
-npm test                # 18 files, 654 passed, 1 skipped (the FSRS refit, gated)
+npm test                # 19 files, 671 passed, 1 skipped (the FSRS refit, gated)
                         # 32.7-87.7 s over six runs. Under load it can also emit
                         # "Timeout calling onTaskUpdate" — that is Vitest's reporter
                         # RPC, not a failure. Check the pass count, not the error line.

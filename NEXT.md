@@ -183,7 +183,7 @@ state, not a gap.
 ## The gates, and the one chore that bites
 
 ```bash
-npm test          # 18 files, 654 passed, 1 skipped (gated FSRS refit). 33-88 s.
+npm test          # 19 files, 671 passed, 1 skipped (gated FSRS refit). 33-88 s.
                   # A "Timeout calling onTaskUpdate" line is Vitest's reporter under
                   # load, not a failing test. Check the pass count.
 npm run typecheck # exit 0
