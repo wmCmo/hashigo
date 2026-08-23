@@ -32,9 +32,14 @@
 
 export {
   mountCard,
+  mountPrepared,
   mountTrack,
+  prepareCard,
   type MountOptions,
+  type MountPreparedOptions,
   type MountedCard,
+  type PrepareOptions,
+  type PreparedCard,
 } from "./mount.js";
 
 export {

@@ -87,6 +87,7 @@ import {
   audioController,
   type AudioController,
   type AudioControllerOptions,
+  type AudioResolver,
 } from "../render/audio.js";
 import { renderSides, type RenderResult } from "../render/index.js";
 import type { RenderDocument, RenderElement } from "../render/dom.js";
@@ -94,7 +95,7 @@ import { shadowingLoop, type ShadowingLoop, type ShadowingSide } from "../render
 import { cardMode, promptsOnEntry, type CardMode } from "./mode.js";
 import type { BlobStore } from "../blobs/store.js";
 import type { FieldGenerationRequest } from "../generate/index.js";
-import type { Direction } from "../template/index.js";
+import type { Direction, Side } from "../template/index.js";
 import type { SqliteHandle } from "../db/browser.js";
 
 export interface MountOptions<E extends RenderElement> {
@@ -119,6 +120,46 @@ export interface MountOptions<E extends RenderElement> {
    * own duck-type check, which is false for a `MemoryElement` and true for a real
    * `<audio>`. A test passes a recorder here.
    */
+  readonly playable?: AudioControllerOptions<E>["playable"];
+  readonly onOutcome?: AudioControllerOptions<E>["onOutcome"];
+}
+
+/** `MountOptions` minus everything that needs a DOM. The worker's half. */
+export interface PrepareOptions {
+  readonly db: SqliteHandle;
+  readonly cardId: string;
+  readonly direction?: Direction;
+  readonly resolveGenerated?: ((request: FieldGenerationRequest) => string | null) | null;
+}
+
+/**
+ * One card, ready to render, with no live object in it.
+ *
+ * **Structured-cloneable on purpose** — this is what crosses `postMessage` in the
+ * app shell. Keep it that way: a function, a class instance, a `Date` with
+ * behaviour attached, or anything holding a DOM node makes the phone throw
+ * `DataCloneError` where the Node suite would never notice.
+ */
+export interface PreparedCard {
+  readonly cardId: string;
+  readonly direction: Direction;
+  readonly loaded: LoadedCard;
+  /** The resolved, generator-expanded sides. Plain AST. */
+  readonly sides: readonly Side[];
+  readonly mode: CardMode;
+  readonly expanded: number;
+  readonly divergent: readonly string[];
+}
+
+/** `MountOptions` minus the database. The page's half. */
+export interface MountPreparedOptions<E extends RenderElement> {
+  readonly document: RenderDocument<E>;
+  /**
+   * Where bytes come from. In-process this is `cardAudioResolver(db, cardId)`;
+   * in the shell it posts to the worker and returns a promise, which
+   * `AudioResolver` has always allowed.
+   */
+  readonly resolve: AudioResolver;
   readonly playable?: AudioControllerOptions<E>["playable"];
   readonly onOutcome?: AudioControllerOptions<E>["onOutcome"];
 }
@@ -172,10 +213,27 @@ export interface MountedCard<E extends RenderElement> {
  * Nothing plays as a result of this call. `AudioController.stats.requested` is
  * still 0 when it returns, and a test asserts exactly that over the real corpus.
  */
-export function mountCard<E extends RenderElement>(
-  options: MountOptions<E>,
-): MountedCard<E> | null {
-  const { db, cardId, document } = options;
+/**
+ * Everything the DATABASE has to say about a card, and nothing that needs a DOM.
+ *
+ * ─── WHY THIS IS A SEPARATE STEP: THE SHELL HAS A PROCESS BOUNDARY ───────────
+ *
+ * OPFS sync access handles are worker-only (`opfs-sahpool` refuses to install
+ * outside a dedicated worker — measured, `spike/README.md`), and Hashigo sets no
+ * COOP/COEP headers on purpose, so there is no SharedArrayBuffer and no way to
+ * make a synchronous `SqliteHandle` reachable from the page. **The database is in
+ * a worker; the DOM is not.** So the six-call path has to be cut somewhere, and
+ * the only question is whether it gets cut ONCE, here, or re-derived by every
+ * caller that has a worker.
+ *
+ * This is the cut. `PreparedCard` is deliberately **structured-cloneable** —
+ * strings, plain AST nodes, arrays and a `Map` — so a worker can post it whole.
+ * `test/review.test.ts` asserts that with a real `structuredClone`, because "it
+ * looks like data" is how a function sneaks into a payload and turns into a
+ * DataCloneError on the phone and not in the suite.
+ */
+export function prepareCard(options: PrepareOptions): PreparedCard | null {
+  const { db, cardId } = options;
   const loaded = loadCard(db, cardId);
   if (loaded === null) return null;
 
@@ -193,26 +251,53 @@ export function mountCard<E extends RenderElement>(
     ...(resolveGenerated === null ? {} : { resolveGenerated }),
   });
 
-  const result = renderSides(bound.sides, { document });
+  return {
+    cardId,
+    direction,
+    loaded,
+    sides: bound.sides,
+    mode: cardMode(loaded),
+    expanded: bound.expanded.length,
+    divergent: bound.divergent,
+  };
+}
+
+/**
+ * The other half: DOM, audio and the loop, from a `PreparedCard`.
+ *
+ * Takes a `resolve` rather than a database, because on the shell's page side
+ * there is no database — the resolver posts a message to the worker and returns a
+ * promise. `AudioResolver` has always accepted a `PromiseLike`, which is the one
+ * thing that makes this split free.
+ *
+ * **The hard rule survives the boundary intact**, and it is worth saying why:
+ * nothing here resolves anything. `audioController` asks the resolver only from
+ * `play()`, `reveal()` and `prompt()` reach `play()`, and `enter()` reaches
+ * nothing. So a worker that only answers payload requests is itself evidence —
+ * the message log shows no payload message while a side is merely on screen.
+ */
+export function mountPrepared<E extends RenderElement>(
+  prepared: PreparedCard,
+  options: MountPreparedOptions<E>,
+): MountedCard<E> {
+  const result = renderSides(prepared.sides, { document: options.document });
 
   const audio = audioController<E>(result, {
-    resolve: cardAudioResolver(db, cardId, {
-      ...(options.store === undefined || options.store === null ? {} : { store: options.store }),
-    }),
+    resolve: options.resolve,
     ...(options.playable === undefined ? {} : { playable: options.playable }),
     ...(options.onOutcome === undefined ? {} : { onOutcome: options.onOutcome }),
   });
 
   const loop = shadowingLoop<E>(result, { audio });
-  const mode = cardMode(loaded);
+  const mode = prepared.mode;
   // One question per entry. The policy lives here rather than in `prompt()` so
   // that `src/render/reveal.ts` stays a mechanism with no memory of modes.
   const asked = new Set<number>();
 
   let disposed = false;
   return {
-    cardId,
-    loaded,
+    cardId: prepared.cardId,
+    loaded: prepared.loaded,
     result,
     loop,
     audio,
@@ -227,14 +312,37 @@ export function mountCard<E extends RenderElement>(
       return side;
     },
     clipCount: result.media.filter((m) => m.kind === "audio" || m.kind === "video").length,
-    expanded: bound.expanded.length,
-    divergent: bound.divergent,
+    expanded: prepared.expanded,
+    divergent: prepared.divergent,
     dispose(): void {
       if (disposed) return;
       disposed = true;
       loop.dispose();
     },
   };
+}
+
+export function mountCard<E extends RenderElement>(
+  options: MountOptions<E>,
+): MountedCard<E> | null {
+  const { db, cardId } = options;
+  const prepared = prepareCard({
+    db,
+    cardId,
+    ...(options.direction === undefined ? {} : { direction: options.direction }),
+    ...(options.resolveGenerated === undefined
+      ? {}
+      : { resolveGenerated: options.resolveGenerated }),
+  });
+  if (prepared === null) return null;
+  return mountPrepared<E>(prepared, {
+    document: options.document,
+    resolve: cardAudioResolver(db, cardId, {
+      ...(options.store === undefined || options.store === null ? {} : { store: options.store }),
+    }),
+    ...(options.playable === undefined ? {} : { playable: options.playable }),
+    ...(options.onOutcome === undefined ? {} : { onOutcome: options.onOutcome }),
+  });
 }
 
 /** `mountCard` for a scheduler/session track, which knows its own direction. */

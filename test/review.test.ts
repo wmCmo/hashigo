@@ -8,7 +8,14 @@ import { memoryDocument, type MemoryElement } from "../src/render/dom.js";
 import type { MediaMount } from "../src/render/nodes.js";
 import type { PlayableMediaElement } from "../src/render/audio.js";
 import { loadCard } from "../src/cards/index.js";
-import { cardMode, mountCard, mountTrack, promptsOnEntry } from "../src/review/index.js";
+import {
+  cardMode,
+  mountCard,
+  mountPrepared,
+  mountTrack,
+  prepareCard,
+  promptsOnEntry,
+} from "../src/review/index.js";
 
 /**
  * `src/review` — the card mount, and the FIRST time `shadowingLoop` (the reveal
@@ -658,6 +665,98 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       card!.loop.enter(side.position);
       expect(rec.plays.length).toBe(before);
       card!.dispose();
+    } finally {
+      close();
+    }
+  });
+
+  // ─── the process boundary the shell has ────────────────────────────────────
+
+  it("PreparedCard survives a REAL structuredClone, over 300 cards", () => {
+    // The app shell puts the database in a worker (OPFS sync access handles are
+    // worker-only) and the DOM on the page, so a prepared card crosses
+    // `postMessage`. "It looks like plain data" is exactly how a function ends up
+    // in a payload and turns into a DataCloneError on the phone and never in the
+    // suite — so this uses the real `structuredClone`, not a JSON round-trip,
+    // because JSON silently DROPS a function where structuredClone throws.
+    const db = openDatabase(DB, { readOnly: true, applySchema: false });
+    try {
+      const ids = (
+        db
+          .prepare(
+            `SELECT c.id FROM cards c JOIN templates t ON t.id = c.template_id
+              WHERE t.name IN ('単語', '言葉', '漢字', 'New Vocab', '基本情報')
+              ORDER BY c.id LIMIT 300`,
+          )
+          .all() as { id: string }[]
+      ).map((r) => r.id);
+      let cloned = 0;
+      let sides = 0;
+      for (const cardId of ids) {
+        const prepared = prepareCard({ db, cardId });
+        if (prepared === null) continue;
+        const copy = structuredClone(prepared) as typeof prepared;
+        cloned += 1;
+        sides += copy.sides.length;
+        // The clone is EQUIVALENT, not merely cloneable — a payload that arrives
+        // structurally different renders a different card.
+        expect(copy.cardId).toBe(prepared.cardId);
+        expect(copy.mode).toEqual(prepared.mode);
+        expect(copy.sides.length).toBe(prepared.sides.length);
+        expect(copy.loaded.values).toEqual(prepared.loaded.values);
+        // `values` is a Map, which is why this is structuredClone and not JSON:
+        // JSON.stringify turns a Map into `{}` and loses every field value.
+        expect(copy.loaded.values instanceof Map).toBe(true);
+      }
+      // eslint-disable-next-line no-console
+      console.log(`structuredClone: ${cloned} prepared cards · ${sides} sides`);
+      expect(cloned).toBe(300);
+      expect(sides).toBeGreaterThan(600);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("mountPrepared renders the same card mountCard does, and stays silent on entry", async () => {
+    // The split must be a split, not a rewrite: the two halves composed by hand
+    // have to equal the one-call form. Asserted on the numbers that matter —
+    // clips, sides, mode — and on the hard rule surviving the boundary.
+    const { db, store, close } = openCorpus();
+    try {
+      for (const cardId of speechCards(db, 20)) {
+        const whole = mountCard<MemoryElement>({
+          db,
+          cardId,
+          document: memoryDocument(),
+          store,
+        });
+        const prepared = prepareCard({ db, cardId })!;
+        // Deliberately through a CLONE and an ASYNC resolver — the shell's shape.
+        const posted = structuredClone(prepared) as typeof prepared;
+        const rec = recorder();
+        const asked: string[] = [];
+        const halves = mountPrepared<MemoryElement>(posted, {
+          document: memoryDocument(),
+          resolve: async (address) => {
+            asked.push(address.origin);
+            return null;
+          },
+          playable: rec.playable,
+        });
+        expect(halves.clipCount).toBe(whole!.clipCount);
+        expect(halves.result.sides.length).toBe(whole!.result.sides.length);
+        expect(halves.mode).toEqual(whole!.mode);
+        expect(halves.expanded).toBe(whole!.expanded);
+
+        // The rule across the boundary: entering asks the worker for NOTHING.
+        for (const side of halves.loop.sides) halves.loop.enter(side.position);
+        expect(asked, `${cardId} fetched a payload on entry`).toEqual([]);
+        await halves.audio.idle();
+        expect(rec.plays).toEqual([]);
+
+        whole!.dispose();
+        halves.dispose();
+      }
     } finally {
       close();
     }
