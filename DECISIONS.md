@@ -88,6 +88,22 @@ right**: it holds his verbatim reasoning and this quotes it.
    **coincidental to the claim**. A number that agrees with another figure is not
    thereby the right number for the argument it is standing in.
 
+   **THE OTHER HALF OF THAT, because the rule is not "distrust agreement".** Whether
+   agreement is evidence depends on whether the two routes share a FAILURE MODE.
+   235 matching the importer's `orphanFieldValues` was worthless: both counted all
+   orphans the same way, so they could not have disagreed, and the match said
+   nothing about the claim it was cited for. But 132 arrived three ways with
+   *different* failure modes — an `EXISTS` subquery that cannot duplicate, a bare
+   `JOIN template_fields ON f.id = v.field_id` that DOES duplicate whenever a field
+   id sits on several templates, and a strict one-template filter. All three give
+   132. The bare join would have EXCEEDED the others had any of the 132 been
+   ambiguous, so the agreement positively rules duplication out. **That is a
+   differential check and it is sound evidence.**
+   
+   So: agreement between methods that fail the same way proves nothing; agreement
+   between methods that fail differently is a measurement. Distinguishing the two is
+   the skill the first half of this rule does not teach.
+
    **AND THE RULE'S LIMIT, worth naming so it is not over-applied.** A fifth
    disagreement in the same exchange was NOT a basis split: "8 templates" against 6
    was a plain miscount from not re-reading a table that had just been printed.
