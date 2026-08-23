@@ -87,6 +87,13 @@ right**: it holds his verbatim reasoning and this quotes it.
    `orphanFieldValues`, and that match read as confirmation while being
    **coincidental to the claim**. A number that agrees with another figure is not
    thereby the right number for the argument it is standing in.
+
+   **AND THE RULE'S LIMIT, worth naming so it is not over-applied.** A fifth
+   disagreement in the same exchange was NOT a basis split: "8 templates" against 6
+   was a plain miscount from not re-reading a table that had just been printed.
+   Naming the basis would not have caught it, and neither would checking that the
+   basis fits the sentence. Not every number disagreement is a basis question — this
+   rule catches the ones where two honest counts exist, and nothing more.
 7. **The generator's input is the RENDERED text, never the stored value.** This
    cost real work twice, in two different subsystems, in one session: the audio
    cache key missed all 471 基本情報 cards because the value is `{{データ}}` and
