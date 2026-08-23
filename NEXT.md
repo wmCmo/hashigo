@@ -600,7 +600,33 @@ measured to fail.
 > home for `かな主流` on 言葉 and says so; decision 28 confirms that was correct — the
 > field stays stored (decision 9) and renders nothing.
 >
-> **WHAT REPLACED THEM, and it is bigger: `言葉` HAS NEVER BEEN MOCKED UP.** A2's four
+> **WHAT REPLACED THEM, AND THE FIRST ONE IS THE BIGGEST THING IN THIS FILE.**
+>
+> **A. THE HARD RULE IS NOW CONDITIONAL — decision 29, settled 2026-08-23.** Audio
+> autoplays on entry for the **3,177** `Reading`-not-true cards and stays reveal-gated for
+> the **692** `Reading = true` ones, and `型` follows the same switch (gated in mode 1,
+> visible on entry in mode 2, because that is how he discovers an accent he had wrong).
+> **A2 DRAWS ONLY MODE 1, and all four of its cards are mode 2** — `裸足`, `捜査` and
+> `取り戻す` have `Reading` absent, `係数` is explicitly false. Its `.head` shows the word
+> large and always-visible, which is precisely backwards for those cards: in mode 2 the
+> word is MASKED and the audio is the prompt. So the review screen needs a SECOND card
+> layout, not just a second audio rule, and decision 23 does not cover it. Building
+> stage 7 from A2 alone ships the wrong exercise on 41% of the corpus.
+>
+> **B. THE REVIEW SCREEN MUST FLIP `Reading` ON THE CURRENT CARD.** New requirement out of
+> decision 29 and not covered anywhere in stages 7-10. His loop is: hear the audio, see
+> `型`, realise he had the accent wrong, and promote the card to `Reading = true` there and
+> then. Without an in-review toggle that loop requires leaving the app mid-session, which
+> means it will not happen. It is one boolean on one card, but it is the mechanism the
+> whole accent pipeline feeds.
+>
+> **C. HIGHEST-VALUE CARDS TO AUDIT FIRST: the 56 尾高.** 尾高 is the category he did not
+> know existed, so those are where the discovery loop pays out — **44 are in mode 2** (he
+> will meet them as the queue surfaces them) and **12 are already mode 1**. Also worth
+> knowing: 772 mode-2 cards are 中高 or 尾高, which is the measured cost of the mode-2
+> trade-off (decision 29 has the table).
+>
+> **D. `言葉` HAS NEVER BEEN MOCKED UP.** A2's four
 > cards are `裸足`, `捜査`, `係数` and `取り戻す` — all 単語/基本情報, no 言葉 among them.
 > And `言葉` is structurally different: its side 1 is `{{<<言葉>>}}`, so **the head word
 > itself is the cloze**, whereas 単語 shows the kanji and clozes the READING. With 型 in

@@ -152,4 +152,43 @@ His own words explaining WHY are not derivable from the code or from git.
   in HIS reasoning. It was never his position, and it is wrong on the merits: 14 of the 20
   are phrases (`気が付く`, `目をつける`) where the kanji is the correct spelling. Decision 28.
 
+- **THE AUTOPLAY RULE WAS TOO ABSOLUTE, and here is the exercise it was missing.**
+  2026-08-23. The repo had "audio never autoplays" as a correctness requirement on all
+  7,716 cards. It is right for 692 of them. His own system does the opposite on the rest,
+  on purpose:
+
+  > for the card that is templated with 言葉, because showing the word or not doesn't
+  > change the difficulty level … you know it's まるで, so in my mochi flashcard system,
+  > the audio plays when you see the card
+  >
+  > oh, same with 単語 template when the `Reading` boolean is false, when you see the card
+  > it plays the audio
+
+  And the reason, which is the part no agent would have guessed:
+
+  > some words that play the audio to me is the recall testing for listening, if you show
+  > me 償却 i can read that word like instantly, because i can remember the radical rules,
+  > but if you hide it behind the cloze, and play しょうきゃく, i would be like... what
+  > しょう... and what きゃく、、、 and it would force me to remember, which is the trade
+  > off between knowing the accent recall, because most of said cards are 平板 or 頭高
+  > anyway? i pay for the ability to recognize the word without the kanji for the accent
+  > drill, which btw, comes in the example sentence part anyway
+
+  > my listening skill is far worse than my reading skill … that's why most of the cards
+  > are like that
+
+  **`Reading` is a STATE HE MOVES CARDS THROUGH, not a property** — and this is what makes
+  `型`-on-entry mandatory in mode 2 rather than optional:
+
+  > but that's also because i didn't know that 尾高 was a thing, so from now on, if it's
+  > `Reading` is false, so the audio would play on the first side when enter the card, i
+  > would see that it's 尾高, and i'll be like, damn, i didn't know this, ive been
+  > pronounced it has 平板 all along, and then i'll just go ahead and edit the card to
+  > `Reading` -> true
+
+  Decision 29. Note what he was right and wrong about in his own argument: the
+  平板/頭高 leg does not hold (mode 2 is 75.4%, mode 1 is 72.3% — the same), and the
+  example-sentence leg is stronger than he claimed (97.6% coverage, and the sentence is
+  the only AUDIBLE carrier of 平板-vs-尾高 because it has a particle).
+
 ---

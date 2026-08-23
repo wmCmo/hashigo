@@ -305,6 +305,50 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     — exactly the `かな主流` six), and **14** are phrases where the kanji is entirely
     normal (`目をつける`, `気が付く`, `口をきく`, `一から十まで`, `〜ない限り` …). Any rule
     keyed on the DECK rather than on the flag breaks those 14.
+29. **THE HARD RULE IS CONDITIONAL ON `Reading`, and `型`'s gating is conditional with
+    it.** Zach, 2026-08-23. **This AMENDS the autoplay rule — read this before touching
+    `src/render/reveal.ts` or its tests.** There are TWO card modes:
+
+    | `Reading` | cards | the test | audio | `型` |
+    |---|---|---|---|---|
+    | **true** | 692 単語 | produce the reading + accent | **on reveal only** | behind the reveal — it is the ANSWER |
+    | **not true** | 2,785 単語 + 392 言葉 = **3,177** | hear it, identify the word | **on side ENTRY** | visible on entry — it is the DISCOVERY SIGNAL |
+
+    `boolean-default` is `false`, so the 1,882 cards with `Reading` absent are mode 2.
+    That is **41.2% of the corpus autoplaying** and 9% reveal-gated.
+
+    **WHY MODE 2 IS NOT A WEAKER VERSION OF MODE 1 — it is a different exercise, and the
+    cloze is load-bearing in it.** *"if you show me 償却 i can read that word like
+    instantly … but if you hide it behind the cloze, and play しょうきゃく, i would be
+    like... what しょう... and what きゃく、、、 and it would force me to remember."* His
+    listening is behind his reading, so the audio is the PROMPT and the kanji is the
+    ANSWER. Mode 2 trades accent-production for word-recognition-from-sound, deliberately.
+
+    **AND `Reading` IS A STATE HE MOVES CARDS THROUGH, not a property.** Mode 2 is the
+    default *and* the audit: the `型` label surfaces an accent he had wrong, and he then
+    promotes the card. *"i would see that it's 尾高, and i'll be like, damn, i didn't know
+    this, ive been pronounced it has 平板 all along, and then i'll just go ahead and edit
+    the card to `Reading` -> true."* **This is why `型` must be VISIBLE on entry in mode
+    2** — gating it there breaks the audit loop, which is the whole reason the accent
+    pipeline was built. It also means **the review screen needs to flip `Reading` on the
+    current card** (see NEXT.md); without that the loop requires leaving the app.
+
+    **The trade-off is measured, and one leg of his own argument does not hold.** He
+    reasoned that mode-2 cards are mostly 平板/頭高 so little is lost: true at **75.4%**
+    of mode 2 — but mode 1 is **72.3%**, statistically the same, so the split is
+    orthogonal to accent difficulty and this is a fact about the corpus rather than a
+    discriminator. The real cost is the **772 mode-2 cards that are 中高 or 尾高**.
+    His OTHER leg is stronger than he stated: **97.6%** of mode-2 cards carry
+    example-sentence audio, and a sentence puts a particle after the word, so it can
+    carry the 平板-vs-尾高 downstep the isolated word physically cannot (decision 27).
+    Sampled 400 平板/尾高 mode-2 cards: **54.3%** have a clean particle directly after the
+    head word. So the three channels are complementary — isolated audio carries 頭高/中高,
+    `型` carries all four, the sentence carries 平板-vs-尾高.
+
+    **IF YOU IMPLEMENT THIS, THE TESTS GET STRICTER, NOT LOOSER.** Ten tests currently pin
+    the absolute rule. They must pin BOTH arms — fires on entry for mode 2, and **NEVER**
+    on entry for mode 1 — or someone relaxes them to "may play on entry" and the 692 lose
+    the protection that is their entire exercise. Do not weaken the mode-1 assertions.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
@@ -312,7 +356,15 @@ zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19
 real tags. All five as recommended; the reasoning is in
 [DECISIONS.md](DECISIONS.md).
 
-## The hard rule: audio must never autoplay
+## The hard rule: audio must never autoplay ON A `Reading = true` CARD
+
+> [!warning] **AMENDED 2026-08-23 — decision 29. This rule used to be absolute and it
+> is now CONDITIONAL on the `Reading` boolean.** It is still a correctness requirement,
+> on the **692** `Reading = true` cards. On the other **3,177** (2,785 単語 with
+> `Reading` false or absent, plus all 392 言葉) Zach's Mochi autoplays on entry, he wants
+> that kept, and he has a reason that is not laziness — see decision 29. What follows
+> describes MODE 1. Do not apply it to mode 2, and do not delete the mode-1 tests to
+> make mode 2 pass.
 
 **The audio in this corpus is for 高低アクセント (pitch accent) SHADOWING.** Zach
 looks at the kanji, recalls whether each mora is high or low, SAYS IT ALOUD, and
@@ -326,19 +378,34 @@ that exercise, not a layout:
 * **漢字** — `Kanji` -> `<draw>` canvas -> `Reading` -> `Meaning`. Draw from
   memory, THEN see the answer. No audio on this template.
 
-So: **audio fires on the cloze reveal, never when a side appears.** Autoplay is
-the default in most flashcard renderers and it does not degrade this exercise, it
-deletes it — the contour is given away before he has produced it. This is a
-correctness requirement. `src/render/reveal.ts`'s `enter()` therefore does nothing
+So, **on a `Reading = true` card: audio fires on the cloze reveal, never when a side
+appears.** Autoplay is the default in most flashcard renderers and it does not degrade
+THAT exercise, it deletes it — the contour is given away before he has produced it. This
+is a correctness requirement for those 692 cards.
+
+**On a `Reading` false-or-absent card the exercise is the OTHER WAY ROUND and autoplay is
+correct:** the word is masked, the audio is the PROMPT, and identifying the kanji from the
+sound is the test — *"if you show me 償却 i can read that word like instantly … but if you
+hide it behind the cloze, and play しょうきゃく … it would force me to remember."* `型` is
+visible on entry there too, because it is how he discovers an accent he had wrong and then
+promotes the card to `Reading = true`. Decision 29 carries the full split, the measured
+trade-off, and the reason the tests must get STRICTER rather than looser. `src/render/reveal.ts`'s `enter()` therefore does nothing
 but record that a side is on screen, playback is reachable from exactly two calls
 (`reveal()` and `play()`), and media elements are created with no `src`, no
 `autoplay`, no `loop` and `preload="none"`.
 
-It is pinned by tests with demonstrated teeth (integrator, 2026-08-20): adding
-`audio.play(...)` inside `enter()` turns 8 tests red including the 7,716-card
-sweep (450 violations); adding an `autoplay` attribute in `src/render/nodes.ts`
-turns 8 tests red across three files. If you change either file, re-run that
-experiment rather than trusting a green suite.
+It is pinned by tests with demonstrated teeth, re-measured by a peer review 2026-08-23:
+putting `audio.play(media, "reveal")` inside `enter()` turns **10** tests red — 8 in
+`test/reveal.test.ts` and 2 in `test/review.test.ts`, including the 7,716-card sweep.
+Adding an `autoplay` attribute in `src/render/nodes.ts` turns 8 red across three files.
+If you change either file, re-run that experiment rather than trusting a green suite.
+
+**AND THIS IS THE TRAP DECISION 29 CREATES.** Implementing mode 2 means making `enter()`
+play on some cards, which turns those tests red *for the right reason*. The wrong fix is
+to relax them to "audio may play on entry"; the right one is to make each assertion name
+its mode, so mode 1 stays as hard as it is today. `src/render/reveal.ts` has no knowledge
+of `Reading` — the condition belongs above it, in the mount or the screen, so that
+`enter()` can keep doing nothing and the caller decides whether to play.
 
 ## Zach's own words are in the repo now, not only in Obsidian
 

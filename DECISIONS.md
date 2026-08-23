@@ -574,6 +574,81 @@ right**: it holds his verbatim reasoning and this quotes it.
    **The values stay stored.** Decision 9 carries them through a re-import; they render
    nothing. Six rows in the archive is not a cost worth a deletion nobody asked for.
 
+29. **The hard rule is CONDITIONAL on `Reading`, and `型`'s gating with it.** Decided
+   2026-08-23. **This amends the most heavily pinned invariant in the repo**, so the
+   reasoning is here in full rather than summarised.
+
+   **What the rule said.** "Audio fires on the cloze reveal, never when a side appears."
+   Absolute, called a correctness requirement, pinned by 10 tests including a 7,716-card
+   sweep. It was written from Zach's description of shadowing and it was right about the
+   exercise it described — it was wrong that every card runs that exercise.
+
+   **The two modes, and `boolean-default` is `false` so absent means mode 2:**
+
+   ```plaintext
+   Reading = true    692 単語    produce reading+accent   audio ON REVEAL   型 gated
+   Reading ≠ true  3,177 cards   hear it, name the word   audio ON ENTRY    型 visible
+                   (2,785 単語 + 392 言葉; 1,882 of those have Reading ABSENT)
+   ```
+
+   41.2% of the corpus autoplays; 9% is reveal-gated.
+
+   **Mode 2 is a different exercise, not a laxer one, and the cloze is load-bearing:**
+
+   > if you show me 償却 i can read that word like instantly, because i can remember the
+   > radical rules, but if you hide it behind the cloze, and play しょうきゃく, i would be
+   > like... what しょう... and what きゃく、、、 and it would force me to remember
+
+   His listening lags his reading, so mode 2 makes the AUDIO the prompt and the KANJI the
+   answer. That is why the default is `false`: *"my listening skill is far worse than my
+   reading skill … that's why most of the cards are like that."*
+
+   **`Reading` IS A STATE, NOT A PROPERTY — this is the part that constrains the UI.**
+   Mode 2 doubles as the audit that finds accents he had wrong:
+
+   > but that's also because i didn't know that 尾高 was a thing, so from now on, if it's
+   > `Reading` is false, so the audio would play on the first side when enter the card, i
+   > would see that it's 尾高, and i'll be like, damn, i didn't know this, ive been
+   > pronounced it has 平板 all along, and then i'll just go ahead and edit the card to
+   > `Reading` -> true
+
+   So `型` MUST render on entry in mode 2 — gating it there breaks the audit loop, which
+   is the reason the accent pipeline exists at all (decision 27). And **the review screen
+   must be able to flip `Reading` on the current card**, or the loop requires leaving the
+   app mid-session. Nothing in stages 7-10 covered a mid-review field toggle before this.
+
+   **THE TRADE-OFF, MEASURED — and one leg of his own argument does not survive it.**
+   He reasoned that mode-2 cards are mostly 平板/頭高 so little accent recall is lost:
+
+   ```plaintext
+                    平板+頭高     中高    尾高
+   mode 2  (3,141)    75.4%       728      44
+   mode 1    (689)    72.3%       179      12
+   ```
+
+   True at 75.4% — but mode 1 is 72.3%, statistically identical. The split is orthogonal
+   to accent difficulty, so this is a fact about his corpus and not a discriminator. The
+   real cost is the **772 mode-2 cards that are 中高 or 尾高.**
+
+   **His other leg is STRONGER than he stated.** *"which btw, comes in the example
+   sentence part anyway"* — 97.6% of mode-2 cards carry example-sentence audio (3,102 of
+   3,177). And a sentence puts a particle after the word, so the sentence audio can carry
+   the 平板-vs-尾高 downstep the isolated word physically cannot (decision 27). Sampled
+   400 平板/尾高 mode-2 cards: **54.3%** have a clean particle immediately after the head
+   word (裸足**で**海岸を…, 夜中**に**起きて…). So the three channels are complementary:
+
+   ```plaintext
+   isolated word audio    carries 頭高 / 中高      CANNOT carry 平板 vs 尾高
+   型 label               carries all four
+   example sentence       carries 平板 vs 尾高     when a particle follows (~54%)
+   ```
+
+   **IMPLEMENTATION NOTE, because the obvious approach breaks mode 1.** Making `enter()`
+   play turns the 10 mode-1 tests red *for the right reason*, and the wrong repair is to
+   relax them to "audio may play on entry". `src/render/reveal.ts` knows nothing about
+   `Reading` and should stay that way: `enter()` keeps doing nothing, and the CALLER — the
+   mount or the screen — decides whether to play. Then every assertion can name its mode
+   and mode 1 stays exactly as hard as it is today.
    Consistent with decision 15 and with `newTracks`' own docstring, which corrected
    an earlier claim that the queue delivered forward/reverse pairs.
 
