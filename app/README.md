@@ -125,10 +125,24 @@ reproduces it.
 
 **Basis, because the number is meaningless without it:** `performance.now()` around
 `ReviewSession.answer()` in the worker. That covers the reads `gradeTrack` does,
-the `reviews` INSERT, the `card_tracks` UPDATE and sqlite-wasm's own prepare —
-`WasmDb` prepares ~6 statements per grade and finalizes none of them, which is
-`P2`. **NOT measured on the handset yet**; his phone wrote the corpus 1.44× faster
-than this machine, so expect it to be quicker rather than slower.
+the `reviews` INSERT and the `card_tracks` UPDATE. **NOT measured on the handset
+yet**; his phone wrote the corpus 1.44× faster than this machine, so expect it to
+be quicker rather than slower.
+
+### P2 was measured here too, and the estimate was HALF the real number
+
+`WasmDb` used to leak a statement per `prepare()` — the class estimated ~6 per
+grade. The app is the only place that is observable, and it says **12.07 per
+graded card**: 30 grades left 365 open, so a 443-card day would have left ~5,350,
+each one pinning the OPFS file so `pauseVfs()` throws.
+
+Fixed by caching one statement per distinct SQL string in `WasmDb.prepare`:
+
+```plaintext
+before   12.07 open statements per graded card, growing linearly
+after    0 — flat at 16 open / 16 cached over 19 consecutive grades
+cost     none: p50 write 35.0 ms against 37.3, mean 37.7 against 38.9
+```
 
 ## The dev server's bind address is a trap in both directions
 
@@ -174,6 +188,49 @@ sentences at ~120 KB, and it maximises playable cards per byte. Raise it with
 Payloads are re-hashed on the way in, so the browser plays bytes that provably
 still match the address the card database refers to.
 
+## Eviction, detected after the fact
+
+Decision 17's last missing piece. A receipt in `localStorage` — not in the
+database, because a receipt inside the thing that went missing proves nothing, and
+`localStorage` is also the only store the PAGE can use since it does not exist in
+a worker. The worker answers the other half: was the card database in OPFS before
+this open began.
+
+**Verified against a real wipe**, not reasoned about: 187 local grades, then
+`removeEntry('.opfs-sahpool', {recursive: true})` from a page with no worker
+holding a handle, then a reload.
+
+```plaintext
+pool holds []
+  fetching /hashigo-app.db        imported 72,630,272 bytes
+  fetching /hashigo-app-blobs.db  imported 42,287,104 bytes
+plan: 556 cards (546 due, 10 new) · 0 local reviews
+THE DATABASE WAS GONE. A receipt from 2026-08-23T13:15 says it held 187 local
+review(s). They are not recoverable from exports/ — restore a backup.
+```
+
+**What it CANNOT detect, said out loud rather than implied:** a full site-data
+clear takes the receipt with it, and then this looks exactly like a first run. No
+store survives that. The honest fallback is the boot log — a re-fetch of 72 MB is
+visible, and the local-review count is stated on every successful open, so a drop
+is noticeable even when the cause is not.
+
+It reports the LOSS, not the event: `localReviews` is the only thing `exports/`
+cannot rebuild, so a receipt saying 0 gets an informational line and no banner.
+
+## `?reset=1` — the route a schema bump needs
+
+`SCHEMA_VERSION` has moved eight times and `applySchema` refuses any version but
+its own, so a bump means re-import rather than migrate — and there was no way to
+do that from the app. There is now, behind a `confirm()` because it destroys local
+grades.
+
+It calls `removeVfs()`, and that is the whole point: **a per-file `unlink()` frees
+NOTHING.** `SAHPoolUtil.unlink()` disassociates a name from its pool slot and
+leaves the file — measured at 0.0 MiB of 639.0 MiB on Zach's own handset, and
+byte-for-byte the same on desktop. Anything that deletes audio must not be built
+on `unlink()`.
+
 ## What is NOT here yet
 
 * **Sync (stage 11) and the editor (stage 10).** The `Reading` toggle is the one
@@ -184,8 +241,8 @@ still match the address the card database refers to.
   installed** — so install is not the precondition the notes assumed. Decision
   17's banner is here; the "add to home screen" prompt is not, and drops in
   priority.
-* **Eviction detection.** The banner covers `persisted() === false`; noticing an
-  eviction that already happened is still to do.
+* Nothing else on the critical path. Eviction detection landed 2026-08-23 — see
+  below.
 * **A tap target on the head word.** Decision 23 deliberately does not settle
   where the head word pins after the reveal, where a decision-13 re-ask re-enters
   the session, or type and spacing detail. Those are Zach's.

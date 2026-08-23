@@ -50,6 +50,7 @@ import { buildSession, type ReviewSession } from "../src/session/index.js";
 
 import type {
   AnswerRequest,
+  ResetRequest,
   AppMessage,
   AppRequest,
   BackupRequest,
@@ -131,6 +132,8 @@ async function open(request: OpenRequest): Promise<void> {
   await installPool();
   log(`pool holds ${JSON.stringify(await databaseFilesInOpfs())}`);
 
+  // Asked BEFORE either fetch, because `ensureFile` is what changes the answer.
+  const cardsWerePresent = (await databaseFilesInOpfs()).includes(CARD_DB);
   const imported =
     (await ensureFile(CARD_DB, CARD_URL, request.reimport)) +
     (await ensureFile(STORE_DB, STORE_URL, request.reimport));
@@ -168,6 +171,14 @@ async function open(request: OpenRequest): Promise<void> {
     reviews: reviewCount,
     imported,
     storeRows,
+    cardsWerePresent,
+    localReviews: Number(
+      (
+        cards.prepare("SELECT count(*) AS n FROM reviews WHERE source = 'local'").get() as {
+          n: number;
+        }
+      ).n,
+    ),
     progress: session.progress(),
   });
 }
@@ -293,6 +304,39 @@ function setReading(request: ReadingRequest): void {
   post({ kind: "reading", id: request.id, cardId: request.cardId, value: request.value });
 }
 
+/**
+ * Throw away the whole pool.
+ *
+ * The order matters and each step is load-bearing: count the loss BEFORE
+ * destroying it, `close()` both handles so no sync access handle is still open
+ * (`WasmDb.close` finalizes every statement first, which upstream's own close does
+ * not), then `removeVfs()`. A per-file `unlink()` would report success and free
+ * nothing — measured at 0.0 MiB of 639.0 MiB.
+ */
+async function reset(request: ResetRequest): Promise<void> {
+  const localReviews =
+    cards === null
+      ? 0
+      : Number(
+          (
+            cards.prepare("SELECT count(*) AS n FROM reviews WHERE source = 'local'").get() as {
+              n: number;
+            }
+          ).n,
+        );
+  const pool = await installPool();
+  const removed = await databaseFilesInOpfs();
+  session = null;
+  store = null;
+  cards?.close();
+  payloads?.close();
+  cards = null;
+  payloads = null;
+  await pool.removeVfs();
+  log(`removed ${JSON.stringify(removed)} — ${localReviews} local grade(s) gone`, "bad");
+  post({ kind: "reset", id: request.id, removed, localReviews });
+}
+
 /** Decision 17's archive. Read-only; the page turns it into a file. */
 function backup(request: BackupRequest): void {
   const db = requireCards();
@@ -332,6 +376,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "backup":
           backup(request);
+          break;
+        case "reset":
+          await reset(request);
           break;
       }
     } catch (cause) {

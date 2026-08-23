@@ -84,6 +84,32 @@ export interface ReadingRequest {
   readonly value: boolean;
 }
 
+/**
+ * Throw away everything in OPFS and stop.
+ *
+ * **This is the route a SCHEMA BUMP needs** (`SCHEMA_VERSION` has moved eight
+ * times and `applySchema` refuses any version but its own, so a bump means
+ * re-import rather than migrate) and it is the only way to free the space: a
+ * per-file `unlink()` frees NOTHING — it disassociates the name from its pool slot
+ * and leaves the file, measured at 0.0 MiB of 639.0 MiB on Zach's own handset.
+ * Only `removeVfs()` frees anything.
+ *
+ * It destroys local grades, so the page confirms first and the worker closes
+ * cleanly rather than pulling the file out from under an open handle.
+ */
+export interface ResetRequest {
+  readonly kind: "reset";
+  readonly id: number;
+}
+
+export interface ResetMessage {
+  readonly kind: "reset";
+  readonly id: number;
+  readonly removed: readonly string[];
+  /** Local grades destroyed. Reported so the log says what it cost. */
+  readonly localReviews: number;
+}
+
 /** Decision 17's archive, as JSON text, for the page to hand to a download. */
 export interface BackupRequest {
   readonly kind: "backup";
@@ -96,7 +122,8 @@ export type AppRequest =
   | PayloadRequest
   | AnswerRequest
   | ReadingRequest
-  | BackupRequest;
+  | BackupRequest
+  | ResetRequest;
 
 // ─── worker → page ───────────────────────────────────────────────────────────
 
@@ -121,6 +148,22 @@ export interface OpenedMessage {
   /** Bytes imported this open, or 0 when OPFS already had the database. */
   readonly imported: number;
   readonly storeRows: number;
+  /**
+   * Was the CARD database already in OPFS when this open began?
+   *
+   * The half of eviction detection the worker can answer. The other half is a
+   * receipt in `localStorage`, which only the page can read — see
+   * `checkEviction` in `main.ts`. Reported separately from `imported`, which sums
+   * both files and so cannot distinguish "the cards were there" from "the audio
+   * was there".
+   */
+  readonly cardsWerePresent: boolean;
+  /**
+   * `reviews` where `source = 'local'` — grades made in Hashigo, and the only
+   * thing in this database that `exports/` cannot rebuild (decision 17). It is
+   * what an eviction would actually cost, so it is what the receipt records.
+   */
+  readonly localReviews: number;
   readonly progress: SessionProgress;
 }
 
@@ -190,6 +233,7 @@ export interface ErrorMessage {
 }
 
 export type AppMessage =
+  | ResetMessage
   | LogMessage
   | OpenedMessage
   | CardMessage
@@ -207,4 +251,5 @@ export interface ReplyFor {
   readonly answer: AnsweredMessage;
   readonly reading: ReadingMessage;
   readonly backup: BackupMessage;
+  readonly reset: ResetMessage;
 }

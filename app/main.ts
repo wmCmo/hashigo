@@ -362,6 +362,99 @@ async function flipReading(): Promise<void> {
   }
 }
 
+// ─── decision 17: eviction, detected after the fact ─────────────────────────
+
+/**
+ * A RECEIPT, in `localStorage`, of the last successful open.
+ *
+ * `localStorage` rather than the database, obviously — a receipt inside the thing
+ * that went missing proves nothing. It is also the only store the PAGE can use;
+ * `localStorage` does not exist in a worker, which is why this half lives here
+ * and the worker reports the file's presence instead.
+ */
+const RECEIPT_KEY = "hashigo.receipt.v1";
+
+interface Receipt {
+  readonly at: string;
+  readonly localReviews: number;
+  readonly schemaVersion: number;
+}
+
+function readReceipt(): Receipt | null {
+  try {
+    const raw = localStorage.getItem(RECEIPT_KEY);
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw) as Partial<Receipt>;
+    return typeof parsed.at === "string" && typeof parsed.localReviews === "number"
+      ? { at: parsed.at, localReviews: parsed.localReviews, schemaVersion: parsed.schemaVersion ?? 0 }
+      : null;
+  } catch {
+    // A corrupt receipt is not worth failing a boot over; it just means the
+    // eviction check cannot answer this time, which it says rather than assumes.
+    return null;
+  }
+}
+
+function writeReceipt(receipt: Receipt): void {
+  try {
+    localStorage.setItem(RECEIPT_KEY, JSON.stringify(receipt));
+  } catch {
+    /* a full or disabled localStorage costs the check, not the session */
+  }
+}
+
+/**
+ * Did the browser throw the database away since last time?
+ *
+ * **What this CAN detect:** OPFS had no card database, and a receipt says one was
+ * there before. That is an eviction, or "clear site data", or a profile that moved
+ * — indistinguishable from each other and all costing the same thing, so they get
+ * the same message.
+ *
+ * **What it CANNOT detect, said out loud rather than implied:** a full site-data
+ * clear takes the receipt with it, and then this looks exactly like a first run.
+ * There is no store that survives that, so the honest fallback is the boot log —
+ * a re-fetch of 72 MB is visible, and the number of local reviews is stated on
+ * every successful open so the drop is noticeable even when the cause is not.
+ *
+ * It is the LOSS that is reported, not the event: `localReviews` is the only thing
+ * in the database `exports/` cannot rebuild (decision 17), so a receipt saying 0
+ * means an eviction cost nothing and does not deserve an alarm.
+ */
+function checkEviction(opened: {
+  readonly cardsWerePresent: boolean;
+  readonly localReviews: number;
+  readonly schemaVersion: number;
+}): void {
+  const receipt = readReceipt();
+  if (!opened.cardsWerePresent && receipt !== null) {
+    const lost = receipt.localReviews;
+    line(
+      lost > 0
+        ? `THE DATABASE WAS GONE. A receipt from ${receipt.at.slice(0, 16)} says it held ` +
+            `${lost.toLocaleString()} local review(s). They are not recoverable from exports/ — ` +
+            `restore a backup with the export you took.`
+        : `The database was gone (receipt from ${receipt.at.slice(0, 16)}), but it held 0 local ` +
+            `reviews, so nothing was lost — exports/ rebuilds the rest.`,
+      lost > 0 ? "bad" : "info",
+    );
+    if (lost > 0) {
+      banner.replaceChildren(
+        document.createTextNode(
+          `Storage was cleared since ${receipt.at.slice(0, 10)} — ${lost.toLocaleString()} ` +
+            `local review(s) were lost. Restore from a backup, and keep exporting.`,
+        ),
+      );
+      banner.hidden = false;
+    }
+  }
+  writeReceipt({
+    at: new Date().toISOString(),
+    localReviews: opened.localReviews,
+    schemaVersion: opened.schemaVersion,
+  });
+}
+
 // ─── decision 17's banner ────────────────────────────────────────────────────
 
 /**
@@ -375,6 +468,9 @@ async function flipReading(): Promise<void> {
  * and a fresh origin starts at zero, so the banner still has to exist.
  */
 async function checkPersistence(): Promise<void> {
+  // An eviction message already on screen is the more important one; it names a
+  // loss that has happened, not a risk.
+  if (!banner.hidden) return;
   if (navigator.storage?.persisted === undefined) {
     banner.textContent = "this browser cannot report storage persistence — export a backup often";
     banner.hidden = false;
@@ -459,8 +555,38 @@ document.addEventListener(
   true,
 );
 
+/**
+ * `?reset=1` — destroy the OPFS copy and stop.
+ *
+ * A URL parameter rather than a button, and behind a `confirm()`, because it
+ * destroys local grades. It is here because a SCHEMA BUMP has no other route (a
+ * bump means re-import, not migrate) and because `unlink()` frees nothing — only
+ * `removeVfs()` does. It is also how the eviction detector below gets tested
+ * rather than assumed.
+ */
+async function maybeReset(): Promise<boolean> {
+  if (new URLSearchParams(location.search).get("reset") !== "1") return false;
+  if (
+    !confirm(
+      "Delete Hashigo's local database? Any grades made in this app are lost — " +
+        "exports/ cannot rebuild them. Take a backup first if you have not.",
+    )
+  ) {
+    line("reset cancelled — nothing was removed.", "info");
+    return false;
+  }
+  const reply = await ask<"reset">({ kind: "reset" });
+  line(
+    `reset: removed ${reply.removed.join(", ")} · ${reply.localReviews} local grade(s) gone. ` +
+      `Reload without ?reset=1 to re-import.`,
+    "bad",
+  );
+  return true;
+}
+
 async function boot(): Promise<void> {
   try {
+    if (await maybeReset()) return;
     line("opening the database…", "step");
     const opened = await ask<"open">({ kind: "open", reimport: false });
     line(
@@ -471,9 +597,13 @@ async function boot(): Promise<void> {
     );
     line(
       `plan: ${opened.progress.planned} cards (${opened.progress.dueCount} due, ` +
-        `${opened.progress.newCount} new)`,
+        `${opened.progress.newCount} new) · ${opened.localReviews.toLocaleString()} local reviews`,
       "good",
     );
+    // BEFORE the persistence check, so an eviction that already happened is the
+    // first thing said rather than the second — and so its banner is not
+    // overwritten by the "not persistent" one.
+    checkEviction(opened);
     await checkPersistence();
     bootView.hidden = true;
     reviewView.hidden = false;
