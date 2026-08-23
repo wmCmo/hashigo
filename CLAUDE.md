@@ -5,8 +5,10 @@ user's Japanese study. Built because Mochi's developer stopped fixing reported b
 
 ## Where this is — and where the numbers live
 
-**The whole path from "what is due" to "these bytes" exists in `src/`. What does not
-exist is the SCREEN.** Nothing mounts a card in a browser and nothing calls `play()`.
+**Everything from "what is due" to a live, audible card exists in `src/`. What does not
+exist is the SHELL** — the page that hosts it, a writable database in the browser, and
+the audio on the device. `play()` IS called: `src/review` mounts a card and drives
+`shadowingLoop`, and `test/review.test.ts` measures it over real cards.
 
 Built and tested against the real export: stages **0-6 and 8, plus 1.5** — schema,
 importer, dashboard, template engine, renderer (`src/render`), scheduler backtest,
@@ -83,18 +85,18 @@ argument, or a second artifact gets created instead of updating this one.
 ## The commands
 
 ```bash
-npm test                # 20 files, 697 passed, 1 skipped (the FSRS refit, gated)
+npm test                # 23 files, 734 passed, 1 skipped (the FSRS refit, gated)
                         # 32.7-87.7 s over six runs.
                         # IT EXITS 1 ON A FULLY PASSING RUN. The "Timeout calling
                         # onTaskUpdate" lines are Vitest's reporter RPC under load,
                         # they count as `Errors`, and they set the exit code with
-                        # `697 passed` printed directly above. So read the pass
+                        # `734 passed` printed directly above. So read the pass
                         # count -- not because the error line is noise, but because
                         # $LASTEXITCODE is WRONG. Anything chaining on this gate
                         # (CI, a hook, a `;`-joined line) reports a break that is
                         # not there. Measured on a clean tree with zero edits.
 npm run typecheck       # exit 0
-npm run build           # refuses to exit 0 unless dist/ actually imports (24 export subpaths)
+npm run build           # refuses to exit 0 unless dist/ actually imports (27 export subpaths)
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
 npm run dashboard -- --db build/hashigo.db --out dashboard.html   # English; --locale ja for the other
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 1 on any location

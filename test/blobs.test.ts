@@ -1271,7 +1271,7 @@ describe("importBlobs and where the payloads go", () => {
     db.close();
 
     // A SQLITE DATABASE beside the card database, not a directory of 10,816
-    // files: `notes/browser-feasibility.md` §4. The importer opened it, so the
+    // files: `notes/archive/browser-feasibility.md` §4. The importer opened it, so the
     // importer closed it — hence this test can reopen it and read the payload.
     expect(report.payloadStore).toBe("content-addressed");
     expect(report.storeRoot).toBe(`sqlite:${defaultStoreDatabase(file)}`);
@@ -1640,7 +1640,7 @@ describe.skipIf(!haveCorpus)("the real export", () => {
   it(
     "inserts the whole corpus into a fresh store at a measured rate",
     () => {
-      // THE COMPARABLE NUMBER. notes/browser-feasibility.md §4 measured 4.9 s to
+      // THE COMPARABLE NUMBER. notes/archive/browser-feasibility.md §4 measured 4.9 s to
       // insert 624.6 MiB as BLOB rows in a browser, against 322.1 s for the same
       // bytes as 10,816 OPFS files. That figure is INSERT ONLY, so this one has
       // to be too: the reads out of the populated store are timed separately and

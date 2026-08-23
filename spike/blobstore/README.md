@@ -2,7 +2,7 @@
 
 **Disposable harness.** It exists to settle, in a real browser, whether
 `SqliteBlobStore` from `src/blobs/sqlite.ts` actually holds the whole corpus in
-OPFS — and to measure it against `notes/browser-feasibility.md` §4. Nothing in
+OPFS — and to measure it against `notes/archive/browser-feasibility.md` §4. Nothing in
 `src/` imports anything here. Delete it once the PWA shell exists.
 
 Every line of store code it exercises comes from `src/`, unmodified. That is the
@@ -41,7 +41,7 @@ could not install the opfs-sahpool VFS: Failed to execute 'createSyncAccessHandl
 Access Handle or Writable stream associated with the same file.
 ```
 
-That is `notes/browser-feasibility.md` §7's untested multi-tab item, now observed.
+That is `notes/archive/browser-feasibility.md` §7's untested multi-tab item, now observed.
 To run two harnesses at once, give each its own origin: `npx vite --port 5299
 --strictPort` is a different origin and therefore a different OPFS.
 
@@ -96,7 +96,7 @@ copied into a document written for Zach before anyone tried to reproduce it.
 
 ### The per-file alternative, re-measured in the same session
 
-`notes/browser-feasibility.md` §4's 65× / 20× came from one session on one
+`notes/archive/browser-feasibility.md` §4's 65× / 20× came from one session on one
 machine, and until now nobody had re-measured *both* halves together. The
 integrator did, in the same browser, minutes apart: **1,000 individual OPFS
 files** of the corpus's average payload size (60,551 B) over a 2-level hex

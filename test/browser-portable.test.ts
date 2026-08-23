@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 /**
  * THE BROWSER-PORTABILITY PIN.
  *
- * `notes/browser-feasibility.md` measured that "the FSRS-6 port, the whole
+ * `notes/archive/browser-feasibility.md` measured that "the FSRS-6 port, the whole
  * template engine, the whole renderer pipeline and all the metrics are already
  * browser-ready", and called that the expensive part being free. That sentence
  * then went false and nothing noticed: `src/schema/index.ts` grew a
@@ -32,7 +32,7 @@ const ROOT = resolve(import.meta.dirname, "..");
  * Entry points a browser worker must be able to import. Deliberately NOT
  * `src/db/open.ts` (better-sqlite3), `src/import/*` (node:crypto, node:fs) or
  * any `cli.ts` — those are declared Node-only seams, listed as such in
- * `notes/browser-feasibility.md` section 5.
+ * `notes/archive/browser-feasibility.md` section 5.
  */
 const BROWSER_ENTRY_POINTS = [
   "src/schema/index.ts",
@@ -63,7 +63,7 @@ const BROWSER_ENTRY_POINTS = [
  *
  * `src/generate/index.ts` was listed, because `src/generate/store.ts`
  * value-imported `generationKey` from `src/import/blobs.ts`, whose digest was
- * `node:crypto`. `notes/browser-feasibility.md` §5 called the remedy "the one
+ * `node:crypto`. `notes/archive/browser-feasibility.md` §5 called the remedy "the one
  * genuinely invasive change" — `crypto.subtle.digest` is ASYNC, so the key, the
  * resolver and everything above them would change signature — and two sessions
  * carried that forward as the plan.

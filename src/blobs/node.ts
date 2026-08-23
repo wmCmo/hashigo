@@ -3,7 +3,7 @@
  * `<root>/<shard>/<hash>`.
  *
  * NO LONGER THE DEFAULT ANYWHERE. `sqlite.ts` is the production backing, in Node
- * and in the browser both, because `notes/browser-feasibility.md` §4 measured
+ * and in the browser both, because `notes/archive/browser-feasibility.md` §4 measured
  * one-file-per-payload at 322.1 s to write the corpus's 624.6 MiB in a browser
  * against 4.9 s for BLOB rows, and 10.60 ms against 0.54 ms per random read — a
  * gap since re-measured, on a second machine, at 19.30 ms against 0.52–0.60 ms

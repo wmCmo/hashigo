@@ -5,7 +5,7 @@
  * `node:*`, no `better-sqlite3` — and are what the OPFS build imports. `sqlite.ts`
  * is the PRODUCTION backing in both halves: BLOB rows in a separate `blobs.db`,
  * because one-file-per-payload measured tens of times slower in a real browser --
- * 65× write / 20× read in `notes/browser-feasibility.md` §4, re-measured since at
+ * 65× write / 20× read in `notes/archive/browser-feasibility.md` §4, re-measured since at
  * 32×–37× write / 57×–95× read (see `sqlite.ts`'s header for the spread and why no
  * single multiplier is quotable). `node.ts` is the directory store, kept for
  * export and interop and no longer the default.

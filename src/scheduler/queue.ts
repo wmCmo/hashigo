@@ -33,7 +33,7 @@
  *     dueTracks, one deck      10.1 ms      the deck_ancestry subquery, 3x
  *
  * Node and better-sqlite3; the browser figure is not this one and is not yet
- * measured — `notes/browser-feasibility.md` has the OPFS read numbers this would
+ * measured — `notes/archive/browser-feasibility.md` has the OPFS read numbers this would
  * sit on. The index stays right for anything that wants a date RANGE, which is
  * what `reviewForecast` would use if 3.6 ms ever mattered.
  *

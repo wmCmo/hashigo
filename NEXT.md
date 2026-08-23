@@ -85,15 +85,15 @@ browser-portability split, schema **v8**, a correctness sweep, and the dashboard
 English. `git log --oneline -20` is the list; do not rebuild any of it.
 
 Gates, **all five re-run 2026-08-22 and all five green**, not repeated from a paste:
-`npm test` → 20 files / 697 passed / 1 skipped, 77.0 s · `npm run typecheck` → 0 ·
-`npm run build` → OK, **70 modules**, 48 dist targets, 24 export subpaths ·
+`npm test` → 23 files / 734 passed / 1 skipped, ~75 s · `npm run typecheck` → 0 ·
+`npm run build` → OK, **76 modules**, 54 dist targets, 27 export subpaths ·
 `npm run spike:check` → 0 · `blobs … paths` → 0, "NO absolute path … anywhere".
 
 > [!warning] **`npm test` EXITS 1 ON A FULLY PASSING RUN, and the exit code is the thing
 > that lies.** Both this file and CLAUDE.md said "that is Vitest's reporter RPC, not a
 > failing test — read the pass count", which is correct and incomplete: the two
 > `Timeout calling "onTaskUpdate"` unhandled errors are counted as `Errors 2` and the
-> process exits **1** with `697 passed | 1 skipped` right above it. So "read the pass
+> process exits **1** with `734 passed | 1 skipped` right above it. So "read the pass
 > count" is not merely advice about where to look — it is necessary because
 > `$LASTEXITCODE` is wrong. Anything that chains on `npm test` succeeding (a CI step, a
 > pre-commit hook, a `;`-joined PowerShell line that checks the code) will report a break
@@ -253,13 +253,15 @@ left between the loader and audible audio, none of it needing Zach:
 
 | | what | why it is next |
 |---|---|---|
-| ~~C1~~ | ~~The async cache key~~ | **DONE 2026-08-22, and it was NOT an async rewrite.** Three documents — `notes/browser-feasibility.md` §5, the `KNOWN_NODE_BOUND` comment, and two session handoffs — said `node:crypto` → `crypto.subtle` was "the one genuinely invasive change" because `digest` is async and the key, the resolver and everything above them would change signature. **That reasoning was obsolete.** `src/blobs/sha256.ts` is a synchronous, dependency-free SHA-256 written for exactly this, already the default digest of `SqliteBlobStore`, already agreeing with `node:crypto` bit for bit on all 10,816 payloads — and its own header says so. So the key MOVED to `src/blobs/generation.ts` with one line changed and **no signature altered**. `src/generate/index.ts` is now in `BROWSER_ENTRY_POINTS` and `KNOWN_NODE_BOUND` is empty. Pinned: 36,398 distinct corpus identities, 32,465 of them non-ASCII, **0 differing digests**, plus three real keys as literals |
+| ~~C1~~ | ~~The async cache key~~ | **DONE 2026-08-22, and it was NOT an async rewrite.** Three documents — `notes/archive/browser-feasibility.md` §5, the `KNOWN_NODE_BOUND` comment, and two session handoffs — said `node:crypto` → `crypto.subtle` was "the one genuinely invasive change" because `digest` is async and the key, the resolver and everything above them would change signature. **That reasoning was obsolete.** `src/blobs/sha256.ts` is a synchronous, dependency-free SHA-256 written for exactly this, already the default digest of `SqliteBlobStore`, already agreeing with `node:crypto` bit for bit on all 10,816 payloads — and its own header says so. So the key MOVED to `src/blobs/generation.ts` with one line changed and **no signature altered**. `src/generate/index.ts` is now in `BROWSER_ENTRY_POINTS` and `KNOWN_NODE_BOUND` is empty. Pinned: 36,398 distinct corpus identities, 32,465 of them non-ASCII, **0 differing digests**, plus three real keys as literals |
 | ~~C2~~ | ~~The audio resolver's second half — hash → bytes → `blob:` URL~~ | **DONE 2026-08-22.** `cardAudioResolver` in `src/cards/audio.ts` is the `AudioResolver` that `src/render/audio.ts` has always taken. Measured end to end over 400 real cards: **373 speech mounts → 361 addressed → 361 payloads read → 16.2 MiB of `audio/mpeg`** out of the store. Both facts honoured — the card id comes from the closure (a test proves the same `ref_key` against another card resolves to null), and the inline split is by PAYLOAD not by kind, since `file` and `image` are out-of-line too |
 
-**So the whole path from "what is due" to "these bytes" now exists in `src/`.** What does
-not exist is the SCREEN: nothing mounts a rendered card in a browser and nothing calls
-`play()`. That is **B1, and it is Zach's.** The two runs needing his handset — the 625 MB
-fill and the per-grade OPFS write — are still unmeasured.
+**So the whole path from "what is due" to "these bytes" now exists in `src/`** — and as
+of 2026-08-23 so does everything above it: the session (`src/session`), the card mount
+(`src/review`, which calls `play()` on the reveal over real cards) and decision 17's
+backup (`src/backup`). **B1 is no longer Zach's and no longer the screen — it is the
+SHELL**, and its shape is the one thing left. The two runs needing his handset — the
+625 MB fill and the per-grade OPFS write — are still unmeasured.
 
 ### The session layer landed 2026-08-22 — so B1 is now only the screen
 
@@ -361,6 +363,47 @@ counted, never fatal. This corpus has **8,958 tombstones**, so it would have hap
 > `persisted()` is false, an "add to home screen" prompt beside it, and detection of an
 > eviction that already happened. Nothing calls `exportLocalArchive` from a screen.
 
+### STARTING THE SHELL — read this first, most of it already exists
+
+B1's remainder is the app shell, and the reason to write this down is that **the two
+hardest parts are already solved in `spike/`**, which is labelled THROWAWAY and therefore
+easy to skip past. Do not rebuild them; do not copy them wholesale either.
+
+**Reuse the mechanism, not the code:**
+
+| already works | where | what it gives the shell |
+|---|---|---|
+| a real SQLite database in a Worker, over OPFS | `spike/viewer/cards.worker.ts` | the worker holds BOTH databases and every SQL statement — the shape the shell needs, because OPFS sync access handles require a worker |
+| `persist()` granted, manifest, service worker, installed | `spike/persist/` | 133.96 GiB quota, standalone. The PWA shell question is answered |
+| the 625 MB transfer | `spike/blobstore/` | 10,816 payloads rehashed to their own address, audit clean. Missing only mid-stream resume and the on-device run |
+| a BOUNDED audio subset | `spike/viewer/make-viewer-db.ts` | 32 MiB instead of 617.9. **Start here** — the full transfer is a separate, measured step (P1), not a prerequisite |
+
+**What is genuinely new** is smaller than it looks: hosting a page, mounting
+`src/review`'s output inside the A2 chrome, wiring two buttons to `src/session`'s
+`answer()`, and decision 17's banner. The pipeline underneath is done and pinned.
+
+> [!warning] **Four traps, each of which has already cost someone time.**
+>
+> 1. **Do NOT copy `spike/viewer`'s reveal sequencing.** It hand-rolls
+>    `revealSide()`/`armSide()` and its own README says so. `src/review` drives the loop
+>    that SHIPS (`shadowingLoop`) and is measured over real cards. Use it.
+> 2. **`loadRenderedCard` cannot reach the audio** — it is the documented entry point in
+>    `src/cards/README.md` and it returns neither the template fields nor the card values
+>    `expandGeneratorFields` needs. A card mounted that way renders perfectly and is
+>    SILENT on all 5,664 cards with speech, with no error. Use `hashigo/review`.
+> 3. **A LAN IP is not a secure context**, so OPFS and `persist()` behave differently
+>    there than on `localhost` or over the tunnel. `notes/archive/persistence.md` §1.6
+>    calls this "the single most expensive thing to discover late" and measured it.
+> 4. **`npm run spike:dev -- --host ::`, never `--host 127.0.0.1`**, for anything reached
+>    from the phone or a tunnel. IPv4-only binding makes ngrok return 502, because it
+>    resolves `localhost` to `::1` and does not fall back. Cost a round trip on
+>    2026-08-23.
+
+**The one structural call, which Zach delegated** (*"this is `how`, and I'm trusting you
+on `how`"*, 2026-08-23): where the app lives. `spike/` is throwaway and `src/` is the
+library, so neither is right — it wants its own top-level directory with its own Vite
+entry. That is a judgement, not a decision of his; make it and write down why.
+
 ### Table B — do NOT start these without him
 
 | | what | why |
@@ -368,7 +411,7 @@ counted, never fatal. This corpus has **8,958 tombstones**, so it would have hap
 | ~~**B1**~~ | **Stage 7 — Review UI** — **UNBLOCKED 2026-08-22** | The taste question is answered: **decision 23**, direction A2. It is no longer "do not start without him" — it is the next thing to build, against a written spec. What exists is a MOCKUP in `build/mock/out/` (three directions plus the chosen A2), served at `/mock/` by `vite.config.ts` middleware; it has no scheduler, no grading and writes nothing. The build is wiring `hashigo/scheduler` → `hashigo/cards` → `hashigo/render` behind that layout. Two constraints, both non-negotiable: **audio fires on cloze reveal, NEVER on side entry** (`src/render/reveal.ts`, and the autoplay section of CLAUDE.md), and the keycap hints must stay behind `@media (hover: hover) and (pointer: fine)` rather than any hover affordance — decision 19 is why. Decision 23 lists what it does NOT settle; do not decide those for him |
 | **B2** | Design tokens → `spike/viewer/` | 3 named fixes exist in `notes/design-tokens.md`, but he judges the result on his own phone. Propose, do not decide |
 | **B3** | Nested-tag sidebar · Ctrl+K palette | query layers are done; the UI is taste |
-| **B4** | Stage 10 Editor · Stage 11 Sync | both large, both unspecified in shape |
+| **B4** | Stage 10 Editor · Stage 11 Sync | both large, both unspecified in shape. The SHELL (stage 9) is no longer in this table — see "Starting the shell" above; Zach handed the "how" over on 2026-08-23 |
 
 ### ~~The one stage-7 question still open~~ — CLOSED by decision 13
 
@@ -524,12 +567,12 @@ state, not a gap.
 ## The gates, and the one chore that bites
 
 ```bash
-npm test          # 20 files, 697 passed, 1 skipped (gated FSRS refit). 33-88 s.
+npm test          # 23 files, 734 passed, 1 skipped (gated FSRS refit). 33-88 s.
                   # EXITS 1 ANYWAY when the "Timeout calling onTaskUpdate" reporter
                   # errors appear -- everything passes and the code is still 1.
                   # Check the pass count; do NOT trust $LASTEXITCODE here.
 npm run typecheck # exit 0
-npm run build     # VERIFIED 70 modules, 48 dist targets = 24 export subpaths
+npm run build     # VERIFIED 76 modules, 54 dist targets = 27 export subpaths
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 0
 npm run spike:check
 ```

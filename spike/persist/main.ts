@@ -296,7 +296,7 @@ const api = {
    * Kill the worker outright. This is precisely what the browser does to a
    * dedicated worker when its tab closes, and it is the ONLY thing observed in
    * this spike that reliably releases the OPFS sync access handles — see
-   * notes/persistence.md. Also the mitigation a follower tab can rely on: the
+   * notes/archive/persistence.md. Also the mitigation a follower tab can rely on: the
    * leader terminates its worker on `pagehide` and the follower can take over.
    */
   terminate: (): boolean => {

@@ -282,10 +282,21 @@ right**: it holds his verbatim reasoning and this quotes it.
    clearing site data or a browser eviction takes it — and TODAY that is survivable
    because every review is reconstructible from `exports/`. After decision 16's final
    import, it is not: from the first local grade onward, `exports/` no longer receives his
-   history and the OPFS database is the ONLY copy. `notes/persistence.md:204` already
-   prescribes the one-tap export; measured 2026-08-22, **no code path gets a database
-   out** of either half (0 matches for export/download in `src/` and `spike/`). Schedule
-   it with the cutover, not with day one.
+   history and the OPFS database is the ONLY copy. `notes/archive/persistence.md:204` already
+   prescribes the one-tap export.
+
+   **THE MECHANISM LANDED 2026-08-23 — `src/backup`.** It archives only what `exports/`
+   cannot rebuild (local reviews, the scheduling state of any track that has one,
+   decision 9's local fields and their values, settings): **2,674 bytes** over the real
+   corpus against a 74 MB file. Rows rather than the file, because a binary copy only
+   restores into the schema version it came from and `applySchema` refuses any other — a
+   bump would strand every older backup. Keyed on `(card_id, kind)`, never `track_id`.
+   `src/backup/README.md` has the two defects testing found.
+
+   **What is still missing is the SCREEN half**, and it belongs to the shell: the
+   persistent banner when `persisted()` is false, the add-to-home-screen prompt beside
+   it, and detecting an eviction that already happened. Nothing calls
+   `exportLocalArchive` from a UI. So the decision is half-built, not done.
 18. **The TTS key NEVER goes in the client.** Decided 2026-08-22: *"we have to find a way
    that will not leak my key."* So the provider call is proxied through the Cloudflare
    Worker that stage 11 needs anyway; the PWA holds no credential. This is free to decide

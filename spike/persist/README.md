@@ -4,7 +4,7 @@
 one question that can lose Zach's data — *will the browser keep it?* — and it is
 safe to delete once the PWA shell exists. Nothing in `src/` imports it.
 
-The findings are in [`notes/persistence.md`](../../notes/persistence.md). The
+The findings are in [`notes/archive/persistence.md`](../../notes/archive/persistence.md). The
 checklist Zach runs on his own phone is [`PHONE-TEST.md`](../../PHONE-TEST.md).
 
 ```
@@ -28,7 +28,7 @@ spike/persist/
 The page lives on the **dev server only**, at `/persist/`. `vite build` emits
 just `spike/index.html`, because adding a second `build.rollupOptions.input`
 means editing `vite.config.ts`, which this change does not own. See the ORPHAN
-note in `notes/persistence.md`.
+note in `notes/archive/persistence.md`.
 
 ```bash
 npm run spike:bootstrap                    # once; build/spike/hashigo-bootstrap.db

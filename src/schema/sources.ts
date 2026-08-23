@@ -8,7 +8,7 @@
  * `src/scheduler/schedule.ts`, `src/generate/fields.ts`, `src/generate/voice.ts`,
  * `src/dashboard/metrics.ts` and more -- so *every one of those subsystems threw
  * at module load in a browser worker*, for a filesystem read none of them wanted.
- * `notes/browser-feasibility.md` measured the template engine, the renderer and
+ * `notes/archive/browser-feasibility.md` measured the template engine, the renderer and
  * the metrics as "already browser-ready"; that sentence was false for exactly
  * this reason, and splitting the file is what makes it true.
  *

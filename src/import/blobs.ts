@@ -89,7 +89,7 @@
  *
  * As of the blob-store backing swap that store is `<database>.blobs.db`: BLOB
  * rows in a SEPARATE SQLite database, not 10,816 files in a directory.
- * `notes/browser-feasibility.md` §4 measured the identical 624.6 MiB both ways in
+ * `notes/archive/browser-feasibility.md` §4 measured the identical 624.6 MiB both ways in
  * a real browser -- 322.1 s and 10.60 ms per random read as files, 4.9 s and
  * 0.54 ms as rows -- and the phone is the target.  (Those seconds are one run on
  * one machine; re-measurements span 2.5-24.8 s for the row insert.  The ordering
@@ -873,7 +873,7 @@ function resolvePayloadStore(db: Db, options: ImportBlobsOptions): ResolvedStore
       `storeRoot opens the legacy one-file-per-payload store. The default is a ` +
         `SQLite blob database, which measured tens of times faster to write on ` +
         `OPFS (32x-65x across the runs that measured both); see ` +
-        `notes/browser-feasibility.md §4 and spike/blobstore/README.md.`,
+        `notes/archive/browser-feasibility.md §4 and spike/blobstore/README.md.`,
     );
     return {
       store: requested,

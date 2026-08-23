@@ -2,7 +2,7 @@
  * The blob store, backed by BLOB rows in a SQLite database. THE PRODUCTION
  * BACKING, in Node and in the browser, from this one file.
  *
- * WHY THIS REPLACED ONE-FILE-PER-BLOB. `notes/browser-feasibility.md` §4 stored
+ * WHY THIS REPLACED ONE-FILE-PER-BLOB. `notes/archive/browser-feasibility.md` §4 stored
  * the identical 624.6 MiB of the corpus's audio both ways, in a real browser,
  * back to back:
  *

@@ -8,7 +8,7 @@
  *
  *   1. The full corpus — 10,816 payloads, 654,917,364 bytes of real mp3 — written
  *      into a BLOB table in OPFS, with write throughput measured against
- *      notes/browser-feasibility.md §4's 4.9 s. READ THE README BEFORE QUOTING A
+ *      notes/archive/browser-feasibility.md §4's 4.9 s. READ THE README BEFORE QUOTING A
  *      TIME FROM THIS PAGE: the counts repeat exactly on every machine, the
  *      timings spread 3×–8× (insert 2.5–24.8 s, reclaim 6.6–53.9 s across three
  *      environments), and the first version of that README quoted its own fastest

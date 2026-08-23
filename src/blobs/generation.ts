@@ -8,7 +8,7 @@
  * `test/browser-portable.test.ts` recorded it as `KNOWN_NODE_BOUND`.
  *
  * THE FIX WAS NOT THE ONE ON RECORD, AND THIS IS WORTH READING BEFORE BELIEVING
- * EITHER. `notes/browser-feasibility.md` §5 called `node:crypto` ->
+ * EITHER. `notes/archive/browser-feasibility.md` §5 called `node:crypto` ->
  * `crypto.subtle` "the one genuinely invasive change", on the grounds that
  * `crypto.subtle.digest` is ASYNC and would therefore change the signature of
  * the key, the resolver, and everything above them. Two later sessions carried

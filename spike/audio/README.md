@@ -4,7 +4,7 @@
 itself. It exists to settle one question that could not be settled by reasoning:
 does a real mp3 out of Zach's corpus actually reach an `<audio>` element and
 decode, when the bytes live in a database and there is no path to give the
-element? `notes/browser-feasibility.md` §7 listed this as untested and was
+element? `notes/archive/browser-feasibility.md` §7 listed this as untested and was
 explicit that the bytes it had stored were "synthetic, not the real mp3s".
 
 The PRODUCTION half of this work is **`src/blobs/url.ts`** — object URLs and
@@ -73,8 +73,8 @@ attachment.detach()                     -> pause, clear src, load(), revoke
 | Who revokes, and when? | The scope that minted it, after the element has been cleared. Revoking before load → `MEDIA_ERR_SRC_NOT_SUPPORTED`. Revoking after `canplay` → playback continues, but the next `load()` on the still-assigned URL fails the same way. |
 | Can the worker mint the URL? | It resolves in the document (same origin, one blob URL store) — but the worker cannot know when the element is done, so `src/blobs/url.ts` lives on the DOM side. |
 | Does a review session leak? | Not with a scope per card: 40 presentations × 3 clips = 120 URLs minted and revoked, peak 67,392 live bytes. The cap (`maxLive` 32 / `maxLiveBytes` 32 MiB) is a backstop for a caller who forgets. |
-| What happens with TWO tabs open on the same origin? | **The second tab cannot open the database at all** — hit by accident here, reproducibly. `opfs-sahpool` holds an exclusive sync access handle per pool file, so the second install fails once per slot with `NoModificationAllowedError: Access Handles cannot be created if there is another open Access Handle…`, and then `removeVfs()` fails too, logging *"failed with no recovery strategy"*. `notes/browser-feasibility.md` §7 listed multi-tab as unexercised; this is the shape of it. Transcript: `build/spike/audio/multi-tab-failure.txt`, console: `build/spike/audio/multi-tab-console.log`. |
-| How fast is a payload out of an OPFS SQLite store? | 0.33 ms per payload, 18 payloads / 1,487,398 bytes in 5.9 ms — consistent with `notes/browser-feasibility.md` §4's 0.54 ms. |
+| What happens with TWO tabs open on the same origin? | **The second tab cannot open the database at all** — hit by accident here, reproducibly. `opfs-sahpool` holds an exclusive sync access handle per pool file, so the second install fails once per slot with `NoModificationAllowedError: Access Handles cannot be created if there is another open Access Handle…`, and then `removeVfs()` fails too, logging *"failed with no recovery strategy"*. `notes/archive/browser-feasibility.md` §7 listed multi-tab as unexercised; this is the shape of it. Transcript: `build/spike/audio/multi-tab-failure.txt`, console: `build/spike/audio/multi-tab-console.log`. |
+| How fast is a payload out of an OPFS SQLite store? | 0.33 ms per payload, 18 payloads / 1,487,398 bytes in 5.9 ms — consistent with `notes/archive/browser-feasibility.md` §4's 0.54 ms. |
 
 ## Caveats — read these before quoting anything above
 

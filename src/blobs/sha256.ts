@@ -6,7 +6,7 @@
  * hashes to the address it is filed under. `node:crypto` cannot be imported in
  * the browser build and `crypto.subtle.digest` returns a Promise, so on the
  * browser side the *only* way to satisfy the existing synchronous interface is a
- * synchronous digest. `notes/browser-feasibility.md` §5 called
+ * synchronous digest. `notes/archive/browser-feasibility.md` §5 called
  * `node:crypto -> crypto.subtle` "the one genuinely invasive change"; this file
  * is why it is not one.
  *
