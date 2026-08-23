@@ -468,23 +468,34 @@ function checkEviction(opened: {
  * and a fresh origin starts at zero, so the banner still has to exist.
  */
 async function checkPersistence(): Promise<void> {
-  // An eviction message already on screen is the more important one; it names a
-  // loss that has happened, not a risk.
-  if (!banner.hidden) return;
-  if (navigator.storage?.persisted === undefined) {
-    banner.textContent = "this browser cannot report storage persistence — export a backup often";
+  // An eviction message already on screen is the more important one — it names a
+  // loss that HAS happened, not a risk — so this may not overwrite it. But the
+  // REQUEST still has to run: an evicted boot is precisely when persistence is
+  // most worth asking for, and an early return here would have skipped it. (That
+  // was a live flaw in the first version of this function.)
+  const evicted = !banner.hidden;
+  const say = (text: string): void => {
+    if (evicted) return;
+    banner.textContent = text;
     banner.hidden = false;
+  };
+
+  if (navigator.storage?.persisted === undefined) {
+    say("this browser cannot report storage persistence — export a backup often");
     return;
   }
   if (await navigator.storage.persisted()) {
-    banner.hidden = true;
+    if (!evicted) banner.hidden = true;
     return;
   }
   const granted = (await navigator.storage.persist?.()) ?? false;
   if (granted) {
-    banner.hidden = true;
+    line("storage persistence granted", "good");
+    if (!evicted) banner.hidden = true;
     return;
   }
+  line("storage persistence DENIED — the browser may evict this database", "bad");
+  if (evicted) return;
   banner.replaceChildren(
     document.createTextNode(
       "storage is NOT persistent — the browser may evict your reviews. Export a backup: ",
