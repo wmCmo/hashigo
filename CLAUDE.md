@@ -220,6 +220,14 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
 > people who needed it. So if it is settled in conversation and it is not here, it
 > is not settled. Write the line here first, then the reasoning anywhere else.
 >
+> **DO NOT RUN A MARKDOWN FORMATTER OVER THIS FILE OR `DECISIONS.md`.** It renumbers
+> the list. On 2026-08-23 an Alt+Shift+F turned `20.` `21.` `22.` `23.` into `1.` `2.`
+> `3.` `4.` and every entry after that into `1.`, because an ordered list interrupted by
+> prose is several lists to a formatter. **It passed test, typecheck AND build** — it was
+> caught by reading `git diff`, which is luck, not a control. There are now two defences:
+> `.prettierignore`, and `test/docs-integrity.test.ts`, which fails on exactly that damage
+> (proven: 2 tests red). Editing these by hand is fine; reflowing them mechanically is not.
+>
 > **Read [DECISIONS.md](DECISIONS.md) before proposing anything that touches one.**
 > It carries the full derivation, the measurements, and the tensions that were
 > accepted rather than overlooked. This is the WHAT; that is the WHY. Numbering is
