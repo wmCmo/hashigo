@@ -604,14 +604,21 @@ measured to fail.
 >
 > **A. THE HARD RULE IS NOW CONDITIONAL — decision 29, settled 2026-08-23.** Audio
 > autoplays on entry for the **3,177** `Reading`-not-true cards and stays reveal-gated for
-> the **692** `Reading = true` ones, and `型` follows the same switch (gated in mode 1,
-> visible on entry in mode 2, because that is how he discovers an accent he had wrong).
-> **A2 DRAWS ONLY MODE 1, and all four of its cards are mode 2** — `裸足`, `捜査` and
-> `取り戻す` have `Reading` absent, `係数` is explicitly false. Its `.head` shows the word
-> large and always-visible, which is precisely backwards for those cards: in mode 2 the
-> word is MASKED and the audio is the prompt. So the review screen needs a SECOND card
-> layout, not just a second audio rule, and decision 23 does not cover it. Building
-> stage 7 from A2 alone ships the wrong exercise on 41% of the corpus.
+> the **692** `Reading = true` ones, and `型` follows the same switch — visible on entry
+> where the audio plays, gated where he is recalling it, because that is how he spots an
+> accent he had wrong.
+>
+> **CORRECTION, 2026-08-23 — I FIRST WROTE THAT THIS NEEDED A SECOND SCREEN DESIGN FROM
+> ZACH. IT DOES NOT, AND HE CORRECTED IT.** *"i don't need to see screens with auto play
+> audio, it should be the same, and it should render conditionally from my template."* The
+> template already encodes the whole difference: side 1 is EMPTY when `Reading` is false
+> (its body is inside `<<#Reading>>`, so the screen starts at side 2) and side 2 carries
+> **two** clozes instead of one. **One screen, rendered from the template.** See the
+> READ THE TEMPLATE section of `CLAUDE.md` for the rendered proof of both states.
+> The mockup's always-visible `.head` is a hand-authored artifact of
+> `scripts/mockup-html.ts`, not something the real render produces — the mockup is a spec
+> for the LOOK, never for the structure. What IS still real work: the audio and `型`
+> conditional (below), and the fact that no test yet covers the `Reading = false` arm.
 >
 > **B. THE REVIEW SCREEN MUST FLIP `Reading` ON THE CURRENT CARD.** New requirement out of
 > decision 29 and not covered anywhere in stages 7-10. His loop is: hear the audio, see

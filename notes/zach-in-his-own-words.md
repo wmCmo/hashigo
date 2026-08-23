@@ -191,4 +191,27 @@ His own words explaining WHY are not derivable from the code or from git.
   example-sentence leg is stronger than he claimed (97.6% coverage, and the sentence is
   the only AUDIBLE carrier of 平板-vs-尾高 because it has a particle).
 
+- **THREE THINGS HE HAS HAD TO REPEAT, with his own counts.** 2026-08-23, after a session
+  asked him to make design decisions the template already answers. Recording the counts
+  because the repetition is the signal — each one is an agent failing to read what exists:
+
+  > and it should render conditionally from my template, please tell me you have read my
+  > template and how it would render conditionally from a boolean? the template that i can
+  > edit whenever i want... this is me telling agents in this repo for the 4th time to look
+  > at my template
+
+  > i will regenerate my audio after we finished the app, because i have to re import
+  > anyway because everyday when i make this app i still review mochi, and if we use the
+  > cards right now the review history would be outdated, frozen 6 days ago, and this is
+  > my 5th time telling an agent about this
+
+  > we can discuss about whether to open source it once we finish dev, this is my 3rd time
+  > telling an agent about this
+
+  **Also: he does not want jargon.** Same message: *"can you stop using words i don't
+  understand? like decision 23's three referals, d2 d4 d5, b2, b3, b4 ... bro i know you
+  are fluent in code language but don't use code language to me."* The `D2`/`B4`/decision-
+  number scheme is an agent filing system. When talking TO him, name the thing — "the
+  editor", "the cards where the audio plays" — and keep the numbers in the repo.
+
 ---

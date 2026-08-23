@@ -356,6 +356,58 @@ zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19
 real tags. All five as recommended; the reasoning is in
 [DECISIONS.md](DECISIONS.md).
 
+## READ THE TEMPLATE. It answers most questions about the screen.
+
+> [!warning] **Zach has told agents to read his template FOUR times.** Stop asking him
+> what the review screen shows in which case. `templates.content` is a column in this
+> database, he edits it whenever he wants, and it already encodes the conditional. Run
+> `SELECT content FROM templates WHERE name = '単語'` before asking anything about layout.
+
+`<<#Reading>>` renders a block when the boolean is TRUE, `<<^Reading>>` when it is FALSE.
+That is the whole mechanism. Rendered from the real corpus, both states of 単語:
+
+```plaintext
+Reading = TRUE (慈善)                     Reading = FALSE/absent (係数)
+  side 1  "慈善"           0 clozes 0 audio   side 1  ""              0 clozes 0 audio
+  side 2  "[…]慈善 平板"    1 cloze  1 audio   side 2  "[…]係数[…]係数 中高(3)"  2 clozes 1 audio
+  side 3  example sentence  0 clozes 1 audio   side 3  example sentence 0 clozes 1 audio
+  side 4  meaning + links   1 cloze  0 audio   side 4  meaning + links  1 cloze  0 audio
+```
+
+**IT IS ONE SCREEN, NOT TWO.** The only structural differences are that side 1 is EMPTY
+when `Reading` is false (its whole body sits inside `<<#Reading>>`, so the screen starts
+at side 2), and side 2 carries **two** clozes instead of one — `Reference` is masked as
+well, because it was never shown. A session-7 agent invented "a second card layout Zach
+must design"; that was wrong, and he corrected it. **There is no second design. Render
+the template.**
+
+**And this answers "does he get the meaning as a hint on a hidden-word card?" — NO.** On
+side 2 of a `Reading = false` card the only things visible are the **accent label and the
+audio**; the word and its reading are both behind clozes and `意味` is on side 4. Sound
+plus `型`, nothing else. Do not ask him this; the template says it.
+
+**The mockup's `.head` div is a HAND-AUTHORED ARTIFACT.** `build/mock/out/*.html` was
+built by `scripts/mockup-html.ts`, not by the template engine, so its always-visible large
+word does not exist in the real render. Do not treat the mockup as a spec for structure —
+it is a spec for the LOOK (decision 23).
+
+## Three things he has already answered — DO NOT ASK AGAIN
+
+He has repeated each of these to a different agent, and the count is his:
+
+1. **READ THE TEMPLATE** (above) — asked four times.
+2. **Audio regeneration happens AFTER the app is finished** — told to five agents.
+   *"i will regenerate my audio after we finished the app, because i have to re import
+   anyway because everyday when i make this app i still review mochi."* So do not propose
+   regenerating clips, do not price it, do not treat `other-voice` clips or the missing
+   ones as a task. **AND THE CONSEQUENCE AGENTS KEEP MISSING:** he is still reviewing in
+   Mochi daily, so the review history in `build/hashigo.db` is FROZEN — the newest review
+   is **2026-08-18**. Every due-queue figure in this repo (443 due, the 10 new, the
+   forecast) is a snapshot of a stale history and **will change at the final import**
+   (decision 16). Quote those numbers as "as of the 2026-08-18 export", never as current.
+3. **Open-sourcing gets discussed AFTER development** — told to three agents. Not now.
+   `notes/open-sourcing.md` holds what was already checked; leave it there.
+
 ## The hard rule: audio must never autoplay ON A `Reading = true` CARD
 
 > [!warning] **AMENDED 2026-08-23 — decision 29. This rule used to be absolute and it
