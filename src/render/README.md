@@ -30,8 +30,11 @@ tree back with `serialise(result.root)`.
    `audio.ts:399` is `result = element.play()`. The rule is not that the call does
    not exist — it has to exist somewhere — it is **where the call is reachable
    from**. `index.ts:19` states it correctly, and that is the wording to trust:
-   playback is reachable from exactly two entry points, `reveal()` and `play()`,
-   and `reveal.ts`'s `enter()` does nothing but record that a side is on screen.
+   playback is reachable from exactly three named entry points — `reveal()`,
+   `play()` and (since decision 29) `prompt()`, the mode-2 question that unmasks
+   nothing — and `reveal.ts`'s `enter()` does nothing but record that a side is on
+   screen. Which of the three a card gets is decided in `src/review/mode.ts`, never
+   here.
    Read as written, the old sentence invites a future reader to "fix" `audio.ts`
    by adding the call they were told was missing, or to conclude the invariant
    lives somewhere it does not.

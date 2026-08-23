@@ -158,8 +158,20 @@ export type AudioState =
 
 // ─── outcomes ────────────────────────────────────────────────────────────────
 
-/** Why a clip was asked for. There is no fourth reason, and none of them is "a side appeared". */
-export type PlayReason = "reveal" | "replay" | "gesture";
+/**
+ * Why a clip was asked for. There is no fifth reason.
+ *
+ * Three of the four mean "he has already produced an answer". `"prompt"` is the
+ * one that does not, and it exists because **decision 29 made the hard rule
+ * conditional**: on the 3,177 cards where `Reading` is not true the audio IS the
+ * question — he hears the word and names the kanji — so the clip fires when the
+ * side appears. That is a different exercise, not a laxer one.
+ *
+ * It is still not "a side appeared". `enter()` cannot reach this: a caller that
+ * knows the card's mode has to ask for it by name, and `src/review` is the only
+ * thing in the repo that does. See `reviewModeFor` there.
+ */
+export type PlayReason = "reveal" | "replay" | "gesture" | "prompt";
 
 export type AudioOutcomeKind =
   /** Attached and playing. */

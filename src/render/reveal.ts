@@ -20,14 +20,37 @@
  * looks at the kanji, recalls whether each mora is high or low, SAYS IT ALOUD,
  * and only then reveals the reading and hears the clip to compare.
  *
- *   ** AUDIO MUST NEVER FIRE WHEN A SIDE APPEARS. **
+ *   ** AUDIO MUST NEVER FIRE BECAUSE A SIDE APPEARED. **
  *
  * `enter()` below is therefore the most important method in this file and it does
  * nothing: it records that a side is on screen and returns. Every other flashcard
  * renderer autoplays here, and autoplay gives away the contour before he has
- * produced it, which does not make the exercise worse — it deletes it. Playback
- * is reachable from exactly two calls, `reveal()` and `play()`, and both mean
- * "he has already produced an answer".
+ * produced it, which does not make the exercise worse — it deletes it.
+ *
+ * ── DECISION 29 AMENDED THE RULE. READ THIS BEFORE "FIXING" ANYTHING HERE ────
+ *
+ * The rule used to be stated absolutely, over all 7,716 cards. It is right for
+ * the **692** cards where `Reading` is true and wrong for the **3,177** where it
+ * is not, because those run the OPPOSITE exercise: the clip is the question and
+ * the kanji is the answer, hidden behind a cloze. *"if you hide it behind the
+ * cloze, and play しょうきゃく, i would be like... what しょう... and it would force
+ * me to remember."*
+ *
+ * **That did not soften anything in this file.** `enter()` still does nothing and
+ * still cannot reach the port — the amendment is entirely about WHO asks. There
+ * are three ways to ask, none of them automatic, and each names why:
+ *
+ *   `reveal()`  he produced the answer and wants to compare      → mode 1
+ *   `play()`    he deliberately tapped a clip                    → either
+ *   `prompt()`  the clip IS the question, and nothing unmasks    → mode 2
+ *
+ * `prompt()` is the new one and it is the dangerous one, so it is deliberately
+ * NOT reachable from `enter()`, does NOT unmask, and does not know what
+ * `Reading` is. The caller that knows the card's mode calls it — `src/review`'s
+ * `reviewModeFor`, which is the only thing in the repo that does. Point a
+ * `prompt()` at a mode-1 card and you have re-created the autoplay defect by
+ * hand; `test/review.test.ts` asserts mode 1 at exactly 0 play calls so that
+ * shows up as a red test rather than as a quiet loss of the exercise.
  *
  * ── DO CLOZES ON A SIDE REVEAL INDIVIDUALLY OR TOGETHER? TOGETHER, PER SIDE ──
  *
@@ -97,17 +120,26 @@
  *
  * Nothing about blobs, object URLs or media elements: `audio` is an injected port
  * (`RevealAudio`) and `./audio.ts` implements it. Grep this file for `.play(` —
- * two call sites, one in `reveal()`, one in `play()`, and `test/reveal.test.ts`
- * counts them. Nothing about grading, queues or which card comes next either;
- * that is stage 7.
+ * THREE call sites, one each in `reveal()`, `play()` and `prompt()`, and
+ * `test/reveal.test.ts` counts them AND names the reason each one passes, so a
+ * fourth route cannot arrive unnamed.
+ *
+ * **And it does not know which mode a card is in.** `Reading` is not mentioned
+ * anywhere below and must not be: the moment this file decides when to autoplay,
+ * the invariant stops being checkable by reading one method. Nothing about
+ * grading, queues or which card comes next either; that is stage 7.
  */
 
 import type { ClozeMount, MediaMount, RenderElement, RenderResult } from "./index.js";
 
 // ─── the audio port ──────────────────────────────────────────────────────────
 
-/** Why the loop asked for sound. There is no reason called "a side appeared". */
-export type RevealAudioReason = "reveal" | "replay" | "gesture";
+/**
+ * Why the loop asked for sound. There is no reason called "a side appeared" —
+ * `"prompt"` is decision 29's mode-2 question, asked by a caller that knows the
+ * card's mode, and it leaves every cloze masked.
+ */
+export type RevealAudioReason = "reveal" | "replay" | "gesture" | "prompt";
 
 /**
  * The slice of `./audio.ts`'s controller this file uses.
@@ -203,6 +235,23 @@ export interface ShadowingSide<E extends RenderElement = RenderElement> {
    * armed and reach the port through here.
    */
   play(mount: MediaMount<E>): boolean;
+  /**
+   * Play this side's clips as the QUESTION, leaving every cloze masked.
+   *
+   * Decision 29's mode 2, and the one method here that plays without the human
+   * having produced anything. It is safe only because of what it does NOT do:
+   *
+   *   * it does not unmask, so the kanji stays hidden and the clip stays the
+   *     prompt. That is the whole difference from `play()`, which unmasks on
+   *     purpose because a deliberate tap means "show me";
+   *   * it is not called by `enter()`, and nothing here decides to call it. The
+   *     caller has to know the card's mode and ask.
+   *
+   * Returns false when the side has no audio or the port is absent. Not
+   * idempotent — one call, one question. `src/review`'s `enter()` calls it at
+   * most once per entry; a screen that calls it twice asks twice.
+   */
+  prompt(): boolean;
   /** Re-mask the clozes and pause the audio. Does not revoke; a re-reveal replays. */
   conceal(): void;
   /** Deliberate re-listen of the side's first clip. Reuses the live lease. */
@@ -210,7 +259,7 @@ export interface ShadowingSide<E extends RenderElement = RenderElement> {
 }
 
 export interface RevealEvent<E extends RenderElement = RenderElement> {
-  readonly kind: "enter" | "reveal" | "conceal" | "replay";
+  readonly kind: "enter" | "reveal" | "conceal" | "replay" | "prompt";
   readonly side: ShadowingSide<E>;
   readonly cause: RevealCause | null;
   /** Clozes this event changed. */
@@ -336,6 +385,15 @@ export function shadowingLoop<E extends RenderElement>(
           audio: 1,
         });
         if (first) announce();
+        return true;
+      },
+      prompt(): boolean {
+        // No unmask() call, and that omission is the method. Mode 2 hides the
+        // kanji and asks with the clip; unmasking here would print the answer
+        // beside the question.
+        if (media.length === 0 || audio === null) return false;
+        audio.play(media, "prompt");
+        emit({ kind: "prompt", side, cause: null, clozes: 0, audio: media.length });
         return true;
       },
       conceal(): void {

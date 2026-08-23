@@ -13,10 +13,96 @@ const item = session.current()!;
 
 const mounted = mountTrack({ db, track: item, document: browserDocument(document), store });
 container.appendChild(mounted.result.root);
-mounted.loop.enter(0);                  // on screen. PLAYS NOTHING, by design.
-// ... he looks at the kanji, recalls the contour, says it aloud ...
-mounted.loop.side(0)?.reveal();         // THIS is what plays
+mounted.enter(0);                       // on screen — and see the two modes below
+// ... he produces the contour, or names the word he just heard ...
+mounted.loop.side(0)?.reveal();         // THIS is what compares
 session.answer(remembered);
+```
+
+## Two modes, and `mounted.enter()` is the only thing that knows
+
+**Decision 29, 2026-08-23 — this amends the invariant this module was built
+around, so read it before changing anything here.** The hard rule used to be
+stated over all 7,716 cards: audio fires on the cloze reveal, never on side
+entry. That is exactly right for 692 of them and wrong for 3,177.
+
+| | cards | the exercise | audio | `型` |
+|---|---|---|---|---|
+| `produce` | 692 単語 (`Reading` true) | see the kanji, recall the reading and the accent, say it, then reveal and hear it | on REVEAL | behind a cloze |
+| `identify` | 3,177 (2,785 単語 + 392 言葉) | hear the clip, name the kanji | on ENTRY | plain |
+
+*"my listening skill is far worse than my reading skill … that's why most of the
+cards are like that."* `boolean-default` is `false`, so 1,882 単語 cards carry no
+`Reading` row at all and land in `identify`.
+
+**`identify` is not a laxer `produce`, it is the drill inverted** — the clip is
+the question and the kanji is the answer. So the two calls are different methods
+and are tested apart:
+
+    loop.enter(pos)      plays NOTHING, on any card, ever. Unchanged by decision 29.
+    mounted.enter(pos)   plays the question when the card is `identify` AND the side
+                         masks something. Uses `side.prompt()`, which unmasks nothing.
+
+**Use `mounted.enter()`.** `loop.enter()` on an identify card is silent, which
+looks fine and deletes the exercise — the same shape of failure autoplay was, in
+the other direction.
+
+### `./mode.ts` — three things that keep it from being one `if`
+
+1. **`漢字` declares a field called `Reading` and it is `plain`, not boolean** —
+   it holds the actual reading (コウ on 36 cards, ショウ on 33) across 1,662 cards.
+   The type check is load-bearing; without it every one of them is misclassified
+   on a name collision.
+2. **`identify` is not "everything that is not `produce`".** It is scoped to the
+   templates that declare an `accent`-typed field — 単語 and 言葉. 敬語 (21 cards)
+   and New Vocab (1,203) show the head word UNMASKED beside its clip: read it
+   aloud, then hear it. Autoplay there hands him the pronunciation, which is the
+   original defect wearing a new hat. The default is `produce`, the silent one, so
+   a template added tomorrow cannot start autoplaying by omission.
+3. **The prompt is per SIDE, not per card.** An identify card has a sentence side
+   too (`例文` + `Audio`) and nothing on it is masked, so `promptsOnEntry` requires
+   a cloze on the side. Measured over the real templates:
+
+       単語 identify, side 2   2 clozes, 1 clip   the word is hidden → PROMPT
+       単語 identify, side 3   0 clozes, 1 clip   例文 is visible    → no prompt
+       言葉 identify, side 1   1 cloze,  1 clip   the word is hidden → PROMPT
+
+### `型` is gated by the TEMPLATE, not by this module
+
+The other half of decision 29 is data. `scripts/accent-field-apply.ts` writes
+単語's side 2 as:
+
+```plaintext
+{{<furigana><< 単語 >></furigana>}}
+<< #型 >>
+<< #Reading >>
+{{<< 型 >>}}          <- mode 1: the accent is the ANSWER, so it is masked
+<< /Reading >>
+<< ^Reading >>
+<< 型 >>              <- mode 2: the accent is part of the QUESTION
+<< /Reading >>
+<< /型 >>
+<< Speech >>
+```
+
+**Why the template and not the screen:** a resolved plain field is substituted to
+TEXT before the render, so nothing downstream knows the characters `平板` came from
+`型`. Gating it in code would mean adding field provenance to the resolver — the
+most heavily tested module here — to express something the template already says.
+Zach asked for it this way in his own words: *"it should render conditionally from
+my template."*
+
+**The outer `<<#型>>` is not decoration.** An empty cloze does not vanish: `{{}}`
+reaches the page as the literal text `{{}}`. 689 of the 692 mode-1 cards have a
+derived accent, so without the guard three cards show braces.
+
+Measured over the real corpus after the edit, all four cases:
+
+```plaintext
+単語 mode 1 (慈善-like)     side 1  "あらかた" visible   side 2  2 clozes ([…]粗方 · […]平板)
+単語 mode 2                 side 1  EMPTY              side 2  2 clozes, 平板 PLAIN
+単語 mode 1, no 型 value     side 1  visible            side 2  1 cloze, no braces
+言葉 (always mode 2)        side 1  1 cloze, 型 plain, clip present
 ```
 
 ## What is new here, and it is not the convenience
@@ -35,9 +121,19 @@ audioController → shadowingLoop` over real cards and then asked *did anything
 play?* Now `test/review.test.ts` does, and the answer is measured:
 
 ```plaintext
-mount + enter, 120 単語 cards    238 clip mounts · 0 resolve calls · 0 play() calls
-reveal, 40 単語 cards             40 cards played · 79 play() calls
+loop.enter, 120 単語 cards        238 clip mounts · 0 resolve calls · 0 play() calls
+reveal, 40 単語 cards              40 cards played · 79 play() calls
+
+mounted.enter, 60 produce cards     0 resolve calls · 0 play() calls
+mounted.enter, 60 identify cards    60 asked · 60 play() calls · 120 clozes STILL MASKED
+言葉, all 392                      391 asked · 377 played · 391 clozes still masked
 ```
+
+The identify rows are the ones added by decision 29, and the number that carries
+the exercise is **120 clozes still masked** — playing on entry is easy to do the
+wrong way, because `side.play()` also plays and it unmasks. The 391/377 gap is 14
+cards whose clip the store cannot produce; on an identify card that is not a
+missing extra, it is the QUESTION going missing, and the shell needs a fallback.
 
 **Those first figures read 120 and 39/39 until 2026-08-23**, and the difference was a
 defect in this module found by a peer review, not by me: `mountCard` omitted

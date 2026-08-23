@@ -449,10 +449,13 @@ sound is the test — *"if you show me 償却 i can read that word like instantl
 hide it behind the cloze, and play しょうきゃく … it would force me to remember."* `型` is
 visible on entry there too, because it is how he discovers an accent he had wrong and then
 promotes the card to `Reading = true`. Decision 29 carries the full split, the measured
-trade-off, and the reason the tests must get STRICTER rather than looser. `src/render/reveal.ts`'s `enter()` therefore does nothing
-but record that a side is on screen, playback is reachable from exactly two calls
-(`reveal()` and `play()`), and media elements are created with no `src`, no
-`autoplay`, no `loop` and `preload="none"`.
+trade-off, and the reason the tests must get STRICTER rather than looser.
+
+`src/render/reveal.ts`'s `enter()` therefore does nothing but record that a side is on
+screen — **that did not change, on any card** — and media elements are created with no
+`src`, no `autoplay`, no `loop` and `preload="none"`. Playback is reachable from exactly
+**three** named calls: `reveal()`, `play()`, and (since decision 29) `prompt()`, which
+plays the mode-2 question and **unmasks nothing**.
 
 It is pinned by tests with demonstrated teeth, re-measured by a peer review 2026-08-23:
 putting `audio.play(media, "reveal")` inside `enter()` turns **10** tests red — 8 in
@@ -460,12 +463,51 @@ putting `audio.play(media, "reveal")` inside `enter()` turns **10** tests red �
 Adding an `autoplay` attribute in `src/render/nodes.ts` turns 8 red across three files.
 If you change either file, re-run that experiment rather than trusting a green suite.
 
-**AND THIS IS THE TRAP DECISION 29 CREATES.** Implementing mode 2 means making `enter()`
-play on some cards, which turns those tests red *for the right reason*. The wrong fix is
-to relax them to "audio may play on entry"; the right one is to make each assertion name
-its mode, so mode 1 stays as hard as it is today. `src/render/reveal.ts` has no knowledge
-of `Reading` — the condition belongs above it, in the mount or the screen, so that
-`enter()` can keep doing nothing and the caller decides whether to play.
+### DECISION 29 IS BUILT as of 2026-08-23 — and `enter()` never had to change
+
+The trap this section warned about was that implementing mode 2 means making `enter()`
+play, turning the mode-1 tests red *for the right reason*, with the wrong repair being to
+relax them. **Neither happened.** `enter()` still does nothing; mode 2 got its own verb.
+
+```plaintext
+loop.enter(pos)      plays NOTHING, on any card, ever. Byte-for-byte unchanged.
+mounted.enter(pos)   plays the question when the card is `identify` AND the side
+                     masks something. Calls side.prompt(), which does NOT unmask.
+```
+
+**`src/review/mode.ts` is where a card's mode is decided, and `src/render/reveal.ts`
+still contains no reference to `Reading`** — a test asserts that literally. Three things
+in that file stop it being one `if`, all measured:
+
+* **`漢字` declares a field named `Reading` and it is `plain`, not boolean** — it holds
+  the actual reading (コウ ×36, ショウ ×33) on 1,662 cards. Without the type check every
+  one of them is misclassified on a name collision.
+* **`identify` is NOT "everything that is not `produce`".** It is scoped to templates
+  declaring an `accent` field — 単語 and 言葉. **敬語 (21) and New Vocab (1,203) show the
+  head word UNMASKED beside its clip**; autoplay there is the original defect again. The
+  default is `produce`, the silent one.
+* **The prompt is per SIDE.** An identify card's sentence side (`例文` + `Audio`) masks
+  nothing, so `promptsOnEntry` requires a cloze on the side.
+
+Measured through the shipping loop over the real corpus:
+
+```plaintext
+mounted.enter, 60 produce cards      0 resolve calls · 0 play() calls
+mounted.enter, 60 identify cards     60 asked · 60 play() calls · 120 clozes STILL MASKED
+言葉, all 392                       391 asked · 377 played · 391 clozes still masked
+corpus modes                        692 produce (drill) · 3,177 identify · 3,869 in the drill
+```
+
+**`型`'s gating is in the TEMPLATE, not in code** (`scripts/accent-field-apply.ts`), because
+a resolved plain field is substituted to TEXT before the render — nothing downstream knows
+`平板` came from `型`. Zach asked for exactly this: *"it should render conditionally from my
+template."* The outer `<<#型>>` guard is load-bearing: an empty cloze reaches the page as
+the LITERAL `{{}}`, and 3 of the 692 mode-1 cards have no derived accent.
+
+**Six injections, all with teeth** (2026-08-23). `enter()` plays → **15** red across two
+files. The mount prompts regardless of mode → **5**. `prompt()` unmasks → **2**. The
+`Reading` lookup ignores the field type → **2**. `identify` unscoped → **3**.
+`promptsOnEntry` drops the "something is masked" condition → **3**.
 
 ## Zach's own words are in the repo now, not only in Obsidian
 

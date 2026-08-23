@@ -4,9 +4,11 @@
  *
  *     const mounted = mountCard({ db, cardId, direction, document, store });
  *     container.appendChild(mounted.result.root);
- *     mounted.loop.enter(0);            // side on screen. PLAYS NOTHING.
- *     // ... the human says the contour aloud, then taps ...
- *     mounted.loop.side(0)?.reveal();   // unmasks, and THIS is what plays
+ *     mounted.enter(0);                 // on screen. Silent in `produce` mode;
+ *                                       // in `identify` mode the clip IS the
+ *                                       // question, and nothing unmasks.
+ *     // ... he says the contour aloud, or names the word he just heard ...
+ *     mounted.loop.side(0)?.reveal();   // unmasks, and THIS is what compares
  *
  * WHY THIS EXISTS RATHER THAN A CALLER DOING IT. The path is six calls in a
  * specific order, two of which are silently lossy if skipped, and it had never
@@ -51,15 +53,22 @@
  *
  * ─── THE HARD RULE, AND WHERE IT LIVES ───────────────────────────────────────
  *
- * Audio fires on the cloze REVEAL, never when a side appears. This module does
- * not implement that — `shadowingLoop` in `src/render/reveal.ts` does, and this
- * is the first thing in `src/` to use it. `spike/viewer/` proved Chromium does
- * not autoplay, but it hand-rolled `revealSide()`/`armSide()` instead of the
- * shipping loop, so its green panel was evidence about the browser rather than
- * about this code. Wiring the real loop once, here, is what its README asked for.
+ * `shadowingLoop` in `src/render/reveal.ts` owns the mechanism; this module owns
+ * the POLICY, and after decision 29 that split is the whole design. The loop's
+ * `enter()` does nothing and knows nothing about `Reading`. This file is where a
+ * card's mode is decided and where the mode-2 question is asked.
  *
- * `enter()` records that a side is on screen and does nothing else. The only two
- * paths to sound are `reveal()` and a deliberate `play()`/`replay()`.
+ *   mode 1   `Reading` true, 692 cards    audio on REVEAL   `型` behind a cloze
+ *   mode 2   otherwise,    3,177 cards    audio on ENTRY    `型` plain
+ *
+ * So `MountedCard.enter()` is the method to use, not `loop.enter()`. They differ
+ * on exactly one thing: `enter()` asks the mode-2 question, and does it through
+ * `side.prompt()`, which plays without unmasking anything.
+ *
+ * `spike/viewer/` proved Chromium does not autoplay, but it hand-rolled
+ * `revealSide()`/`armSide()` instead of the shipping loop, so its green panel was
+ * evidence about the browser rather than about this code. Wiring the real loop
+ * once, here, is what its README asked for.
  *
  * BROWSER-PORTABLE: typed against `RenderDocument`, so `browserDocument(document)`
  * drives a real screen and `memoryDocument()` drives a test. Nothing here reaches
@@ -81,7 +90,8 @@ import {
 } from "../render/audio.js";
 import { renderSides, type RenderResult } from "../render/index.js";
 import type { RenderDocument, RenderElement } from "../render/dom.js";
-import { shadowingLoop, type ShadowingLoop } from "../render/reveal.js";
+import { shadowingLoop, type ShadowingLoop, type ShadowingSide } from "../render/reveal.js";
+import { cardMode, promptsOnEntry, type CardMode } from "./mode.js";
 import type { BlobStore } from "../blobs/store.js";
 import type { FieldGenerationRequest } from "../generate/index.js";
 import type { Direction } from "../template/index.js";
@@ -119,6 +129,23 @@ export interface MountedCard<E extends RenderElement> {
   readonly result: RenderResult<E>;
   readonly loop: ShadowingLoop<E>;
   readonly audio: AudioController<E>;
+  /**
+   * Which exercise this card runs, and what a `Reading` toggle would write.
+   * Decision 29 — see `./mode.ts`.
+   */
+  readonly mode: CardMode;
+  /**
+   * Put a side on screen, and in `identify` mode ask its question.
+   *
+   * **Use this rather than `loop.enter(position)`.** The loop's own `enter` is
+   * mode-blind by design and plays nothing ever, which is correct for the 692
+   * `produce` cards and silently wrong for the other 3,177: on those the clip IS
+   * the prompt. This is the one place in the repo that knows the difference.
+   *
+   * At most one question per entry, so a screen that re-renders does not ask
+   * twice. `loop.enter` remains available and remains silent.
+   */
+  enter(position: number): ShadowingSide<E> | null;
   /** Speech/audio mounts the render produced, before any resolution is tried. */
   readonly clipCount: number;
   /** Generator fields expanded. Zero on a card with no generators. */
@@ -177,6 +204,10 @@ export function mountCard<E extends RenderElement>(
   });
 
   const loop = shadowingLoop<E>(result, { audio });
+  const mode = cardMode(loaded);
+  // One question per entry. The policy lives here rather than in `prompt()` so
+  // that `src/render/reveal.ts` stays a mechanism with no memory of modes.
+  const asked = new Set<number>();
 
   let disposed = false;
   return {
@@ -185,6 +216,16 @@ export function mountCard<E extends RenderElement>(
     result,
     loop,
     audio,
+    mode,
+    enter(position: number): ShadowingSide<E> | null {
+      const side = loop.enter(position);
+      if (side === null) return null;
+      if (promptsOnEntry(mode.mode, side) && !asked.has(position)) {
+        asked.add(position);
+        side.prompt();
+      }
+      return side;
+    },
     clipCount: result.media.filter((m) => m.kind === "audio" || m.kind === "video").length,
     expanded: bound.expanded.length,
     divergent: bound.divergent,

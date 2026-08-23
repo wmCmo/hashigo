@@ -8,7 +8,7 @@
  * is high or low, says it aloud, and ONLY THEN reveals the reading and hears the
  * clip. So:
  *
- *   ** AUDIO MUST NEVER FIRE WHEN A SIDE APPEARS. **
+ *   ** AUDIO MUST NEVER FIRE BECAUSE A SIDE APPEARED. **
  *
  * That is pinned five ways here, because it is a correctness requirement and a
  * test that does not pin it is inadequate:
@@ -21,8 +21,22 @@
  *   4. The armed media element's own play affordance reveals; nothing else does,
  *      and it fires once (§5).
  *   5. Neither module can express autoplay: source checks for the attribute, for
- *      a direct `src` assignment, and for a `play()` outside the two call sites
- *      that mean "he has produced an answer" (§9).
+ *      a direct `src` assignment, and for a `play()` whose reason is not one of
+ *      the three this file names (§9).
+ *
+ * ── DECISION 29 (2026-08-23): THE RULE IS ABOUT `enter()`, NOT ABOUT SILENCE ──
+ *
+ * On the 3,177 cards where `Reading` is not true the clip is the QUESTION and the
+ * kanji is the answer, so it fires when the side appears. **None of the five
+ * above was relaxed by one card**, because none of them was ever about silence —
+ * they are about `enter()` and about the port being unreachable except through a
+ * named reason. §3b tests the new reason, `prompt()`, and the assertion that
+ * matters there is that it unmasks NOTHING: it plays the question and leaves the
+ * answer hidden, which is the entire difference from `play()`.
+ *
+ * WHICH MODE A CARD IS IN IS NOT DECIDED HERE, and §9 asserts this file never
+ * mentions `Reading`. `src/review/mode.ts` owns that, and `test/review.test.ts`
+ * measures both modes over the real corpus.
  *
  * And the leak the third required test is about: a review session mints one
  * object URL per clip and MUST revoke every one of them. 40 cards, 40 claims,
@@ -406,6 +420,72 @@ describe("the hard rule: audio fires on reveal, never on side entry", () => {
     expect(new Set(urls.revoked)).toEqual(new Set(urls.minted));
     expect(peak).toBe(1);
     expect(live).toBe(0);
+  });
+});
+
+// ─── 3b. decision 29: prompt() plays the QUESTION, and unmasks nothing ───────
+
+describe("prompt(): the mode-2 question", () => {
+  it("plays without unmasking, which is the whole difference from play()", async () => {
+    const h = harness(SHADOWING_SIDE, { store: STORE });
+    const side = h.loop.enter(0)!;
+    // Entering is still silent. `prompt()` is a separate, deliberate call.
+    expect(h.requests).toEqual([]);
+    expect(side.revealed).toBe(false);
+
+    expect(side.prompt()).toBe(true);
+    await h.audio.idle();
+
+    // It played…
+    expect(h.media().plays).toBe(1);
+    expect(h.requests).toHaveLength(1);
+    expect(h.outcomes.map((o) => o.reason)).toEqual(["prompt"]);
+    // …and the answer is STILL HIDDEN. On an identify card the cloze holds the
+    // kanji he is meant to name, so unmasking here would print the answer beside
+    // the question. `play()` does unmask, deliberately; this must not.
+    expect(side.revealed).toBe(false);
+    expect(h.result.clozes.every((cloze) => !cloze.revealed)).toBe(true);
+    expect(h.events.map((e) => e.kind)).toEqual(["enter", "prompt"]);
+    expect(h.events.at(-1)?.clozes).toBe(0);
+    h.loop.dispose();
+  });
+
+  it("and play() on the same side DOES unmask — the contrast, asserted", async () => {
+    const h = harness(SHADOWING_SIDE, { store: STORE });
+    const side = h.loop.enter(0)!;
+    const mount = h.result.media.find((m) => m.kind === "audio")!;
+    expect(side.play(mount)).toBe(true);
+    await h.audio.idle();
+    expect(side.revealed).toBe(true);
+    h.loop.dispose();
+  });
+
+  it("returns false where there is no question to ask", () => {
+    // A side with no clip. `prompt()` reporting false is what lets a screen tell
+    // "asked" from "nothing to ask" — 1 of the 392 言葉 cards has an empty head
+    // word and reaches exactly this.
+    const h = harness("{{あらかた}}");
+    const side = h.loop.enter(0)!;
+    expect(side.prompt()).toBe(false);
+    expect(h.events.map((e) => e.kind)).toEqual(["enter"]);
+    expect(side.revealed).toBe(false);
+    h.loop.dispose();
+  });
+
+  it("a reveal AFTER a prompt still works, and is what compares", async () => {
+    // The mode-2 loop end to end: hear it, name it, then reveal to check.
+    const h = harness(SHADOWING_SIDE, { store: STORE });
+    const side = h.loop.enter(0)!;
+    side.prompt();
+    await h.audio.idle();
+    expect(side.reveal("caller")).toBe(true);
+    await h.audio.idle();
+    expect(side.revealed).toBe(true);
+    // Two sounds: the question and the comparison. The second reuses the lease
+    // rather than minting a second object URL.
+    expect(h.media().plays).toBe(2);
+    expect(h.urls.minted).toHaveLength(1);
+    h.loop.dispose();
   });
 });
 
@@ -821,18 +901,40 @@ describe("source discipline", () => {
     }
   });
 
-  it("starts playback from exactly two places, both of which mean `he answered`", () => {
+  it("starts playback from exactly three NAMED places, and none of them is `enter`", () => {
     const reveal = stripComments(readFileSync(resolve(SRC_RENDER, "reveal.ts"), "utf8"));
-    // `reveal.ts` may only ask the port, and only for these two reasons.
-    const asks = [...reveal.matchAll(/audio(?:\?)?\.play\(/g)];
-    expect(asks).toHaveLength(2);
-    // `enter()` is the method that must stay empty of it.
+    // `reveal.ts` may only ask the port, and only with a reason it names at the
+    // call site. Counting the calls alone was the old assertion and it was too
+    // weak the moment decision 29 added a third: a fourth could have arrived as
+    // `audio.play(media, reason)` with `reason` computed anywhere. So the reasons
+    // are read out of the source, and the SET is what is pinned.
+    const asks = [...reveal.matchAll(/audio(?:\?)?\.play\(\s*\[?[^,)]*\]?\s*,\s*(.*?)\)/g)];
+    expect(asks).toHaveLength(3);
+    const reasons = asks.map((match) => (match[1] ?? "").trim());
+    // `play()`'s is a conditional over two literals; the other two are literals.
+    expect(reasons).toContain('"reveal"');
+    expect(reasons).toContain('"prompt"');
+    expect(reasons.some((reason) => reason.includes('"replay"'))).toBe(true);
+    // Every reason is spelled out here. A computed one — a variable, a lookup —
+    // means the caller chose it, which is the one thing this file must not allow.
+    for (const reason of reasons) {
+      expect(reason, `computed play reason: ${reason}`).toMatch(/^["'?:\s\w]+$/);
+    }
+
+    // `enter()` is the method that must stay empty of it, and decision 29 did not
+    // touch that. `prompt()` exists precisely so `enter()` did not have to change.
     const enter = /enter\(\): void \{([\s\S]*?)\n      \},/.exec(reveal)?.[1] ?? "MISSING";
     expect(enter).not.toBe("MISSING");
     expect(enter).not.toContain("play");
+    expect(enter).not.toContain("prompt");
     // It may MENTION audio — it logs `audio: 0` so the trail proves the zero — but
     // it may not reach the port.
     expect(enter).not.toMatch(/audio\s*[?.[]/);
+
+    // And the loop still does not know what decides the mode. The moment
+    // `Reading` appears here, the invariant stops being checkable by reading one
+    // method — which is the whole reason the policy sits in `src/review`.
+    expect(reveal, "reveal.ts must not know about Reading").not.toMatch(/\bReading\b/);
 
     // `audio.ts` touches the element's own play() in one helper, `start()`.
     const audio = stripComments(readFileSync(resolve(SRC_RENDER, "audio.ts"), "utf8"));

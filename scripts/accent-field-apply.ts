@@ -83,32 +83,89 @@ interface Edit {
   readonly template: string;
   readonly name: string;
   readonly label: string;
-  readonly from: string;
+  /**
+   * Anchors to try, in order — the first one present wins.
+   *
+   * A LIST rather than a string because this script has to be re-appliable from
+   * two different starting states: a database freshly imported from Mochi (whose
+   * body has never seen `型`) and one where an earlier run of this same script
+   * already inserted the plain form. Both must land on the same `to`, and after
+   * either one the `to` check reports "already there" — so a re-run says ALREADY
+   * APPLIED rather than printing an alarming ANCHOR NOT FOUND for whichever path
+   * was not taken.
+   */
+  readonly from: readonly string[];
   readonly to: string;
 }
 
 const KANA_GATE = ["<< #かな主流 >>", "◎かな主流", "<< /かな主流 >>"].join("\n");
 
+/**
+ * `型` on 単語 side 2, gated BOTH ways — decision 29.
+ *
+ * Two branches, because the two modes need it rendered differently and a template
+ * cannot say "cloze this only sometimes" in one line:
+ *
+ *   `Reading` true   `{{<< 型 >>}}`   the accent is the ANSWER, so it stays MASKED
+ *                                     until the reveal, alongside the reading.
+ *   otherwise        `<< 型 >>`       the accent is part of the QUESTION, plain on
+ *                                     screen while the word itself stays hidden.
+ *
+ * That asymmetry IS decision 20's reasoning applied honestly. Decision 20 kept `型`
+ * off side 1 because showing it "would hand him the thing he is meant to produce" —
+ * and side-2 ENTRY has exactly the same property, so the plain form was leaking the
+ * answer on all 692 mode-1 cards. Decision 29 then established that on the other
+ * 3,177 the leak is the POINT: he is auditing his own accents there, and hiding the
+ * label removes the audit the whole pipeline exists to feed.
+ *
+ * **The outer `<<#型>>` is not decoration.** An empty cloze does NOT render as
+ * nothing — measured before writing this, `{{}}` reaches the page as the LITERAL
+ * TEXT `{{}}`. Only 689 of the 692 mode-1 cards have a derived accent, so without
+ * the guard three cards would show braces. The plain branch needs no guard (an
+ * absent value substitutes the empty string) and sits inside the same one anyway,
+ * so the block reads as one thought.
+ *
+ * Markers are each ALONE ON THEIR OWN LINE. Inline section markers are measured to
+ * fail — `stray-section-marker`, and the gate silently does not fire.
+ */
+const ACCENT_BLOCK = [
+  "<< #型 >>",
+  "<< #Reading >>",
+  "{{<< 型 >>}}",
+  "<< /Reading >>",
+  "<< ^Reading >>",
+  "<< 型 >>",
+  "<< /Reading >>",
+  "<< /型 >>",
+].join("\n");
+
 const EDITS: readonly Edit[] = [
   {
     template: "oiaISYb2",
     name: "単語",
-    label: "型 above <<Speech>> (side 2)",
-    from: "{{<furigana><< 単語 >></furigana>}}\n<< Speech >>",
-    to: "{{<furigana><< 単語 >></furigana>}}\n<< 型 >>\n<< Speech >>",
+    label: "型 above <<Speech>> (side 2), CLOZED when Reading is true",
+    from: [
+      // A database where an earlier run inserted the plain form (D3, 2026-08-23).
+      "{{<furigana><< 単語 >></furigana>}}\n<< 型 >>\n<< Speech >>",
+      // A database freshly imported from Mochi, which has never seen `型`.
+      "{{<furigana><< 単語 >></furigana>}}\n<< Speech >>",
+    ],
+    to: `{{<furigana><< 単語 >></furigana>}}\n${ACCENT_BLOCK}\n<< Speech >>`,
   },
   {
     template: "oiaISYb2",
     name: "単語",
     label: "かな主流 inside the <<#Reading>> gate (side 1)",
-    from: "<< #Reading>>\n<< Reference >>\n<< /Reading >>",
+    from: ["<< #Reading>>\n<< Reference >>\n<< /Reading >>"],
     to: `<< #Reading>>\n<< Reference >>\n${KANA_GATE}\n<< /Reading >>`,
   },
   {
     template: "itmYDz2N",
     name: "言葉",
-    label: "型 above <<Speech>>",
-    from: "___\n<< Speech >>",
+    // No branch here on purpose: 言葉 declares no `Reading` field at all, so every
+    // one of its 392 cards is mode 2 and the label is always part of the question.
+    label: "型 above <<Speech>> — always plain, 言葉 has no Reading switch",
+    from: ["___\n<< Speech >>"],
     to: "___\n<< 型 >>\n<< Speech >>",
   },
 ];
@@ -142,6 +199,12 @@ function main(): number {
 
     // ── 2. the body edits ────────────────────────────────────────────────────
     const pending: Edit[] = [];
+    // Anchors that matched NOTHING. Counted rather than merely printed, because
+    // "ALREADY APPLIED — nothing to do" printed over the top of a skipped edit
+    // reads as success, and that is the exact shape of failure this repo keeps
+    // finding: a report that is true about what it looked at and silent about
+    // what it did not.
+    const stranded: Edit[] = [];
     for (const edit of EDITS) {
       const t = templates.get(edit.template);
       if (t === undefined) {
@@ -152,7 +215,8 @@ function main(): number {
         console.log(`  body   ${edit.name}: ${edit.label} — already there`);
         continue;
       }
-      if (!t.content.includes(edit.from)) {
+      if (!edit.from.some((anchor) => t.content.includes(anchor))) {
+        stranded.push(edit);
         console.log(
           `  body   ${edit.name}: ${edit.label} — ANCHOR NOT FOUND, skipped.\n` +
             `         The body is not the shape this script was written against.\n` +
@@ -174,6 +238,15 @@ function main(): number {
     }
 
     if (fieldsNeeded === 0 && pending.length === 0) {
+      if (stranded.length > 0) {
+        console.log(
+          `\nNOT APPLIED — ${stranded.length} edit(s) found no anchor and were skipped:` +
+            `\n  ${stranded.map((e) => `${e.name}: ${e.label}`).join("\n  ")}` +
+            `\nThe rest is already there. Read the body before forcing anything, and` +
+            `\nnote that exit code 1 here means SKIPPED, not broken.`,
+        );
+        return 1;
+      }
       console.log("\nALREADY APPLIED — nothing to do.");
       return 0;
     }
@@ -208,7 +281,9 @@ function main(): number {
       for (const edit of pending) {
         const t = templates.get(edit.template);
         if (t === undefined) continue;
-        const next = t.content.replace(edit.from, edit.to);
+        const anchor = edit.from.find((candidate) => t.content.includes(candidate));
+        if (anchor === undefined) continue;
+        const next = t.content.replace(anchor, edit.to);
         db.prepare(
           `UPDATE templates SET content = ?,
               updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`,

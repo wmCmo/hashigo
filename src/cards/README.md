@@ -126,10 +126,15 @@ audio yet". Both halves are tested with a fake store.
 ## What it deliberately does not do
 
 **It does not START audio.** Resolving bytes and playing them are different
-jobs, and the second one has a correctness rule attached — audio fires on the
-cloze reveal, never on side entry, because a clip that plays when a side appears
-gives away the pitch contour before Zach has produced it. That rule lives in
+jobs, and the second one has a correctness rule attached. That rule lives in
 `src/render/reveal.ts` and `src/render/audio.ts`, and nothing here can reach it.
+
+Its shape changed on 2026-08-23 and the short form is now misleading, so: `enter()`
+never plays, on any card. On the 692 `Reading = true` cards playback comes only from
+the reveal, because a clip on side entry gives away the contour before Zach has
+produced it. On the other 3,177 the clip IS the question — he hears the word and
+names the kanji — and it fires on entry through `prompt()`, which unmasks nothing.
+Decision 29; `src/review/mode.ts` decides which.
 
 **It does not generate anything.** Resolving finds a clip that already exists.
 Where a card's text has changed and no clip matches it, the answer is null and
