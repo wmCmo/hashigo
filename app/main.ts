@@ -332,7 +332,11 @@ async function grade(remembered: boolean): Promise<void> {
   try {
     const reply = await ask<"answer">({ kind: "answer", remembered, durationMs });
     if (reply.graded && reply.dueAt !== null) {
-      line(`graded · due ${reply.dueAt.slice(0, 10)} · ${reply.writeMs.toFixed(1)} ms write`, "good");
+      line(
+        `graded · due ${reply.dueAt.slice(0, 10)} · ${reply.writeMs.toFixed(1)} ms write · ` +
+          `${reply.openStatements} open / ${reply.cachedStatements} cached statements`,
+        "good",
+      );
     }
     await showNext();
   } finally {

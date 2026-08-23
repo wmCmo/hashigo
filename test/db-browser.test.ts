@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   SCHEMA_VERSION as BROWSER_SCHEMA_VERSION,
+  STATEMENT_CACHE_LIMIT,
+  StatementCache,
   applySchema as applySchemaBrowser,
   checkIntegrity as checkIntegrityBrowser,
   schemaVersion as schemaVersionBrowser,
@@ -198,5 +200,169 @@ describe("the browser database port, over a Node handle", () => {
       browser.close();
       node.close();
     }
+  });
+});
+
+// ─── P2: the statement cache ─────────────────────────────────────────────────
+
+/**
+ * The COUNT is easy to check in a browser and hard to get wrong. What is easy to
+ * get wrong is `pluck()`/`raw()` state surviving a cache hit — which returns the
+ * wrong SHAPE with no error anywhere — and a live `iterate()` cursor being reset
+ * under a generator. Neither needs sqlite-wasm, so neither is tested only there.
+ *
+ * MEASURED FIRST, in the running app, because that is the only place `WasmDb` is
+ * observable: **12.07 statements per graded card**, not the ~6 `src/db/browser.ts`
+ * used to estimate. 30 grades left 365 open; a 443-card day would leave ~5,350,
+ * each one pinning the OPFS file so that `pauseVfs()` throws.
+ */
+describe("StatementCache — P2", () => {
+  interface Stub {
+    readonly sql: string;
+    busy: boolean;
+    plucked: boolean;
+    rawed: boolean;
+    finalized: number;
+    pluck(toggle: boolean): unknown;
+    raw(toggle: boolean): unknown;
+    finalize(): void;
+  }
+
+  const made: Stub[] = [];
+
+  function stub(sql: string): Stub {
+    const entry: Stub = {
+      sql,
+      busy: false,
+      plucked: false,
+      rawed: false,
+      finalized: 0,
+      pluck(toggle) {
+        entry.plucked = toggle;
+        return entry;
+      },
+      raw(toggle) {
+        entry.rawed = toggle;
+        return entry;
+      },
+      finalize() {
+        entry.finalized += 1;
+      },
+    };
+    made.push(entry);
+    return entry;
+  }
+
+  it("hands the SAME statement back for the same SQL", () => {
+    made.length = 0;
+    const cache = new StatementCache<Stub>();
+    const a = cache.get("SELECT 1", () => stub("SELECT 1"));
+    const b = cache.get("SELECT 1", () => stub("SELECT 1"));
+    const c = cache.get("SELECT 2", () => stub("SELECT 2"));
+    expect(b).toBe(a);
+    expect(c).not.toBe(a);
+    // The point: two calls, ONE statement. That is the whole of P2.
+    expect(made).toHaveLength(2);
+    expect(cache.size).toBe(2);
+  });
+
+  it("RESETS pluck and raw on a hit — the hazard that returns a wrong shape", () => {
+    // 30 call sites in `src/` set these. A statement handed to a plucking caller
+    // and then to a non-plucking one would silently return scalars where the
+    // caller expects rows, and nothing would raise.
+    made.length = 0;
+    const cache = new StatementCache<Stub>();
+    const first = cache.get("SELECT hash FROM blobs", () => stub("q"));
+    first.pluck(true);
+    first.raw(true);
+    expect(first.plucked).toBe(true);
+
+    const second = cache.get("SELECT hash FROM blobs", () => stub("q"));
+    expect(second).toBe(first);
+    expect(second.plucked, "pluck survived a cache hit").toBe(false);
+    expect(second.rawed, "raw survived a cache hit").toBe(false);
+  });
+
+  it("never hands out a BUSY statement, and does not displace it either", () => {
+    // A live `iterate()` cursor. Re-preparing the same SQL would reset it under
+    // the generator, so the caller gets a fresh uncached statement — which it may
+    // leak, and that is strictly better than the wrong rows.
+    made.length = 0;
+    const cache = new StatementCache<Stub>();
+    const held = cache.get("SELECT * FROM cards", () => stub("held"));
+    held.busy = true;
+
+    const fresh = cache.get("SELECT * FROM cards", () => stub("fresh"));
+    expect(fresh).not.toBe(held);
+    expect(made).toHaveLength(2);
+    // The incumbent KEEPS its slot, so once the cursor closes the next caller
+    // gets it back rather than a second permanent copy accumulating.
+    expect(cache.size).toBe(1);
+    held.busy = false;
+    expect(cache.get("SELECT * FROM cards", () => stub("third"))).toBe(held);
+    expect(made).toHaveLength(2);
+  });
+
+  it("at the cap it FINALIZES what it evicts, rather than forgetting it", () => {
+    // A dropped-but-open statement is exactly the leak this class replaces, so
+    // eviction has to close the file handle and not merely lose the reference.
+    made.length = 0;
+    const cache = new StatementCache<Stub>(3);
+    for (const sql of ["a", "b", "c"]) cache.get(sql, () => stub(sql));
+    expect(cache.size).toBe(3);
+    cache.get("d", () => stub("d"));
+    expect(cache.size).toBe(3);
+    const first = made[0]!;
+    expect(first.sql).toBe("a");
+    expect(first.finalized, "the evicted statement was not finalized").toBe(1);
+    // And it really is gone: asking for it again builds a new one.
+    cache.get("a", () => stub("a2"));
+    expect(made.at(-1)?.sql).toBe("a2");
+  });
+
+  it("will not evict a busy statement — it goes over the cap instead", () => {
+    made.length = 0;
+    const cache = new StatementCache<Stub>(2);
+    const busy = cache.get("a", () => stub("a"));
+    busy.busy = true;
+    cache.get("b", () => stub("b"));
+    cache.get("c", () => stub("c"));
+    // `b` went, `a` stayed, and nothing finalized a live cursor.
+    expect(busy.finalized).toBe(0);
+    expect(made.find((entry) => entry.sql === "b")?.finalized).toBe(1);
+  });
+
+  it("defaults to the limit the source declares, and it is generous", () => {
+    // Generous rather than tight on purpose: the whole of `src/` runs well under
+    // it, and the cap exists only so a caller building SQL from unbounded input
+    // cannot turn the cache into the leak it removes.
+    expect(STATEMENT_CACHE_LIMIT).toBe(128);
+    made.length = 0;
+    const cache = new StatementCache<Stub>();
+    for (let i = 0; i < STATEMENT_CACHE_LIMIT; i += 1) {
+      cache.get(`SELECT ${i}`, () => stub(String(i)));
+    }
+    expect(cache.size).toBe(STATEMENT_CACHE_LIMIT);
+    expect(made.filter((entry) => entry.finalized > 0)).toEqual([]);
+    cache.get("one more", () => stub("one more"));
+    expect(cache.size).toBe(STATEMENT_CACHE_LIMIT);
+    expect(made.filter((entry) => entry.finalized > 0)).toHaveLength(1);
+  });
+
+  it("refuses a nonsense limit rather than behaving oddly at one", () => {
+    expect(() => new StatementCache(0)).toThrow(/positive integer/);
+    expect(() => new StatementCache(-1)).toThrow(/positive integer/);
+    expect(() => new StatementCache(1.5)).toThrow(/positive integer/);
+  });
+
+  it("clear() does NOT finalize — WasmDb.close() drains the set itself", () => {
+    // Two owners of the same statements would double-finalize, which steps on a
+    // freed pointer. The cache is an index; the Set is the owner.
+    made.length = 0;
+    const cache = new StatementCache<Stub>();
+    const one = cache.get("a", () => stub("a"));
+    cache.clear();
+    expect(cache.size).toBe(0);
+    expect(one.finalized).toBe(0);
   });
 });

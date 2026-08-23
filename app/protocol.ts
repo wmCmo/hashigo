@@ -154,6 +154,16 @@ export interface AnsweredMessage {
   readonly progress: SessionProgress;
   /** How long the write itself took, in ms. P1's second half. */
   readonly writeMs: number;
+  /**
+   * `WasmDb.openStatements` after the write — P2, and the only place it is
+   * observable. `oo1.DB.close()` finalizes nothing (upstream passes the array
+   * INDEX where it means the statement), so every `prepare()` a caller does not
+   * finalize pins the OPFS file and eventually makes `pauseVfs()` throw. Reported
+   * per grade so the growth rate is a measurement rather than an estimate.
+   */
+  readonly openStatements: number;
+  /** Distinct SQL strings cached. Should PLATEAU; `openStatements` should follow. */
+  readonly cachedStatements: number;
 }
 
 export interface ReadingMessage {

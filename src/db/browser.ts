@@ -181,6 +181,11 @@ export interface BrowserDb extends SqliteHandle {
   /** Escape hatch to the sqlite-wasm handle. */
   readonly wasm: Database;
   /**
+   * Distinct SQL strings this handle holds a cached statement for. Diagnostics
+   * only; see `WasmDb.#cache` for why the cache exists and what makes reuse safe.
+   */
+  readonly cachedStatements: number;
+  /**
    * Statements prepared through this handle and not yet finalized. Zero after
    * `close()`. Exposed because "did close() actually release the OPFS file" is
    * otherwise only answerable by watching `pauseVfs()` fail.
@@ -440,8 +445,51 @@ class WasmDb implements BrowserDb {
    * abandoned statement, `pauseVfs()` threw; with this set drained first, it did
    * not. better-sqlite3 needs none of this, which is why the leak is invisible
    * in Node and in the whole test suite.
+   *
+   * **As of 2026-08-23 this set no longer GROWS**, because `#cache` hands one
+   * statement back per distinct SQL string. Measured in the running app, which is
+   * the only place it is observable: **12.07 per graded card before, 0 after** —
+   * flat at 16 open / 16 cached over 19 consecutive grades, with the per-grade
+   * write time unchanged (p50 35.0 ms against 37.3). The old estimate of ~6 per
+   * grade was half the real figure.
    */
   readonly #statements = new Set<WasmStatement>();
+
+  /**
+   * ONE STATEMENT PER DISTINCT SQL STRING — P2, and the fix is here rather than
+   * in every caller.
+   *
+   * **Measured in the running app on 2026-08-23, which is the only place it is
+   * observable: 12.07 statements per graded card**, not the ~6 this class used to
+   * estimate. Thirty grades left 365 open; a 443-card day would leave about
+   * **5,350**, each one pinning the OPFS file and so making `pauseVfs()` throw.
+   *
+   * The alternative was `try/finally { stmt.finalize() }` at every one of the
+   * dozens of `db.prepare(...)` sites in `src/`, and it is the wrong alternative:
+   * `SqliteHandle` is shared with better-sqlite3, where a statement needs no
+   * finalizing at all, so the ceremony would exist to serve a platform half the
+   * callers never run on. `SqliteBlobStore` already solved the same problem one
+   * level up ("PREPARED ONCE, NOT PER CALL") — this generalises it.
+   *
+   * THREE THINGS MAKE REUSE SAFE, and each of them is a real hazard rather than a
+   * hypothetical:
+   *
+   *   1. **`pluck()` / `raw()` are per-statement flags**, and 30 call sites in
+   *      `src/` set them. A cached statement handed to a plucking caller and then
+   *      to a non-plucking one would return the wrong SHAPE. So a cache hit
+   *      resets both flags before handing the statement back.
+   *   2. **`iterate()` holds a live cursor.** Re-preparing the same SQL while a
+   *      generator is mid-flight would reset the statement under it. A busy
+   *      statement is therefore never handed out — the caller gets a fresh,
+   *      UNCACHED one, which it may leak, which is strictly better than a wrong
+   *      answer. (`src/` calls `iterate()` zero times today; the contract allows
+   *      it, so it is handled rather than assumed away.)
+   *   3. **The cache is CAPPED.** SQL text is a fixed set in a program, but
+   *      `src/scheduler/queue.ts` and `src/blobs/db.ts` build a few strings from
+   *      fragments, and an unbounded cache would itself be the leak it replaces.
+   *      At the cap the oldest entry is finalized and dropped.
+   */
+  readonly #cache = new StatementCache<WasmStatement>(STATEMENT_CACHE_LIMIT);
 
   constructor(db: Database, pool: SAHPoolUtil) {
     this.#db = db;
@@ -461,14 +509,21 @@ class WasmDb implements BrowserDb {
   }
 
   prepare(sql: string): BrowserStatement {
-    const statement = new WasmStatement(this.#db, this.#db.prepare(sql), this.#statements);
-    this.#statements.add(statement);
-    return statement;
+    return this.#cache.get(sql, () => {
+      const statement = new WasmStatement(this.#db, this.#db.prepare(sql), this.#statements);
+      this.#statements.add(statement);
+      return statement;
+    });
   }
 
   /** How many statements this handle is still holding open. Diagnostics only. */
   get openStatements(): number {
     return this.#statements.size;
+  }
+
+  /** Distinct SQL strings currently cached. Diagnostics only. */
+  get cachedStatements(): number {
+    return this.#cache.size;
   }
 
   exec(sql: string): this {
@@ -558,7 +613,97 @@ class WasmDb implements BrowserDb {
       }
     }
     this.#statements.clear();
+    this.#cache.clear();
     this.#db.close();
+  }
+}
+
+/**
+ * Distinct SQL strings `WasmDb` will hold statements for.
+ *
+ * Generous rather than tight: the whole of `src/` runs well under this, and the
+ * point of the cap is only to stop a caller that builds SQL from unbounded input
+ * turning the cache into the leak it exists to remove.
+ */
+export const STATEMENT_CACHE_LIMIT = 128;
+
+/** The slice of a statement the cache touches. `WasmStatement` satisfies it. */
+export interface CacheableStatement {
+  /** True while an `iterate()` cursor is live over it. */
+  readonly busy: boolean;
+  pluck(toggle: boolean): unknown;
+  raw(toggle: boolean): unknown;
+  finalize(): void;
+}
+
+/**
+ * One statement per distinct SQL string — P2's fix, extracted so that the part
+ * that can be WRONG is testable without sqlite-wasm.
+ *
+ * The COUNT is easy to check in a browser and hard to get wrong. What is easy to
+ * get wrong is `pluck()`/`raw()` surviving a cache hit, which returns the wrong
+ * SHAPE with no error anywhere — and that logic needs no wasm, so it should not
+ * be trapped behind it. `test/db-browser.test.ts` drives this class directly with
+ * a recording stub.
+ */
+export class StatementCache<T extends CacheableStatement> {
+  readonly #entries = new Map<string, T>();
+  readonly #limit: number;
+
+  constructor(limit: number = STATEMENT_CACHE_LIMIT) {
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new Error(`StatementCache limit must be a positive integer, got ${String(limit)}`);
+    }
+    this.#limit = limit;
+  }
+
+  get size(): number {
+    return this.#entries.size;
+  }
+
+  /**
+   * The statement for `sql`, making one with `make` if there is none.
+   *
+   * A hit RESETS the shape flags, because they are per-statement and 30 call
+   * sites in `src/` set them. A hit on a BUSY statement is not a hit: the caller
+   * gets a fresh, uncached statement, which it may leak — strictly better than
+   * resetting a live cursor under a generator and returning the wrong rows.
+   */
+  get(sql: string, make: () => T): T {
+    const cached = this.#entries.get(sql);
+    if (cached !== undefined && !cached.busy) {
+      cached.pluck(false);
+      cached.raw(false);
+      return cached;
+    }
+    const made = make();
+    // Only claim the key when it is free. A busy incumbent keeps its slot, so the
+    // next caller after the cursor closes gets the cached one back rather than a
+    // second permanent copy.
+    if (cached === undefined) {
+      this.#evictIfFull();
+      this.#entries.set(sql, made);
+    }
+    return made;
+  }
+
+  /** Drop every entry WITHOUT finalizing: `WasmDb.close()` drains them itself. */
+  clear(): void {
+    this.#entries.clear();
+  }
+
+  #evictIfFull(): void {
+    if (this.#entries.size < this.#limit) return;
+    // Insertion order: the oldest distinct SQL goes. FINALIZED, not merely
+    // forgotten — a dropped-but-open statement is the leak this class replaces.
+    for (const [key, entry] of this.#entries) {
+      if (entry.busy) continue;
+      this.#entries.delete(key);
+      entry.finalize();
+      return;
+    }
+    // Every entry is busy, which cannot happen with synchronous callers. Leave
+    // the cache over its limit rather than finalizing a live cursor.
   }
 }
 
@@ -568,11 +713,24 @@ class WasmStatement implements BrowserStatement {
   readonly #owner: Set<WasmStatement> | undefined;
   #pluck = false;
   #raw = false;
+  /**
+   * True while an `iterate()` generator is mid-flight over this statement.
+   *
+   * `WasmDb.prepare` refuses to hand out a busy statement, because re-preparing
+   * the same SQL would `reset()` the cursor under a live generator and the caller
+   * would silently see the wrong rows. Nothing in `src/` calls `iterate()` today;
+   * the contract allows it, so this is handled rather than assumed away.
+   */
+  #busy = false;
 
   constructor(db: Database, stmt: PreparedStatement, owner?: Set<WasmStatement>) {
     this.#db = db;
     this.#stmt = stmt;
     this.#owner = owner;
+  }
+
+  get busy(): boolean {
+    return this.#busy;
   }
 
   pluck(toggle = true): this {
@@ -625,10 +783,14 @@ class WasmStatement implements BrowserStatement {
 
   *iterate(...params: readonly unknown[]): IterableIterator<unknown> {
     const stmt = this.#start(params);
+    this.#busy = true;
     try {
       while (stmt.step()) yield this.#shape(stmt);
     } finally {
+      // Both, and in this order: the cursor closes and only then does the
+      // statement become reusable. A `return` out of a `for…of` runs this too.
       stmt.reset(true);
+      this.#busy = false;
     }
   }
 
@@ -636,6 +798,7 @@ class WasmStatement implements BrowserStatement {
    * does not step on a freed pointer. */
   finalize(): void {
     this.#owner?.delete(this);
+    this.#busy = false;
     this.#stmt.finalize();
   }
 

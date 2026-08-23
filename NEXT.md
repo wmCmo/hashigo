@@ -86,10 +86,10 @@ the corpus 1.44× faster than this machine, so expect quicker rather than slower
 | | what | state |
 |---|---|---|
 | **1** | **Run the app on his phone** | The one thing that needs him. `npm run app:dev -- --host ::` plus a tunnel; the bind-address trap is in `app/README.md`. Everything below can wait for it |
-| **2** | **P2 — the prepared-statement leak in `WasmDb`** | ~6 per grade, ~2,700 in a 443-card session, and its own docstring says an unfinalized statement makes `pauseVfs()` throw. Now REACHABLE, and the p90 above is the number it would improve |
-| **3** | **Eviction detection** | Decision 17's banner and one-tap export are in `app/`; noticing an eviction that ALREADY happened is not |
-| **4** | **Stage 10, the editor** | `app/` ships one editor-shaped thing — decision 29's `Reading` toggle — because the audit loop dies without it. The rest is unspecified in shape. The measured precedent for field moves is the **132 rows** below |
-| **5** | **Stage 11, sync** | Unspecified in shape. Decision 18: the TTS key never goes in the client |
+| ~~2~~ | ~~P2 — the prepared-statement leak in `WasmDb`~~ | **DONE 2026-08-23, and the estimate was HALF the real number.** Measured in the running app — the only place `WasmDb` is observable — at **12.07 statements per graded card**, not ~6: 30 grades left 365 open, so a 443-card day would have left ~5,350, each pinning the OPFS file. Fixed by caching one statement per distinct SQL string in `WasmDb.prepare`, not by making dozens of callers finalize (`SqliteHandle` is shared with better-sqlite3, where a statement needs no finalizing at all). **After: 0 growth — flat at 16 open / 16 cached over 19 consecutive grades, write time unchanged (p50 35.0 ms against 37.3).** The logic is extracted as `StatementCache` and tested in Node, because the dangerous part is not the count: it is `pluck()`/`raw()` surviving a cache hit, which returns the wrong SHAPE silently. Four injections, all caught |
+| **2** | **Eviction detection** | Decision 17's banner and one-tap export are in `app/`; noticing an eviction that ALREADY happened is not |
+| **3** | **Stage 10, the editor** | `app/` ships one editor-shaped thing — decision 29's `Reading` toggle — because the audit loop dies without it. The rest is unspecified in shape. The measured precedent for field moves is the **132 rows** below |
+| **4** | **Stage 11, sync** | Unspecified in shape. Decision 18: the TTS key never goes in the client |
 | — | ~~P1's second half~~ | **DONE**, above |
 | — | ~~The app shell~~ | **DONE** — `app/` |
 | — | ~~Decision 29's conditional audio~~ | **DONE** — `src/review/mode.ts` |

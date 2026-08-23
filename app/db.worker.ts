@@ -255,6 +255,8 @@ function answer(request: AnswerRequest): void {
     scheduledDays: result.review?.intervalDays ?? null,
     progress: active.progress(),
     writeMs,
+    openStatements: requireCards().openStatements,
+    cachedStatements: requireCards().cachedStatements,
   });
 }
 
