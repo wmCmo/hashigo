@@ -396,13 +396,49 @@ device. And 66.5 MiB survived a reload with `persisted()` still true.
 `persisted()` and `estimate()` DO work there. **The shell must request persistence from
 the Window**, not from the OPFS worker — an architectural constraint, not a detail.
 
-**Still unmeasured: the WRITE THROUGHPUT.** The 66.5 MiB is just the bootstrap database;
-the ~700 MB fill has not been run on device. And note the transport trap found while
-setting this up: `/blobstore/`'s `readPack` STREAMS the 655 MB pack and writes into OPFS
-as it arrives, so over a tunnel it measures ngrok and hides OPFS inside it. `/persist/`'s
-`fill` uses the REAL byte sizes of the 10,816 blobs but generates the bytes locally, so it
-is the valid instrument over any transport. Getting `/blobstore/` to produce a valid
-on-device number needs its write timing separated from its fetch — small, not yet done.
+#### The fill, on device — and the phone BEATS the desktop
+
+Run the same day, same page, after `open the database`:
+
+```
+10,816 external blobs, 624.6 MiB total, largest 3,374,905 B, mean 60,551 B
+INSERTED 10,816 blobs / 624.6 MiB in 3.4s = 181 MiB/s, 0.32 ms/blob
+readback 10,816 rows / 624.6 MiB · 50 random reads avg 0.21 ms
+usage 75.5 MiB -> 714.5 MiB · 0.52% of a 133.96 GiB quota
+```
+
+**181 MiB/s against 126 MiB/s for the SAME harness on desktop**
+(`notes/archive/persistence.md`: 4.9 s / 126 MiB/s / 0.46 ms/blob). His phone is **1.44×
+faster** than his own machine at writing the corpus into OPFS. Within the 25–248 MiB/s
+band recorded across three desktop environments, but above every one of his own runs
+(96 MiB/s cold, 111 warm on `/blobstore/`). Random reads land at 0.21 ms, inside the
+0.13–1.06 ms desktop range.
+
+**It scales linearly** — 2,000 rows at 548 ms, 4,000 at 1,104, 6,000 at 1,697, 8,000 at
+2,289, 10,000 at 2,903. No degradation as the file grows, which is the thing a 625 MB
+write could plausibly have failed at.
+
+**And the corpus is intact in OPFS on the phone**: the oracle MATCHES — 7,716 cards,
+102,020 reviews, 58,937 forward, 43,083 reverse, retention 96.24, 39 decks, 19 tags,
+8,744 card_links — reattaching (not re-importing) in **32.7 ms**.
+
+**CONFIRMED, not discovered:** `unlink()` returned **0.0 MiB of 639.0 MiB**. That is
+byte-for-byte the desktop result already in `notes/archive/persistence.md` §2.5 —
+`SAHPoolUtil.unlink()` disassociates the name from its pool slot and leaves the file, so
+only `removeVfs()` frees anything. Now confirmed on hardware. **Anything that deletes
+audio must not be built on `unlink()`.**
+
+**So P1's first half is DONE.** What remains unmeasured is the **per-grade OPFS write** —
+`gradeTrack`'s own cost (an INSERT into `reviews`, an UPDATE to `card_tracks`, the reads
+before them, and `WasmDb`'s ~6 prepared statements per grade). That is a different
+instrument and it does not exist yet.
+
+**A transport trap found while setting this up**, worth keeping: `/blobstore/`'s
+`readPack` STREAMS the 655 MB pack and writes into OPFS as it arrives, so over a tunnel it
+measures ngrok with OPFS hidden inside. `/persist/`'s `fill` generates its bytes locally
+at the real blob sizes, which is why it is the valid instrument over any transport.
+Getting `/blobstore/` to produce a valid on-device number needs its write timing separated
+from its fetch — small, not yet done.
 
 ### STARTING THE SHELL — read this first, most of it already exists
 
