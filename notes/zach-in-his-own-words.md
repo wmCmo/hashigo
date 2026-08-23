@@ -107,4 +107,29 @@ His own words explaining WHY are not derivable from the code or from git.
   native `<audio controls>`, and it is a layout constraint for every screen after this
   one: primary actions belong bottom-RIGHT.
 
+- **WHY THE ACCENT PIPELINE EXISTS AT ALL.** 2026-08-23, asked whether he knew what
+  `型` was for before he would answer three design questions. Every prior note in this
+  repo describes the pipeline's mechanics; none recorded its purpose, and the purpose
+  changes what the field is allowed to be:
+
+  > the true reason we need it is just because i didn't know 花 and 鼻 would be
+  > pronounced differently when the particle is attached to them, that's the whole point
+  > because by sound i can distinguish 配慮, from 勉強, that's easy, but without particle
+  > for those two kanji word, there's no way to tell, yet natives pronounce them
+  > perfectly, because the 型 rule is encoded into their brain, that's what im trying to
+  > train myself for
+
+  So `型` is **not a caption for what the audio just played.** For the 平板/尾高 class it
+  carries a fact that is absent from the audio entirely — 2,148 of 3,830 labelled cards.
+  Decision 27 is this quote turned into a build constraint.
+
+- **The word is the unit, and nothing attaches to it.** Same day, asked whether the
+  contour should render a trailing particle box so 平板 and 尾高 become visually distinct:
+
+  > nope, don't add particle to my word, the word stays the word
+
+  Consistent with the audio rule rather than a new preference — three particles get
+  conflated, so displaying one privileges it. He accepted the consequence that the
+  distinction then lives only in the label. Decision 27.
+
 ---

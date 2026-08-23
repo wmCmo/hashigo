@@ -482,6 +482,62 @@ right**: it holds his verbatim reasoning and this quotes it.
    2026-08-22 spanned ten DISTINCT cards, mixed forward and reverse — decision 15's
    claim that the two are not paired, holding in real data.
 
+26. **`型` renders on SIDE 1 for `言葉` cards.** Decided 2026-08-23. Decision 20 settled
+   `型` onto "side 2, immediately above `<<Speech>>`" and says outright that it was read
+   off *the `単語` template Zach pasted 2026-08-21*. It does not transfer, and a peer
+   review found why: **`言葉` has no side 2.** Its body is
+   `{{<<言葉>>}}` / `___` / `<<型>>` / `<<Speech>>` / `---` / …, and `___` is a rule
+   WITHIN a side while `---` is the side break (parser trap 1, `src/template/parse.ts`).
+   So `言葉`'s first `---` comes after `<<Speech>>` and everything above it is side 1.
+
+   Zach confirmed rather than corrected: side 1 is where it goes for those 376 cards.
+   **Decision 20 is unchanged for `単語`** — this records that the placement is
+   template-specific, so nobody "fixes" `言葉` to match a side that does not exist there.
+
+27. **NO PARTICLE beside the word — in the audio OR the display.** Decided 2026-08-23:
+   *"don't add particle to my word, the word stays the word."*
+
+   The audio half was already settled (`no particle in the audio`, because three
+   different particles get conflated and the probe particle is internal to the
+   derivation and never spoken). This extends it to the SCREEN. It was asked as a
+   design question — should the A2 contour show a trailing particle box so 平板 and
+   尾高 are visually distinct? — and the answer is no, on the same grounds: choosing a
+   particle to display privileges one, and **the card's unit is the WORD.**
+
+   **WHY THIS IS WRITTEN DOWN AS A CONSTRAINT AND NOT A PREFERENCE.** 平板 and 尾高 are
+   *identical inside the word*: both are L-H-H on a three-mora word, and the downstep
+   lives on the following mora — 花が (L-H-H) against 鼻が (L-H-L). With no particle in
+   the audio and none in the boxes, neither channel can express the difference. Measured
+   over the labelled cards:
+
+   ```plaintext
+   頭高    775    audible bare, and the contour boxes show it  (hi lo lo)
+   中高    907    audible bare, and the contour boxes show it  (hi hi hi lo)
+   平板  2,092  ┐ indistinguishable from each other in BOTH channels
+   尾高     56  ┘ -> 2,148 cards where `型` is the ONLY carrier
+   ```
+
+   So `型` is not a caption. On 2,148 of 3,830 labelled cards it is the sole thing on
+   the card carrying the fact being trained, and a layout that drops it on a narrow
+   screen deletes the exercise on 56% of them. That is the same shape of failure as
+   autoplay: not a degradation, a deletion.
+
+   **AND THIS IS THE POINT OF THE ACCENT PIPELINE, in his own words** — worth having in
+   the repo because every earlier note described the pipeline's mechanics and none
+   recorded what it is FOR:
+
+   > *"the true reason we need it is just because i didn't know 花 and 鼻 would be
+   > pronounced differently when the particle is attached to them, that's the whole
+   > point ... by sound i can distinguish 配慮 from 勉強, that's easy, but without
+   > particle for those two kanji word, there's no way to tell, yet natives pronounce
+   > them perfectly, because the 型 rule is encoded into their brain, that's what im
+   > trying to train myself for."*
+
+   `配慮` is `accent_type = 1` in his own derivation — 頭高, the audible class. The class
+   that motivates the project is the inaudible one, which is exactly why decision 8
+   refuses to let the UniDic cross-check resolve on its own and why the labels were
+   materialised rather than generated at render.
+
    Consistent with decision 15 and with `newTracks`' own docstring, which corrected
    an earlier claim that the queue delivered forward/reverse pairs.
 

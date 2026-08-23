@@ -51,13 +51,18 @@ Three things that are built and do NOTHING, which is the opposite trap to rebuil
   drifted. **And the follow-up guess is also dead:** all six carry ZERO undeclared values,
   so they did not migrate from 単語 — they are natively 言葉. So the question is just
   **"should 言葉's body render `かな主流`?"**, which is one line of template. Zach's call.
-* **`型` is visible at SIDE ENTRY, before any reveal — on both templates.** It is not
-  inside a cloze, so when the side appears the accent is already on screen. Decision 20's
-  stated reason for keeping it off side 1 is that it "would hand him the thing he is
-  meant to produce"; side-2-*entry* has the same property. **Naming the side may not be
-  enough to get what the decision wanted.** Also: for the **376 言葉 cards it lands on
-  side 1**, because `___` is a rule WITHIN a side and 言葉's first `---` comes after
-  `<<Speech>>`. Both are Zach's to settle.
+* **`型` renders BARE from the template, and the screen must gate it.** It is not inside
+  a cloze, so rendering side 2 through `src/render` puts the accent on screen the moment
+  the side appears — and decision 20's stated reason for keeping it off side 1 is that it
+  "would hand him the thing he is meant to produce", which side-2-*entry* does too.
+  **This is NOT an open decision: A2 already answers it.** In
+  `build/mock/out/a2-terminal.html` the label sits inside `<div class="answer">`
+  (`display:none` until `[data-state="revealed"]`), beside `.reading` and the `.contour`
+  boxes, with only `.head` visible at prompt time. The mockup is hand-authored HTML that
+  never went through the template engine, so the MOCKUP and the TEMPLATE disagree and the
+  real screen has to reconcile them: **gate the accent field into the answer region, or
+  wrap `<<型>>` in a cloze so the body says what A2 shows.** Implementation, not taste.
+  (Side placement for `言葉` is settled — decision 26.)
 * **The UI half of decision 17's backup.** The MECHANISM landed 2026-08-23
   (`src/backup`, 332,262 bytes over the real corpus) but nothing calls it from a
   screen: the persistent banner when `persisted()` is false, the "add to home
@@ -268,6 +273,25 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     the right granularity. **Terminology trap:** he said the label is "per side",
     meaning per DIRECTION; in this repo "side" means the parts of a card (side 1-4
     of 単語), so read it as per TRACK or it lands in the wrong place.
+26. **`型` renders on SIDE 1 for `言葉` cards.** Decision 20 says side 2 and derives it
+    from the `単語` template Zach pasted; `言葉` has no side 2, because its first `---`
+    comes after `<<Speech>>` and `___` is a rule WITHIN a side. Confirmed by Zach
+    2026-08-23 for the 376 `言葉` cards: side 1 is where it goes. Decision 20 stands
+    unchanged for `単語` — this says the placement does not transfer, not that it was wrong.
+27. **NO PARTICLE beside the word — in the audio OR the display.** Zach, 2026-08-23:
+    *"don't add particle to my word, the word stays the word."* This extends the existing
+    audio rule (no particle spoken, because three different particles get conflated) to
+    the review screen: the contour boxes show the word's own morae and nothing after them.
+    **The consequence is a BUILD CONSTRAINT, and it is the reason this is written down.**
+    平板 and 尾高 are identical inside the word — the downstep lives on the following mora
+    (花が vs 鼻が) — so with no particle anywhere, **`型` is the SOLE carrier of that
+    distinction on 2,092 平板 + 56 尾高 = 2,148 of 3,830 labelled cards.** 頭高 and 中高
+    are audible bare and the boxes show them; 平板 vs 尾高 is neither audible nor drawable
+    under this decision. So `型` is not a caption the layout may drop on a narrow screen —
+    on those 2,148 cards it is the only thing on the card carrying the fact being trained.
+    **This is the point of the whole accent pipeline, in Zach's words:** he did not know
+    花 and 鼻 diverge once a particle attaches, and natives get it right because the 型 rule
+    is encoded rather than heard. See `notes/zach-in-his-own-words.md`.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

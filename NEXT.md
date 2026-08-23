@@ -535,8 +535,9 @@ accent render nothing rather than a literal `<<型>>`. A section gate also works
 not needed. `かな主流` DOES need its gate — it is a boolean, and bare interpolation is
 measured to fail.
 
-> [!important] **THREE THINGS FROM D3 ARE ZACH'S, and one of them I first diagnosed
-> WRONG.** Corrected by a peer review 2026-08-23; verified before recording.
+> [!important] **ONE THING FROM D3 IS STILL ZACH'S. TWO WERE ANSWERED 2026-08-23**
+> (decisions 26 and 27), and one of the three was first diagnosed WRONG here.
+> Corrected by a peer review 2026-08-23; verified before recording.
 >
 > **1. `かな主流` renders on ZERO cards, and not for the reason first written here.**
 > This file used to say the six `かな主流 = true` cards "have `Reading` unset" so the gate
@@ -565,17 +566,37 @@ measured to fail.
 > review said 692; 693 is right", which was the wrong way round: for the question being
 > asked, 692 was the better number.)
 >
-> **2. `型` is on screen at SIDE ENTRY, before any reveal, on both templates.** It is not
+> **2. ANSWERED — and it was never a taste question.** `型` is on screen at SIDE ENTRY, before any reveal, on both templates. It is not
 > inside a cloze. Decision 20 keeps it off side 1 because that "would hand him the thing
-> he is meant to produce" — side-2-*entry* has the same property, so naming the side may
-> not deliver what the decision wanted. This is the same family as the autoplay rule.
+> he is meant to produce" — side-2-*entry* has the same property, so naming the side does
+> not deliver what the decision wanted. **A2 ALREADY ANSWERS IT:** in
+> `build/mock/out/a2-terminal.html` the label sits inside `<div class="answer">`, which is
+> `display:none` until `[data-state="revealed"]`, beside `.reading` and the `.contour`
+> boxes; only `.head` (the kanji) shows at prompt time. So the intent was settled by
+> decision 23 and the gap is between the MOCKUP and the TEMPLATE — the mockup is
+> hand-authored HTML that never went through `src/render`, while `<<型>>` in the body sits
+> outside any cloze and renders bare. **The real screen must gate the accent field into
+> the answer region** (or the body must wrap it in a cloze). Implementation, not taste.
 >
-> **3. `型` lands on SIDE 1 for the 376 言葉 cards**, because `___` is a rule WITHIN a
-> side and 言葉's first `---` comes after `<<Speech>>`. `DECISIONS.md` says side 2 and
-> grounds it on the 単語 template, so the placement does not transfer.
+> **3. ANSWERED — side 1 is correct.** `型` lands on SIDE 1 for the 376 言葉 cards,
+> because `___` is a rule WITHIN a side and 言葉's first `---` comes after `<<Speech>>`.
+> `DECISIONS.md` says side 2 and grounds it on the 単語 template, so the placement does
+> not transfer. **Zach confirmed it rather than corrected it, 2026-08-23 — see decision
+> 26.** Decision 20 stands unchanged for 単語.
 >
-> **Do not pick any of the three.** `scripts/accent-field-apply.ts` declined to invent a
-> home for `かな主流` on 言葉 and says so; that part was right.
+> **4. ANSWERED, and it raised a build constraint — see decision 27.** Asked whether the
+> A2 contour should render a trailing particle box, since 平板 and 尾高 are identical
+> inside the word and differ only on the following mora (花が vs 鼻が). **No:** *"don't add
+> particle to my word, the word stays the word."* The consequence is load-bearing rather
+> than cosmetic: with no particle in the audio (already settled) and none in the boxes,
+> **`型` is the SOLE carrier of 平板-vs-尾高 on 2,092 + 56 = 2,148 of 3,830 labelled
+> cards.** 頭高 (775) and 中高 (907) are audible bare and the boxes draw them. So the
+> layout may never drop the label to save space — on those 2,148 cards it is the whole
+> exercise, the same shape of failure as autoplay.
+>
+> **ONE IS LEFT AND IT IS STILL HIS: item 1, `かな主流` on 言葉.**
+> `scripts/accent-field-apply.ts` declined to invent a home for it and says so; that part
+> was right, and it is still the open question — one line of template.
 
 ### The older note, kept because the shape of the trap is the lesson
 
