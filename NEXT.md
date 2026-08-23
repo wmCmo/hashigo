@@ -432,8 +432,45 @@ every session on this project including the ones that did good work.
 
 ## Built but NOT WIRED UP — the opposite trap
 
-**`<<型>>` has never been written to a card.** `materialiseAccents` iterates
-`template_fields WHERE type = 'accent'`, and there are **zero such rows** — so it has been
+### D3 APPLIED 2026-08-23 — 型 is on the cards, かな主流 is not
+
+`scripts/accent-field-apply.ts` created the `型` field (`type = 'accent'`,
+`source_field_id = 'name'`) on 単語 and 言葉 and inserted `<< 型 >>` above `<< Speech >>`
+in both bodies. `accent/cli.ts write` then **wrote 3,830 labels** — 平板 2,092 · 中高 907
+· 頭高 775 · 尾高 56. That 尾高 share is 1.46%, which matches the 1.4% ratio the pipeline
+pins, so the two agree. 15 guarded (ambiguous, left empty on purpose) and 13 underived.
+
+**It was never Zach's edit to make.** `templates.content` is a column in this database;
+an earlier session said "only he can do this, it is in his Mochi templates", confusing
+"the template came from Mochi" with "the edit must happen there". Editing it in Mochi
+would be worse: Mochi has no `型` field, so `<<型>>` would render unresolved **in his
+daily reviews**, which he is still doing ~100 of a day.
+
+**RE-RUN IT AFTER A REBUILD.** `templates.content` is Mochi's field, so decision 9's
+`local = 1` cannot protect it — that flag protects a field we ADDED, never an EDIT to
+something Mochi owns. It is idempotent and self-erasing; CLAUDE.md lists it in the
+rebuild sequence beside `reading-apply.ts`.
+
+Measured before writing, because an unresolved field renders as VISIBLE TEXT: a declared
+field with no value substitutes the empty string, so the ~2,000 cards with no derived
+accent render nothing rather than a literal `<<型>>`. A section gate also works and is
+not needed. `かな主流` DOES need its gate — it is a boolean, and bare interpolation is
+measured to fail.
+
+> [!important] **`かな主流` renders on ZERO cards, and the fix is Zach's.**
+> Decision 20 puts it inside the `<<#Reading>>` gate. All **six** `かな主流 = true` cards
+> have `Reading` unset, and the **693** cards that do have `Reading = true` are not the
+> kana-primary ones. The gate is correct and wired and fires for nobody. Either those six
+> want `Reading = true`, or the placement wants revisiting. Both change what his cards
+> show. **Do not pick one.**
+>
+> 言葉 has no `<<#Reading>>` gate at all, so the script did not invent a home for
+> `かな主流` there — reported, not silently skipped.
+
+### The older note, kept because the shape of the trap is the lesson
+
+**`<<型>>` had never been written to a card.** `materialiseAccents` iterates
+`template_fields WHERE type = 'accent'`, and there were **zero such rows** — so it had been
 a no-op every time it has run, reporting 0 written, which reads as "nothing to do". The
 3,850 derived accents sit in the `accents` table unused. It needs one field row per
 template plus a `<<型>>` reference in the template body; the body edit is Zach's (**D3**).

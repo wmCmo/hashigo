@@ -257,20 +257,30 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
     const db = openDatabase(DB, { readOnly: true, applySchema: false });
     try {
       const a = exportLocalArchive(db, AT);
-      // Today: no local grades yet, but the local FIELDS and settings are real and
-      // are already unreconstructible from exports/ (decision 9).
+      // Today: no local grades yet, but the local FIELDS and their values are real
+      // and already unreconstructible from exports/ (decision 9).
+      //
+      // 6 local fields is 読み, かな主流 and 型 across 単語 and 言葉 — 型 landed
+      // 2026-08-23 with D3. THE COMPOSITION IS WORTH KNOWING: of the 3,848 values,
+      // **3,830 are derived** 型 labels that `accent/cli.ts write` regenerates from
+      // the `accents` table, and only 18 are hand-authored (12 読み + 6 かな主流).
+      // They are kept anyway, deliberately: 309 KB is still instant to export, and
+      // including them makes a restore a single apply rather than "restore, then
+      // rebuild the 1.4 GB Python venv, then re-derive". Excluding them is one
+      // WHERE clause if that ever stops being the right trade.
       expect(a.counts).toEqual({
         reviews: 0,
         trackState: 0,
-        localFields: 4,
-        fieldValues: 18,
+        localFields: 6,
+        fieldValues: 3_848,
         settings: 4,
       });
       // 102,020 imported reviews are NOT in here — that is the point.
       const bytes = JSON.stringify(a).length;
       // eslint-disable-next-line no-console
       console.log(`local archive over the real corpus: ${bytes} bytes JSON`);
-      expect(bytes).toBeLessThan(20_000);
+      // Still three orders of magnitude under the 74 MB database it protects.
+      expect(bytes).toBeLessThan(400_000);
       expect(verifyLocalArchive(a)).toBeUndefined();
     } finally {
       db.close();

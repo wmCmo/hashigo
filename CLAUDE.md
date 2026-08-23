@@ -40,9 +40,12 @@ Three things that are built and do NOTHING, which is the opposite trap to rebuil
 
 * **The audio is bound but nothing plays it.** Binding is not playback; `play()`
   belongs to stage 7. See `src/generate/README.md`.
-* **`<<型>>` has never been written to a card.** `materialiseAccents` iterates
-  `template_fields WHERE type = 'accent'` and there are **zero such rows**, so it has
-  been a no-op reporting 0 every time it ran. The template body edit is Zach's.
+* **`かな主流` renders on ZERO cards, and that needs Zach.** `型` is done (below), but
+  decision 20 puts `かな主流` inside the `<<#Reading>>` gate and **all six
+  `かな主流 = true` cards have `Reading` unset**, while the 693 cards that do have
+  `Reading = true` are not the kana-primary ones. So the gate is correct, wired, and
+  fires for nobody. Either those six cards want `Reading = true` or the placement
+  wants revisiting — both change what his cards show, so neither is an agent's call.
 * **The UI half of decision 17's backup.** The MECHANISM landed 2026-08-23
   (`src/backup`, 2,674 bytes over the real corpus) but nothing calls it from a
   screen: the persistent banner when `persisted()` is false, the "add to home
@@ -175,6 +178,8 @@ npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accent
 npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accents-unidic.jsonl
 npx vite-node src/accent/cli.ts -- ojad  --db build/hashigo.db
 npx vite-node scripts/reading-apply.ts -- --db build/hashigo.db --apply   # the 13 読み rows
+npx vite-node scripts/accent-field-apply.ts -- --db build/hashigo.db --apply  # the 型 field + bodies
+npx vite-node src/accent/cli.ts -- write --db build/hashigo.db            # 3,830 型 labels
 ```
 
 **The last line is the LOCAL FIELDS, and it belongs to the rebuild, not to the accents.**
