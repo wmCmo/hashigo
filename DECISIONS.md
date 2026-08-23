@@ -69,6 +69,24 @@ right**: it holds his verbatim reasoning and this quotes it.
    of defect has since appeared in a math count (29 AUTHORED fragments vs 28
    RESOLVED) and a furigana count (4,933 skeleton runs vs 4,943 `<rt>` elements).
    Name the basis or the number is not a fact.
+
+   **A SECOND HALF, added 2026-08-23: check that the basis is the one the sentence
+   NEEDS.** Naming it is not sufficient. Four disagreements between two sessions in
+   one day were all two questions wearing one number — 692/693 (`Reading = true`
+   declared on the card's own template vs raw rows), 15/28 (orphan 単語 `Reading`
+   held by 言葉 vs by any template), 6,855/10,656 (speech mounts without
+   `resolveGenerated` vs with), and 132/235 (orphans that are field-move evidence vs
+   all orphans).
+
+   **The first three were harmless and the fourth was not**, which is the whole
+   addition. Both readings of the first three were true of *something*, so quoting
+   either only cost precision. But 235 was cited as SUPPORT FOR A CLAIM — that
+   moving a field orphans its values — and 92 of those 235 rows sit on cards with no
+   template at all, so they cannot evidence a move. Only one reading supported the
+   sentence. Worse, 235 reconciled exactly with the importer's own
+   `orphanFieldValues`, and that match read as confirmation while being
+   **coincidental to the claim**. A number that agrees with another figure is not
+   thereby the right number for the argument it is standing in.
 7. **The generator's input is the RENDERED text, never the stored value.** This
    cost real work twice, in two different subsystems, in one session: the audio
    cache key missed all 471 基本情報 cards because the value is `{{データ}}` and
