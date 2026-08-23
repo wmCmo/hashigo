@@ -270,12 +270,19 @@ His own words explaining WHY are not derivable from the code or from git.
   controller and its own object-URL scope, which must be released when that layer closes
   and not before (`src/blobs/url.ts`, rule 1 — the scope that mints a URL revokes it).
 
-  **ONE QUESTION FOR HIM, NOT FOR AN AGENT.** Mounting a card is what fires the audio on
-  the cards where the sound is the question. If he opens a linked card in a layer and that
-  card is one of those, **does its clip play?** Arguments both ways: it is a new card
-  appearing, which is when the sound belongs; but he opened it to READ something while
-  mid-review of a different card, and a clip firing under his thumb is a surprise. Nobody
-  should guess this — it is the hard rule meeting the modal stack.
+  **THAT QUESTION IS ANSWERED, AND THE PREMISE WAS WRONG — decision 30.** It was put to
+  him as "does a linked card opened mid-review play its clip?", with arguments both ways.
+  He rejected the framing:
+
+  > showing a preview card is not the same as put the card into a review mode, when you
+  > enter a review mode, everything goes as it is now, showing a previewed card lets you
+  > view every sides at once
+
+  A preview is not an exercise, so it has no reason to sound and nothing to hide: every
+  side at once, fully revealed, no grade, and a clip one deliberate tap away. **Review
+  mode unchanged** — which also ratifies the progressive-sides behaviour an agent chose
+  without asking. Full reasoning in `DECISIONS.md` 30. **The pattern is his usual one: the
+  pushback was a reframe, not a preference.**
 
   **(6) is not decoration.** A reversed track shows the same card with the sides permuted,
   and on this corpus that changes which side is the question — the reason the review

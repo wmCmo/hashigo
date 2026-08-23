@@ -652,6 +652,47 @@ right**: it holds his verbatim reasoning and this quotes it.
    Consistent with decision 15 and with `newTracks`' own docstring, which corrected
    an earlier claim that the queue delivered forward/reverse pairs.
 
+30. **A previewed card is not a reviewed card.** Decided 2026-08-23, and it dissolved a
+   question rather than answering it.
+
+   The question put to him was: opening a card-link layer mounts a card, and mounting is
+   what fires the audio on the 3,177 cards where the sound IS the question (decision 29) —
+   so does a linked card opened mid-review play? Both answers looked defensible.
+
+   **Neither was right, because the premise was.** His answer:
+
+   > showing a preview card is not the same as put the card into a review mode, when you
+   > enter a review mode, everything goes as it is now, showing a previewed card lets you
+   > view every sides at once
+
+   So there are two modes and only one of them is a drill:
+
+   ```plaintext
+   REVIEW    one card, sides PROGRESSIVE, clozes masked until the reveal, audio per
+             decision 29, a grade at the end.        UNCHANGED — "everything goes as it is now"
+   PREVIEW   every side at once, fully revealed, no masks, no grade, and nothing plays
+             by itself. A clip stays one deliberate tap away, as it always is.
+   ```
+
+   **WHY THIS IS MORE THAN A UI DETAIL.** Decision 29's audio is a property of the
+   EXERCISE, not of the card — so a card that is not being exercised has no reason to
+   sound. That also means preview needs none of the machinery review needs: no
+   prompt-on-entry, no drill-side boundary, no one-clip-per-reveal arbitration. It is
+   `revealAll()` and every side visible, which is what `src/render` already does.
+
+   **AND IT RATIFIES SOMETHING AN AGENT DECIDED WITHOUT AUTHORITY.** The review screen
+   shows sides PROGRESSIVELY — the question side, then the rest on reveal — and that was
+   my call, forced by measurement rather than by him: showing every side at once leaks the
+   answer, because 単語's side 3 is the example SENTENCE and it is not clozed, so on an
+   identify card it prints the very word he is being asked to name. *"when you enter a
+   review mode, everything goes as it is now"* is him looking at that behaviour and
+   keeping it. Recorded as ratified rather than left implicit.
+
+   **The two modes share the editor.** His request 3 is *"whether the card is in the
+   review mode or the pop up mode, you can press `e` for edit"* — so `e` is not a
+   review-mode key, and the edit surface is reachable from both. That is the one thing the
+   split does NOT separate.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

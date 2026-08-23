@@ -379,6 +379,15 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     on entry for mode 1 — or someone relaxes them to "may play on entry" and the 692 lose
     the protection that is their entire exercise. Do not weaken the mode-1 assertions.
 
+30. **A PREVIEWED CARD IS NOT A REVIEWED CARD — they are two different modes, and
+    preview shows every side at once.** Zach, 2026-08-23: *"showing a preview card is not
+    the same as put the card into a review mode, when you enter a review mode, everything
+    goes as it is now, showing a previewed card lets you view every sides at once."* So
+    the card-link modal (his request 2) renders **fully revealed, all sides, no masks, no
+    grading, and nothing plays by itself** — a clip is one deliberate tap away, as it
+    always is. **Review mode is UNCHANGED**, which also ratifies the progressive-sides
+    reading the app already ships. See `DECISIONS.md` 30.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19
