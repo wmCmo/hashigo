@@ -23,61 +23,108 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 
 ---
 
-## STATE RIGHT NOW — 2026-08-23, tree clean, ten commits landed
+## STATE RIGHT NOW — 2026-08-23, tree clean, THE APP RUNS
 
-**`play()` IS NOW CALLED.** The two newest commits are the session layer
-(`src/session`) and the card mount (`src/review`), and between them B1 is reduced to
-the CHROME: CSS, two buttons, and the app shell. Gates after them: **22 files / 723
-passed / 1 skipped**, typecheck 0, build 0 (74 modules, **26** export subpaths),
-spike:check 0.
+**There is an app.** `app/` is a page, an OPFS database, audio on the device and grades
+landing on disk. Measured end to end in Chromium over the real corpus: **7,716 cards,
+102,020 imported reviews, a 531-card plan, reveal, grade, next.** Read
+[app/README.md](app/README.md) before touching it — it carries three findings that only
+came out of running it, and none of them was reachable by reasoning.
 
-The headline measurement, because it closes the project's biggest unproven claim —
-`src/review` is the first thing in `src/` to drive `shadowingLoop`, the reveal loop
-that ships:
+```bash
+npx vite-node scripts/app-bootstrap.ts    # once
+npm run app:dev -- --host 127.0.0.1       # local
+npm run app:dev -- --host ::              # phone / tunnel
+```
 
-    mount + enter, 120 単語 cards   120 clip mounts · 0 resolve calls · 0 play() calls
-    reveal, 40 単語 cards            39 cards played · 39 play() calls
+Gates, all six re-run on this tree: **`npm test` → 24 files / 757 passed / 1 skipped**
+(~90 s) · `npm run typecheck` → 0 · **`npm run app:check` → 0** · `npm run build` → OK,
+77 modules, 27 export subpaths · `npm run spike:check` → 0 · `blobs … paths` → 0.
 
-See the two sections below. **The interleave question is now CLOSED** — Zach chose
-`spread` on 2026-08-23 and it ships windowed over 80 cards; decision 25 (the per-track
-`New Card` label) landed with it.
+### The three landings, newest first
 
-**D1 IS DECIDED and stage 7 is unblocked.** The review screen is **direction A2** —
-direction A's terminal look with direction C's hand — chosen from four mockups built over
-four real cards with real audio. `DECISIONS.md` **decision 23** is the specification and
-is explicit about the three things it does NOT settle. **Table B's B1 is no longer "do not
-start without him"; it is the next thing to build, against a written spec.**
+**1. `app/` — the shell (stage 9).** Its own top-level directory with its own Vite
+config, port 5274 beside the spike's 5273. `spike/` is THROWAWAY and `src/` has to stay
+importable from Node, so the app is neither; Zach handed that call over. The worker owns
+both databases (opfs-sahpool is worker-only and there is no SharedArrayBuffer without
+COOP/COEP, which this app deliberately does not set), the page owns the DOM and the
+object URLs.
 
-**Agents now commit their own work — `DECISIONS.md` decision 24**, a standing grant:
-*"no permission needed, commit is always revertible, and it's your job now."* Gates green
-first, scoped commits, and this heading is part of the last commit of a run rather than a
-follow-up. Pushing is still not authorised, and there is no remote.
+**2. `prepareCard` / `mountPrepared` — `src/review` cut at the process boundary.** The
+six-call order still exists in exactly one place; the seam is where the worker ends.
+`PreparedCard` is structured-cloneable and a test proves it with a REAL
+`structuredClone` over 300 cards / 1,079 sides — not a JSON round trip, which would drop
+a function silently and turn `loaded.values` from a Map into `{}`.
 
-What the four commits contain:
+**3. Decision 29 is BUILT, and `enter()` never had to change.** The trap this file and
+CLAUDE.md both warned about — "implementing mode 2 means making `enter()` play, which
+turns the mode-1 tests red for the right reason, and the wrong repair is relaxing them"
+— did not happen. `loop.enter()` still plays nothing on any card, ever;
+`mounted.enter()` asks the mode-2 question through `side.prompt()`, which unmasks
+nothing. `src/review/mode.ts` owns the policy and `src/render/reveal.ts` still contains
+no reference to `Reading` (a test asserts that literally).
 
-    feat(vite)  the mockups served at /mock/, fs.allow narrowed off the corpus,
-                the ngrok host allowed, and the generator promoted to scripts/
-    docs        the seven point-in-time reports moved under notes/archive/
-    docs        BACKTEST.md's withdrawn 454-day argument, corrected where it was
-                still stated as live in the Recommendation
-    docs        CLAUDE.md 717 -> 333 lines, DECISIONS.md split out, decisions 23 & 24
+### P1 IS DONE — the last unmeasured number in the project
 
-**The security fix is the one to know about.** `server.fs.allow` was `[root]`, so Vite's
-`/@fs/` route served `build/hashigo.db` (74,465,280 bytes) and the blob store
-(673,554,432) to anything that could reach the dev server. Harmless on localhost, not
-harmless behind the public tunnel the same config authorises. Now 403. `.env` and `.git/`
-were refused before and after, so **no credential was ever exposed** — source, notes and
-databases were.
+The per-grade OPFS write, over 60 consecutive grades, timed INSIDE the worker so the
+figure excludes `postMessage`:
 
-**Tunnelling needs `npm run spike:dev -- --host ::`, not `--host 127.0.0.1`.** The
-IPv4-only bind cost a 502: ngrok forwards to `localhost`, Windows resolves that to `::1`
-first, and ngrok does not fall back to IPv4 the way PowerShell does.
+```plaintext
+min 20.2 ms · p50 37.3 · p90 61.1 · max 81.5 · mean 38.9    Chromium, desktop
+```
+
+A 443-card day is about **17 seconds** of write time in total. **Basis:**
+`performance.now()` around `ReviewSession.answer()` — gradeTrack's reads, the `reviews`
+INSERT, the `card_tracks` UPDATE and sqlite-wasm's own prepare (`WasmDb` prepares ~6
+statements per grade and finalizes none: that is **P2**). One 1,563 ms outlier on the
+7th grade of a cold database, not reproduced in 83 further grades; treat it as first-run
+warmup until something reproduces it. **NOT measured on the handset** — his phone wrote
+the corpus 1.44× faster than this machine, so expect quicker rather than slower.
+
+### What is left, in dependency order
+
+| | what | state |
+|---|---|---|
+| **1** | **Run the app on his phone** | The one thing that needs him. `npm run app:dev -- --host ::` plus a tunnel; the bind-address trap is in `app/README.md`. Everything below can wait for it |
+| **2** | **P2 — the prepared-statement leak in `WasmDb`** | ~6 per grade, ~2,700 in a 443-card session, and its own docstring says an unfinalized statement makes `pauseVfs()` throw. Now REACHABLE, and the p90 above is the number it would improve |
+| **3** | **Eviction detection** | Decision 17's banner and one-tap export are in `app/`; noticing an eviction that ALREADY happened is not |
+| **4** | **Stage 10, the editor** | `app/` ships one editor-shaped thing — decision 29's `Reading` toggle — because the audit loop dies without it. The rest is unspecified in shape. The measured precedent for field moves is the **132 rows** below |
+| **5** | **Stage 11, sync** | Unspecified in shape. Decision 18: the TTS key never goes in the client |
+| — | ~~P1's second half~~ | **DONE**, above |
+| — | ~~The app shell~~ | **DONE** — `app/` |
+| — | ~~Decision 29's conditional audio~~ | **DONE** — `src/review/mode.ts` |
+| — | ~~`型`'s gating~~ | **DONE** — in the TEMPLATE, `scripts/accent-field-apply.ts` |
+| — | ~~Decision 17's UI~~ | **banner and export DONE**; eviction detection is (3) |
+
+### Three things RUNNING it found, which reasoning had not
+
+Recorded here as well as in `app/README.md`, because the shape of each is reusable:
+
+1. **The prompt boundary has to be POSITIONAL.** A first version took "every side up to
+   the first one that hides or sounds something", and **the first card the real session
+   served killed it**: a REVERSE New Vocab track, order permuted to Meaning → Example →
+   Vocab, whose Example side carries audio — so the rule pulled it into the question and
+   the sentence *"time constraints make it impossible to do everything"* printed the
+   answer above it. Reverse tracks are why the rule cannot be clever.
+2. **Exactly one clip per reveal, or 単語 plays two at once.**
+   `audioController.play()` defers extras only WITHIN one call. `ShadowingSide.reveal()`
+   gained `{silent}` — unmask without sound, the safe direction.
+3. **A reverse identify track is SILENT on entry, and that is CORRECT.** The clip is the
+   ANSWER there. `promptsOnEntry` already had it right because it asks about the SIDE,
+   not the card; the HINT was what lied. Pinned as a differential: same 40 cards,
+   **40/40 forward ask, 40/40 reverse silent**.
 
 > [!warning] **`git status` FIRST, always — and if you change the state, change this
-> heading in the SAME edit.** It has been wrong in both directions in one day: commit
-> `0477240` fixed it claiming NOTHING IS COMMITTED while the body said the opposite, and
-> `a4e00b3` fixed it claiming the tree was clean when a day's work was unstaged. It is a
+> heading in the SAME edit.** It has been wrong in both directions in one day. It is a
 > heading a cold session trusts before it has looked at anything.
+
+---
+
+## The record below this line is HISTORY, kept for the reasoning
+
+Everything from here down was written while the shell did not exist. The measurements
+are still good and the traps are still live; the "what to do next" framing is not. Where
+a section says something is missing, check the table above first.
 
 **Twenty commits landed 2026-08-22** — the scheduler's interval fuzz, the forecast tile
 and heatmap tables, the cap/relearning derivations, the ratifications, the
@@ -696,11 +743,13 @@ statement makes `pauseVfs()` throw.
 
 | I want… | read |
 |---|---|
+| **THE APP — how to run it, and the three things running it found** | [app/README.md](app/README.md) |
+| **which exercise a card runs, and the two traps in deciding it** | `src/review/mode.ts` — decision 29 |
 | **the session layer: the queue, and decision 13's re-ask** | `src/session/README.md` — including the two pieces of dead code injection found |
 | **the card mount, and the first real-browser evidence for the shipping reveal loop** | `src/review/README.md` |
 | **decision 17's backup: what it archives, and why not the database file** | `src/backup/README.md` |
-| **the chosen review-screen direction, and why** | `DECISIONS.md` decision 23 — and the mockup at `/mock/` (`npm run spike:dev -- --host ::`) |
-| what a fresh session must know | `CLAUDE.md` — auto-loads; 328 lines, and the 22 decisions as a one-line index |
+| **the chosen review-screen direction, and why** | `DECISIONS.md` decision 23 — the mockup at `/mock/` is a spec for the LOOK only; the built screen is `app/` |
+| what a fresh session must know | `CLAUDE.md` — auto-loads, and the 29 decisions as a one-line index |
 | **why a decision is what it is** | `DECISIONS.md` — the full derivations, split out of CLAUDE.md 2026-08-22 |
 | a point-in-time report, treated as a sample | `notes/archive/` — and its `README.md` first |
 | what to do next, in dependency order | `NEXT.md` |
@@ -781,12 +830,13 @@ state, not a gap.
 ## The gates, and the one chore that bites
 
 ```bash
-npm test          # 23 files, 734 passed, 1 skipped (gated FSRS refit). 33-88 s.
+npm test          # 24 files, 757 passed, 1 skipped (gated FSRS refit). 33-90 s.
                   # EXITS 1 ANYWAY when the "Timeout calling onTaskUpdate" reporter
                   # errors appear -- everything passes and the code is still 1.
                   # Check the pass count; do NOT trust $LASTEXITCODE here.
 npm run typecheck # exit 0
-npm run build     # VERIFIED 76 modules, 54 dist targets = 27 export subpaths
+npm run app:check # exit 0 — app/ has its own tsconfig; a REQUIRED gate, not optional
+npm run build     # VERIFIED 77 modules, 54 dist targets = 27 export subpaths
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 0
 npm run spike:check
 ```

@@ -5,10 +5,16 @@ user's Japanese study. Built because Mochi's developer stopped fixing reported b
 
 ## Where this is — and where the numbers live
 
-**Everything from "what is due" to a live, audible card exists in `src/`. What does not
-exist is the SHELL** — the page that hosts it, a writable database in the browser, and
-the audio on the device. `play()` IS called: `src/review` mounts a card and drives
-`shadowingLoop`, and `test/review.test.ts` measures it over real cards.
+**THE APP RUNS.** As of 2026-08-23 there is a page (`app/`), a writable SQLite
+database in OPFS, audio on the device and grades landing on disk — measured end to end
+in Chromium over the real corpus: 7,716 cards, 102,020 imported reviews, a 531-card
+plan, reveal, grade, next. `app/README.md` is the entry point; `npm run app:bootstrap`
+then `npm run app:dev` is the whole way in.
+
+**What is left is no longer the shell.** It is the editor and sync (stages 10, 11), an
+on-device run of the app itself, and the two small things named at the end of
+`app/README.md`. Everything from "what is due" to a live, audible, graded card exists
+and is pinned.
 
 Built and tested against the real export: stages **0-6 and 8, plus 1.5** — schema,
 importer, dashboard, template engine, renderer (`src/render`), scheduler backtest,
@@ -31,15 +37,19 @@ its own README says it hand-rolls its reveal sequencing rather than importing
 `shadowingLoop`, so the green panel was evidence about the BROWSER and never about
 the shipping code.
 
-**What is left is the CHROME: CSS, the two buttons, and the app shell.** The
-session, the mount, the audio and the loop all exist and are pinned. Design settled: decision
-23, direction A2. Also missing: the app shell, editor and sync (stages 9, 10, 11).
-`spike/viewer/` is a THROWAWAY harness, not that shell.
+**And the chrome exists too, as of 2026-08-23** — `app/` is decision 23's direction
+A2 over the real pipeline, in its own top-level directory with its own Vite config
+(port 5274, beside the spike's 5273). `spike/viewer/` remains a THROWAWAY harness and
+is not that shell.
 
-Three things that are built and do NOTHING, which is the opposite trap to rebuilding:
+Three things running it found that reasoning had not, all three in `app/README.md`:
+the prompt boundary has to be POSITIONAL (a reverse track printed the answer above the
+question); exactly one clip per reveal, or 単語 sounds its word and its example sentence
+at once; and a reverse identify track is silent on entry, which is CORRECT because the
+clip is the answer there.
 
-* **The audio is bound but nothing plays it.** Binding is not playback; `play()`
-  belongs to stage 7. See `src/generate/README.md`.
+Two things that are built and do NOTHING, which is the opposite trap to rebuilding:
+
 * **`かな主流` renders on ZERO cards — and the FIRST diagnosis of this was wrong.**
   Corrected by a peer review 2026-08-23, verified before recording. **All six
   `かな主流 = true` cards are on 言葉**, whose template declares no `Reading` field at
@@ -51,23 +61,22 @@ Three things that are built and do NOTHING, which is the opposite trap to rebuil
   drifted. **And the follow-up guess is also dead:** all six carry ZERO undeclared values,
   so they did not migrate from 単語 — they are natively 言葉. So the question is just
   **"should 言葉's body render `かな主流`?"**, which is one line of template. Zach's call.
-* **`型` renders BARE from the template, and the screen must gate it.** It is not inside
-  a cloze, so rendering side 2 through `src/render` puts the accent on screen the moment
-  the side appears — and decision 20's stated reason for keeping it off side 1 is that it
-  "would hand him the thing he is meant to produce", which side-2-*entry* does too.
-  **This is NOT an open decision: A2 already answers it.** In
-  `build/mock/out/a2-terminal.html` the label sits inside `<div class="answer">`
-  (`display:none` until `[data-state="revealed"]`), beside `.reading` and the `.contour`
-  boxes, with only `.head` visible at prompt time. The mockup is hand-authored HTML that
-  never went through the template engine, so the MOCKUP and the TEMPLATE disagree and the
-  real screen has to reconcile them: **gate the accent field into the answer region, or
-  wrap `<<型>>` in a cloze so the body says what A2 shows.** Implementation, not taste.
-  (Side placement for `言葉` is settled — decision 26.)
-* **The UI half of decision 17's backup.** The MECHANISM landed 2026-08-23
-  (`src/backup`, 332,262 bytes over the real corpus) but nothing calls it from a
-  screen: the persistent banner when `persisted()` is false, the "add to home
-  screen" prompt beside it, and detecting an eviction that already happened all
-  belong to the app shell.
+* **DONE 2026-08-23, kept here because the SHAPE is the lesson: `型` used to render
+  BARE and leak on entry.** It was not inside a cloze, so side 2 put the accent on
+  screen the moment the side appeared — and decision 20's stated reason for keeping it
+  off side 1 is that it "would hand him the thing he is meant to produce", which
+  side-2-*entry* does too. **Fixed in the TEMPLATE, not in code**
+  (`scripts/accent-field-apply.ts`): `<<#型>>` guards it, `<<#Reading>>` clozes it in
+  mode 1, `<<^Reading>>` leaves it plain in mode 2. In code it would have meant adding
+  field provenance to the resolver, because a resolved plain field is substituted to
+  TEXT before the render and nothing downstream knows `平板` came from `型`. Zach asked
+  for exactly this: *"it should render conditionally from my template."*
+* **The UI half of decision 17's backup — DONE 2026-08-23.** `app/` carries the
+  non-dismissible banner when `persisted()` is false and the one-tap export, asking for
+  persistence from the WINDOW because `navigator.storage.persist` is absent in a worker.
+  **Still missing: detecting an eviction that already happened.** The "add to home
+  screen" prompt dropped in priority — persistence was granted on his handset in a
+  plain browser tab, not installed.
 
 The accent pipeline is **DONE and VALIDATED** — do not redo it.
 `notes/pitch-accent-pipeline.md` §7-§10 has every measurement, including the two that
@@ -79,15 +88,16 @@ onsets, and the 20-card listening test measured GOOGLE rather than our derivatio
 > review screen is **direction A2** and decision 23 is the specification. That was the
 > last thing standing between the finished pipeline and a usable app.
 >
-> What exists is a MOCKUP (`build/mock/out/`, regenerate with the two commands below):
-> no scheduler, no grading, no writes. Building the real screen means wiring
-> `hashigo/scheduler` → `hashigo/cards` → `hashigo/render` behind that layout, and the
-> hard rule still governs it — **audio fires on cloze reveal, never on side entry.**
+> **THE REAL SCREEN IS BUILT** — `app/`, 2026-08-23. `build/mock/out/` is still there
+> and is still a spec for the LOOK and never for the structure: its `.head` /
+> `.answer` divs are hand-authored by `scripts/mockup-html.ts` and `src/render`
+> produces none of them. Do not read layout structure out of it; `app/README.md`
+> explains what the real render forced instead.
 >
 > Decision 23 names three things it deliberately does NOT settle (the head word pinning
 > after reveal, where a decision-13 re-ask re-enters the session, and type/spacing
-> detail). Those are still his. D2-D5 remain in his Obsidian planner, which no agent
-> reads.
+> detail). Those are still his, and the app ships a plain reading of each rather than a
+> decision. D2-D5 remain in his Obsidian planner, which no agent reads.
 
 **Every status figure lives in [NEXT.md](NEXT.md), not here** — the queue counts, the
 gate results, what landed when, and the dependency-ordered list of what is left. That
@@ -105,7 +115,7 @@ argument, or a second artifact gets created instead of updating this one.
 ## The commands
 
 ```bash
-npm test                # 23 files, 734 passed, 1 skipped (the FSRS refit, gated)
+npm test                # 24 files, 757 passed, 1 skipped (the FSRS refit, gated)
                         # 32.7-87.7 s over six runs.
                         # IT EXITS 1 ON A FULLY PASSING RUN. The "Timeout calling
                         # onTaskUpdate" lines are Vitest's reporter RPC under load,
@@ -116,11 +126,22 @@ npm test                # 23 files, 734 passed, 1 skipped (the FSRS refit, gated
                         # (CI, a hook, a `;`-joined line) reports a break that is
                         # not there. Measured on a clean tree with zero edits.
 npm run typecheck       # exit 0
+npm run app:check       # exit 0 — app/ has its OWN tsconfig and this is a REQUIRED gate
 npm run build           # refuses to exit 0 unless dist/ actually imports (27 export subpaths)
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
 npm run dashboard -- --db build/hashigo.db --out dashboard.html   # English; --locale ja for the other
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 1 on any location
 npm run spike:check     # the browser contract; spike/ is excluded from tsconfig.json
+
+# THE APP. This is the thing. `app/README.md` first -- it carries the three findings
+# that only came out of RUNNING it, and P1's per-grade write measurement.
+npm run app:bootstrap                     # once: build/app/*.db, the two files it fetches
+npm run app:dev -- --host 127.0.0.1       # local only
+npm run app:dev -- --host ::              # phone / tunnel (see the bind-address trap)
+npm run app:check                         # tsc -p app/tsconfig.json
+# Raise the audio coverage when it matters more than the download (default 32 MiB,
+# which reaches 23.8% of the 5,708 speech-bearing cards):
+npx vite-node scripts/app-bootstrap.ts -- --speech-bytes 209715200
 
 # The scheduler. Read-only except `seed`, which writes state and moves no due date.
 npx vite-node src/scheduler/cli.ts -- counts   --db build/hashigo.db
