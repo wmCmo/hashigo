@@ -8,13 +8,16 @@ summary process, it loses so much context."* So this is the handoff, not a summa
 settled decision) → this file → whichever `notes/` file the task touches.
 
 Zach keeps a planner at
-`C:\DEV\obsidian\second-brain\PARA\1Projects\ハシゴ\Planner.md`. **As of 2026-08-22 it is
-exactly two sections — what he has to decide, and what is left before he can use the app —
-and nothing else.** He cut it to that himself: everything that was status, measurement,
-what-not-to-rebuild or reasoning moved into this repo, because no agent reads Obsidian.
+`C:\DEV\obsidian\second-brain\PARA\1Projects\ハシゴ\Planner.md`. **As of 2026-08-23 it is
+three short sections — what he has to decide, what is left before he can use the app, and
+a wishlist he added himself.** Everything that was status, measurement, what-not-to-rebuild
+or reasoning moved into this repo, because no agent reads Obsidian.
 
-So: it is NOT in git, it holds no measurements, and if you edit it, **do not grow it**. A
-thing that is not a decision of his or a blocker belongs here instead. His verbatim
+So: it is NOT in git — **an edit there is NOT revertible, so copy it first** — and if you
+edit it, **do not grow it**. A thing that is not a decision of his, a blocker, or a wish
+belongs here instead. It quotes no figures on purpose: the ones it used to carry went
+stale, so it points at the repo rather than counting. **Do not renumber D2-D5** — this
+file and `CLAUDE.md` cite them by number, and D1 is absent because it is decided. His verbatim
 reasoning — the SOURCE that CLAUDE.md's decisions were written from — now lives at
 `notes/zach-in-his-own-words.md`; preserve his wording there and don't paraphrase him away.
 
@@ -113,9 +116,8 @@ forbids it. `src/cards/README.md` has both.
 > numbered list first. There are 22 decisions; read them before proposing anything.
 
 **THE DECISION QUEUE IS NO LONGER EMPTY — it has five items, and they are HIS, in his
-planner.** He rewrote that file on 2026-08-22 to exactly two sections: what he has to
-decide (**D2–D5**) and what is left before he can use the app. **D1 IS NOW DECIDED —
-see decision 23; the review screen is direction A2.** Historical note, because the
+planner** — **four** of them now, D2-D5. **D1 IS DECIDED: see decision 23, the review
+screen is direction A2**, and the planner was updated on 2026-08-23 to say so. Historical note, because the
 sentence below is what this file said for most of 2026-08-22: **D1 — what the review
 screen looks like — is the only thing blocking the project.** Do not open by asking him
 to re-decide anything else; the four he cleared earlier that day are below, and every one
