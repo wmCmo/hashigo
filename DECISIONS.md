@@ -538,6 +538,42 @@ right**: it holds his verbatim reasoning and this quotes it.
    refuses to let the UniDic cross-check resolve on its own and why the labels were
    materialised rather than generated at render.
 
+28. **`言葉` displays the way it was inputted, so `かな主流` renders nowhere.** Decided
+   2026-08-23, closing the last of D3's three questions: *"for 言葉 deck, it should
+   display the way it's inputted."*
+
+   **The route is worth keeping, because two steps along it were wrong.** The question
+   only became askable once a peer review established that the flag and the
+   `<<#Reading>>` gate sit on DIFFERENT templates — all six flagged cards are `言葉`,
+   while the marker was authored into `単語`.
+
+   Zach's first answer was that everything in `言葉` is kana anyway, which would make the
+   flag vacuous. **Measured, that is 94.9% true and not 100%:** of 391 `言葉` head words,
+   371 contain no kanji and **20 do.** He corrected himself on seeing them — *"which was
+   wrong now that you showed me those cards i remember now"* — and then ruled on the
+   general principle rather than the special case, which is the better decision and the
+   reason this entry is about DISPLAY rather than about `かな主流`.
+
+   **The 20 split cleanly, and the split is why "hide kanji on `言葉`" is wrong:**
+
+   ```plaintext
+   6   single words whose kanji nobody writes   蟻 雄 搔く 茄子 灰汁 雌  <- the かな主流 six
+   14  phrases where the kanji is normal        目をつける · 気が付く · 口をきく ·
+                                                質がいい · つじつまが合わない · 一体 ·
+                                                一から十まで · 目が点になる · 〜ない限り ·
+                                                と来たら · 待ちきれない · ...
+   ```
+
+   So the flag does real discrimination — it separates the 6 from the 14 exactly — but it
+   fires on 6 of 391 cards and says something the deck already implies. Not worth a badge.
+
+   **"Hide the kanji on `言葉`" was an AGENT'S suggestion and he rejected it explicitly:**
+   *"i never said on 言葉 deck you should hide kanji?"* Recorded as rejected so it is not
+   re-proposed — it breaks all 14 phrase cards, where the kanji is the correct spelling.
+
+   **The values stay stored.** Decision 9 carries them through a re-import; they render
+   nothing. Six rows in the archive is not a cost worth a deletion nobody asked for.
+
    Consistent with decision 15 and with `newTracks`' own docstring, which corrected
    an earlier claim that the queue delivered forward/reverse pairs.
 

@@ -132,4 +132,24 @@ His own words explaining WHY are not derivable from the code or from git.
   conflated, so displaying one privileges it. He accepted the consequence that the
   distinction then lives only in the label. Decision 27.
 
+- **`言葉` displays as authored, and he corrected himself to get there.** 2026-08-23,
+  asked whether `言葉`'s body should render `かな主流`. His first answer was that the deck
+  is kana anyway — shown the 20 kanji-containing head words, he said:
+
+  > which was wrong now that you showed me those cards i remember now
+
+  and then ruled on the principle rather than the exception:
+
+  > for 言葉 deck, it should display the way it's inputted
+
+  **He also rejected something an agent had put in his mouth**, which is worth recording
+  as a caution about how these questions get framed:
+
+  > i never said on 言葉 deck you should hide kanji? i just said i never put kanji words
+  > in the deck
+
+  The agent had raised "hide kanji on 言葉" as a hypothetical and then treated it as a gap
+  in HIS reasoning. It was never his position, and it is wrong on the merits: 14 of the 20
+  are phrases (`気が付く`, `目をつける`) where the kanji is the correct spelling. Decision 28.
+
 ---

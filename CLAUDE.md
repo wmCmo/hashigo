@@ -292,6 +292,19 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     **This is the point of the whole accent pipeline, in Zach's words:** he did not know
     花 and 鼻 diverge once a particle attaches, and natives get it right because the 型 rule
     is encoded rather than heard. See `notes/zach-in-his-own-words.md`.
+28. **`言葉` DISPLAYS THE WAY IT WAS INPUTTED, and `かな主流` therefore renders nowhere.**
+    Zach, 2026-08-23: *"for 言葉 deck, it should display the way it's inputted."* This
+    closes the last of D3's three questions. The head word shows as authored — `蟻` as
+    `蟻`, `にんじん` as `にんじん` — so the flag changes no display and needs no home in
+    the body. `scripts/accent-field-apply.ts` was right to decline to invent one.
+    **The values STAY STORED** (decision 9 protects them from re-import); they simply
+    render nothing. Deleting them was never authorised.
+    **Do NOT turn this into "hide kanji on 言葉" — that was an agent's idea, not his,
+    and it is wrong.** 20 of 391 `言葉` head words contain kanji, and they split cleanly:
+    **6** are single words whose kanji nobody writes (`蟻` `雄` `搔く` `茄子` `灰汁` `雌`
+    — exactly the `かな主流` six), and **14** are phrases where the kanji is entirely
+    normal (`目をつける`, `気が付く`, `口をきく`, `一から十まで`, `〜ない限り` …). Any rule
+    keyed on the DECK rather than on the flag breaks those 14.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

@@ -535,11 +535,13 @@ accent render nothing rather than a literal `<<型>>`. A section gate also works
 not needed. `かな主流` DOES need its gate — it is a boolean, and bare interpolation is
 measured to fail.
 
-> [!important] **ONE THING FROM D3 IS STILL ZACH'S. TWO WERE ANSWERED 2026-08-23**
-> (decisions 26 and 27), and one of the three was first diagnosed WRONG here.
+> [!important] **ALL OF D3 IS ANSWERED as of 2026-08-23** — decisions 26, 27 and 28.
+> One of the three was first diagnosed WRONG here, and the last one Zach answered by
+> correcting his own first answer, so the route is recorded as well as the verdict.
 > Corrected by a peer review 2026-08-23; verified before recording.
 >
-> **1. `かな主流` renders on ZERO cards, and not for the reason first written here.**
+> **1. ANSWERED — `言葉` displays as inputted, so it renders nowhere (decision 28).** The
+> diagnosis below was also not the reason first written here.
 > This file used to say the six `かな主流 = true` cards "have `Reading` unset" so the gate
 > fires for nobody. What is actually true: **all six are on 言葉**, which declares no
 > `Reading` field at all and whose body contains neither marker, while the marker was
@@ -594,9 +596,17 @@ measured to fail.
 > layout may never drop the label to save space — on those 2,148 cards it is the whole
 > exercise, the same shape of failure as autoplay.
 >
-> **ONE IS LEFT AND IT IS STILL HIS: item 1, `かな主流` on 言葉.**
-> `scripts/accent-field-apply.ts` declined to invent a home for it and says so; that part
-> was right, and it is still the open question — one line of template.
+> **NOTHING IS LEFT OF THE THREE.** `scripts/accent-field-apply.ts` declined to invent a
+> home for `かな主流` on 言葉 and says so; decision 28 confirms that was correct — the
+> field stays stored (decision 9) and renders nothing.
+>
+> **WHAT REPLACED THEM, and it is bigger: `言葉` HAS NEVER BEEN MOCKED UP.** A2's four
+> cards are `裸足`, `捜査`, `係数` and `取り戻す` — all 単語/基本情報, no 言葉 among them.
+> And `言葉` is structurally different: its side 1 is `{{<<言葉>>}}`, so **the head word
+> itself is the cloze**, whereas 単語 shows the kanji and clozes the READING. With 型 in
+> the answer region (A2) and the word masked, what the PROMPT side of a 言葉 card shows
+> has never been drawn. 392 cards. Decision 23 settled the 単語 screen; it did not settle
+> this one, and nobody should infer it.
 
 ### The older note, kept because the shape of the trap is the lesson
 
