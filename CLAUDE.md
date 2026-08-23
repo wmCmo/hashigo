@@ -48,7 +48,9 @@ Three things that are built and do NOTHING, which is the opposite trap to rebuil
   gate are on **different templates**. That kills the option this file used to offer
   ("those six want `Reading = true`"): you cannot set a field a template does not
   declare. `scripts/accent-field-apply.ts`'s own header had it right; this summary of it
-  drifted. Zach's call, and he needs the right question.
+  drifted. **And the follow-up guess is also dead:** all six carry ZERO undeclared values,
+  so they did not migrate from 単語 — they are natively 言葉. So the question is just
+  **"should 言葉's body render `かな主流`?"**, which is one line of template. Zach's call.
 * **`型` is visible at SIDE ENTRY, before any reveal — on both templates.** It is not
   inside a cloze, so when the side appears the accent is already on screen. Decision 20's
   stated reason for keeping it off side 1 is that it "would hand him the thing he is

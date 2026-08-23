@@ -489,7 +489,7 @@ entry. That is a judgement, not a decision of his; make it and write down why.
 | ~~**B1**~~ | **Stage 7 — Review UI** — **UNBLOCKED 2026-08-22** | The taste question is answered: **decision 23**, direction A2. It is no longer "do not start without him" — it is the next thing to build, against a written spec. What exists is a MOCKUP in `build/mock/out/` (three directions plus the chosen A2), served at `/mock/` by `vite.config.ts` middleware; it has no scheduler, no grading and writes nothing. The build is wiring `hashigo/scheduler` → `hashigo/cards` → `hashigo/render` behind that layout. Two constraints, both non-negotiable: **audio fires on cloze reveal, NEVER on side entry** (`src/render/reveal.ts`, and the autoplay section of CLAUDE.md), and the keycap hints must stay behind `@media (hover: hover) and (pointer: fine)` rather than any hover affordance — decision 19 is why. Decision 23 lists what it does NOT settle; do not decide those for him |
 | **B2** | Design tokens → `spike/viewer/` | 3 named fixes exist in `notes/design-tokens.md`, but he judges the result on his own phone. Propose, do not decide |
 | **B3** | Nested-tag sidebar · Ctrl+K palette | query layers are done; the UI is taste |
-| **B4** | Stage 10 Editor · Stage 11 Sync | both large, both unspecified in shape. The SHELL (stage 9) is no longer in this table — see "Starting the shell" above; Zach handed the "how" over on 2026-08-23 |
+| **B4** | Stage 10 Editor · Stage 11 Sync | both large, both unspecified in shape. **One stage-10 decision already has data behind it:** decision 21 makes fields MOVABLE between templates from the UI, and this corpus shows what Mochi's own version of that move does — it **orphans** the old values rather than migrating or clearing them. Measured: 15 言葉 and 7 漢字 cards hold an orphan 単語 `Reading`, plus 15 漢字←単語 and 11 New Vocab←単語 `Reference`, and 10 単語←言葉 — **235 orphaned field values in total**, which is exactly the figure the importer reports. So "what happens to the old value on a move" is a real decision with a measured precedent, not a blank. The SHELL (stage 9) is no longer in this table — see "Starting the shell" above; Zach handed the "how" over on 2026-08-23 |
 
 ### ~~The one stage-7 question still open~~ — CLOSED by decision 13
 
@@ -545,8 +545,25 @@ measured to fail.
 > authored into 単語 where no card carries the flag. **The flag and the gate are on
 > different templates.** That removes one of the two options previously offered — you
 > cannot set `Reading = true` on a card whose template has no such field.
-> (For the record: total `Reading = true` is **693**, 692 on 単語 plus one orphan value on
-> a 言葉 card for a field 言葉 does not declare. The review said 692; 693 is right.)
+>
+> **AND THE OBVIOUS FOLLOW-UP HYPOTHESIS IS DEAD, checked card by card.** "Those six
+> migrated from 単語 and were left on the wrong template" is the natural next guess, and it
+> is wrong: all six (`NpDWVYgm`, `Ufs9lMJR`, `XVucJVhx`, `e6lbPHIS`, `f9UT7D6f`,
+> `vim2i4A9`) carry **zero** undeclared field values. A card that moved templates leaves
+> its old values behind — 15 言葉 cards carry an orphan 単語 `Reading`, and one of those is
+> the 693rd row — but **none of the six is one of them.** They are natively 言葉, and the
+> flag was authored there on purpose.
+>
+> **So the question is narrower than either of us first wrote it:** not "are these cards
+> on the wrong template" but **"should 言葉's body render `かな主流`?"** That is answerable
+> in one line of template. Killed explicitly rather than left implied, so nobody spends a
+> session on the migration theory.
+> (**The count is a BASIS SPLIT, not an error** — decision 6 applied to a field count.
+> **693** rows carry `Reading = true`; **692** of them are on a card whose own template
+> DECLARES the field, and only those can render. This sentence is about what renders, so
+> **692 renderable / 693 rows** is the honest form. A first version of this note said "the
+> review said 692; 693 is right", which was the wrong way round: for the question being
+> asked, 692 was the better number.)
 >
 > **2. `型` is on screen at SIDE ENTRY, before any reveal, on both templates.** It is not
 > inside a cloze. Decision 20 keeps it off side 1 because that "would hand him the thing
