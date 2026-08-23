@@ -249,6 +249,34 @@ His own words explaining WHY are not derivable from the code or from git.
   card-link popup. That is an editor, reachable from two places, and it lands before the
   card gallery he asks for in (5).
 
+  **AND (2) NESTS, WHICH HE ADDED SEPARATELY AND LIKES:**
+
+  > also, when you click another link that's on the pop up modal, it opens another layer on
+  > the top, and you can keep going in mochi, and i kinda like that system
+
+  So it is a STACK of layers, not one modal that replaces its contents. Measured on his
+  corpus before anyone designs it, because "you can keep going" turns out not to be
+  theoretical:
+
+  ```plaintext
+  8,744 card links from 4,335 distinct source cards
+  deepest chain found (first 400 sources, acyclic)   9 cards
+  MUTUAL two-way link pairs                          23
+  ```
+
+  **The 23 mutual pairs are the finding.** A links to B and B links back to A, so the
+  stack can grow WITHOUT BOUND on his real data — any depth limit is a design choice, not
+  something the corpus imposes. And every layer is a fully mounted card: its own audio
+  controller and its own object-URL scope, which must be released when that layer closes
+  and not before (`src/blobs/url.ts`, rule 1 — the scope that mints a URL revokes it).
+
+  **ONE QUESTION FOR HIM, NOT FOR AN AGENT.** Mounting a card is what fires the audio on
+  the cards where the sound is the question. If he opens a linked card in a layer and that
+  card is one of those, **does its clip play?** Arguments both ways: it is a new card
+  appearing, which is when the sound belongs; but he opened it to READ something while
+  mid-review of a different card, and a clip firing under his thumb is a surprise. Nobody
+  should guess this — it is the hard rule meeting the modal stack.
+
   **(6) is not decoration.** A reversed track shows the same card with the sides permuted,
   and on this corpus that changes which side is the question — the reason the review
   screen's prompt boundary had to become positional. If he cannot see which direction he
