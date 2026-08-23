@@ -40,14 +40,24 @@ Three things that are built and do NOTHING, which is the opposite trap to rebuil
 
 * **The audio is bound but nothing plays it.** Binding is not playback; `play()`
   belongs to stage 7. See `src/generate/README.md`.
-* **`かな主流` renders on ZERO cards, and that needs Zach.** `型` is done (below), but
-  decision 20 puts `かな主流` inside the `<<#Reading>>` gate and **all six
-  `かな主流 = true` cards have `Reading` unset**, while the 693 cards that do have
-  `Reading = true` are not the kana-primary ones. So the gate is correct, wired, and
-  fires for nobody. Either those six cards want `Reading = true` or the placement
-  wants revisiting — both change what his cards show, so neither is an agent's call.
+* **`かな主流` renders on ZERO cards — and the FIRST diagnosis of this was wrong.**
+  Corrected by a peer review 2026-08-23, verified before recording. **All six
+  `かな主流 = true` cards are on 言葉**, whose template declares no `Reading` field at
+  all and whose body contains neither marker. The marker was authored into 単語, where
+  no card carries the flag. So it is not "the gate fires for nobody" — the flag and the
+  gate are on **different templates**. That kills the option this file used to offer
+  ("those six want `Reading = true`"): you cannot set a field a template does not
+  declare. `scripts/accent-field-apply.ts`'s own header had it right; this summary of it
+  drifted. Zach's call, and he needs the right question.
+* **`型` is visible at SIDE ENTRY, before any reveal — on both templates.** It is not
+  inside a cloze, so when the side appears the accent is already on screen. Decision 20's
+  stated reason for keeping it off side 1 is that it "would hand him the thing he is
+  meant to produce"; side-2-*entry* has the same property. **Naming the side may not be
+  enough to get what the decision wanted.** Also: for the **376 言葉 cards it lands on
+  side 1**, because `___` is a rule WITHIN a side and 言葉's first `---` comes after
+  `<<Speech>>`. Both are Zach's to settle.
 * **The UI half of decision 17's backup.** The MECHANISM landed 2026-08-23
-  (`src/backup`, 2,674 bytes over the real corpus) but nothing calls it from a
+  (`src/backup`, 332,262 bytes over the real corpus) but nothing calls it from a
   screen: the persistent banner when `persisted()` is false, the "add to home
   screen" prompt beside it, and detecting an eviction that already happened all
   belong to the app shell.

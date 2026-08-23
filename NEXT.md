@@ -335,7 +335,7 @@ session simply continues.
 
 ### `src/backup` landed 2026-08-23 — decision 17's mechanism, not its UI
 
-**2,674 bytes** over the real corpus, against a 74 MB database and a 617.9 MiB blob
+**332,262 bytes** over the real corpus, against a 74 MB database and a 617.9 MiB blob
 store. It archives exactly what `exports/` cannot rebuild: local reviews, the scheduling
 state of any track that has one, decision 9's local fields and their values, and
 settings. Everything else rebuilds in fifteen seconds.
@@ -535,15 +535,30 @@ accent render nothing rather than a literal `<<型>>`. A section gate also works
 not needed. `かな主流` DOES need its gate — it is a boolean, and bare interpolation is
 measured to fail.
 
-> [!important] **`かな主流` renders on ZERO cards, and the fix is Zach's.**
-> Decision 20 puts it inside the `<<#Reading>>` gate. All **six** `かな主流 = true` cards
-> have `Reading` unset, and the **693** cards that do have `Reading = true` are not the
-> kana-primary ones. The gate is correct and wired and fires for nobody. Either those six
-> want `Reading = true`, or the placement wants revisiting. Both change what his cards
-> show. **Do not pick one.**
+> [!important] **THREE THINGS FROM D3 ARE ZACH'S, and one of them I first diagnosed
+> WRONG.** Corrected by a peer review 2026-08-23; verified before recording.
 >
-> 言葉 has no `<<#Reading>>` gate at all, so the script did not invent a home for
-> `かな主流` there — reported, not silently skipped.
+> **1. `かな主流` renders on ZERO cards, and not for the reason first written here.**
+> This file used to say the six `かな主流 = true` cards "have `Reading` unset" so the gate
+> fires for nobody. What is actually true: **all six are on 言葉**, which declares no
+> `Reading` field at all and whose body contains neither marker, while the marker was
+> authored into 単語 where no card carries the flag. **The flag and the gate are on
+> different templates.** That removes one of the two options previously offered — you
+> cannot set `Reading = true` on a card whose template has no such field.
+> (For the record: total `Reading = true` is **693**, 692 on 単語 plus one orphan value on
+> a 言葉 card for a field 言葉 does not declare. The review said 692; 693 is right.)
+>
+> **2. `型` is on screen at SIDE ENTRY, before any reveal, on both templates.** It is not
+> inside a cloze. Decision 20 keeps it off side 1 because that "would hand him the thing
+> he is meant to produce" — side-2-*entry* has the same property, so naming the side may
+> not deliver what the decision wanted. This is the same family as the autoplay rule.
+>
+> **3. `型` lands on SIDE 1 for the 376 言葉 cards**, because `___` is a rule WITHIN a
+> side and 言葉's first `---` comes after `<<Speech>>`. `DECISIONS.md` says side 2 and
+> grounds it on the 単語 template, so the placement does not transfer.
+>
+> **Do not pick any of the three.** `scripts/accent-field-apply.ts` declined to invent a
+> home for `かな主流` on 言葉 and says so; that part was right.
 
 ### The older note, kept because the shape of the trap is the lesson
 

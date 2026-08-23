@@ -35,9 +35,20 @@ audioController → shadowingLoop` over real cards and then asked *did anything
 play?* Now `test/review.test.ts` does, and the answer is measured:
 
 ```plaintext
-mount + enter, 120 単語 cards    120 clip mounts · 0 resolve calls · 0 play() calls
-reveal, 40 単語 cards             39 cards played · 39 play() calls
+mount + enter, 120 単語 cards    238 clip mounts · 0 resolve calls · 0 play() calls
+reveal, 40 単語 cards             40 cards played · 79 play() calls
 ```
+
+**Those first figures read 120 and 39/39 until 2026-08-23**, and the difference was a
+defect in this module found by a peer review, not by me: `mountCard` omitted
+`resolveGenerated`, so `Audio` and `Translate` — which chain off `例文`, an `ai` field
+with zero stored values — died at the first hop. **3,801 clips, 35.7% of the corpus
+audio, never mounted**, and the card count was unchanged because every missing one was
+the SECOND clip on a card that already had one: the 例文 sentence audio that side 3 of
+単語 exists to drill. It now defaults ON, `MountOptions.resolveGenerated` can turn it off
+deliberately, and `test/review.test.ts` asserts both arms (238 on, 120 off) so it cannot
+regress. The old assertion was `expect(clips).toBeGreaterThan(100)`, which passed either
+way — the fix was safe *and* unguarded.
 
 **Zero on entry is the number that matters.** `stats.requested` counts `resolve`
 calls, so it goes non-zero the moment anything tries to *find* a clip — strictly

@@ -43,8 +43,12 @@ function doExport(): void {
     const out = arg("out");
     const json = `${JSON.stringify(archive, null, 1)}\n`;
     writeFileSync(out, json, "utf-8");
+    // `json.length` is UTF-16 CODE UNITS, not bytes, and this archive is mostly
+    // Japanese — it under-reported by 15,402 on the real corpus (316,860 against
+    // 332,262). Name the basis or the number is not a fact (decision 6).
+    const bytes = Buffer.byteLength(json, "utf8");
     process.stdout.write(
-      `wrote ${out} — ${json.length} bytes, schema v${archive.schemaVersion}\n` +
+      `wrote ${out} — ${bytes} bytes on disk (UTF-8), schema v${archive.schemaVersion}\n` +
         `  local reviews   ${archive.counts["reviews"]}\n` +
         `  track state     ${archive.counts["trackState"]}\n` +
         `  local fields    ${archive.counts["localFields"]}\n` +

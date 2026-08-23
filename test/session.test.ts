@@ -118,9 +118,13 @@ describe("interleaveTracks", () => {
   });
 
   it("spread is EVEN: with due >= new, no two new cards are ever adjacent", () => {
-    // Pins the slot formula itself. Without this, a regression to `i * total / n`
-    // or a dropped `+ 0.5` clusters the new cards and every other test still
-    // passes, because totality survives clustering. Minimum gap is 2, swept.
+    // Pins CLUSTERING, and nothing else — this comment claimed more until a peer
+    // review checked it on 2026-08-23. Verified: dropping the `+ 0.5` leaves the
+    // minimum gap at 2, so THIS TEST STAYS GREEN and three others go red instead.
+    // What `+ 0.5` actually buys is the warm-up — first slot 4 rather than 0 — and
+    // the assertions that own that are `expect(at[0]).toBe(4)` above and
+    // `expect(plan[0]?.origin).toBe("due")` in the corpus test. What this test
+    // catches is a regression to `slots.add(i)`, which clusters. Minimum gap 2, swept.
     let worstGap = Number.POSITIVE_INFINITY;
     for (let d = 1; d <= 60; d += 1) {
       for (let f = 1; f <= Math.min(d, 60); f += 1) {
@@ -441,8 +445,11 @@ describe("the session state machine", () => {
 
   it("does NOT advance past a card whose grade threw — no silent skip", () => {
     // The property: `gradeTrack` is called BEFORE the cursor moves, so a track
-    // that has gone dormant under a long session leaves the SAME card current and
-    // the caller can retry or skip deliberately. If the cursor moved first, the
+    // that has gone dormant under a long session leaves the SAME card current.
+    // NOTE what this test does NOT show: it recovers by un-dormanting the track,
+    // which an app cannot do. There is no `skip()`, so in the real world this
+    // hard-locks the session — see the note on `answer()`. If the cursor moved
+    // first, the
     // card would be silently dropped from the session and its review lost — the
     // failure mode you would never notice, because the queue just gets shorter.
     const { db, dueIds } = fixture(2, 0);

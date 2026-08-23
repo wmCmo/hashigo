@@ -33,6 +33,21 @@
  *   2. `expandGeneratorFields` — without it the mounts exist but carry no
  *      `request`, so `cardAudioResolver` has nothing to address and every clip
  *      resolves to null. Also silent.
+ *   3. **`resolveGenerated`** — and this one was MISSING here until 2026-08-23,
+ *      found by a peer review rather than by me. On 単語 and 言葉, `Audio` and
+ *      `Translate` chain off `例文`/`Example`, an `ai` field with ZERO stored
+ *      values, so without a resolver `fieldText` returns null and the chain dies
+ *      at the first hop — silently, again. Measured over the corpus on
+ *      `test/cards.test.ts`'s basis:
+ *
+ *          without  6,855 speech mounts · 10,722 expanded
+ *          with    10,656 speech mounts · 18,324 expanded
+ *
+ *      **3,801 clips — 35.7% of the corpus audio — never mounted**, and the card
+ *      count is identical (5,664) because every missing one is the SECOND clip on
+ *      a card that already had one: the `例文` sentence audio, which is exactly
+ *      what side 3 of 単語 exists to drill. `test/review.test.ts` now pins the
+ *      figure so it cannot regress; nothing did before.
  *
  * ─── THE HARD RULE, AND WHERE IT LIVES ───────────────────────────────────────
  *
@@ -58,7 +73,7 @@ import {
   renderLoadedCard,
   type LoadedCard,
 } from "../cards/index.js";
-import { expandGeneratorFields } from "../generate/index.js";
+import { expandGeneratorFields, storeTextResolver } from "../generate/index.js";
 import {
   audioController,
   type AudioController,
@@ -68,6 +83,7 @@ import { renderSides, type RenderResult } from "../render/index.js";
 import type { RenderDocument, RenderElement } from "../render/dom.js";
 import { shadowingLoop, type ShadowingLoop } from "../render/reveal.js";
 import type { BlobStore } from "../blobs/store.js";
+import type { FieldGenerationRequest } from "../generate/index.js";
 import type { Direction } from "../template/index.js";
 import type { SqliteHandle } from "../db/browser.js";
 
@@ -79,6 +95,15 @@ export interface MountOptions<E extends RenderElement> {
   readonly document: RenderDocument<E>;
   /** The payload store. Omit it and audio resolves to nothing, silently. */
   readonly store?: BlobStore | null;
+  /**
+   * The TEXT an upstream generator produced, for fields that chain off another
+   * generator's output. Defaults to `storeTextResolver(db)`, which is what makes
+   * `Audio` and `Translate` reachable at all — see note 3 in this file's header.
+   *
+   * Pass `null` to switch it off deliberately. That costs 35.7% of the corpus
+   * audio, so only a measurement should do it.
+   */
+  readonly resolveGenerated?: ((request: FieldGenerationRequest) => string | null) | null;
   /**
    * Narrow a mount's element to something playable. Defaults to the controller's
    * own duck-type check, which is false for a `MemoryElement` and true for a real
@@ -130,10 +155,15 @@ export function mountCard<E extends RenderElement>(
   const direction = options.direction ?? "forward";
   const rendered = renderLoadedCard(loaded, direction);
 
-  // See the header: this is the step `loadRenderedCard` cannot do for you.
+  // See the header: these are the two steps `loadRenderedCard` cannot do for you.
+  // `resolveGenerated` defaults ON because the chained fields are unreachable
+  // without it and nothing raises when they are missing.
+  const resolveGenerated =
+    options.resolveGenerated === undefined ? storeTextResolver(db) : options.resolveGenerated;
   const bound = expandGeneratorFields(rendered.sides, {
     fields: loaded.template?.fields ?? [],
     values: loaded.values,
+    ...(resolveGenerated === null ? {} : { resolveGenerated }),
   });
 
   const result = renderSides(bound.sides, { document });

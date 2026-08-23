@@ -112,8 +112,8 @@ export const DEFAULT_NEW_LIMIT = 10;
 /**
  * How new tracks are mixed into the due queue.
  *
- * `new-first` is the default and the header explains why `due-first` is a defect
- * rather than a preference given a 443-card due queue.
+ * `spread` is the default (Zach's choice, 2026-08-23) and the file header explains
+ * both the window it needs and why `due-first` is a defect rather than a preference.
  */
 export type InterleavePolicy = "new-first" | "due-first" | "spread";
 
@@ -298,7 +298,15 @@ export class ReviewSession {
    *
    * `gradeTrack` throws `TrackNotFoundError` / `DormantTrackError` if the track
    * has gone away under a long session. Deliberately NOT swallowed: dropping a
-   * card silently is worse than surfacing it, and the caller can skip forward.
+   * card silently is worse than surfacing it.
+   *
+   * **BUT THE CURSOR DOES NOT MOVE, AND THERE IS NO `skip()`**, so a track that
+   * goes dormant mid-session HARD-LOCKS it — every `answer()` throws on the same
+   * card and the only exit is abandoning the session. An earlier version of this
+   * comment said "the caller can skip forward", which is not an API that exists
+   * (see the file header: skip is absent because no decision covers it). Whether
+   * the fix is a `skip()` or swallowing this one error class is a decision, not an
+   * implementation detail — it changes whether a review can be silently lost.
    */
   answer(
     remembered: boolean,

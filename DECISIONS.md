@@ -287,7 +287,7 @@ right**: it holds his verbatim reasoning and this quotes it.
 
    **THE MECHANISM LANDED 2026-08-23 — `src/backup`.** It archives only what `exports/`
    cannot rebuild (local reviews, the scheduling state of any track that has one,
-   decision 9's local fields and their values, settings): **2,674 bytes** over the real
+   decision 9's local fields and their values, settings): **332,262 bytes** over the real
    corpus against a 74 MB file. Rows rather than the file, because a binary copy only
    restores into the schema version it came from and `applySchema` refuses any other — a
    bump would strand every older backup. Keyed on `(card_id, kind)`, never `track_id`.

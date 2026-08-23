@@ -119,8 +119,12 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
         card.dispose();
       }
 
-      expect(mounted).toBeGreaterThan(100);
-      expect(clips).toBeGreaterThan(100);
+      expect(mounted).toBe(120);
+      // EXACT, not `> 100`. This assertion read `toBeGreaterThan(100)` until
+      // 2026-08-23, which passed at 120 clips and at 238 — it could not tell a
+      // corpus with a third of its audio missing from a whole one. See the
+      // `resolveGenerated` test below for what that hid.
+      expect(clips).toBe(238);
       // eslint-disable-next-line no-console
       console.log(
         `mount+enter over ${mounted} 単語 cards: ${clips} clip mounts · ` +
@@ -169,14 +173,64 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       console.log(
         `reveal over 40 単語 cards: ${revealedCards} cards played · ${played} play() calls`,
       );
-      expect(revealedCards).toBeGreaterThan(20);
-      expect(played).toBeGreaterThan(20);
+      // 40 of 40 and 79 calls, not 39/39: with `resolveGenerated` on, most cards
+      // carry a SECOND clip (the 例文 sentence audio) and revealing both sides
+      // plays both. The one card that previously had nothing playable now does.
+      expect(revealedCards).toBe(40);
+      expect(played).toBe(79);
       // Every play had a source assigned first — the controller never calls
       // `play()` on a bare element, which in Chromium returns a promise that
       // neither resolves nor rejects.
       expect(bytesSeen).toBe(played);
     } finally {
       close();
+    }
+  });
+
+  it("resolveGenerated is ON by default, and OFF costs a third of the audio", () => {
+    // THE REGRESSION THIS FILE DID NOT CATCH, found by a peer review on
+    // 2026-08-23. `Audio` and `Translate` chain off `例文`, an `ai` field with
+    // zero stored values, so without a text resolver `fieldText` returns null and
+    // the chain dies at hop one — silently. Both arms are asserted, because a test
+    // on the default alone would still pass if the default were removed and the
+    // corpus happened to shrink for some other reason.
+    const db = openDatabase(DB, { readOnly: true, applySchema: false });
+    try {
+      const ids = (
+        db
+          .prepare(
+            `SELECT c.id FROM cards c JOIN templates t ON t.id = c.template_id
+              WHERE t.name = '単語' ORDER BY c.id LIMIT 120`,
+          )
+          .all() as { id: string }[]
+      ).map((r) => r.id);
+
+      const count = (resolveGenerated?: null): number => {
+        let clips = 0;
+        for (const cardId of ids) {
+          const card = mountCard<MemoryElement>({
+            db,
+            cardId,
+            document: memoryDocument(),
+            ...(resolveGenerated === null ? { resolveGenerated: null } : {}),
+          });
+          if (card === null) continue;
+          clips += card.clipCount;
+          card.dispose();
+        }
+        return clips;
+      };
+
+      const on = count();
+      const off = count(null);
+      // eslint-disable-next-line no-console
+      console.log(`resolveGenerated on: ${on} clip mounts · off: ${off}`);
+      expect(on).toBe(238);
+      expect(off).toBe(120);
+      // The whole point: the default must be the ON number.
+      expect(on).toBeGreaterThan(off);
+    } finally {
+      db.close();
     }
   });
 

@@ -23,7 +23,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { cardAudioResolver, loadCard, renderLoadedCard } from "../src/cards/index.js";
 import { defaultStoreDatabase, openBlobStoreDatabase } from "../src/blobs/index.js";
 import { openDatabase } from "../src/db/index.js";
-import { expandGeneratorFields } from "../src/generate/index.js";
+import { expandGeneratorFields, storeTextResolver } from "../src/generate/index.js";
 import { memoryDocument, renderSides, serialise } from "../src/render/index.js";
 
 const DB = "build/hashigo.db";
@@ -52,8 +52,13 @@ for (const id of IDS) {
   const loaded = loadCard(db, id);
   if (!loaded) continue;
   const rendered = renderLoadedCard(loaded, "forward");
+  // `resolveGenerated` is REQUIRED for Audio/Translate to exist at all — they
+  // chain off 例文, an `ai` field with no stored value. Without it the mockups
+  // rendered <<Translate>> and <<Audio>> as amber missing-field chips, and
+  // decision 23 was approved with those chips on the card. See src/review/README.
   const bound = expandGeneratorFields(rendered.sides, {
     fields: loaded.template?.fields ?? [], values: loaded.values,
+    resolveGenerated: storeTextResolver(db),
   });
   const out = renderSides(bound.sides, { document: memoryDocument() });
 

@@ -8,8 +8,16 @@ npx vite-node src/backup/cli.ts -- export --db build/hashigo.db --out backup.jso
 npx vite-node src/backup/cli.ts -- apply  --db build/hashigo.db --in  backup.json --dry
 ```
 
-Measured over the real corpus today: **2,674 bytes**, against a 74 MB database file
-and a 617.9 MiB blob store.
+Measured over the real corpus: **332,262 bytes on disk (UTF-8)**, against a 74 MB file
+and a 617.9 MiB blob store. It was 2,674 bytes until D3 landed on 2026-08-23 and
+added 3,830 derived `型` labels — **3,830 of the 3,848 field values are derived**, and
+only 18 are hand-authored. Kept anyway: 330 KB is still instant, and it makes a restore
+one `apply` instead of "restore, rebuild the 1.4 GB Python venv, re-derive".
+
+**Three numbers circulate for this one file and only one is bytes.** 235,686 is a compact
+`JSON.stringify().length`, 316,860 is the pretty-printed `.length` the CLI used to print
+as "bytes", and **332,262 is the actual UTF-8 size on disk**. `.length` counts UTF-16 code
+units, which under-reports Japanese by 15,402 here. Decision 6: name the basis.
 
 ## Why it exists, and why it is not urgent yet
 

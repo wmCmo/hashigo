@@ -21,7 +21,7 @@
  *
  * Cards, decks, templates, tags, links and the 102,020 imported reviews all rebuild
  * from `exports/` in about fifteen seconds, and the blobs are content-addressed and
- * re-fetchable. Backing them up would turn a ~100 KB archive into 690 MB and make
+ * re-fetchable. Backing them up would turn a ~330 KB archive into 690 MB and make
  * the one-tap export something he would not tap.
  *
  * A file-level copy was the other option and is worse for the case that matters: a
