@@ -670,6 +670,60 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
     }
   });
 
+  it("a REVERSE identify track is SILENT on entry — the clip is the answer there", () => {
+    // FOUND BY RUNNING THE APP, not by reasoning, and it is the reason
+    // `promptsOnEntry` asks about the SIDE rather than about the card.
+    //
+    // Reverse permutes the side ORDER, so on a reverse 単語 track the first side
+    // he sees is 意味 — a cloze and NO clip. The word's audio sits on a later
+    // side, where it is the ANSWER, and autoplaying it on entry would hand him
+    // the thing he is meant to produce. Forward and reverse are the SAME mode and
+    // the same card; only the order differs.
+    const { db, store, close } = openCorpus();
+    try {
+      const ids = byMode(db, false, 40);
+      let reverseSilent = 0;
+      let forwardAsked = 0;
+      for (const cardId of ids) {
+        for (const kind of ["forward", "reverse"] as const) {
+          const rec = recorder();
+          const card = mountTrack<MemoryElement>({
+            db,
+            track: { cardId, kind },
+            document: memoryDocument(),
+            store,
+            playable: rec.playable,
+          });
+          if (card === null) continue;
+          expect(card.mode.mode).toBe("identify");
+          // Only the FIRST side is entered — what a screen shows as the question.
+          const first = card.result.sides.filter((side) => !side.empty)[0];
+          if (first === undefined) continue;
+          card.enter(first.position);
+          const asked = card.loop.log.some((event) => event.kind === "prompt");
+          if (kind === "reverse") {
+            expect(asked, `${cardId} reverse asked on entry`).toBe(false);
+            expect(rec.plays, `${cardId} reverse played on entry`).toEqual([]);
+            reverseSilent += 1;
+          } else if (asked) {
+            forwardAsked += 1;
+          }
+          card.dispose();
+        }
+      }
+      // eslint-disable-next-line no-console
+      console.log(
+        `direction: ${forwardAsked}/40 forward asked on entry · ${reverseSilent}/40 reverse silent`,
+      );
+      expect(reverseSilent).toBe(40);
+      // And the pairing, so this is not a test that would pass on a module that
+      // never asks at all: the same 40 cards, forward, all ask.
+      expect(forwardAsked).toBe(40);
+    } finally {
+      close();
+    }
+  });
+
   // ─── the process boundary the shell has ────────────────────────────────────
 
   it("PreparedCard survives a REAL structuredClone, over 300 cards", () => {

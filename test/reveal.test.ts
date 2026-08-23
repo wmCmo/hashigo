@@ -472,6 +472,36 @@ describe("prompt(): the mode-2 question", () => {
     h.loop.dispose();
   });
 
+  it("reveal({silent}) unmasks and sounds NOTHING", async () => {
+    // Added for the shell, and it is the SAFE direction — less audio, never more.
+    // A screen that shows the whole card after the answer unmasks several sides at
+    // once, and `audioController.play()` defers extras only WITHIN one call: three
+    // reveals start three clips. Measured on 単語, whose word clip and
+    // example-sentence clip both fired over the top of each other.
+    const h = harness(SHADOWING_SIDE, { store: STORE });
+    const side = h.loop.enter(0)!;
+    expect(side.reveal("caller", { silent: true })).toBe(true);
+    await h.audio.idle();
+    // Unmasked…
+    expect(side.revealed).toBe(true);
+    expect(h.result.clozes.every((cloze) => cloze.revealed)).toBe(true);
+    // …and silent, all the way down: no resolve, no object URL, no play().
+    expect(h.requests).toEqual([]);
+    expect(h.urls.minted).toEqual([]);
+    expect(h.media().plays).toBe(0);
+    expect(h.events.at(-1)?.audio).toBe(0);
+    h.loop.dispose();
+  });
+
+  it("and the same side WITHOUT silent does sound — the pairing", async () => {
+    const h = harness(SHADOWING_SIDE, { store: STORE });
+    const side = h.loop.enter(0)!;
+    expect(side.reveal("caller")).toBe(true);
+    await h.audio.idle();
+    expect(h.media().plays).toBe(1);
+    h.loop.dispose();
+  });
+
   it("a reveal AFTER a prompt still works, and is what compares", async () => {
     // The mode-2 loop end to end: hear it, name it, then reveal to check.
     const h = harness(SHADOWING_SIDE, { store: STORE });

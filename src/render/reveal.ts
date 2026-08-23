@@ -223,8 +223,18 @@ export interface ShadowingSide<E extends RenderElement = RenderElement> {
   /**
    * Reveal every cloze on this side and play its first addressable clip.
    * Idempotent — returns false if it had already been revealed.
+   *
+   * `silent` unmasks and plays NOTHING. It exists because a screen that shows the
+   * whole card after the answer unmasks several sides at once, and
+   * `audioController.play()` defers only WITHIN one call — so two reveals start
+   * two clips over the top of each other. Found by running the app rather than by
+   * reasoning about it: 単語's word clip and its example-sentence clip both fired.
+   *
+   * It is the SAFE direction — less audio, never more — and it cannot be used to
+   * sneak playback in. The screen reveals every side silently except the one clip
+   * it means to play.
    */
-  reveal(cause?: RevealCause): boolean;
+  reveal(cause?: RevealCause, options?: { readonly silent?: boolean }): boolean;
   /**
    * Deliberately play ONE clip on this side — the armed element's own play
    * affordance, or a "play again" button. Unmasks the side first if it was still
@@ -356,11 +366,11 @@ export function shadowingLoop<E extends RenderElement>(
         // mounts explicitly so that the log proves it rather than implying it.
         emit({ kind: "enter", side, cause: null, clozes: 0, audio: 0 });
       },
-      reveal(cause = "caller"): boolean {
+      reveal(cause = "caller", options = {}): boolean {
         const changed = unmask();
         if (changed === null) return false;
         let played = 0;
-        if (media.length > 0 && audio !== null) {
+        if (media.length > 0 && audio !== null && options.silent !== true) {
           played = media.length;
           audio.play(media, "reveal");
         }

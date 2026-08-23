@@ -1,0 +1,23 @@
+{
+  "//": "The app's own gate. The repo's tsconfig.json includes src/, test/, scripts/ and *.config.ts — never app/ — because this slice needs bundler module resolution, the DOM lib and vite/client's ambient types, none of which the Node-targeted root config provides. Run it with `npm run app:check`, and treat it as a REQUIRED gate: app/ is shipping code, not a spike.",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["vite/client", "node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["env.d.ts", "protocol.ts", "main.ts", "db.worker.ts"]
+}

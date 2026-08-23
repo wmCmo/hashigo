@@ -71,3 +71,8 @@ Thumbs.db
 # ~1.4 GB of dictionary; rebuild it with the two commands in
 # notes/pitch-accent-pipeline.md rather than committing it.
 .venv-accent/
+
+# The Claude Code browser pane's dev-server launcher. Machine-local tooling, not
+# project config -- `npm run app:dev` is the documented way in. The rest of
+# .claude/ is deliberately NOT ignored, so shared agent config can live there.
+.claude/launch.json

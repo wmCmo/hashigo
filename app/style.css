@@ -1,0 +1,494 @@
+/*
+ * Decision 23, direction A2 — "A's terminal look, C's hand".
+ *
+ * Dark, mono, dense, everything on one scroll; controls pinned to the bottom
+ * edge; round replay bottom-RIGHT because he reviews one-handed with his right
+ * hand; keycap hints only where a real pointer exists.
+ *
+ * ─── WHAT IS DIFFERENT FROM THE MOCKUP, AND WHY ─────────────────────────────
+ *
+ * `build/mock/out/a2-terminal.html` is a spec for the LOOK and NEVER for the
+ * structure — its `.head` / `.answer` / `.reading` / `.contour` divs are
+ * hand-authored by `scripts/mockup-html.ts` and `src/render` produces none of
+ * them. So the colours, the type scale and the geometry below are lifted from it
+ * verbatim, and the SELECTORS are `src/render`'s own `CLASS` names.
+ *
+ * The two that carry the exercise:
+ *
+ *   .hashigo-cloze-mask     the masked form. In the mockup this was
+ *                           `display:none` because a mockup shows the answer.
+ *                           Here it is the DEFAULT state and the answer is what
+ *                           is hidden.
+ *   .drill                  the side the question is on, marked by main.ts.
+ *
+ * ─── CONTRAST IS A CORRECTNESS CONSTRAINT HERE, NOT A PREFERENCE ────────────
+ *
+ * Every grey in this file carries a Japanese reading at some point. A2's own
+ * revision raised the side labels from 2.21:1 to 5.77:1 and the deck line from
+ * 3.61:1 to 6.44:1 against #111214, both clear AA. Do not darken them back for
+ * looks: a low-contrast furigana is unreadable at 12px on a phone in daylight,
+ * which is where this app is used.
+ *
+ * One accent, and it is green: green means `remembered` and nothing else. The
+ * yellow (#e2b714, Monkeytype's) is for the thing being learned. A second
+ * near-green anywhere reads as a bug — Zach's own rule, applied after the 型
+ * badge broke it.
+ */
+
+:root {
+  --bg: #111214;
+  --ink: #e6e6e6;
+  --ink-bright: #f4f4f4;
+  --muted: #9298a0;
+  --line: #212327;
+  --line-soft: #2c2f34;
+  --edge: #4d5158;
+  --accent: #e2b714;
+  --ok: #9fe6a0;
+  --ok-edge: #436b4d;
+  --no: #e9a3a3;
+  --no-edge: #6d4444;
+  --jp: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Yu Gothic UI", Meiryo, "Noto Sans JP";
+  --mono: ui-monospace, "Cascadia Mono", Consolas, var(--jp), monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.6 var(--mono);
+  min-height: 100vh;
+  -webkit-text-size-adjust: 100%;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* ── decision 17's banner ── */
+
+.banner {
+  background: #241d10;
+  border-bottom: 1px solid #574018;
+  color: #f0d79a;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 12px 16px;
+  position: sticky;
+  top: 0;
+  z-index: 8;
+}
+
+.banner button {
+  background: none;
+  border: 1px solid #7a5c22;
+  color: #f0d79a;
+  cursor: pointer;
+  font: inherit;
+  margin-left: 8px;
+  padding: 4px 10px;
+}
+
+/* ── boot ── */
+
+.boot {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 40px 16px;
+}
+
+.boot h1 {
+  font-family: var(--jp), serif;
+  font-size: 44px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--ink-bright);
+  margin-bottom: 24px;
+}
+
+.bootlog {
+  border: 1px solid var(--line);
+  font-size: 13px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.logline {
+  color: var(--muted);
+  padding: 2px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.logline.step {
+  color: var(--ink);
+}
+.logline.good {
+  color: var(--ok);
+}
+.logline.bad {
+  color: var(--no);
+}
+
+.bootnote {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 16px;
+}
+
+/* ── the review screen ── */
+
+.review header {
+  align-items: center;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  justify-content: space-between;
+  letter-spacing: 0.08em;
+  padding: 12px 16px;
+  position: sticky;
+  text-transform: uppercase;
+  top: 0;
+  z-index: 4;
+}
+
+.review main {
+  /* 132px of bottom padding clears the pinned bar AND the replay button above
+     it. In direction A the controls sat wherever the content ended — measured at
+     y=894 on an 812px viewport, below the fold — so grading meant scrolling
+     first, ~100 times a day. */
+  margin: 0 auto;
+  max-width: 720px;
+  padding: 24px 16px 148px;
+  width: 100%;
+}
+
+.deck {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 22px;
+}
+
+/* Decision 25: `New Card`, and it is PER TRACK. Ink + border, never the accent
+   green — green is `remembered` and nothing else. */
+.newtag,
+.reasktag {
+  border: 1px solid var(--edge);
+  color: var(--ink);
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  margin-left: 10px;
+  padding: 2px 7px;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+/* Decision 13: shown again, and NOT graded. Said on the card, because a grade
+   that silently does nothing is worse than no button. */
+.reasktag {
+  border-color: #7a5c22;
+  color: #f0d79a;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 26px;
+}
+
+[data-state="revealed"] .hint {
+  color: var(--muted);
+}
+
+.readingtoggle {
+  background: none;
+  border: 1px solid var(--edge);
+  color: var(--muted);
+  cursor: pointer;
+  display: none;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  margin-top: 18px;
+  padding: 8px 12px;
+}
+
+/* Decision 29's audit loop only makes sense once he has heard and seen it. */
+[data-state="revealed"] .readingtoggle:not([hidden]) {
+  display: inline-block;
+}
+
+/* ── the rendered card: src/render's own class names ── */
+
+.cardhost {
+  font-family: var(--jp), sans-serif;
+}
+
+.hashigo-side {
+  border-top: 1px solid var(--line);
+  padding: 16px 0;
+}
+
+.hashigo-side:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* The side the question is on. The head word / reading on it is the biggest
+   thing on the screen, which is A2's `.head` arrived at honestly. */
+.hashigo-side.drill {
+  font-size: clamp(26px, 7vw, 40px);
+  line-height: 1.35;
+}
+
+.hashigo-side.drill ruby rt {
+  color: var(--accent);
+  font-size: 0.42em;
+}
+
+.hashigo-side p {
+  margin: 0 0 10px;
+}
+
+.hashigo-side p:last-child {
+  margin-bottom: 0;
+}
+
+.hashigo-side blockquote {
+  border-left: 2px solid var(--line-soft);
+  color: var(--ink);
+  padding-left: 12px;
+}
+
+.hashigo-side h4 {
+  font-size: 1em;
+  font-weight: 400;
+}
+
+.hashigo-rule {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 14px 0;
+}
+
+.hashigo-link,
+.hashigo-card-link {
+  color: #8cc3e8;
+}
+
+.hashigo-code {
+  background: #17181b;
+  font-family: var(--mono);
+  font-size: 0.85em;
+  padding: 1px 5px;
+}
+
+.hashigo-image {
+  max-width: 100%;
+}
+
+/* ── clozes: masked by default, which is the opposite of the mockup ── */
+
+.hashigo-cloze {
+  cursor: pointer;
+}
+
+.hashigo-cloze-mask {
+  border-bottom: 1px dashed var(--accent);
+  color: var(--accent);
+  padding: 0 0.35em;
+}
+
+.hashigo-cloze[data-state="revealed"] .hashigo-cloze-mask {
+  display: none;
+}
+
+.hashigo-cloze-answer {
+  color: var(--ink-bright);
+}
+
+.hashigo-cloze[data-state="revealed"] .hashigo-cloze-answer {
+  animation: reveal-in 0.18s ease-out;
+}
+
+@keyframes reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* An empty `rt` is a furigana the generator has not produced. Say so rather than
+   collapsing to nothing, which reads as "this word has no reading". */
+ruby rt:empty::after {
+  content: "—";
+  opacity: 0.45;
+}
+
+/* ── audio: the native element is HIDDEN, and the round button is the affordance ──
+ *
+ * Not a style choice. `src/render` creates media elements with no `src`, so the
+ * native play button is inert until something binds bytes to it, and a dead
+ * control is worse than none. The loop still ARMS them, so a tap routes into
+ * `side.play()` — but the visible affordance is `.replay`, bottom right. */
+
+.hashigo-audio,
+.hashigo-video {
+  display: none;
+}
+
+.hashigo-generator {
+  color: var(--muted);
+}
+
+/* ── the pinned controls ── */
+
+.bar {
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  left: 0;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  position: fixed;
+  right: 0;
+  z-index: 5;
+}
+
+.bar button {
+  background: none;
+  border: 1px solid var(--edge);
+  color: var(--ink);
+  cursor: pointer;
+  flex: 1;
+  font: inherit;
+  letter-spacing: 0.05em;
+  padding: 17px 10px;
+}
+
+.bar button:active {
+  background: #1b1d21;
+}
+
+.bar button[disabled] {
+  opacity: 0.4;
+}
+
+.reveal-zone {
+  border-style: dashed !important;
+  color: var(--accent) !important;
+}
+
+/* `remembered` stays on the RIGHT: over 102,020 corpus reviews retention is
+   96.24%, so ~96 of every 100 taps are that button and it belongs under the
+   thumb that is already there. */
+.grades {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+}
+
+.no {
+  border-color: var(--no-edge) !important;
+  color: var(--no) !important;
+}
+
+.ok {
+  border-color: var(--ok-edge) !important;
+  color: var(--ok) !important;
+}
+
+[data-state="prompt"] .grades {
+  display: none;
+}
+
+[data-state="revealed"] .reveal-zone {
+  display: none;
+}
+
+.replay {
+  background: #1b1d21;
+  border: 1px solid var(--edge);
+  border-radius: 50%;
+  bottom: calc(86px + env(safe-area-inset-bottom));
+  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
+  color: var(--accent);
+  cursor: pointer;
+  display: none;
+  font-size: 22px;
+  height: 66px;
+  position: fixed;
+  right: 16px;
+  width: 66px;
+  z-index: 6;
+}
+
+.replay:active {
+  background: #24272c;
+}
+
+[data-state="revealed"] .replay {
+  display: block;
+}
+
+/* ── keycap hints ──
+ *
+ * Decision 19, applied to the hints rather than to links: they render ONLY where
+ * a real pointer exists, and NEVER behind a hover affordance. A phone has no
+ * hover, so a tooltip would hide them from the device this app is FOR — which is
+ * decision 19's own argument, one level down. */
+
+.kbd {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kbd {
+    color: var(--muted);
+    display: block;
+    font-size: 11px;
+    margin-top: 5px;
+  }
+}
+
+/* ── done ── */
+
+.done {
+  margin: 0 auto;
+  max-width: 720px;
+  padding: 60px 16px;
+}
+
+.done h2 {
+  color: var(--ink-bright);
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+}
+
+.done p {
+  color: var(--muted);
+  margin: 12px 0 28px;
+}
+
+.done button {
+  background: none;
+  border: 1px solid var(--edge);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  padding: 14px 18px;
+}
