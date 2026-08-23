@@ -363,6 +363,47 @@ counted, never fatal. This corpus has **8,958 tombstones**, so it would have hap
 > `persisted()` is false, an "add to home screen" prompt beside it, and detection of an
 > eviction that already happened. Nothing calls `exportLocalArchive` from a screen.
 
+### FIRST ON-DEVICE RESULT — 2026-08-23, and it changes one prescribed UI element
+
+Samsung Internet 30 / Chrome 143 / Android, over the ngrok HTTPS tunnel, at `/persist/`.
+The first hardware data this project has had; every persistence figure before this was a
+desktop profile.
+
+```
+persisted(): true          persist() granted: true       quota: 133.96 GiB
+secure context: true       crossOriginIsolated: false    OPFS usage: 66.5 MiB
+installed (display-mode): no (browser tab)
+worker can request persistence: NO — persist is Window-only
+sqlite 3.53.0, schema version 8
+```
+
+**The finding: persistence was granted in a PLAIN BROWSER TAB, not installed.** The
+existing record says `persist()` granted and 133.96 GiB quota — but *installed and
+standalone*. So "add Hashigo to your home screen" is not the precondition for durable
+storage that `notes/archive/persistence.md` §1.5's table assumes it is, at least on this
+device. And 66.5 MiB survived a reload with `persisted()` still true.
+
+> [!warning] **DO NOT conclude that decision 17's banner can be skipped.** Chromium grants
+> `persist()` off site engagement, and this origin had a day of repeated loads behind it
+> (the mockups). **The real app's origin starts with zero engagement**, so a first launch
+> may well be denied where this was granted. What is measured is that the DEVICE will
+> grant it — not that it grants it immediately. The banner and the eviction detector are
+> still worth building; what drops in priority is the "add to home screen" prompt, since
+> install is demonstrably not required.
+
+**Confirmed on hardware, previously desktop-only:** `navigator.storage.persist` is
+`undefined` in a Worker and absent from `StorageManager.prototype`, so calling it throws.
+`persisted()` and `estimate()` DO work there. **The shell must request persistence from
+the Window**, not from the OPFS worker — an architectural constraint, not a detail.
+
+**Still unmeasured: the WRITE THROUGHPUT.** The 66.5 MiB is just the bootstrap database;
+the ~700 MB fill has not been run on device. And note the transport trap found while
+setting this up: `/blobstore/`'s `readPack` STREAMS the 655 MB pack and writes into OPFS
+as it arrives, so over a tunnel it measures ngrok and hides OPFS inside it. `/persist/`'s
+`fill` uses the REAL byte sizes of the 10,816 blobs but generates the bytes locally, so it
+is the valid instrument over any transport. Getting `/blobstore/` to produce a valid
+on-device number needs its write timing separated from its fetch — small, not yet done.
+
 ### STARTING THE SHELL — read this first, most of it already exists
 
 B1's remainder is the app shell, and the reason to write this down is that **the two
