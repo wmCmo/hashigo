@@ -261,7 +261,8 @@ of 2026-08-23 so does everything above it: the session (`src/session`), the card
 (`src/review`, which calls `play()` on the reveal over real cards) and decision 17's
 backup (`src/backup`). **B1 is no longer Zach's and no longer the screen — it is the
 SHELL**, and its shape is the one thing left. The two runs needing his handset — the
-625 MB fill and the per-grade OPFS write — are still unmeasured.
+625 MB fill and the per-grade OPFS write — the FILL is now measured on device
+(**181 MiB/s**, see "First on-device result"); the per-grade write is not.
 
 ### The session layer landed 2026-08-22 — so B1 is now only the screen
 
