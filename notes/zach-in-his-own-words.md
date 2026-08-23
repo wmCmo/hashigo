@@ -214,4 +214,45 @@ His own words explaining WHY are not derivable from the code or from git.
   number scheme is an agent filing system. When talking TO him, name the thing — "the
   editor", "the cards where the audio plays" — and keep the numbers in the repo.
 
+- **SIX REQUESTS ON SEEING THE APP RUN, 2026-08-23**, verbatim and numbered as he wrote
+  them. He was low on tokens and said so — *"i now have limited token access, so i want to
+  make my comments for you and we can resume this on wednesday"* — so these are a
+  handover, not a conversation. **Resume from them on 2026-08-26.**
+
+  > 1. i don't think review reverse is even on for the english deck
+  > 2. on mochi flashcards, if you click on a link that links to another card, it doesn't
+  >    navigate away, it opens kinda like a modal that pops up showing the rendered card
+  >    that dims the background
+  > 3. whether the card is in the review mode or the pop up mode, you can press `e` for
+  >    edit to edit each field of the card right away
+  > 4. i would need a progress bar at the top too
+  > 5. and i would need a side bar to navigate, which is a space where we create cards,
+  >    navigate the card gallery
+  > 6. for every reversed track, i would need a label at the top that it's reversed
+
+  **He picks what, I pick how** — that split is his (2026-08-23). Every one of the six is
+  a WHAT. None of them settles a layout, a keybinding table or a data model, and none
+  should be read as doing so.
+
+  **(1) IS A CORRECTION AND HE IS RIGHT ABOUT THE DECK.** Measured: `English/Vocabulary`
+  resolves `reverse: off` on **1,226 of its 1,234 cards**. What I reported to him as "a
+  reverse New Vocab track" was real, but it was one of **8 per-card overrides** in that
+  deck — card `oYjmEPwB` (`constraint`), whose reverse track is live with 2 reps and a due
+  date of **2023-03-03**. So the bug it exposed is real and the fix stands; the FRAMING
+  was wrong, because it implied his English deck reverses and it does not. The honest
+  support is `日本語/単語` and `日本語/漢字`, where reverse is on for all 5,357 cards.
+  **Worth showing him separately:** those 8 English overrides are cards he has probably
+  forgotten exist.
+
+  **(3) is the first thing he has ever asked for that is stage 10.** Note the scope in his
+  own words — *"edit each field of the card right away"*, in review mode AND in the
+  card-link popup. That is an editor, reachable from two places, and it lands before the
+  card gallery he asks for in (5).
+
+  **(6) is not decoration.** A reversed track shows the same card with the sides permuted,
+  and on this corpus that changes which side is the question — the reason the review
+  screen's prompt boundary had to become positional. If he cannot see which direction he
+  is being asked, a card that looks familiar and reads backwards is indistinguishable from
+  one he has genuinely forgotten.
+
 ---

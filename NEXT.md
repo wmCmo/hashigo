@@ -88,7 +88,8 @@ the corpus 1.44× faster than this machine, so expect quicker rather than slower
 | **1** | **Run the app on his phone** | The one thing that needs him. `npm run app:dev -- --host ::` plus a tunnel; the bind-address trap is in `app/README.md`. Everything below can wait for it |
 | ~~2~~ | ~~P2 — the prepared-statement leak in `WasmDb`~~ | **DONE 2026-08-23, and the estimate was HALF the real number.** Measured in the running app — the only place `WasmDb` is observable — at **12.07 statements per graded card**, not ~6: 30 grades left 365 open, so a 443-card day would have left ~5,350, each pinning the OPFS file. Fixed by caching one statement per distinct SQL string in `WasmDb.prepare`, not by making dozens of callers finalize (`SqliteHandle` is shared with better-sqlite3, where a statement needs no finalizing at all). **After: 0 growth — flat at 16 open / 16 cached over 19 consecutive grades, write time unchanged (p50 35.0 ms against 37.3).** The logic is extracted as `StatementCache` and tested in Node, because the dangerous part is not the count: it is `pluck()`/`raw()` surviving a cache hit, which returns the wrong SHAPE silently. Four injections, all caught |
 | ~~2~~ | ~~Eviction detection~~ | **DONE 2026-08-23**, and verified against a REAL wipe rather than reasoned about: 187 local grades, `removeEntry('.opfs-sahpool', {recursive:true})`, reload → *"THE DATABASE WAS GONE. A receipt from 2026-08-23T13:15 says it held 187 local review(s)."* A receipt in `localStorage` (not in the database — a receipt inside the thing that went missing proves nothing; and `localStorage` does not exist in a worker, which is why this half is the page's). **It cannot detect a full site-data clear**, which takes the receipt too; no store survives that, and the honest fallback is the boot log. `?reset=1` landed with it — the route a schema bump needs, and it uses `removeVfs()` because a per-file `unlink()` frees NOTHING (0.0 MiB of 639.0 MiB, measured on his handset) |
-| **2** | **Stage 10, the editor** | `app/` ships one editor-shaped thing — decision 29's `Reading` toggle — because the audit loop dies without it. The rest is unspecified in shape. The measured precedent for field moves is the **132 rows** below |
+| **1a** | **HIS SIX REQUESTS, 2026-08-23** | Verbatim in `notes/zach-in-his-own-words.md`, and they REPLACE the ordering below for anything UI-shaped. Summary: (2) a card link opens a MODAL over a dimmed background, never a navigation — that is how Mochi does it; (3) `e` edits every field of the card, in review mode and in that modal; (4) a progress bar at the top; (5) a SIDEBAR for creating cards and browsing a card gallery; (6) a label at the top of every REVERSED track. Plus (1), his correction, handled below. **He was low on tokens and deferred to 2026-08-26 — do not start these before he is back, because (5) is a whole navigation shell and (3) is stage 10 arriving early** |
+| **2** | **Stage 10, the editor** | His request (3) is the first concrete spec it has ever had, and it is smaller than the stage: EDIT EACH FIELD, from review mode and from the card-link modal, on `e`. The measured precedent for field MOVES is the 132 rows below | `app/` ships one editor-shaped thing — decision 29's `Reading` toggle — because the audit loop dies without it. The rest is unspecified in shape. The measured precedent for field moves is the **132 rows** below |
 | **3** | **Stage 11, sync** | Unspecified in shape. Decision 18: the TTS key never goes in the client |
 | — | ~~P1's second half~~ | **DONE**, above |
 | — | ~~The app shell~~ | **DONE** — `app/` |
@@ -102,10 +103,18 @@ Recorded here as well as in `app/README.md`, because the shape of each is reusab
 
 1. **The prompt boundary has to be POSITIONAL.** A first version took "every side up to
    the first one that hides or sounds something", and **the first card the real session
-   served killed it**: a REVERSE New Vocab track, order permuted to Meaning → Example →
-   Vocab, whose Example side carries audio — so the rule pulled it into the question and
-   the sentence *"time constraints make it impossible to do everything"* printed the
-   answer above it. Reverse tracks are why the rule cannot be clever.
+   served killed it**: a REVERSE track, order permuted to Meaning → Example → Vocab, whose
+   Example side carries audio — so the rule pulled it into the question and the sentence
+   *"time constraints make it impossible to do everything"* printed the answer above it.
+   Reverse tracks are why the rule cannot be clever.
+
+   **CORRECTED 2026-08-23, by Zach, and the correction is worth more than the finding.**
+   I first wrote this as "a reverse *New Vocab* track", which implied his English deck
+   reverses. It does not: `English/Vocabulary` resolves `reverse: off` on **1,226 of its
+   1,234 cards**. That card (`oYjmEPwB`, `constraint`) is one of **8 per-card overrides**
+   in the deck, with a live reverse track at 2 reps due **2023-03-03**. The bug and the
+   fix are unaffected; what was wrong was citing a deck-level setting he had never turned
+   on. The real support is `日本語/単語` and `日本語/漢字` — reverse on, all 5,357 cards.
 2. **Exactly one clip per reveal, or 単語 plays two at once.**
    `audioController.play()` defers extras only WITHIN one call. `ShadowingSide.reveal()`
    gained `{silent}` — unmask without sound, the safe direction.

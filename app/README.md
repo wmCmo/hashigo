@@ -63,10 +63,20 @@ to `mountPrepared`. So a card merely on screen produces no payload message at al
 
 The first version took "every side up to the first one that hides or sounds
 something". **The first card the real session served killed it.** It was a
-*reverse* New Vocab track, whose side order is permuted to Meaning → Example →
-Vocab; the Example side carries audio, so that rule pulled it into the question —
-and the sentence *"time constraints make it impossible to do everything"* contains
-the answer word. The screen printed the answer above the question.
+*reverse* track, whose side order is permuted to Meaning → Example → Vocab; the
+Example side carries audio, so that rule pulled it into the question — and the
+sentence *"time constraints make it impossible to do everything"* contains the
+answer word. The screen printed the answer above the question.
+
+> [!warning] **Corrected by Zach, 2026-08-23.** This first said "a reverse *New
+> Vocab* track", which implied his English deck reverses. **It does not** —
+> `English/Vocabulary` resolves `reverse: off` on 1,226 of its 1,234 cards. That
+> card is one of **8 per-card overrides** there, with a live reverse track at 2
+> reps due **2023-03-03**. The bug was real and the fix stands; citing a
+> deck-level setting he never turned on was not. The honest support is
+> `日本語/単語` and `日本語/漢字`, where reverse is on for all 5,357 cards — which is
+> also why his request for a **"reversed" label at the top of the card** matters:
+> most of his real reverse volume is there.
 
 So: **the question is the FIRST non-empty side**, plus a following side whose only
 content is a WIDGET (that is 漢字 and only 漢字: `<<Kanji>>` / `<draw>` /
