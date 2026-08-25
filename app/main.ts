@@ -276,8 +276,14 @@ async function showNext(): Promise<void> {
   // His request 6, and it is not decoration. A reversed track shows the SAME card
   // with its sides permuted, so without the label a card that looks familiar and
   // reads backwards is indistinguishable from one he has genuinely forgotten.
-  // 5,357 of his cards have reverse on (単語 and 漢字, all of them), so this is
-  // most of the corpus rather than an edge.
+  //
+  // **5,676 cards, not the 5,357 first written here** — corrected by Zach on
+  // 2026-08-23, who asked whether his 数字 deck exports in reverse. It does not
+  // (90 cards, 90 forward tracks, zero reverse), and checking that turned up the
+  // wrong total: 5,357 is 単語 + 漢字 alone. Only FOUR decks store `reverse: on`
+  // — 単語 3,702 · 漢字 1,655 · 言葉 146 · 文法 83 — their children inherit it
+  // (81 more), and 9 cards carry a per-card override. Everything else, 数字
+  // included, resolves to off.
   if (reply.card.direction === "reverse") deckLine.appendChild(tag("reversed", "reversetag"));
 
   readingButton.hidden = card.mode.readingFieldId === null;

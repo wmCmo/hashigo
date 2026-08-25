@@ -115,6 +115,16 @@ Recorded here as well as in `app/README.md`, because the shape of each is reusab
    in the deck, with a live reverse track at 2 reps due **2023-03-03**. The bug and the
    fix are unaffected; what was wrong was citing a deck-level setting he had never turned
    on. The real support is `日本語/単語` and `日本語/漢字` — reverse on, all 5,357 cards.
+
+   **AND 5,357 IS A SUBTOTAL, corrected by him again on 2026-08-23.** He asked whether his
+   数字 deck exports in reverse; it does not (90 cards, 90 forward tracks, zero reverse
+   tracks, zero reverse reviews), and checking it showed the figure had been quoted as if
+   it were the whole corpus. **The total with reverse resolved ON is 5,676.** Only FOUR
+   decks store it — 単語 3,702 · 漢字 1,655 · 言葉 146 · 文法 83 — four child decks inherit
+   it (オノマトペ 41, 尊敬語 21, 謙譲語 17, ビジネス 2), and 9 cards carry a per-card
+   override (8 in English/Vocabulary, 1 in 基本情報/第15章). Everything else resolves OFF,
+   including 数字, 部首 and all of 基本情報. **`日本語` itself is `inherit` with no parent**,
+   so the corpus default is off and reverse is opt-in per deck.
 2. **Exactly one clip per reveal, or 単語 plays two at once.**
    `audioController.play()` defers extras only WITHIN one call. `ShadowingSide.reveal()`
    gained `{silent}` — unmask without sound, the safe direction.

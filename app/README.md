@@ -77,6 +77,13 @@ answer word. The screen printed the answer above the question.
 > `日本語/単語` and `日本語/漢字`, where reverse is on for all 5,357 cards — which is
 > also why his request for a **"reversed" label at the top of the card** matters:
 > most of his real reverse volume is there.
+>
+> **And 5,357 is 単語 + 漢字 ALONE, not the total** — corrected 2026-08-23 after he
+> asked whether 数字 exports in reverse (it does not: 90 cards, 90 forward tracks,
+> zero reverse). The corpus total is **5,676**. Only four decks store
+> `reverse: on` — 単語 3,702 · 漢字 1,655 · 言葉 146 · 文法 83 — four child decks
+> inherit it for 81 more, and 9 cards carry a per-card override. Every other deck,
+> 数字 and 部首 and all of 基本情報 included, resolves to OFF.
 
 So: **the question is the FIRST non-empty side**, plus a following side whose only
 content is a WIDGET (that is 漢字 and only 漢字: `<<Kanji>>` / `<draw>` /
