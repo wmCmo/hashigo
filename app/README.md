@@ -338,6 +338,45 @@ and its type must be one whose stored value is the content.
 would move the thing he is typing into; the change applies the next time the card
 is shown, and the status line says so.
 
+## The sidebar (his request 5) — browsing is built, CREATE is not
+
+*"a side bar to navigate, which is a space where we create cards, navigate the
+card gallery"*. `/` opens it, Escape closes it, and a result opens a preview layer
+— his request 2 reused exactly, because browsing to a card and following a link to
+a card are the same act and deserve the same surface.
+
+```plaintext
+deck list        all decks 7,716 · English/Vocabulary 68 due · 1,234 · …
+no query         "60 of 7,716"        ordered by name — a browse, not a ranking
+search 意味       "3"                  日本語/単語 · 意味合い · a 基本情報 cloze card
+deck filter      日本語/数字 → "60 of 90"
+archived         7 in view, SHOWN and marked
+result → preview  日本語/単語 · preview, then `e` stacks the editor on top
+```
+
+**意味 returning 3 is the point of routing through `src/search`.** Two characters
+is the commonest search unit in Japanese and `card_fts`'s trigram tokeniser
+**cannot serve a query shorter than three** — MATCH returns 0. That module routes
+to a ranked scan and reports which path ran; the 3 above is exactly the figure its
+own docstring predicts. A sidebar that had reached for FTS directly would have
+shown him an empty list and looked broken.
+
+**Archived cards are shown and marked, never hidden.** 234 in the corpus, 7 in
+that view. Archiving means "stop reviewing", not "stop existing", and a browse
+that silently omits a card he archived is a browse he cannot trust — the same
+reasoning `SearchOptions.includeArchived` already documents.
+
+**It opens on the LEFT and that is not arbitrary.** Decision 23 put the replay
+button bottom-RIGHT because he reviews one-handed with his right thumb; a drawer
+under that thumb would be opened by accident mid-card, interrupting a card he is
+holding an answer for.
+
+**CREATE is deliberately absent, and the panel says why in words.** Per
+`notes/crud-audit.md`, create is the one quarter blocked on a decision rather than
+on code: **what id does a card made in Hashigo get**, when decision 16 leaves
+exactly one more Mochi import to collide with? A button that did nothing would be
+worse than a sentence naming the blocker.
+
 ## Found by his screenshot: the `<input>` widget is inert
 
 The 数字 template is `<< Voice >>` + `<input value=<<NoComma>>>` / `---` /

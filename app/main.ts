@@ -604,6 +604,22 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
+  // The sidebar is navigation, so it answers to keys only when no layer is over
+  // it — a layer is a thing he opened on purpose and owns the keyboard.
+  if (document.body.classList.contains("sidebar-open")) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSidebar();
+      return;
+    }
+    // Anything else belongs to the search box he is typing into.
+    if (event.target instanceof HTMLInputElement) return;
+  }
+  if (event.key === "/" && !(event.target instanceof HTMLInputElement)) {
+    event.preventDefault();
+    void openSidebar();
+    return;
+  }
   if (reviewView.hidden) return;
   if (event.key.toLowerCase() === "e") {
     event.preventDefault();
@@ -994,6 +1010,145 @@ function openEditor(): void {
 
 /** Mirrors the worker's `EDITABLE_TYPES`. Kept in sync by the worker REFUSING. */
 const EDITABLE_FIELD_TYPES = new Set(["plain", "text", "boolean", "number", "accent"]);
+
+// ─── his request 5: the sidebar, the half that is not blocked ───────────────
+
+/**
+ * *"a side bar to navigate, which is a space where we create cards, navigate the
+ * card gallery"*.
+ *
+ * **The browsing half is built; CREATE is not, and that is not laziness.**
+ * `notes/crud-audit.md`: nothing outside the importer creates a card, and unlike
+ * delete — where the schema is already complete, every foreign key at `cards`
+ * being `ON DELETE CASCADE` — create is blocked on a real decision that is Zach's.
+ * **What id does a card made in Hashigo get?** Mochi's are 8-character opaque
+ * strings and decision 16 leaves exactly ONE more import to collide with. The
+ * panel says that, by name, rather than showing a button that does nothing.
+ *
+ * ─── IT OPENS ON THE LEFT, WHICH IS THE ONE PLACE IT CAN GO ────────────────
+ *
+ * Decision 23 put the replay button bottom-RIGHT because he reviews one-handed
+ * with his right thumb. A navigation drawer on the right would sit under that
+ * thumb and be opened by accident mid-review, which is the worst failure a
+ * navigation control can have here — it would interrupt a card he is holding an
+ * answer for. Left, and reachable deliberately.
+ *
+ * ─── CLICKING A RESULT OPENS A PREVIEW LAYER ───────────────────────────────
+ *
+ * Not a navigation, and not a second card renderer: it is his request 2 reused
+ * exactly. Browsing to a card and following a link to a card are the same act, so
+ * they get the same surface — decision 30's preview, every side at once.
+ */
+const sidebarToggle = el<HTMLButtonElement>("sidebartoggle");
+const deckList = el("decklist");
+const resultList = el("resultlist");
+const searchBox = el<HTMLInputElement>("searchbox");
+const resultCount = el("resultcount");
+
+let deckFilter: string | null = null;
+let decksLoaded = false;
+let browseToken = 0;
+
+async function openSidebar(): Promise<void> {
+  document.body.classList.add("sidebar-open");
+  sidebarToggle.setAttribute("aria-expanded", "true");
+  searchBox.focus();
+  if (!decksLoaded) {
+    decksLoaded = true;
+    const reply = await ask<"decks">({ kind: "decks" });
+    deckList.replaceChildren();
+    deckList.appendChild(deckRow(null, `all decks`, reply.cards, 0));
+    for (const deck of reply.decks) {
+      deckList.appendChild(deckRow(deck.id, deck.path, deck.cards, deck.due));
+    }
+  }
+  void runBrowse();
+}
+
+function deckRow(id: string | null, label: string, cards: number, due: number): HTMLElement {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "deck-row";
+  if (deckFilter === id) row.classList.add("on");
+  const name = document.createElement("span");
+  name.className = "deck-name";
+  name.textContent = label;
+  const counts = document.createElement("span");
+  counts.className = "deck-counts";
+  // Due is only shown when there IS some: a column of zeroes is noise, and the
+  // number that matters is the one that is not zero.
+  counts.textContent = due > 0 ? `${due} due · ${cards}` : String(cards);
+  if (due > 0) counts.classList.add("has-due");
+  row.append(name, counts);
+  row.addEventListener("click", () => {
+    deckFilter = id;
+    for (const other of deckList.querySelectorAll(".deck-row")) other.classList.remove("on");
+    row.classList.add("on");
+    void runBrowse();
+  });
+  return row;
+}
+
+async function runBrowse(): Promise<void> {
+  // Every keystroke starts a request and the replies can land out of order, so
+  // the LAST one asked is the only one allowed to paint. Cheaper and more honest
+  // than a debounce, which would still race on a slow query.
+  const token = ++browseToken;
+  const reply = await ask<"browse">({
+    kind: "browse",
+    query: searchBox.value,
+    deckId: deckFilter,
+    limit: 60,
+  });
+  if (token !== browseToken) return;
+
+  resultCount.textContent =
+    reply.total === 0
+      ? "nothing"
+      : reply.hits.length < reply.total
+        ? `${reply.hits.length} of ${reply.total.toLocaleString()}`
+        : String(reply.total.toLocaleString());
+
+  resultList.replaceChildren();
+  for (const hit of reply.hits) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "result-row";
+    // Archived cards are SHOWN and marked, never hidden — a browse that silently
+    // omits a card he archived is a browse he cannot trust. 234 of them.
+    if (hit.archived) row.classList.add("archived");
+    const name = document.createElement("span");
+    name.className = "result-name";
+    name.textContent = hit.name === "" ? hit.cardId : hit.name;
+    const meta = document.createElement("span");
+    meta.className = "result-meta";
+    meta.textContent = hit.archived ? `${hit.deckPath} · archived` : hit.deckPath;
+    row.append(name, meta);
+    if (hit.snippet !== null && hit.snippet !== "") {
+      const snip = document.createElement("span");
+      snip.className = "result-snippet";
+      snip.textContent = hit.snippet;
+      row.appendChild(snip);
+    }
+    row.addEventListener("click", () => {
+      void openPreview(hit.cardId);
+    });
+    resultList.appendChild(row);
+  }
+}
+
+function closeSidebar(): void {
+  document.body.classList.remove("sidebar-open");
+  sidebarToggle.setAttribute("aria-expanded", "false");
+}
+
+sidebarToggle.addEventListener("click", () => {
+  if (document.body.classList.contains("sidebar-open")) closeSidebar();
+  else void openSidebar();
+});
+el("sidebarclose").addEventListener("click", closeSidebar);
+el("sidebarscrim").addEventListener("click", closeSidebar);
+searchBox.addEventListener("input", () => void runBrowse());
 
 async function boot(): Promise<void> {
   try {

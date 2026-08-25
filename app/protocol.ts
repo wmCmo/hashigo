@@ -111,6 +111,70 @@ export interface ResetMessage {
 }
 
 /**
+ * The deck tree, for the sidebar — his request 5, the browsing half.
+ *
+ * Sent once when the sidebar first opens. 39 decks, so there is no paging and no
+ * lazy tree: the whole thing is smaller than one card's field values.
+ */
+export interface DecksRequest {
+  readonly kind: "decks";
+  readonly id: number;
+}
+
+export interface DeckBrief {
+  readonly id: string;
+  /** `親 / 子`, resolved — so the list reads without reconstructing the tree. */
+  readonly path: string;
+  readonly cards: number;
+  /** Non-dormant, non-archived tracks due today or earlier. */
+  readonly due: number;
+}
+
+export interface DecksMessage {
+  readonly kind: "decks";
+  readonly id: number;
+  readonly decks: readonly DeckBrief[];
+  readonly cards: number;
+}
+
+/**
+ * Cards matching a query, or the contents of a deck when the query is empty.
+ *
+ * `src/search` answers the query half and it already handles the thing a naive
+ * implementation gets wrong: a 1-2 character query, which is the commonest search
+ * unit in Japanese and which the trigram index CANNOT serve. It routes to a
+ * ranked scan instead and says which path ran.
+ */
+export interface BrowseRequest {
+  readonly kind: "browse";
+  readonly id: number;
+  readonly query: string;
+  /** Restrict to one deck. Null browses everything. */
+  readonly deckId: string | null;
+  readonly limit: number;
+}
+
+export interface BrowseHit {
+  readonly cardId: string;
+  readonly name: string;
+  readonly deckPath: string;
+  /** Archived cards are SHOWN and marked, never hidden — see `SearchOptions`. */
+  readonly archived: boolean;
+  readonly snippet: string | null;
+}
+
+export interface BrowseMessage {
+  readonly kind: "browse";
+  readonly id: number;
+  readonly hits: readonly BrowseHit[];
+  /** Every match, not just this page. Exact, so the UI can say "50 of 228". */
+  readonly total: number;
+  /** `"fts"`, `"like"`, or null when nothing was searched (a deck listing). */
+  readonly mode: string | null;
+  readonly elapsedMs: number;
+}
+
+/**
  * Write ONE field value on one card — his request 3, and the whole of it.
  *
  * "edit each field of the card right away". `card_field_values` is the table, and
@@ -175,6 +239,8 @@ export type AppRequest =
   | ReadingRequest
   | BackupRequest
   | PreviewRequest
+  | DecksRequest
+  | BrowseRequest
   | SetFieldRequest
   | ResetRequest;
 
@@ -286,6 +352,8 @@ export interface ErrorMessage {
 }
 
 export type AppMessage =
+  | DecksMessage
+  | BrowseMessage
   | SetFieldMessage
   | PreviewMessage
   | ResetMessage
@@ -309,4 +377,6 @@ export interface ReplyFor {
   readonly reset: ResetMessage;
   readonly preview: PreviewMessage;
   readonly setField: SetFieldMessage;
+  readonly decks: DecksMessage;
+  readonly browse: BrowseMessage;
 }

@@ -722,3 +722,201 @@ body.layered {
 .edit-status.bad {
   color: var(--no);
 }
+
+/* ── his request 5: the sidebar ──
+ *
+ * LEFT, not right. Decision 23 put the replay button bottom-RIGHT because he
+ * reviews one-handed with his right thumb; a navigation drawer under that thumb
+ * would be opened by accident mid-card, which is the worst thing a navigation
+ * control can do here — it interrupts a card he is holding an answer for.
+ */
+
+.sidebartoggle {
+  background: none;
+  border: 1px solid var(--line-soft);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  /* A thumb target, not a glyph. */
+  height: 34px;
+  margin-right: 10px;
+  width: 38px;
+}
+
+.sidebar {
+  background: var(--bg);
+  border-right: 1px solid var(--line-soft);
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  left: 0;
+  max-width: 88vw;
+  position: fixed;
+  top: 0;
+  transform: translateX(-100%);
+  transition: transform 0.18s ease-out;
+  width: 330px;
+  z-index: 15;
+}
+
+body.sidebar-open .sidebar {
+  transform: none;
+}
+
+/* Below the sidebar, above the review screen. Layers (z 20) sit above BOTH, so a
+   preview opened from a search result covers the thing that opened it. */
+.sidebar-scrim {
+  background: rgb(0 0 0 / 45%);
+  display: none;
+  inset: 0;
+  position: fixed;
+  z-index: 14;
+}
+
+body.sidebar-open .sidebar-scrim {
+  display: block;
+}
+
+.sidebar-head {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  flex: none;
+  font-size: 12px;
+  justify-content: space-between;
+  letter-spacing: 0.08em;
+  padding: 12px 12px 12px 16px;
+  text-transform: uppercase;
+}
+
+/* 16px, because iOS Safari zooms the viewport on focus for anything smaller. */
+.searchbox {
+  background: #17181b;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-bright);
+  flex: none;
+  font: 16px/1.5 var(--jp), sans-serif;
+  padding: 12px 16px;
+  width: 100%;
+}
+
+.searchbox:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+
+.deck-list {
+  border-bottom: 1px solid var(--line);
+  flex: none;
+  max-height: 34vh;
+  overflow-y: auto;
+}
+
+.deck-row,
+.result-row {
+  background: none;
+  border: 0;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  padding: 10px 16px;
+  text-align: left;
+  width: 100%;
+}
+
+.deck-row {
+  align-items: baseline;
+  font-size: 13px;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.deck-row:active,
+.result-row:active {
+  background: #1b1d21;
+}
+
+.deck-row.on {
+  background: #191b1f;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.deck-name {
+  font-family: var(--jp), sans-serif;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deck-counts {
+  color: var(--edge);
+  flex: none;
+  font-size: 11px;
+}
+
+.deck-counts.has-due {
+  color: var(--accent);
+}
+
+.result-head {
+  color: var(--muted);
+  display: flex;
+  flex: none;
+  font-size: 11px;
+  justify-content: space-between;
+  letter-spacing: 0.1em;
+  padding: 10px 16px 6px;
+  text-transform: uppercase;
+}
+
+.result-list {
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.result-row {
+  border-top: 1px solid #1a1c20;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.result-name {
+  color: var(--ink-bright);
+  font-family: var(--jp), sans-serif;
+  font-size: 16px;
+}
+
+.result-meta,
+.result-snippet {
+  color: var(--edge);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.result-snippet {
+  color: var(--muted);
+  font-family: var(--jp), sans-serif;
+}
+
+/* Shown and marked, never hidden: a browse that silently omits a card he
+   archived is a browse he cannot trust. 234 of them. */
+.result-row.archived .result-name {
+  color: var(--muted);
+}
+
+.sidebar-note {
+  border-top: 1px solid var(--line);
+  color: var(--edge);
+  flex: none;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+}

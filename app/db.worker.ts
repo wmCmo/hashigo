@@ -47,9 +47,12 @@ import { cardAudioResolver } from "../src/cards/index.js";
 import { directionForTrackKind } from "../src/cards/index.js";
 import { prepareCard } from "../src/review/index.js";
 import { buildSession, type ReviewSession } from "../src/session/index.js";
+import { searchCards } from "../src/search/index.js";
 
 import type {
   AnswerRequest,
+  BrowseRequest,
+  DecksRequest,
   PreviewRequest,
   SetFieldRequest,
   ResetRequest,
@@ -340,6 +343,117 @@ async function reset(request: ResetRequest): Promise<void> {
 }
 
 /**
+ * The deck tree with counts. 39 rows, one query, sent once.
+ *
+ * `due` uses the SAME predicate the queue does — `dormant = 0 AND archived = 0`
+ * — so the sidebar cannot disagree with the session about what is waiting. 234
+ * archived cards carrying 451 live tracks are excluded from `due` and INCLUDED in
+ * `cards`, because archiving means "stop reviewing", not "stop existing".
+ */
+function decks(request: DecksRequest): void {
+  const db = requireCards();
+  const rows = db
+    .prepare(
+      `SELECT dp.deck_id AS id, dp.path AS path,
+              (SELECT count(*) FROM cards c WHERE c.deck_id = dp.deck_id) AS cards,
+              (SELECT count(*) FROM card_tracks t JOIN cards c2 ON c2.id = t.card_id
+                WHERE c2.deck_id = dp.deck_id AND t.dormant = 0 AND c2.archived = 0
+                  AND t.due_at IS NOT NULL
+                  AND date(t.due_at) <= date('now','localtime')) AS due
+         FROM deck_paths dp
+        ORDER BY dp.path`,
+    )
+    .all() as { id: string; path: string; cards: number; due: number }[];
+  post({
+    kind: "decks",
+    id: request.id,
+    decks: rows.filter((row) => row.cards > 0),
+    cards: Number((db.prepare("SELECT count(*) AS n FROM cards").get() as { n: number }).n),
+  });
+}
+
+/**
+ * Search, or list a deck.
+ *
+ * The query path is `src/search`, untouched — it already answers the thing that
+ * is easy to get wrong here: a 1-2 character query. `card_fts` uses FTS5's
+ * trigram tokeniser and CANNOT serve one, and two characters is the commonest
+ * search unit in Japanese (意味, する, ない all return 0 from MATCH and 3, 228 and
+ * 74 from the ranked scan). It routes and reports which path ran.
+ *
+ * With no query it is a deck listing instead, ordered by name — a browse, not a
+ * ranking, so imposing a relevance order on it would be a lie.
+ */
+function browse(request: BrowseRequest): void {
+  const db = requireCards();
+  const started = performance.now();
+
+  if (request.query.trim() === "") {
+    const rows = db
+      .prepare(
+        `SELECT c.id AS id, c.name AS name, c.archived AS archived, dp.path AS deck
+           FROM cards c LEFT JOIN deck_paths dp ON dp.deck_id = c.deck_id
+          WHERE (? IS NULL OR c.deck_id = ?)
+          ORDER BY c.name LIMIT ?`,
+      )
+      .all(request.deckId, request.deckId, request.limit) as {
+      id: string;
+      name: string;
+      archived: number;
+      deck: string | null;
+    }[];
+    const total = Number(
+      (
+        db
+          .prepare("SELECT count(*) AS n FROM cards c WHERE (? IS NULL OR c.deck_id = ?)")
+          .get(request.deckId, request.deckId) as { n: number }
+      ).n,
+    );
+    post({
+      kind: "browse",
+      id: request.id,
+      hits: rows.map((row) => ({
+        cardId: row.id,
+        name: row.name,
+        deckPath: row.deck ?? "",
+        archived: row.archived === 1,
+        snippet: null,
+      })),
+      total,
+      mode: null,
+      elapsedMs: performance.now() - started,
+    });
+    return;
+  }
+
+  const result = searchCards(db, request.query, { limit: request.limit });
+  const deckPaths = new Map(
+    (db.prepare("SELECT deck_id, path FROM deck_paths").all() as {
+      deck_id: string;
+      path: string;
+    }[]).map((row) => [row.deck_id, row.path]),
+  );
+  const filtered =
+    request.deckId === null
+      ? result.hits
+      : result.hits.filter((hit) => hit.deckId === request.deckId);
+  post({
+    kind: "browse",
+    id: request.id,
+    hits: filtered.map((hit) => ({
+      cardId: hit.cardId,
+      name: hit.name,
+      deckPath: deckPaths.get(hit.deckId) ?? "",
+      archived: hit.archived,
+      snippet: hit.snippet?.text ?? null,
+    })),
+    total: result.total,
+    mode: result.mode,
+    elapsedMs: result.elapsedMs,
+  });
+}
+
+/**
  * Field types whose STORED VALUE is the content, and so may be edited.
  *
  * The exclusions are not caution, they are measured: `speech`, `translate` and
@@ -480,6 +594,12 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "setField":
           setField(request);
+          break;
+        case "decks":
+          decks(request);
+          break;
+        case "browse":
+          browse(request);
           break;
         case "reset":
           await reset(request);

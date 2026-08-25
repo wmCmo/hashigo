@@ -25,6 +25,11 @@
 
     <section id="review" class="review" data-state="prompt" hidden>
       <header>
+        <!-- His request 5. On the LEFT: decision 23 put the replay button
+             bottom-right for his right thumb, and a drawer under that thumb would
+             be opened by accident mid-card. -->
+        <button id="sidebartoggle" class="sidebartoggle" type="button"
+                aria-controls="sidebar" aria-expanded="false" aria-label="browse the collection">☰</button>
         <span>梯子 · review</span>
         <span id="progress">—</span>
         <!-- His request 4, and it sits INSIDE the header on purpose. Three
@@ -78,6 +83,26 @@
       <p id="donetext"></p>
       <button id="backup" type="button">export backup</button>
     </section>
+
+    <!-- His request 5, the browsing half. `create` is deliberately absent and
+         says why: it is blocked on the card-id decision (notes/crud-audit.md). -->
+    <div id="sidebarscrim" class="sidebar-scrim"></div>
+    <aside id="sidebar" class="sidebar" aria-label="collection">
+      <div class="sidebar-head">
+        <span>browse</span>
+        <button id="sidebarclose" class="layer-close" type="button" aria-label="close">✕</button>
+      </div>
+      <input id="searchbox" class="searchbox" type="search" placeholder="search cards"
+             autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <div id="decklist" class="deck-list"></div>
+      <div class="result-head"><span>cards</span><span id="resultcount">—</span></div>
+      <div id="resultlist" class="result-list"></div>
+      <p class="sidebar-note">
+        Creating a card is not here yet, and it is waiting on one decision rather
+        than on code: what id a card made in Hashigo gets, when one more Mochi
+        import could still collide with it.
+      </p>
+    </aside>
 
     <!-- His request 2. Layers are appended here and STACK: a link inside a
          preview opens another on top, which is how Mochi does it and which he
