@@ -1448,12 +1448,17 @@ describe.skipIf(!existsSync(join("build", "hashigo.db")))(
             identity.voice ?? "",
             identity.lang ?? "",
             identity.options,
-          ].join(" ");
+          // `\u0000` rather than a raw NUL byte: identical at runtime, and it keeps
+          // this file TEXT. Two raw control bytes used to sit here and on the regex
+          // below, which is enough for tooling to treat an 89.9 KB test file as
+          // binary and stop showing its matches -- and `git diff` is this repo's
+          // stated review control. Do not put the raw bytes back.
+          ].join("\u0000");
           const legacy = createHash("sha256").update(joined).digest("hex");
           const current = generationKey(identity);
           if (legacy !== current) differing.push(`${row.kind}/${row.source_text}`);
           // eslint-disable-next-line no-control-regex
-          if (/[^ -]/.test(joined)) nonAscii += 1;
+          if (/[^\u0000-\u007f]/.test(joined)) nonAscii += 1;
           checked += 1;
         }
 

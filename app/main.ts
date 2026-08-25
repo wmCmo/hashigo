@@ -70,6 +70,14 @@ import { mountPrepared, type MountedCard, type PreparedCard } from "../src/revie
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import type { RenderResult } from "../src/render/index.js";
 import type { ShadowingSide } from "../src/render/reveal.js";
+// The two extracted rules. Import-free modules so `test/` can reach them; see
+// `test/app-logic.test.ts` and the headers of both files.
+import { childrenOf as treeChildrenOf, subtreeTotals } from "./deck-tree.js";
+import {
+  promptPositions as promptBoundary,
+  visiblePositions,
+  type BoundarySide,
+} from "./review-boundary.js";
 import type {
   AppMessage,
   AppRequest,
@@ -222,35 +230,36 @@ function setState(state: "prompt" | "revealed"): void {
   reviewView.setAttribute("data-state", state);
 }
 
+/**
+ * Both of these are ADAPTERS now. The rules themselves live in
+ * `./review-boundary.js`, over four plain fields instead of over
+ * `RenderResult<HTMLElement>`, so `test/app-logic.test.ts` can reach them — this
+ * file cannot be imported from `test/`, because the root `tsconfig.json` excludes
+ * `app/` on purpose.
+ *
+ * The question boundary had been wrong in production once (a reverse track printed
+ * the answer above the question) and was covered by nothing. It is now pinned by
+ * eight tests, three of which were confirmed to fail when the rule is broken.
+ */
 function visibleSides(result: RenderResult<HTMLElement>): number[] {
-  return result.sides.filter((side) => !side.empty).map((side) => side.position);
+  return visiblePositions(boundarySides(result));
 }
 
-/**
- * The question: the first non-empty side, plus a following widget-only side.
- *
- * See the header for why this is positional and not clever. The widget exception
- * is 漢字 and only 漢字 today — `<draw>` on its own side, which has to be on
- * screen while he draws from memory.
- */
+/** The question: the first non-empty side, plus a following widget-only side. */
 function promptPositions(card: MountedCard<HTMLElement>): number[] {
-  const shown = visibleSides(card.result);
-  const first = shown[0];
-  if (first === undefined) return [];
-  const prompt = [first];
-  const widgetPositions = new Set(
-    card.result.widgets.map(
-      (widget) => card.result.sides.find((side) => side.index === widget.side)?.position ?? -1,
-    ),
+  return promptBoundary(
+    boundarySides(card.result),
+    card.result.widgets.map((widget) => widget.side),
   );
-  for (const position of shown.slice(1)) {
-    if (!widgetPositions.has(position)) break;
-    const side = card.result.sides.find((entry) => entry.position === position);
-    // Widget AND nothing else: a side that also carries text is an answer side.
-    if (side === undefined || (side.element.textContent ?? "").trim() !== "") break;
-    prompt.push(position);
-  }
-  return prompt;
+}
+
+function boundarySides(result: RenderResult<HTMLElement>): BoundarySide[] {
+  return result.sides.map((side) => ({
+    position: side.position,
+    index: side.index,
+    empty: side.empty,
+    text: side.element.textContent ?? "",
+  }));
 }
 
 function releaseCard(): void {
@@ -1248,22 +1257,36 @@ async function loadDecks(force = false): Promise<void> {
   fillNewCardChoices(reply.decks);
 }
 
-/** Children of `parentId`, in path order — the tree the flat list implies. */
+/**
+ * Adapters over `./deck-tree.js`, which owns the walk and is tested in Node.
+ *
+ * The recursion used to live here with no cycle guard. It did not need one — nothing
+ * in `deckOp` can reparent a deck — but request 14's deck CRUD will grow a MOVE, and
+ * an unguarded walk kills the page on load rather than misdrawing a total. The guard
+ * and its two tests cost less than diagnosing that once.
+ */
 function childrenOf(parentId: string | null): readonly DeckBrief[] {
-  return deckIndex.filter((deck) => deck.parentId === parentId);
+  return treeChildrenOf(deckIndex, parentId);
 }
 
-/** Cards in this deck AND everything under it, which is what a parent should say. */
+/**
+ * Cards in this deck AND everything under it, which is what a parent should say.
+ *
+ * `truncated` is reported ONCE per session rather than discarded. A guard that
+ * silently returns a wrong-but-safe number is how "the sidebar totals are a bit off"
+ * becomes a week of confusion — and a cycle in the deck graph is a data bug worth
+ * hearing about, not a rendering detail.
+ */
 function subtreeCards(deck: DeckBrief): { cards: number; due: number } {
-  let cards = deck.cards;
-  let due = deck.due;
-  for (const child of childrenOf(deck.id)) {
-    const under = subtreeCards(child);
-    cards += under.cards;
-    due += under.due;
+  const totals = subtreeTotals(deckIndex, deck);
+  if (totals.truncated && !cycleReported) {
+    cycleReported = true;
+    console.warn(`deck graph has a cycle at or under ${deck.path} — sidebar totals are a floor`);
+    say(`deck "${deck.name}" is inside a cycle; its totals are a floor, not exact`, true);
   }
-  return { cards, due };
+  return totals;
 }
+let cycleReported = false;
 
 function paintTree(total: number): void {
   deckList.replaceChildren();
@@ -1619,7 +1642,20 @@ function fillNewCardChoices(decks: readonly DeckBrief[]): void {
  * A list of 10,000 cards in a 330px drawer was the wrong shape; a filtered,
  * sorted, searchable grid of one deck is the right one.
  */
-type SortKey = "name" | "due" | "created";
+/**
+ * TWO ORDERS, NAMED FOR WHAT THEY DO.
+ *
+ * This was `"name" | "due" | "created"`, and both extra members were fiction:
+ * `BrowseHit` carries no due date and no created stamp, so neither could ever have
+ * been sorted on, and the `<select>` offered only two options anyway — with `"due"`
+ * LABELLED "relevance". The behaviour was right (fall through to the order `browse`
+ * returned, which for a query IS the search ranking) and the name was a lie, which
+ * is the kind of thing that reads as a bug for as long as it survives.
+ *
+ * Sorting by due or created is a real feature and needs the worker to send those
+ * fields; it is not a line of page code away, so it is not pretended at here.
+ */
+type SortKey = "name" | "relevance";
 
 interface GalleryState {
   deckId: string | null;
