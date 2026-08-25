@@ -74,62 +74,40 @@ the number is what killed the claim; the grep alone had made it look real.
 over behaviour that is already tested by the corpus, and is reversible. A hard
 delete is available underneath it if he ever wants it. That is his call, not mine.
 
-### 4. Create needs an ID FORMAT — and that is a smaller question than this
-### note first claimed
+### 4. Create needed no decision at all — the question was mine, not his
 
-Nothing outside the importer creates a card, deck, template, field, tag or link.
-The first version of this section said create was "blocked on an identity
-decision" and implied two problems: whether a locally-made card SURVIVES the final
-import, and what id it should carry. **Measured 2026-08-23, the first one is
-already solved and I should not have raised it.**
+This section has now been wrong twice, and both versions were rigorous. The first
+said create was "blocked on an identity decision". The second measured that a
+locally-created card already survives a re-import and reduced the question to an id
+FORMAT, recommending a hyphen so collision with a Mochi id would be impossible by
+construction.
 
-**A locally-created card already survives a re-import, by construction.**
+**Zach's answer, and it was his fourth time saying it:**
 
-* There is **no `DELETE FROM cards` anywhere in `src/`**. The importer upserts;
-  it never reconciles the card table against the export, so a card the export has
-  never heard of is simply not considered.
-* `pruneFieldValues` — the one thing that does delete on import — is scoped
-  `WHERE card_id IN (SELECT card_id FROM import_field_keys)`, i.e. to the cards
-  in *this* import. Its own docstring says so: *"it can never touch a card that
-  came from an export not being re-read."*
-* And `template_fields.local = 1` is exempt from even that, which is decision 9
-  working exactly as intended.
+> in what world would the id from mochi collide with id from hashigo? i never
+> import one card or one deck, once we finish developing hashigo, ill delete the
+> whole card and reimport again
 
-So the only open question is the FORMAT, and the corpus answers it:
+**The import is WHOLESALE**, and decision 16 leaves exactly one more of them.
+After it, no Mochi id ever arrives here again. There is no shared namespace to
+collide inside, so there was never a collision to design against.
 
-```plaintext
-cards            7,716   ALL exactly 8 chars   base62 [0-9A-Za-z]
-decks               39   all 8                 base62
-templates           10   all 8                 base62
-template_fields     32   31 × 8, 1 × 4         base62   (the 4 is `name`)
-LOCAL fields         3   10 / 12 / 18          contains `-`
-```
+A new card id therefore needs to be unique in THIS database and nothing else,
+which `cards.id UNIQUE` already enforces — a repeat is a failed insert, not silent
+corruption. `app/db.worker.ts` mints 8 base62 characters, the same shape Mochi
+uses, because uniformity is free and one format is one thing to reason about.
 
-**Mochi's alphabet is base62 and cannot produce a hyphen.** So an id containing
-one cannot collide with a Mochi id — *by construction, not by probability*. That
-is a stronger guarantee than a UUID, which is merely unlikely to collide, and it
-is 26 characters shorter in a value that appears in every wiki-link.
+**BUILT 2026-08-23**, and the half that actually needed care was not identity at
+all: **a card with no `card_tracks` row is invisible to the scheduler forever** —
+never due, never new, never in a session. Creating one opens `forward` always and
+`reverse` when the deck resolves to it, read from `card_reverse_resolved` rather
+than re-deriving the inheritance walk. Verified end to end: a new 単語 card came
+back `forward + reverse`.
 
-**And the convention already exists in this repo.** Decision 9's local fields are
-`local-yomi`, `local-kana-primary`, `local-accent`. The same reasoning was applied
-once already, to the same problem, one level down.
-
-**Recommendation, for Zach to accept or reject in one line:**
-
-> A locally-created card gets `local-` followed by 8 base62 characters —
-> `local-k3Xp9QmA`. Hyphen ⇒ Mochi cannot generate it ⇒ no collision is possible.
-> Same rule for a locally-created deck or template.
-
-`cards.id` carries no CHECK constraint on format, so nothing has to change in the
-schema. `id` is UNIQUE, so even a same-device repeat is an insert error rather
-than silent corruption. For stage 11, two devices creating offline collide only if
-they draw the same 8 of 62⁸ ≈ 2.2 × 10¹⁴ — and that surfaces as a failed insert,
-not as merged cards.
-
-**What is genuinely left of create, once the format is settled**, is UI rather
-than identity: which deck, which template, and whether a new card enters the queue
-immediately or waits for the next session. Those are his, and they are smaller
-questions than the one this note originally posed.
+**The generalisable bit, because two careful analyses in a row missed it:** a
+measurement can be flawless and still answer a question nobody asked. Neither
+version of this section was wrong about the code. Both were wrong about the
+workflow, and the workflow was written down — three times before this one.
 
 ## What this means for the order of work
 

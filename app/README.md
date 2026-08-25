@@ -371,17 +371,29 @@ button bottom-RIGHT because he reviews one-handed with his right thumb; a drawer
 under that thumb would be opened by accident mid-card, interrupting a card he is
 holding an answer for.
 
-**CREATE is deliberately absent, and the panel says why in words.** A button
-that did nothing would be worse than a sentence naming the blocker.
+**Creating a card is here too**, and the id question that seemed to block it was
+never real. Zach, for the fourth time: *"i never import one card or one deck, once
+we finish developing hashigo, ill delete the whole card and reimport again"*. The
+import is WHOLESALE, and decision 16 leaves exactly one more of them — after which
+no Mochi id ever arrives again. So a card id has to be unique in this database and
+nothing else, which `cards.id UNIQUE` already enforces. New ids are 8 base62
+characters, the same shape Mochi uses, because one format is one thing to reason
+about.
 
-The blocker is smaller than `notes/crud-audit.md` first said, and that note now
-carries the measurement: a locally-created card **already** survives the final
-import — there is no `DELETE FROM cards` in `src/` at all, and `pruneFieldValues`
-is scoped to the cards in the import being read. What is open is only the id
-FORMAT, and the corpus answers it: every Mochi id is exactly 8 base62 characters,
-so **an id containing a hyphen cannot collide by construction** — which is what
-decision 9's `local-yomi` / `local-accent` field ids already do. The recommendation
-on the table is `local-` + 8 base62, awaiting one word from Zach.
+**The half that IS easy to forget is the tracks.** A card with no `card_tracks`
+row is invisible to the scheduler forever — never due, never new, never in a
+session. So creating one opens `forward` always and `reverse` when the deck
+resolves to it, read from `card_reverse_resolved` rather than re-deriving the
+inheritance walk. Verified: a new 単語 card came back `forward + reverse`.
+
+`due_at` NULL and `reps` 0 puts it in the NEW queue, so decision 12's ten-a-day
+limit applies to it like any other new card. It does not join the session already
+running — that was built before the card existed and rebuilding mid-session would
+reshuffle the queue underneath him — so the form says when it will appear.
+
+Creating opens the EDITOR on the new card immediately, and the title goes into the
+template's primary field as well, because a card with a title and no fields is not
+yet a card and typing the word twice is not a workflow.
 
 ## Found by his screenshot: the `<input>` widget is inert
 

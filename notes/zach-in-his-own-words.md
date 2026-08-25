@@ -208,6 +208,20 @@ His own words explaining WHY are not derivable from the code or from git.
   > we can discuss about whether to open source it once we finish dev, this is my 3rd time
   > telling an agent about this
 
+  **A FOURTH, added 2026-08-23, after an agent designed a card-id namespace to avoid
+  collisions with Mochi:**
+
+  > in what world would the id from mochi collide with id from hashigo? i never import
+  > one card or one deck, once we finish developing hashigo, ill delete the whole card
+  > and reimport again, and i think this is my 4 time telling an agent about this
+
+  **The import is WHOLESALE.** Not incremental, not per-deck, not per-card — and
+  decision 16 leaves exactly one more of them, after which no Mochi data arrives again.
+  The whole collision analysis was rigorous about a scenario that does not exist. A new
+  card id needs to be unique in this database and nothing more, which `cards.id UNIQUE`
+  already enforces. **The lesson is not "check the workflow" in the abstract: it is that
+  a measurement can be flawless and still answer a question nobody asked.**
+
   **Also: he does not want jargon.** Same message: *"can you stop using words i don't
   understand? like decision 23's three referals, d2 d4 d5, b2, b3, b4 ... bro i know you
   are fluent in code language but don't use code language to me."* The `D2`/`B4`/decision-

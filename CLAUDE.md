@@ -455,6 +455,15 @@ He has repeated each of these to a different agent, and the count is his:
    (decision 16). Quote those numbers as "as of the 2026-08-18 export", never as current.
 3. **Open-sourcing gets discussed AFTER development** — told to three agents. Not now.
    `notes/open-sourcing.md` holds what was already checked; leave it there.
+4. **THE IMPORT IS WHOLESALE — he never imports one card or one deck** — told to
+   four agents. *"i never import one card or one deck, once we finish developing
+   hashigo, ill delete the whole card and reimport again."* So a partial or
+   incremental import is not a scenario, and neither is a Mochi id arriving beside
+   locally-created data: **after decision 16's one final import, no Mochi id ever
+   arrives here again.** An agent spent real effort on a namespacing scheme to make
+   locally-created card ids collision-proof against Mochi's; that was solving a
+   problem he does not have. A new id needs to be unique in THIS database, which
+   `cards.id UNIQUE` already enforces, and nothing more.
 
 ## The hard rule: audio must never autoplay ON A `Reading = true` CARD
 

@@ -920,3 +920,70 @@ body.sidebar-open .sidebar-scrim {
   line-height: 1.6;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
 }
+
+/* ── the new-card form ── */
+
+.newcard-host {
+  border-top: 1px solid var(--line);
+  flex: none;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+}
+
+.newcard {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.newcard-title,
+.newcard-said {
+  grid-column: 1 / -1;
+}
+
+/* 16px on every control here: iOS Safari zooms the viewport on focus for
+   anything smaller, and losing his place is worse than a slightly large box. */
+.newcard-title,
+.newcard-select {
+  background: #17181b;
+  border: 1px solid var(--line-soft);
+  color: var(--ink-bright);
+  font: 16px/1.4 var(--jp), sans-serif;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+.newcard-title:focus,
+.newcard-select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.newcard-submit {
+  background: none;
+  border: 1px solid var(--ok-edge);
+  color: var(--ok);
+  cursor: pointer;
+  font: inherit;
+  grid-column: 1 / -1;
+  letter-spacing: 0.06em;
+  padding: 11px;
+}
+
+.newcard-submit:active {
+  background: #1b1d21;
+}
+
+.newcard-submit[disabled] {
+  opacity: 0.45;
+}
+
+.newcard-said {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  min-height: 1em;
+}
+
+.newcard-said.bad {
+  color: var(--no);
+}

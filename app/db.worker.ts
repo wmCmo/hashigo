@@ -52,6 +52,7 @@ import { searchCards } from "../src/search/index.js";
 import type {
   AnswerRequest,
   BrowseRequest,
+  CreateCardRequest,
   DecksRequest,
   PreviewRequest,
   SetFieldRequest,
@@ -343,6 +344,108 @@ async function reset(request: ResetRequest): Promise<void> {
 }
 
 /**
+ * A card id. Eight base62 characters, the same shape Mochi uses.
+ *
+ * **Deliberately NOT namespaced**, and an earlier version of this file argued at
+ * length for a `local-` prefix to make collision impossible. That was solving a
+ * problem Zach does not have and has now said four times: he never imports a
+ * single card or deck. The import is WHOLESALE, and after decision 16's one final
+ * import no Mochi id ever arrives again. Uniqueness inside this database is the
+ * entire requirement, and `cards.id UNIQUE` enforces it — a repeat is a failed
+ * insert, not silent corruption.
+ *
+ * Same shape as Mochi's because uniformity is free here: ids appear in
+ * wiki-links, in the search index and in the backup, and one format is one thing
+ * to reason about.
+ */
+const ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+function newCardId(db: BrowserDb): string {
+  const taken = db.prepare("SELECT 1 FROM cards WHERE id = ?");
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
+    let id = "";
+    for (const byte of bytes) id += ID_ALPHABET[byte % ID_ALPHABET.length];
+    if (taken.get(id) === undefined) return id;
+  }
+  throw new Error("could not find a free card id in 32 tries, which should be impossible");
+}
+
+/**
+ * Make a card, and OPEN ITS TRACKS — which is the half that is easy to forget.
+ *
+ * A card with no `card_tracks` row is invisible to the scheduler forever: it is
+ * never due, never new, and never appears in a session. So this opens `forward`
+ * always and `reverse` when the deck resolves to it, using the SAME view the
+ * importer and the loader use (`card_reverse_resolved`) rather than re-deriving
+ * the inheritance walk — a second definition is how two answers start to differ.
+ *
+ * `due_at` is NULL and `reps` is 0, which is exactly what `newTracks` looks for:
+ * the card enters the NEW queue and is subject to decision 12's 10-a-day limit,
+ * rather than arriving already overdue.
+ */
+function createCard(request: CreateCardRequest): void {
+  const db = requireCards();
+  const deck = db.prepare("SELECT id FROM decks WHERE id = ?").get(request.deckId);
+  if (deck === undefined) throw new Error(`no deck ${request.deckId}`);
+  if (
+    request.templateId !== null &&
+    db.prepare("SELECT id FROM templates WHERE id = ?").get(request.templateId) === undefined
+  ) {
+    throw new Error(`no template ${request.templateId}`);
+  }
+
+  const cardId = newCardId(db);
+  const tracks: string[] = [];
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO cards (id, deck_id, template_id, name, content, archived)
+       VALUES (?, ?, ?, ?, '', 0)`,
+    ).run(cardId, request.deckId, request.templateId, request.name);
+
+    // The template's PRIMARY field carries the head word on every template here
+    // (`name` is its id, and it is what `<<単語>>` / `<<言葉>>` / `<<Kanji>>`
+    // resolve to), so the title he typed goes there as well — otherwise the card
+    // renders blank and he has to type it twice.
+    if (request.templateId !== null && request.name !== "") {
+      const primary = db
+        .prepare("SELECT id FROM template_fields WHERE template_id = ? AND id = 'name'")
+        .get(request.templateId) as { id: string } | undefined;
+      if (primary !== undefined) {
+        db.prepare(
+          "INSERT INTO card_field_values (card_id, field_id, value) VALUES (?, 'name', ?)",
+        ).run(cardId, request.name);
+      }
+    }
+
+    const reverse = db
+      .prepare("SELECT reverse FROM card_reverse_resolved WHERE card_id = ?")
+      .get(cardId) as { reverse: string } | undefined;
+    const kinds = reverse?.reverse === "on" ? ["forward", "reverse"] : ["forward"];
+    for (const kind of kinds) {
+      db.prepare(
+        `INSERT INTO card_tracks
+           (card_id, kind, dormant, needs_rereview, due_at, scheduled_days, reps, lapses,
+            last_reviewed_at, scheduler, scheduler_state)
+         VALUES (?, ?, 0, 0, NULL, NULL, 0, 0, NULL, NULL, NULL)`,
+      ).run(cardId, kind);
+      tracks.push(kind);
+    }
+  })();
+
+  // The session was built before this card existed, so it will not appear until
+  // the next one. Said in the reply rather than silently rebuilt: rebuilding
+  // mid-session would reshuffle the queue under him.
+  post({
+    kind: "createCard",
+    id: request.id,
+    cardId,
+    tracks,
+    card: prepareCard({ db, cardId, direction: "forward" }),
+  });
+}
+
+/**
  * The deck tree with counts. 39 rows, one query, sent once.
  *
  * `due` uses the SAME predicate the queue does — `dormant = 0 AND archived = 0`
@@ -369,6 +472,13 @@ function decks(request: DecksRequest): void {
     id: request.id,
     decks: rows.filter((row) => row.cards > 0),
     cards: Number((db.prepare("SELECT count(*) AS n FROM cards").get() as { n: number }).n),
+    templates: db
+      .prepare(
+        `SELECT t.id AS id, t.name AS name,
+                (SELECT count(*) FROM template_fields f WHERE f.template_id = t.id) AS fields
+           FROM templates t ORDER BY t.name`,
+      )
+      .all() as { id: string; name: string; fields: number }[],
   });
 }
 
@@ -600,6 +710,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "browse":
           browse(request);
+          break;
+        case "createCard":
+          createCard(request);
           break;
         case "reset":
           await reset(request);

@@ -69,7 +69,7 @@ import { browserDocument, CLASS } from "../src/render/index.js";
 import { mountPrepared, type MountedCard, type PreparedCard } from "../src/review/index.js";
 import type { RenderResult } from "../src/render/index.js";
 import type { ShadowingSide } from "../src/render/reveal.js";
-import type { AppMessage, AppRequest, ReplyFor } from "./protocol.js";
+import type { AppMessage, AppRequest, DeckBrief, ReplyFor, TemplateBrief } from "./protocol.js";
 
 // ─── the worker, as a promise-returning client ───────────────────────────────
 
@@ -894,7 +894,10 @@ function editableCard(): { card: PreparedCard; onSaved: () => void } | null {
 function openEditor(): void {
   const target = editableCard();
   if (target === null) return;
-  const { card } = target;
+  openEditorFor(target.card);
+}
+
+function openEditorFor(card: PreparedCard): void {
   const fields = card.loaded.template?.fields ?? [];
   if (fields.length === 0) return;
 
@@ -1053,6 +1056,13 @@ async function openSidebar(): Promise<void> {
   document.body.classList.add("sidebar-open");
   sidebarToggle.setAttribute("aria-expanded", "true");
   searchBox.focus();
+  // Built on FIRST OPEN, not at module load. `buildNewCardForm` is hoisted but
+  // the `let`s it assigns are not — calling it during module initialisation threw
+  // `Cannot access 'newCardDeck' before initialization` and killed the whole
+  // module before `boot()`, leaving a blank page and an empty log. Lazy is also
+  // simply correct: a sidebar he never opens costs nothing.
+  const host = el("newcardhost");
+  if (host.childElementCount === 0) host.appendChild(buildNewCardForm());
   if (!decksLoaded) {
     decksLoaded = true;
     const reply = await ask<"decks">({ kind: "decks" });
@@ -1061,6 +1071,8 @@ async function openSidebar(): Promise<void> {
     for (const deck of reply.decks) {
       deckList.appendChild(deckRow(deck.id, deck.path, deck.cards, deck.due));
     }
+    templateChoices = reply.templates;
+    fillNewCardChoices(reply.decks);
   }
   void runBrowse();
 }
@@ -1149,6 +1161,123 @@ sidebarToggle.addEventListener("click", () => {
 el("sidebarclose").addEventListener("click", closeSidebar);
 el("sidebarscrim").addEventListener("click", closeSidebar);
 searchBox.addEventListener("input", () => void runBrowse());
+
+/**
+ * The new-card form — his request 5's other half, and the last of the six.
+ *
+ * Three inputs and nothing more: a title, a deck, a template. It then opens the
+ * EDITOR on the card it made, because a card with a title and no fields is not
+ * yet a card and the next thing he wants is always to fill it in.
+ *
+ * **The card does not join the session already in progress.** `buildSession` ran
+ * before it existed, and rebuilding mid-session would reshuffle the queue under
+ * him — so the reply says which tracks were opened and the form says when it will
+ * appear. It enters the NEW queue (due_at NULL, reps 0), which means decision 12's
+ * ten-a-day limit applies to it like any other new card.
+ */
+let templateChoices: readonly TemplateBrief[] = [];
+// DECLARED ABOVE `buildNewCardForm`, not below it. `let` sits in a temporal dead
+// zone until its own statement executes, and the form is built during module
+// initialisation — so declaring these after the function threw
+// `Cannot access 'newCardDeck' before initialization` and killed the whole
+// module before `boot()` ran. The page came up blank with an empty log.
+let newCardDeck: HTMLSelectElement | null = null;
+let newCardTemplate: HTMLSelectElement | null = null;
+
+function buildNewCardForm(): HTMLElement {
+  const form = document.createElement("form");
+  form.className = "newcard";
+
+  const title = document.createElement("input");
+  title.className = "newcard-title";
+  title.type = "text";
+  title.placeholder = "new card — the word";
+  title.autocomplete = "off";
+  title.spellcheck = false;
+
+  const deck = document.createElement("select");
+  deck.className = "newcard-select";
+  deck.setAttribute("aria-label", "deck");
+
+  const template = document.createElement("select");
+  template.className = "newcard-select";
+  template.setAttribute("aria-label", "template");
+  const none = document.createElement("option");
+  none.value = "";
+  // 66 of his cards have no template at all, so this is a real option and not a
+  // placeholder.
+  none.textContent = "no template";
+  template.appendChild(none);
+
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "newcard-submit";
+  submit.textContent = "create";
+
+  const said = document.createElement("p");
+  said.className = "newcard-said";
+
+  form.append(title, deck, template, submit, said);
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (deck.value === "") return;
+    submit.disabled = true;
+    void ask<"createCard">({
+      kind: "createCard",
+      deckId: deck.value,
+      templateId: template.value === "" ? null : template.value,
+      name: title.value.trim(),
+    })
+      .then((reply) => {
+        said.classList.remove("bad");
+        said.textContent =
+          `made ${reply.cardId} · ${reply.tracks.join(" + ")} · ` +
+          `it joins the NEW queue next session`;
+        title.value = "";
+        // Straight into the editor on the card just made: a title with no fields
+        // is not yet a card, and this is always the next thing he wants.
+        if (reply.card !== null) openEditorFor(reply.card);
+        decksLoaded = false;
+        void runBrowse();
+      })
+      .catch((cause: Error) => {
+        said.classList.add("bad");
+        said.textContent = cause.message;
+      })
+      .finally(() => {
+        submit.disabled = false;
+      });
+  });
+
+  // Filled when the deck list arrives.
+  newCardDeck = deck;
+  newCardTemplate = template;
+  return form;
+}
+
+function fillNewCardChoices(decks: readonly DeckBrief[]): void {
+  if (newCardDeck !== null) {
+    newCardDeck.replaceChildren();
+    for (const entry of decks) {
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = entry.path;
+      newCardDeck.appendChild(option);
+    }
+  }
+  if (newCardTemplate !== null) {
+    const none = newCardTemplate.firstElementChild;
+    newCardTemplate.replaceChildren();
+    if (none !== null) newCardTemplate.appendChild(none);
+    for (const entry of templateChoices) {
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = `${entry.name} · ${entry.fields} fields`;
+      newCardTemplate.appendChild(option);
+    }
+  }
+}
 
 async function boot(): Promise<void> {
   try {

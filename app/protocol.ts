@@ -111,6 +111,40 @@ export interface ResetMessage {
 }
 
 /**
+ * Make a new card — his request 5's other half.
+ *
+ * **There is no id namespace and no collision question**, which is where an
+ * earlier version of this spent effort it should not have. Zach never imports a
+ * single card or deck: the import is WHOLESALE, and after decision 16's one final
+ * import no Mochi data arrives here ever again. So a card id has to be unique in
+ * this database and nothing more, which `cards.id UNIQUE` already enforces.
+ */
+export interface CreateCardRequest {
+  readonly kind: "createCard";
+  readonly id: number;
+  readonly deckId: string;
+  /** Null makes a template-less card, which 66 of his already are. */
+  readonly templateId: string | null;
+  readonly name: string;
+}
+
+export interface CreateCardMessage {
+  readonly kind: "createCard";
+  readonly id: number;
+  readonly cardId: string;
+  /** Tracks opened for it — `forward`, plus `reverse` when the deck says so. */
+  readonly tracks: readonly string[];
+  readonly card: PreparedCard | null;
+}
+
+/** Templates a new card can be given, with the deck list. */
+export interface TemplateBrief {
+  readonly id: string;
+  readonly name: string;
+  readonly fields: number;
+}
+
+/**
  * The deck tree, for the sidebar — his request 5, the browsing half.
  *
  * Sent once when the sidebar first opens. 39 decks, so there is no paging and no
@@ -135,6 +169,8 @@ export interface DecksMessage {
   readonly id: number;
   readonly decks: readonly DeckBrief[];
   readonly cards: number;
+  /** For the new-card form. Sent with the decks, since both are tiny. */
+  readonly templates: readonly TemplateBrief[];
 }
 
 /**
@@ -241,6 +277,7 @@ export type AppRequest =
   | PreviewRequest
   | DecksRequest
   | BrowseRequest
+  | CreateCardRequest
   | SetFieldRequest
   | ResetRequest;
 
@@ -352,6 +389,7 @@ export interface ErrorMessage {
 }
 
 export type AppMessage =
+  | CreateCardMessage
   | DecksMessage
   | BrowseMessage
   | SetFieldMessage
@@ -379,4 +417,5 @@ export interface ReplyFor {
   readonly setField: SetFieldMessage;
   readonly decks: DecksMessage;
   readonly browse: BrowseMessage;
+  readonly createCard: CreateCardMessage;
 }
