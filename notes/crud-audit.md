@@ -109,6 +109,42 @@ measurement can be flawless and still answer a question nobody asked. Neither
 version of this section was wrong about the code. Both were wrong about the
 workflow, and the workflow was written down — three times before this one.
 
+## A HOLE CREATE OPENED, found 2026-08-23 the same day it shipped
+
+**A card created in Hashigo is protected by nothing.** `exports/` never had it,
+the other device cannot see it, and — measured against `src/backup/archive.ts` —
+**the backup does not carry it either**:
+
+```plaintext
+SELECT_REVIEWS       reviews WHERE source = 'local'
+SELECT_TRACKS        card_tracks with state, or with a local review
+SELECT_LOCAL_FIELDS  template_fields WHERE local = 1
+SELECT_FIELD_VALUES  card_field_values WHERE field_id IN (local fields)
+SELECT_SETTINGS      settings
+                     ...and there is NO `SELECT ... FROM cards` at all.
+```
+
+So for a new 単語 card: the `cards` row is not archived; its `単語` / `Reference` /
+`意味` values are not archived, because those fields are Mochi's (`local = 0`); and
+its tracks are not archived, because a brand-new track has no state and no local
+review. **Every part of it falls through.**
+
+`src/backup/README.md` says the archive holds "exactly what `exports/` cannot
+rebuild" — and a locally-created card is the purest example of that. It was true
+when written, because nothing could create one. Creating shipped without extending
+it.
+
+**The fix is a schema column**, mirroring decision 9's `template_fields.local`:
+`cards.local INTEGER NOT NULL DEFAULT 0`, set on create, and the archive carries
+every `local = 1` card with all of its field values. That is a `SCHEMA_VERSION`
+bump, which means re-import — cheap for him today (he wipes and re-imports anyway)
+and expensive once he has local cards worth keeping. **Which is an argument for
+doing it BEFORE he makes any.**
+
+**Until then: do not create cards you would mind losing.** A schema bump, a
+"clear site data", or an eviction takes them, and the app's own eviction detector
+will correctly report that they are unrecoverable.
+
 ## What this means for the order of work
 
 1. **Edit fields** (his 3) — the write path exists; this is a UI plus the two

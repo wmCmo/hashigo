@@ -455,7 +455,16 @@ He has repeated each of these to a different agent, and the count is his:
    (decision 16). Quote those numbers as "as of the 2026-08-18 export", never as current.
 3. **Open-sourcing gets discussed AFTER development** — told to three agents. Not now.
    `notes/open-sourcing.md` holds what was already checked; leave it there.
-4. **THE IMPORT IS WHOLESALE — he never imports one card or one deck** — told to
+4. **HE USES IT ON BOTH — laptop AND phone** — told to two agents. *"on my laptop
+   i review when im home, and i create card from my laptop; on my phone, mostly for
+   reviews."* So the desktop is a FIRST-CLASS surface and not a test rig, card
+   CREATION is a laptop activity, and the phone is review-heavy. **The consequence
+   is the one that matters: without stage 11 sync, the two devices hold separate
+   OPFS databases and his stated workflow is impossible** — a card made on the
+   laptop never reaches the phone, a grade made on the phone never reaches the
+   laptop. Sync is not "a large remaining piece"; it is the thing that makes the
+   app usable as he uses it.
+5. **THE IMPORT IS WHOLESALE — he never imports one card or one deck** — told to
    four agents. *"i never import one card or one deck, once we finish developing
    hashigo, ill delete the whole card and reimport again."* So a partial or
    incremental import is not a scenario, and neither is a Mochi id arriving beside
