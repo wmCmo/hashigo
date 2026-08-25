@@ -67,9 +67,18 @@
 import { BlobUrlScope } from "../src/blobs/url.js";
 import { browserDocument, CLASS } from "../src/render/index.js";
 import { mountPrepared, type MountedCard, type PreparedCard } from "../src/review/index.js";
+import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import type { RenderResult } from "../src/render/index.js";
 import type { ShadowingSide } from "../src/render/reveal.js";
-import type { AppMessage, AppRequest, DeckBrief, ReplyFor, TemplateBrief } from "./protocol.js";
+import type {
+  AppMessage,
+  AppRequest,
+  BrowseHit,
+  CardOp,
+  DeckBrief,
+  ReplyFor,
+  TemplateBrief,
+} from "./protocol.js";
 
 // ─── the worker, as a promise-returning client ───────────────────────────────
 
@@ -154,6 +163,59 @@ let revealed = false;
 let currentCardId: string | null = null;
 /** The review card's prepared form, so `e` can edit it without re-fetching. */
 let previewOfCurrent: PreparedCard | null = null;
+let drawHandles: DrawHandle[] = [];
+
+/**
+ * Make every `<draw>` canvas on a card actually drawable — his #10.
+ *
+ * **He asked whether the drawing field worked. It did not, and this is why.**
+ * `src/render` deliberately emits a BARE `<canvas>` — its own header says a
+ * drawing surface has to be sized in device pixels at attach time or every stroke
+ * is drawn at half resolution and blurs — and `attachDraw` is the function that
+ * does that sizing and binds the pointer events. Nothing in the shell had ever
+ * called it. The canvas appeared, took no strokes, and reported no error: the
+ * 漢字 exercise is *draw it from memory, then check*, so 1,662 cards had their
+ * exercise silently missing.
+ *
+ * `touch-action: none` is set inside `attachDraw` for a measured reason: without
+ * it the browser reads the first finger movement as a scroll and the stroke never
+ * arrives — which is exactly what "i tried but it didn't work" looks like on a
+ * phone.
+ *
+ * Handles are returned so the caller can dispose them with the card; a canvas
+ * that outlives its mount keeps pointer listeners alive on a detached node.
+ */
+function makeDrawable(result: { widgets: readonly { element: HTMLElement; name: string; attributes: Readonly<Record<string, string>> }[] }): DrawHandle[] {
+  const handles: DrawHandle[] = [];
+  for (const widget of result.widgets) {
+    if (widget.name !== "draw") continue;
+    if (!(widget.element instanceof HTMLCanvasElement)) continue;
+    const handle = attachDraw(widget, widget.element as unknown as DrawSurface);
+    handles.push(handle);
+    // Undo and clear, as BUTTONS. `DrawHandle` has had both since stage 4 and
+    // neither was reachable — and on a phone there is no keyboard to reach them
+    // with, which is his standing rule: every 操作 on the desktop must exist on
+    // mobile. A stroke you cannot take back is a canvas you stop using.
+    const bar = document.createElement("div");
+    bar.className = "draw-bar";
+    for (const [label, run] of [
+      ["undo stroke", () => handle.undo()],
+      ["clear", () => handle.clear()],
+    ] as const) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "draw-button";
+      button.textContent = label;
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        run();
+      });
+      bar.appendChild(button);
+    }
+    widget.element.insertAdjacentElement("afterend", bar);
+  }
+  return handles;
+}
 
 /** `data-state` on the review view, which is what `style.css` switches on. */
 function setState(state: "prompt" | "revealed"): void {
@@ -192,6 +254,8 @@ function promptPositions(card: MountedCard<HTMLElement>): number[] {
 }
 
 function releaseCard(): void {
+  for (const handle of drawHandles) handle.detach();
+  drawHandles = [];
   mounted?.dispose();
   scope?.releaseAll();
   mounted = null;
@@ -228,6 +292,7 @@ async function showNext(): Promise<void> {
 
   releaseCard();
   revealed = false;
+  peekOffset = 0;
   currentCardId = reply.card.cardId;
   previewOfCurrent = reply.card;
   scope = new BlobUrlScope();
@@ -273,6 +338,9 @@ async function showNext(): Promise<void> {
   }
 
   cardHost.appendChild(card.result.root);
+  // AFTER it is in the document: `attachDraw` sizes the backing store from the
+  // element's laid-out box, and a detached canvas has none.
+  drawHandles = makeDrawable(card.result as never);
   deckLine.replaceChildren(document.createTextNode(reply.deckPath));
   if (reply.isNew) deckLine.appendChild(tag("new card", "newtag"));
   if (reply.reask) deckLine.appendChild(tag("again · not graded", "reasktag"));
@@ -584,6 +652,21 @@ el("backup").addEventListener("click", () => void exportBackup());
 // behind a hover affordance, and a phone has no hover).
 document.addEventListener("keydown", (event) => {
   if (event.repeat) return;
+
+  // His #3 and #13, and both are global: they work over a layer, over the
+  // gallery, and mid-review, because that is what a palette and an undo are for.
+  const typing =
+    event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    openPalette();
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !typing) {
+    event.preventDefault();
+    void runUndo();
+    return;
+  }
   // ESCAPE closes the top layer, and a layer swallows every other key. Without
   // this, space would grade the card UNDERNEATH the preview he is reading.
   if (layerHost.childElementCount > 0) {
@@ -617,7 +700,7 @@ document.addEventListener("keydown", (event) => {
   }
   if (event.key === "/" && !(event.target instanceof HTMLInputElement)) {
     event.preventDefault();
-    void openSidebar();
+    openSidebar();
     return;
   }
   if (reviewView.hidden) return;
@@ -632,10 +715,79 @@ document.addEventListener("keydown", (event) => {
     if (!revealed) reveal();
     return;
   }
+  // His #7 and #9, on the review card. These act WITHOUT grading — stepping and
+  // archiving are not answers, and none of them writes a review.
+  if (key === "a" && currentCardId !== null) {
+    event.preventDefault();
+    void runCardOp("archive", currentCardId);
+    return;
+  }
+  if (key === "d" && currentCardId !== null) {
+    event.preventDefault();
+    confirmDelete(currentCardId, previewOfCurrent?.loaded.name ?? currentCardId);
+    return;
+  }
+  if (event.key === "ArrowRight") {
+    event.preventDefault();
+    void stepCard(1);
+    return;
+  }
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    void stepCard(-1);
+    return;
+  }
   if (!revealed) return;
   if (key === "f") void grade(false);
   else if (key === "j") void grade(true);
   else if (key === "r") drill?.replay();
+});
+
+/**
+ * His #9: step between cards WITHOUT registering a review.
+ *
+ * *"just wanna see what's next"*. So this does not touch the session cursor and
+ * writes nothing — it PREVIEWS the neighbouring card, which is the honest way to
+ * look ahead without answering. Moving the session cursor would either skip a card
+ * or grade it, and both are worse than a preview.
+ */
+let peekOffset = 0;
+
+async function stepCard(delta: number): Promise<void> {
+  const next = peekOffset + delta;
+  const reply = await ask<"next">({ kind: "next", offset: next });
+  if (reply.card === null) {
+    say(next > 0 ? "nothing further ahead" : "that is the first card");
+    return;
+  }
+  peekOffset = next;
+  if (peekOffset === 0) {
+    // Back to the card he is actually on: close the look-ahead and show the real
+    // one, so `reveal` and the grade buttons act on what he can see.
+    await showNext();
+    say("back to the card you were on");
+    return;
+  }
+  await openPreview(reply.card.cardId);
+  say(
+    `${peekOffset > 0 ? "+" : ""}${peekOffset} — looking ahead, nothing graded ` +
+      `(${reply.progress.answered}/${reply.progress.planned})`,
+  );
+}
+
+el("prevcard").addEventListener("click", () => void stepCard(-1));
+el("nextcard").addEventListener("click", () => void stepCard(1));
+el("oparchive").addEventListener("click", () => {
+  if (currentCardId !== null) void runCardOp("archive", currentCardId);
+});
+el("opdelete").addEventListener("click", () => {
+  if (currentCardId !== null) {
+    confirmDelete(currentCardId, previewOfCurrent?.loaded.name ?? currentCardId);
+  }
+});
+el("palettebutton").addEventListener("click", () => {
+  closeSidebar();
+  openPalette();
 });
 
 // A tap on a cloze reveals too — `shadowingLoop`'s `bindClozes` does that for
@@ -789,6 +941,8 @@ async function openPreview(cardId: string): Promise<void> {
 
   body.appendChild(mounted.result.root);
   layerHost.appendChild(root);
+  // A preview shows every side, so 漢字's canvas is on screen there too.
+  makeDrawable(mounted.result as never);
   document.body.classList.add("layered");
   close.focus();
 
@@ -1044,109 +1198,165 @@ const EDITABLE_FIELD_TYPES = new Set(["plain", "text", "boolean", "number", "acc
  */
 const sidebarToggle = el<HTMLButtonElement>("sidebartoggle");
 const deckList = el("decklist");
-const resultList = el("resultlist");
-const searchBox = el<HTMLInputElement>("searchbox");
-const resultCount = el("resultcount");
 
-let deckFilter: string | null = null;
-let decksLoaded = false;
-let browseToken = 0;
+/**
+ * THE SIDEBAR IS A TREE, AND IT NO LONGER LISTS CARDS.
+ *
+ * *"showing cards on the sidebar is pointless, i have like 10,000+ cards, it's
+ * better to use obsidian style search"* — so the card list that shipped this
+ * morning is gone. What is left is navigation: decks, nested and collapsible
+ * (*"nesting deck on the side bar should be togglable"*), templates beside them
+ * (*"why are templates not nesting like notion pages"*), and a way into the
+ * dashboard. Finding a card is Ctrl+K's job now; SEEING a set of cards is the
+ * gallery's.
+ *
+ * Expansion state lives in `localStorage` because a tree that forgets is a tree
+ * he re-opens every session, and 39 decks is small enough that the whole map fits
+ * in one key.
+ */
+const EXPANDED_KEY = "hashigo.sidebar.expanded";
 
-async function openSidebar(): Promise<void> {
-  document.body.classList.add("sidebar-open");
-  sidebarToggle.setAttribute("aria-expanded", "true");
-  searchBox.focus();
-  // Built on FIRST OPEN, not at module load. `buildNewCardForm` is hoisted but
-  // the `let`s it assigns are not — calling it during module initialisation threw
-  // `Cannot access 'newCardDeck' before initialization` and killed the whole
-  // module before `boot()`, leaving a blank page and an empty log. Lazy is also
-  // simply correct: a sidebar he never opens costs nothing.
-  const host = el("newcardhost");
-  if (host.childElementCount === 0) host.appendChild(buildNewCardForm());
-  if (!decksLoaded) {
-    decksLoaded = true;
-    const reply = await ask<"decks">({ kind: "decks" });
-    deckList.replaceChildren();
-    deckList.appendChild(deckRow(null, `all decks`, reply.cards, 0));
-    for (const deck of reply.decks) {
-      deckList.appendChild(deckRow(deck.id, deck.path, deck.cards, deck.due));
-    }
-    templateChoices = reply.templates;
-    fillNewCardChoices(reply.decks);
+function readExpanded(): Set<string> {
+  try {
+    const raw = localStorage.getItem(EXPANDED_KEY);
+    return new Set(raw === null ? [] : (JSON.parse(raw) as string[]));
+  } catch {
+    return new Set();
   }
-  void runBrowse();
 }
 
-function deckRow(id: string | null, label: string, cards: number, due: number): HTMLElement {
+function writeExpanded(open: ReadonlySet<string>): void {
+  try {
+    localStorage.setItem(EXPANDED_KEY, JSON.stringify([...open]));
+  } catch {
+    /* a full localStorage costs the memory, not the session */
+  }
+}
+
+let deckIndex: readonly DeckBrief[] = [];
+let templateChoices: readonly TemplateBrief[] = [];
+let decksLoaded = false;
+const expanded = readExpanded();
+
+async function loadDecks(force = false): Promise<void> {
+  if (decksLoaded && !force) return;
+  decksLoaded = true;
+  const reply = await ask<"decks">({ kind: "decks" });
+  deckIndex = reply.decks;
+  templateChoices = reply.templates;
+  paintTree(reply.cards);
+  fillNewCardChoices(reply.decks);
+}
+
+/** Children of `parentId`, in path order — the tree the flat list implies. */
+function childrenOf(parentId: string | null): readonly DeckBrief[] {
+  return deckIndex.filter((deck) => deck.parentId === parentId);
+}
+
+/** Cards in this deck AND everything under it, which is what a parent should say. */
+function subtreeCards(deck: DeckBrief): { cards: number; due: number } {
+  let cards = deck.cards;
+  let due = deck.due;
+  for (const child of childrenOf(deck.id)) {
+    const under = subtreeCards(child);
+    cards += under.cards;
+    due += under.due;
+  }
+  return { cards, due };
+}
+
+function paintTree(total: number): void {
+  deckList.replaceChildren();
+  deckList.appendChild(navRow("everything", total, 0, 0, null, false));
+  for (const root of childrenOf(null)) deckList.appendChild(deckNode(root, 0));
+
+  // Templates, as their own collapsible group — his #2. They are not decks and do
+  // not nest into them, but they are the other thing he navigates by.
+  const group = document.createElement("div");
+  group.className = "tree-group";
+  const header = navRow(`templates`, templateChoices.length, 0, 0, "__templates__", true);
+  group.appendChild(header);
+  if (expanded.has("__templates__")) {
+    for (const template of templateChoices) {
+      const row = navRow(template.name, template.fields, 0, 1, null, false);
+      row.classList.add("is-template");
+      row.addEventListener("click", () => openTemplateEditor(template));
+      group.appendChild(row);
+    }
+  }
+  deckList.appendChild(group);
+}
+
+function deckNode(deck: DeckBrief, depth: number): HTMLElement {
+  const wrap = document.createElement("div");
+  const kids = childrenOf(deck.id);
+  const under = subtreeCards(deck);
+  const row = navRow(deck.name, under.cards, under.due, depth, kids.length > 0 ? deck.id : null, false);
+  if (deck.archived) row.classList.add("is-archived");
+  row.addEventListener("click", (event) => {
+    if ((event.target as HTMLElement).classList.contains("tree-twist")) return;
+    void openGallery(deck.id);
+  });
+  row.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    openDeckMenu(deck, row);
+  });
+  wrap.appendChild(row);
+  if (kids.length > 0 && expanded.has(deck.id)) {
+    for (const child of kids) wrap.appendChild(deckNode(child, depth + 1));
+  }
+  return wrap;
+}
+
+function navRow(
+  label: string,
+  count: number,
+  due: number,
+  depth: number,
+  twistFor: string | null,
+  isGroupHeader: boolean,
+): HTMLElement {
   const row = document.createElement("button");
   row.type = "button";
-  row.className = "deck-row";
-  if (deckFilter === id) row.classList.add("on");
+  row.className = "tree-row";
+  if (isGroupHeader) row.classList.add("tree-header");
+  row.style.paddingLeft = `${12 + depth * 14}px`;
+
+  const twist = document.createElement("span");
+  twist.className = "tree-twist";
+  if (twistFor !== null) {
+    twist.textContent = expanded.has(twistFor) ? "▾" : "▸";
+    twist.addEventListener("click", (event) => {
+      // His #5: TOGGLABLE. Stop the click reaching the row, or opening a deck and
+      // collapsing it would be the same gesture.
+      event.stopPropagation();
+      if (expanded.has(twistFor)) expanded.delete(twistFor);
+      else expanded.add(twistFor);
+      writeExpanded(expanded);
+      paintTree(deckIndex.reduce((n, d) => n + d.cards, 0));
+    });
+  } else {
+    twist.textContent = "";
+  }
+  row.appendChild(twist);
+
   const name = document.createElement("span");
-  name.className = "deck-name";
+  name.className = "tree-name";
   name.textContent = label;
   const counts = document.createElement("span");
-  counts.className = "deck-counts";
-  // Due is only shown when there IS some: a column of zeroes is noise, and the
-  // number that matters is the one that is not zero.
-  counts.textContent = due > 0 ? `${due} due · ${cards}` : String(cards);
+  counts.className = "tree-counts";
+  counts.textContent = due > 0 ? `${due} · ${count}` : String(count);
   if (due > 0) counts.classList.add("has-due");
   row.append(name, counts);
-  row.addEventListener("click", () => {
-    deckFilter = id;
-    for (const other of deckList.querySelectorAll(".deck-row")) other.classList.remove("on");
-    row.classList.add("on");
-    void runBrowse();
-  });
   return row;
 }
 
-async function runBrowse(): Promise<void> {
-  // Every keystroke starts a request and the replies can land out of order, so
-  // the LAST one asked is the only one allowed to paint. Cheaper and more honest
-  // than a debounce, which would still race on a slow query.
-  const token = ++browseToken;
-  const reply = await ask<"browse">({
-    kind: "browse",
-    query: searchBox.value,
-    deckId: deckFilter,
-    limit: 60,
-  });
-  if (token !== browseToken) return;
-
-  resultCount.textContent =
-    reply.total === 0
-      ? "nothing"
-      : reply.hits.length < reply.total
-        ? `${reply.hits.length} of ${reply.total.toLocaleString()}`
-        : String(reply.total.toLocaleString());
-
-  resultList.replaceChildren();
-  for (const hit of reply.hits) {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "result-row";
-    // Archived cards are SHOWN and marked, never hidden — a browse that silently
-    // omits a card he archived is a browse he cannot trust. 234 of them.
-    if (hit.archived) row.classList.add("archived");
-    const name = document.createElement("span");
-    name.className = "result-name";
-    name.textContent = hit.name === "" ? hit.cardId : hit.name;
-    const meta = document.createElement("span");
-    meta.className = "result-meta";
-    meta.textContent = hit.archived ? `${hit.deckPath} · archived` : hit.deckPath;
-    row.append(name, meta);
-    if (hit.snippet !== null && hit.snippet !== "") {
-      const snip = document.createElement("span");
-      snip.className = "result-snippet";
-      snip.textContent = hit.snippet;
-      row.appendChild(snip);
-    }
-    row.addEventListener("click", () => {
-      void openPreview(hit.cardId);
-    });
-    resultList.appendChild(row);
-  }
+function openSidebar(): void {
+  document.body.classList.add("sidebar-open");
+  sidebarToggle.setAttribute("aria-expanded", "true");
+  const host = el("newcardhost");
+  if (host.childElementCount === 0) host.appendChild(buildNewCardForm());
+  void loadDecks();
 }
 
 function closeSidebar(): void {
@@ -1156,11 +1366,126 @@ function closeSidebar(): void {
 
 sidebarToggle.addEventListener("click", () => {
   if (document.body.classList.contains("sidebar-open")) closeSidebar();
-  else void openSidebar();
+  else openSidebar();
 });
 el("sidebarclose").addEventListener("click", closeSidebar);
 el("sidebarscrim").addEventListener("click", closeSidebar);
-searchBox.addEventListener("input", () => void runBrowse());
+el("dashboardlink").addEventListener("click", () => void openDashboard());
+
+// ─── his #3: Ctrl+K ─────────────────────────────────────────────────────────
+
+/**
+ * *"i want notion, obsidian like searching feature, so like ctrl +k and it pops
+ * up a modal that we can search and enter"* — his second time asking.
+ *
+ * It is a LAYER, like everything else that goes over the card, so Escape peels it
+ * and the review underneath is untouched. Arrow keys move the selection, Enter
+ * opens the highlighted card as a preview.
+ *
+ * The query goes through `src/search`, which matters at two characters: `card_fts`
+ * uses a trigram tokeniser and CANNOT serve a query shorter than three, and two
+ * characters is the commonest search unit in Japanese. That module routes to a
+ * ranked scan instead — 意味 returns 0 from MATCH and 3 from the scan.
+ */
+let paletteIndex = 0;
+let paletteHits: readonly BrowseHit[] = [];
+let paletteToken = 0;
+
+function openPalette(): void {
+  if (document.querySelector(".palette") !== null) return;
+  const root = document.createElement("div");
+  root.className = "layer palette";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.setAttribute("aria-label", "search");
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+  root.appendChild(backdrop);
+
+  const panel = document.createElement("div");
+  panel.className = "palette-panel";
+  const input = document.createElement("input");
+  input.className = "palette-input";
+  input.type = "search";
+  input.placeholder = "search cards";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  const list = document.createElement("div");
+  list.className = "palette-list";
+  const foot = document.createElement("div");
+  foot.className = "palette-foot";
+  panel.append(input, list, foot);
+  root.appendChild(panel);
+
+  const run = async (): Promise<void> => {
+    const token = ++paletteToken;
+    const reply = await ask<"browse">({
+      kind: "browse",
+      query: input.value,
+      deckId: null,
+      limit: 40,
+    });
+    if (token !== paletteToken) return;
+    paletteHits = reply.hits;
+    paletteIndex = 0;
+    foot.textContent =
+      reply.total === 0
+        ? "nothing"
+        : `${reply.hits.length} of ${reply.total.toLocaleString()}` +
+          (reply.mode === null ? "" : ` · ${reply.mode} · ${reply.elapsedMs.toFixed(0)}ms`);
+    paintPalette(list);
+  };
+
+  input.addEventListener("input", () => void run());
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const next = paletteIndex + (event.key === "ArrowDown" ? 1 : -1);
+      paletteIndex = Math.max(0, Math.min(paletteHits.length - 1, next));
+      paintPalette(list);
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const hit = paletteHits[paletteIndex];
+      if (hit !== undefined) {
+        closeIfTop(root);
+        void openPreview(hit.cardId);
+      }
+    }
+  });
+
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  layers.push({ root, mounted: null, prepared: null, cardId: "" });
+  input.focus();
+  void run();
+}
+
+function paintPalette(list: HTMLElement): void {
+  list.replaceChildren();
+  paletteHits.forEach((hit, index) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "palette-row";
+    if (index === paletteIndex) row.classList.add("on");
+    if (hit.archived) row.classList.add("is-archived");
+    const name = document.createElement("span");
+    name.className = "palette-name";
+    name.textContent = hit.name === "" ? hit.cardId : hit.name;
+    const meta = document.createElement("span");
+    meta.className = "palette-meta";
+    meta.textContent = hit.archived ? `${hit.deckPath} · archived` : hit.deckPath;
+    row.append(name, meta);
+    row.addEventListener("click", () => {
+      const top = layers.at(-1);
+      if (top !== undefined) closeIfTop(top.root);
+      void openPreview(hit.cardId);
+    });
+    list.appendChild(row);
+    if (index === paletteIndex) row.scrollIntoView({ block: "nearest" });
+  });
+}
 
 /**
  * The new-card form — his request 5's other half, and the last of the six.
@@ -1175,7 +1500,6 @@ searchBox.addEventListener("input", () => void runBrowse());
  * appear. It enters the NEW queue (due_at NULL, reps 0), which means decision 12's
  * ten-a-day limit applies to it like any other new card.
  */
-let templateChoices: readonly TemplateBrief[] = [];
 // DECLARED ABOVE `buildNewCardForm`, not below it. `let` sits in a temporal dead
 // zone until its own statement executes, and the form is built during module
 // initialisation — so declaring these after the function threw
@@ -1238,8 +1562,7 @@ function buildNewCardForm(): HTMLElement {
         // Straight into the editor on the card just made: a title with no fields
         // is not yet a card, and this is always the next thing he wants.
         if (reply.card !== null) openEditorFor(reply.card);
-        decksLoaded = false;
-        void runBrowse();
+        void loadDecks(true);
       })
       .catch((cause: Error) => {
         said.classList.add("bad");
@@ -1277,6 +1600,358 @@ function fillNewCardChoices(decks: readonly DeckBrief[]): void {
       newCardTemplate.appendChild(option);
     }
   }
+}
+
+// ─── his #6: the card gallery ───────────────────────────────────────────────
+
+/**
+ * *"once you click the deck, what happens? the main screen goes to the card
+ * gallery, imagine a notion gallery database view, something like that, where you
+ * can filter, search, sort, click to preview, edit archive, pin, copy, duplicate,
+ * delete, from there"*.
+ *
+ * It REPLACES the main screen rather than being another layer, because that is
+ * what he described and because a gallery is somewhere you stay — layers are for
+ * things you look at and dismiss. `data-view` on the body switches them, and
+ * going back to review is one control.
+ *
+ * **The card list that was in the sidebar this morning lives here now** (his #4).
+ * A list of 10,000 cards in a 330px drawer was the wrong shape; a filtered,
+ * sorted, searchable grid of one deck is the right one.
+ */
+type SortKey = "name" | "due" | "created";
+
+interface GalleryState {
+  deckId: string | null;
+  query: string;
+  sort: SortKey;
+  includeArchived: boolean;
+}
+
+const gallery: GalleryState = { deckId: null, query: "", sort: "name", includeArchived: true };
+const galleryGrid = el("gallerygrid");
+const galleryTitle = el("gallerytitle");
+const galleryCount = el("gallerycount");
+const gallerySearch = el<HTMLInputElement>("gallerysearch");
+let galleryToken = 0;
+
+async function openGallery(deckId: string | null): Promise<void> {
+  gallery.deckId = deckId;
+  document.body.setAttribute("data-view", "gallery");
+  closeSidebar();
+  const deck = deckIndex.find((entry) => entry.id === deckId);
+  galleryTitle.textContent = deck?.path ?? "everything";
+  await paintGallery();
+}
+
+function closeGallery(): void {
+  document.body.setAttribute("data-view", "review");
+}
+
+async function paintGallery(): Promise<void> {
+  const token = ++galleryToken;
+  const reply = await ask<"browse">({
+    kind: "browse",
+    query: gallery.query,
+    deckId: gallery.deckId,
+    limit: 300,
+  });
+  if (token !== galleryToken) return;
+
+  let hits = [...reply.hits];
+  if (!gallery.includeArchived) hits = hits.filter((hit) => !hit.archived);
+  if (gallery.sort === "name") hits.sort((a, b) => a.name.localeCompare(b.name, "ja"));
+
+  galleryCount.textContent =
+    hits.length < reply.total
+      ? `${hits.length} of ${reply.total.toLocaleString()}`
+      : `${hits.length.toLocaleString()}`;
+
+  galleryGrid.replaceChildren();
+  for (const hit of hits) galleryGrid.appendChild(galleryCard(hit));
+  if (hits.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "gallery-empty";
+    empty.textContent = gallery.query === "" ? "no cards here" : `nothing matching ${gallery.query}`;
+    galleryGrid.appendChild(empty);
+  }
+}
+
+function galleryCard(hit: BrowseHit): HTMLElement {
+  const tile = document.createElement("article");
+  tile.className = "gcard";
+  if (hit.archived) tile.classList.add("is-archived");
+
+  const name = document.createElement("h3");
+  name.className = "gcard-name";
+  name.textContent = hit.name === "" ? hit.cardId : hit.name;
+  const meta = document.createElement("p");
+  meta.className = "gcard-meta";
+  meta.textContent = hit.archived ? `${hit.deckPath} · archived` : hit.deckPath;
+  tile.append(name, meta);
+  if (hit.snippet !== null && hit.snippet !== "") {
+    const snip = document.createElement("p");
+    snip.className = "gcard-snippet";
+    snip.textContent = hit.snippet;
+    tile.appendChild(snip);
+  }
+
+  // EVERY operation as a BUTTON, not only as a shortcut. His standing rule: any
+  // 操作 available on the desktop must be available on mobile, and a phone has no
+  // shift+P.
+  const bar = document.createElement("div");
+  bar.className = "gcard-ops";
+  const ops: readonly (readonly [string, () => void])[] = [
+    ["preview", () => void openPreview(hit.cardId)],
+    ["edit", () => void openEditorById(hit.cardId)],
+    [hit.archived ? "unarchive" : "archive", () => void runCardOp(hit.archived ? "unarchive" : "archive", hit.cardId)],
+    ["duplicate", () => void runCardOp("duplicate", hit.cardId)],
+    ["delete", () => void confirmDelete(hit.cardId, hit.name)],
+  ];
+  for (const [label, run] of ops) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "gcard-op";
+    if (label === "delete") button.classList.add("danger");
+    button.textContent = label;
+    button.addEventListener("click", run);
+    bar.appendChild(button);
+  }
+  tile.appendChild(bar);
+  tile.addEventListener("click", (event) => {
+    if ((event.target as HTMLElement).closest(".gcard-ops") !== null) return;
+    void openPreview(hit.cardId);
+  });
+  return tile;
+}
+
+gallerySearch.addEventListener("input", () => {
+  gallery.query = gallerySearch.value;
+  void paintGallery();
+});
+el("galleryback").addEventListener("click", closeGallery);
+el<HTMLSelectElement>("gallerysort").addEventListener("change", (event) => {
+  gallery.sort = (event.target as HTMLSelectElement).value as SortKey;
+  void paintGallery();
+});
+el<HTMLInputElement>("galleryarchived").addEventListener("change", (event) => {
+  gallery.includeArchived = (event.target as HTMLInputElement).checked;
+  void paintGallery();
+});
+
+// ─── his #7 and #13: operations, and undo ───────────────────────────────────
+
+/**
+ * The undo stack — his #13.
+ *
+ * *"when you ctrl+z, it should undo your last action, whether create card, review
+ * card, remember card, forget card, etc., we need button on mobile as well"*.
+ *
+ * **Every entry carries its own reversal, computed by the WORKER at the moment it
+ * acted**, rather than being re-derived later from a description. That is the
+ * difference between an undo that works and one that guesses: the worker knew the
+ * card was unarchived before it archived it; nothing afterwards does.
+ *
+ * **Delete is deliberately NOT undoable and says so** rather than offering a
+ * reversal it cannot honour — the card's reviews go with it, and a "restored" card
+ * with no history would be a quiet lie.
+ */
+interface UndoEntry {
+  readonly describe: string;
+  readonly run: () => Promise<void>;
+}
+
+const undoStack: UndoEntry[] = [];
+const undoButton = el<HTMLButtonElement>("opundo");
+
+function pushUndo(entry: UndoEntry): void {
+  undoStack.push(entry);
+  if (undoStack.length > 50) undoStack.shift();
+  paintUndo();
+}
+
+function paintUndo(): void {
+  const top = undoStack.at(-1);
+  undoButton.disabled = top === undefined;
+  undoButton.title = top === undefined ? "nothing to undo" : `undo: ${top.describe}`;
+}
+
+async function runUndo(): Promise<void> {
+  const entry = undoStack.pop();
+  paintUndo();
+  if (entry === undefined) return;
+  await entry.run();
+  say(`undid: ${entry.describe}`);
+}
+
+undoButton.addEventListener("click", () => void runUndo());
+
+/** One place the app says what just happened, on every surface. */
+function say(text: string, bad = false): void {
+  const strip = el("say");
+  strip.textContent = text;
+  strip.classList.toggle("bad", bad);
+  strip.hidden = false;
+  window.clearTimeout(sayTimer);
+  sayTimer = window.setTimeout(() => {
+    strip.hidden = true;
+  }, 4000);
+}
+let sayTimer = 0;
+
+async function runCardOp(op: CardOp, cardId: string): Promise<void> {
+  try {
+    const reply = await ask<"cardOp">({ kind: "cardOp", op, cardId });
+    say(reply.describe, op === "delete");
+    if (reply.undo !== null) {
+      const undo = reply.undo;
+      pushUndo({
+        describe: reply.describe,
+        run: async () => {
+          await ask<"cardOp">({ kind: "cardOp", op: undo.op, cardId: undo.cardId });
+          await refreshAfterOp();
+        },
+      });
+    }
+    await refreshAfterOp();
+  } catch (cause) {
+    say((cause as Error).message, true);
+  }
+}
+
+async function refreshAfterOp(): Promise<void> {
+  await loadDecks(true);
+  if (document.body.getAttribute("data-view") === "gallery") await paintGallery();
+}
+
+/**
+ * His #7's delete, *"with warning modal ofc"* — and the warning states the cost in
+ * numbers rather than asking "are you sure?", because the cost is the reviews.
+ */
+function confirmDelete(cardId: string, name: string): void {
+  openConfirm(
+    `Delete ${name === "" ? cardId : name}?`,
+    "The card, its field values, its tags, its links and ALL of its review history " +
+      "go with it. This is the one operation that cannot be undone.",
+    "delete",
+    () => void runCardOp("delete", cardId),
+  );
+}
+
+function openConfirm(title: string, body: string, verb: string, run: () => void): void {
+  const root = document.createElement("div");
+  root.className = "layer layer-confirm";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+  const panel = document.createElement("div");
+  panel.className = "confirm-panel";
+  const h = document.createElement("h2");
+  h.textContent = title;
+  const p = document.createElement("p");
+  p.textContent = body;
+  const bar = document.createElement("div");
+  bar.className = "confirm-bar";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "cancel";
+  cancel.addEventListener("click", () => closeIfTop(root));
+  const go = document.createElement("button");
+  go.type = "button";
+  go.className = "danger";
+  go.textContent = verb;
+  go.addEventListener("click", () => {
+    closeIfTop(root);
+    run();
+  });
+  bar.append(cancel, go);
+  panel.append(h, p, bar);
+  root.append(backdrop, panel);
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  layers.push({ root, mounted: null, prepared: null, cardId: "" });
+  cancel.focus();
+}
+
+/** Open the editor for a card the page does not already hold prepared. */
+async function openEditorById(cardId: string): Promise<void> {
+  const reply = await ask<"preview">({ kind: "preview", cardId });
+  if (reply.card !== null) openEditorFor(reply.card);
+}
+
+// ─── his #11 and #1 ─────────────────────────────────────────────────────────
+
+/**
+ * *"where can i edit my template? there should be a modal for editing template and
+ * fields"* — his #11. This is the FIELD LIST and the body; it is deliberately not
+ * a field-type editor yet, because changing a field's type is a data migration and
+ * not a form.
+ */
+function openTemplateEditor(template: TemplateBrief): void {
+  openConfirm(
+    `${template.name} · ${template.fields} fields`,
+    "Template editing is not built yet. What exists today is per-CARD field " +
+      "editing (press e on any card). Editing the template BODY changes how every " +
+      "card on it renders, and editing a field's type is a data migration — both " +
+      "want more care than a text box.",
+    "ok",
+    () => {},
+  );
+}
+
+/** His #1: the dashboard, from the sidebar. */
+async function openDashboard(): Promise<void> {
+  closeSidebar();
+  openConfirm(
+    "Dashboard",
+    "The dashboard is generated by `npm run dashboard` as a standalone HTML file " +
+      "with zero JavaScript (SPEC problem #1, battery). Wiring it into the app " +
+      "means porting src/dashboard to run against the OPFS database in the worker — " +
+      "real work, not a link. Recorded rather than faked.",
+    "ok",
+    () => {},
+  );
+}
+
+/** Right-click a deck: his #14. */
+function openDeckMenu(deck: DeckBrief, anchor: HTMLElement): void {
+  void anchor;
+  openConfirm(
+    deck.path,
+    `${deck.cards} cards. Archiving a deck marks the deck AND its cards, because ` +
+      `the review queue filters on the card — two predicates that disagree is worse ` +
+      `than one that is blunt. This is also the answer to your 数字 question: Mochi ` +
+      `has no deck-level archive at all, so a deck you archived there arrived here ` +
+      `unarchived.`,
+    deck.archived ? "unarchive deck" : "archive deck",
+    () => {
+      void (async () => {
+        try {
+          const reply = await ask<"deckOp">({
+            kind: "deckOp",
+            op: deck.archived ? "unarchive" : "archive",
+            deckId: deck.id,
+          });
+          say(reply.describe);
+          if (reply.undo !== null) {
+            const undo = reply.undo;
+            pushUndo({
+              describe: reply.describe,
+              run: async () => {
+                await ask<"deckOp">({ kind: "deckOp", op: undo.op, deckId: undo.deckId });
+                await refreshAfterOp();
+              },
+            });
+          }
+          await refreshAfterOp();
+        } catch (cause) {
+          say((cause as Error).message, true);
+        }
+      })();
+    },
+  );
 }
 
 async function boot(): Promise<void> {

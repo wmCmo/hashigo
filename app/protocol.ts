@@ -44,10 +44,17 @@ export interface OpenRequest {
   readonly reimport: boolean;
 }
 
-/** The card the session is on, prepared for rendering. */
+/**
+ * The card the session is on, prepared for rendering.
+ *
+ * `offset` is his #9: a non-zero value LOOKS at a neighbour without moving the
+ * cursor, writing a review, or changing what `answer()` would grade. Zero is the
+ * current card, so one message serves both and they cannot drift apart.
+ */
 export interface NextRequest {
   readonly kind: "next";
   readonly id: number;
+  readonly offset?: number;
 }
 
 /**
@@ -111,6 +118,63 @@ export interface ResetMessage {
 }
 
 /**
+ * One operation on one card — his #7 and #14.
+ *
+ * `archive` sets `cards.archived`, which the queue, dashboard and backtest ALREADY
+ * honour (234 imported cards prove it) — so it is one column over machinery that
+ * works. `delete` is one statement over cascades that are already complete: every
+ * foreign key at `cards` is `ON DELETE CASCADE` and the FTS triggers keep search
+ * correct. `duplicate` copies the row and its field values, and opens fresh tracks.
+ *
+ * **Undo (his #13) is why this reports `undo`.** Every operation returns what it
+ * would take to reverse it, so the page can stack it without re-deriving anything.
+ */
+export type CardOp = "archive" | "unarchive" | "delete" | "duplicate";
+
+export interface CardOpRequest {
+  readonly kind: "cardOp";
+  readonly id: number;
+  readonly op: CardOp;
+  readonly cardId: string;
+}
+
+export interface CardOpMessage {
+  readonly kind: "cardOp";
+  readonly id: number;
+  readonly op: CardOp;
+  readonly cardId: string;
+  /** `duplicate` returns the new card; everything else returns the same id. */
+  readonly resultCardId: string;
+  /** How to reverse it, or null when it cannot be reversed. */
+  readonly undo: { readonly op: CardOp; readonly cardId: string } | null;
+  /** Said plainly, for the status line and for the undo stack's label. */
+  readonly describe: string;
+}
+
+/** Deck operations — his #14, and the answer to #8. */
+export type DeckOp = "archive" | "unarchive" | "rename" | "create" | "delete";
+
+export interface DeckOpRequest {
+  readonly kind: "deckOp";
+  readonly id: number;
+  readonly op: DeckOp;
+  readonly deckId: string;
+  /** `rename` and `create` only. */
+  readonly name?: string;
+  /** `create` only; null makes a top-level deck. */
+  readonly parentId?: string | null;
+}
+
+export interface DeckOpMessage {
+  readonly kind: "deckOp";
+  readonly id: number;
+  readonly op: DeckOp;
+  readonly deckId: string;
+  readonly describe: string;
+  readonly undo: { readonly op: DeckOp; readonly deckId: string; readonly name?: string } | null;
+}
+
+/**
  * Make a new card — his request 5's other half.
  *
  * **There is no id namespace and no collision question**, which is where an
@@ -162,6 +226,10 @@ export interface DeckBrief {
   readonly cards: number;
   /** Non-dormant, non-archived tracks due today or earlier. */
   readonly due: number;
+  /** For his #2 and #5: the sidebar nests, and nesting needs the edges. */
+  readonly parentId: string | null;
+  readonly name: string;
+  readonly archived: boolean;
 }
 
 export interface DecksMessage {
@@ -278,6 +346,8 @@ export type AppRequest =
   | DecksRequest
   | BrowseRequest
   | CreateCardRequest
+  | CardOpRequest
+  | DeckOpRequest
   | SetFieldRequest
   | ResetRequest;
 
@@ -389,6 +459,8 @@ export interface ErrorMessage {
 }
 
 export type AppMessage =
+  | CardOpMessage
+  | DeckOpMessage
   | CreateCardMessage
   | DecksMessage
   | BrowseMessage
@@ -418,4 +490,6 @@ export interface ReplyFor {
   readonly decks: DecksMessage;
   readonly browse: BrowseMessage;
   readonly createCard: CreateCardMessage;
+  readonly cardOp: CardOpMessage;
+  readonly deckOp: DeckOpMessage;
 }

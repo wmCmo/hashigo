@@ -52,7 +52,9 @@ import { searchCards } from "../src/search/index.js";
 import type {
   AnswerRequest,
   BrowseRequest,
+  CardOpRequest,
   CreateCardRequest,
+  DeckOpRequest,
   DecksRequest,
   PreviewRequest,
   SetFieldRequest,
@@ -202,7 +204,8 @@ function requireCards(): BrowserDb {
 function next(request: NextRequest): void {
   const active = requireSession();
   const db = requireCards();
-  const item = active.current();
+  // offset 0 is `current()`; anything else LOOKS without moving (his #9).
+  const item = active.peek(request.offset ?? 0);
   if (item === null) {
     post({
       kind: "card",
@@ -344,6 +347,195 @@ async function reset(request: ResetRequest): Promise<void> {
 }
 
 /**
+ * One operation on one card — his #7 and #14, and every one of them was already
+ * possible in the schema and unreachable from anywhere.
+ *
+ * `archive` is `cards.archived`, which the queue (`src/scheduler/queue.ts:139`),
+ * the dashboard and the backtest all already honour — 234 imported cards prove the
+ * machinery works. Nothing could SET it until now.
+ *
+ * `delete` is one statement, because every foreign key pointing at `cards` is
+ * `ON DELETE CASCADE` (field values, tracks, tags, links, blob refs) and the FTS
+ * index has triggers on all three of its sources. `blob_refs_ad` decrements the
+ * refcount so the card's audio is released, and `blobs_no_delete_while_referenced`
+ * stops a payload something else still uses from going with it.
+ *
+ * **`delete` is the one that cannot be undone**, and it says so rather than
+ * offering a reversal it cannot honour: the reviews go with the card.
+ */
+function cardOp(request: CardOpRequest): void {
+  const db = requireCards();
+  const card = db.prepare("SELECT id, name, deck_id, template_id, archived FROM cards WHERE id = ?").get(
+    request.cardId,
+  ) as
+    | { id: string; name: string; deck_id: string; template_id: string | null; archived: number }
+    | undefined;
+  if (card === undefined) throw new Error(`no card ${request.cardId}`);
+
+  const name = card.name === "" ? card.id : card.name;
+  let resultCardId = card.id;
+  let undo: { op: "archive" | "unarchive" | "delete" | "duplicate"; cardId: string } | null = null;
+  let describe = "";
+
+  switch (request.op) {
+    case "archive":
+      db.prepare("UPDATE cards SET archived = 1 WHERE id = ?").run(card.id);
+      undo = { op: "unarchive", cardId: card.id };
+      describe = `archived ${name}`;
+      break;
+    case "unarchive":
+      db.prepare("UPDATE cards SET archived = 0 WHERE id = ?").run(card.id);
+      undo = { op: "archive", cardId: card.id };
+      describe = `unarchived ${name}`;
+      break;
+    case "delete":
+      // The cascades do the rest. Counted first so the message can say what went.
+      {
+        const reviews = Number(
+          (
+            db
+              .prepare(
+                `SELECT count(*) AS n FROM reviews r JOIN card_tracks t ON t.id = r.track_id
+                  WHERE t.card_id = ?`,
+              )
+              .get(card.id) as { n: number }
+          ).n,
+        );
+        db.prepare("DELETE FROM cards WHERE id = ?").run(card.id);
+        // NO UNDO. The reviews went with it, and offering a reversal that
+        // silently loses them is worse than saying so.
+        undo = null;
+        describe = `deleted ${name} and ${reviews} review(s) — not undoable`;
+      }
+      break;
+    case "duplicate":
+      {
+        const copyId = newCardId(db);
+        db.transaction(() => {
+          db.prepare(
+            `INSERT INTO cards (id, deck_id, template_id, name, content, archived)
+             SELECT ?, deck_id, template_id, name, content, 0 FROM cards WHERE id = ?`,
+          ).run(copyId, card.id);
+          db.prepare(
+            `INSERT INTO card_field_values (card_id, field_id, value)
+             SELECT ?, field_id, value FROM card_field_values WHERE card_id = ?`,
+          ).run(copyId, card.id);
+          // Fresh tracks, NOT the original's schedule: a duplicate is a new card
+          // he has never seen, and inheriting a 300-day interval would hide it.
+          const reverse = db
+            .prepare("SELECT reverse FROM card_reverse_resolved WHERE card_id = ?")
+            .get(copyId) as { reverse: string } | undefined;
+          for (const kind of reverse?.reverse === "on" ? ["forward", "reverse"] : ["forward"]) {
+            db.prepare(
+              `INSERT INTO card_tracks (card_id, kind, dormant, needs_rereview, due_at,
+                 scheduled_days, reps, lapses, last_reviewed_at, scheduler, scheduler_state)
+               VALUES (?, ?, 0, 0, NULL, NULL, 0, 0, NULL, NULL, NULL)`,
+            ).run(copyId, kind);
+          }
+        })();
+        resultCardId = copyId;
+        undo = { op: "delete", cardId: copyId };
+        describe = `duplicated ${name}`;
+      }
+      break;
+  }
+  post({ kind: "cardOp", id: request.id, op: request.op, cardId: card.id, resultCardId, undo, describe });
+}
+
+/**
+ * Deck operations — his #14, and the ANSWER to his #8.
+ *
+ * `decks.archived` has existed in the schema since v1 and **nothing has ever read
+ * or written it**. That is why his 数字 deck kept appearing: Mochi has no
+ * deck-level archive flag at all (`src/import/entities.ts:326` writes `archived: 0`
+ * unconditionally and says so), so a deck he archived in Mochi arrived here
+ * unarchived and there was no way to say otherwise.
+ *
+ * Archiving a deck here marks the DECK. `queueRespectsDeckArchive` in the page is
+ * not a thing — the queue filters on the CARD — so archiving a deck also archives
+ * its cards, which is the honest reading of "stop reviewing this" and keeps one
+ * predicate rather than two.
+ */
+function deckOp(request: DeckOpRequest): void {
+  const db = requireCards();
+  let describe = "";
+  let undo: { op: "archive" | "unarchive" | "rename" | "create" | "delete"; deckId: string; name?: string } | null =
+    null;
+  let deckId = request.deckId;
+
+  if (request.op === "create") {
+    deckId = newDeckId(db);
+    db.prepare(
+      `INSERT INTO decks (id, parent_id, name, reverse, archived, pos)
+       VALUES (?, ?, ?, 'inherit', 0, '000000')`,
+    ).run(deckId, request.parentId ?? null, request.name ?? "new deck");
+    describe = `made deck ${request.name ?? "new deck"}`;
+    undo = { op: "delete", deckId };
+  } else {
+    const deck = db.prepare("SELECT id, name, archived FROM decks WHERE id = ?").get(deckId) as
+      | { id: string; name: string; archived: number }
+      | undefined;
+    if (deck === undefined) throw new Error(`no deck ${deckId}`);
+    switch (request.op) {
+      case "archive":
+      case "unarchive": {
+        const to = request.op === "archive" ? 1 : 0;
+        // The deck AND its cards. The queue filters on the card, so marking only
+        // the deck would archive nothing he can see — two predicates that
+        // disagree is worse than one that is blunt.
+        db.transaction(() => {
+          db.prepare("UPDATE decks SET archived = ? WHERE id = ?").run(to, deckId);
+          db.prepare("UPDATE cards SET archived = ? WHERE deck_id = ?").run(to, deckId);
+        })();
+        describe = `${request.op}d ${deck.name} and its cards`;
+        undo = { op: request.op === "archive" ? "unarchive" : "archive", deckId };
+        break;
+      }
+      case "rename":
+        db.prepare("UPDATE decks SET name = ? WHERE id = ?").run(request.name ?? deck.name, deckId);
+        describe = `renamed ${deck.name} to ${request.name ?? deck.name}`;
+        undo = { op: "rename", deckId, name: deck.name };
+        break;
+      case "delete": {
+        // `cards.deck_id` is ON DELETE RESTRICT, deliberately: deleting a deck
+        // must never silently take its cards. So this refuses rather than
+        // cascading, and says how many are in the way.
+        const held = Number(
+          (db.prepare("SELECT count(*) AS n FROM cards WHERE deck_id = ?").get(deckId) as {
+            n: number;
+          }).n,
+        );
+        if (held > 0) {
+          throw new Error(
+            `${deck.name} still holds ${held} card(s). Move or delete them first — ` +
+              `the schema refuses to take cards with a deck (ON DELETE RESTRICT), and ` +
+              `that is deliberate.`,
+          );
+        }
+        db.prepare("DELETE FROM decks WHERE id = ?").run(deckId);
+        describe = `deleted deck ${deck.name}`;
+        undo = null;
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  post({ kind: "deckOp", id: request.id, op: request.op, deckId, describe, undo });
+}
+
+function newDeckId(db: BrowserDb): string {
+  const taken = db.prepare("SELECT 1 FROM decks WHERE id = ?");
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
+    let id = "";
+    for (const byte of bytes) id += ID_ALPHABET[byte % ID_ALPHABET.length];
+    if (taken.get(id) === undefined) return id;
+  }
+  throw new Error("could not find a free deck id");
+}
+
+/**
  * A card id. Eight base62 characters, the same shape Mochi uses.
  *
  * **Deliberately NOT namespaced**, and an earlier version of this file argued at
@@ -457,20 +649,31 @@ function decks(request: DecksRequest): void {
   const db = requireCards();
   const rows = db
     .prepare(
-      `SELECT dp.deck_id AS id, dp.path AS path,
+      `SELECT dp.deck_id AS id, dp.path AS path, d.parent_id AS parentId,
+              d.name AS name, d.archived AS archived,
               (SELECT count(*) FROM cards c WHERE c.deck_id = dp.deck_id) AS cards,
               (SELECT count(*) FROM card_tracks t JOIN cards c2 ON c2.id = t.card_id
                 WHERE c2.deck_id = dp.deck_id AND t.dormant = 0 AND c2.archived = 0
                   AND t.due_at IS NOT NULL
                   AND date(t.due_at) <= date('now','localtime')) AS due
-         FROM deck_paths dp
+         FROM deck_paths dp JOIN decks d ON d.id = dp.deck_id
         ORDER BY dp.path`,
     )
-    .all() as { id: string; path: string; cards: number; due: number }[];
+    .all() as {
+    id: string;
+    path: string;
+    cards: number;
+    due: number;
+    parentId: string | null;
+    name: string;
+    archived: number;
+  }[];
   post({
     kind: "decks",
     id: request.id,
-    decks: rows.filter((row) => row.cards > 0),
+    // EVERY deck now, not just non-empty ones: the sidebar nests (his #2/#5) and
+            // a parent with no cards of its own is still a node its children hang from.
+    decks: rows.map((row) => ({ ...row, archived: row.archived === 1 })),
     cards: Number((db.prepare("SELECT count(*) AS n FROM cards").get() as { n: number }).n),
     templates: db
       .prepare(
@@ -713,6 +916,12 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "createCard":
           createCard(request);
+          break;
+        case "cardOp":
+          cardOp(request);
+          break;
+        case "deckOp":
+          deckOp(request);
           break;
         case "reset":
           await reset(request);

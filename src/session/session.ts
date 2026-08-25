@@ -278,6 +278,31 @@ export class ReviewSession {
     this.plan = plan;
   }
 
+  /**
+   * The item `offset` places from the one on screen, WITHOUT moving anything.
+   *
+   * Zach's *"while reviewing card, i would like to use arrows (left and right) to
+   * move to next card and move back, without registering any reviewing record,
+   * just wanna see what's next"*.
+   *
+   * **It is a read, and that is the whole point.** Advancing the cursor would
+   * either skip a card or demand a grade for it, and both are worse than looking:
+   * a skipped card silently leaves the session and a forced grade writes a review
+   * he did not mean. So `peek` moves nothing — `cursor` is untouched, no review is
+   * written, and the queue he comes back to is the queue he left.
+   *
+   * Offsets run over the plan and then over the decision-13 re-asks, in the same
+   * order `current()` walks them, so `peek(0)` and `current()` are the same item
+   * by construction rather than by coincidence.
+   */
+  peek(offset: number): SessionItem | null {
+    const at = this.cursor + offset;
+    if (at < 0) return null;
+    if (at < this.plan.length) return this.plan[at] ?? null;
+    const tail = at - this.plan.length;
+    return tail < this.reasks.length ? (this.reasks[tail] ?? null) : null;
+  }
+
   /** The item on screen, or null when the session is finished. */
   current(): SessionItem | null {
     if (this.cursor < this.plan.length) return this.plan[this.cursor] ?? null;
