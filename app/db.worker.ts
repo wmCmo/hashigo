@@ -655,7 +655,16 @@ function decks(request: DecksRequest): void {
               (SELECT count(*) FROM card_tracks t JOIN cards c2 ON c2.id = t.card_id
                 WHERE c2.deck_id = dp.deck_id AND t.dormant = 0 AND c2.archived = 0
                   AND t.due_at IS NOT NULL
-                  AND date(t.due_at) <= date('now','localtime')) AS due
+                  -- substr, NOT date(). A due date is stored as local midnight with
+                  -- its offset written out (2026-08-24T00:00:00+09:00), and SQLite's
+                  -- date() CONVERTS that to UTC -- turning it into 2026-08-23 and
+                  -- pulling every JST due date a day earlier. Measured on the real
+                  -- corpus: date() reported 704 due where the scheduler reports 646,
+                  -- so the sidebar over-counted by 58 while the header beside it said
+                  -- 646. The first ten characters of an RFC 3339 timestamp ARE its
+                  -- local date; that is what writing the offset means.
+                  -- src/scheduler/queue.ts owns this rule and explains both reasons.
+                  AND substr(t.due_at, 1, 10) <= date('now','localtime')) AS due
          FROM deck_paths dp JOIN decks d ON d.id = dp.deck_id
         ORDER BY dp.path`,
     )
