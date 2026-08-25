@@ -371,11 +371,17 @@ button bottom-RIGHT because he reviews one-handed with his right thumb; a drawer
 under that thumb would be opened by accident mid-card, interrupting a card he is
 holding an answer for.
 
-**CREATE is deliberately absent, and the panel says why in words.** Per
-`notes/crud-audit.md`, create is the one quarter blocked on a decision rather than
-on code: **what id does a card made in Hashigo get**, when decision 16 leaves
-exactly one more Mochi import to collide with? A button that did nothing would be
-worse than a sentence naming the blocker.
+**CREATE is deliberately absent, and the panel says why in words.** A button
+that did nothing would be worse than a sentence naming the blocker.
+
+The blocker is smaller than `notes/crud-audit.md` first said, and that note now
+carries the measurement: a locally-created card **already** survives the final
+import — there is no `DELETE FROM cards` in `src/` at all, and `pruneFieldValues`
+is scoped to the cards in the import being read. What is open is only the id
+FORMAT, and the corpus answers it: every Mochi id is exactly 8 base62 characters,
+so **an id containing a hyphen cannot collide by construction** — which is what
+decision 9's `local-yomi` / `local-accent` field ids already do. The recommendation
+on the table is `local-` + 8 base62, awaiting one word from Zach.
 
 ## Found by his screenshot: the `<input>` widget is inert
 

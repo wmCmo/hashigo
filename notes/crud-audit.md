@@ -74,23 +74,62 @@ the number is what killed the claim; the grep alone had made it look real.
 over behaviour that is already tested by the corpus, and is reversible. A hard
 delete is available underneath it if he ever wants it. That is his call, not mine.
 
-### 4. Create is blocked on an IDENTITY decision, and only Create is
+### 4. Create needs an ID FORMAT — and that is a smaller question than this
+### note first claimed
 
 Nothing outside the importer creates a card, deck, template, field, tag or link.
-Unlike delete, that is not just missing code:
+The first version of this section said create was "blocked on an identity
+decision" and implied two problems: whether a locally-made card SURVIVES the final
+import, and what id it should carry. **Measured 2026-08-23, the first one is
+already solved and I should not have raised it.**
 
-**What id does a locally-created card get?** Mochi's are 8-character opaque
-strings, and decision 16 says there is exactly ONE more import from Mochi. A card
-created here must carry an id that cannot collide with anything that import
-brings, and must survive the re-import guard that already exists. Options exist
-(a reserved prefix, a UUID, a separate namespace column) and they have different
-costs at sync time (stage 11). **This is a real decision and it is Zach's**, and it
-is the reason his request 5 — *"a space where we create cards"* — is the expensive
-one of the six.
+**A locally-created card already survives a re-import, by construction.**
 
-The same question, one level down, applies to a locally-created DECK or TEMPLATE,
-where the stakes are higher because those ids are referenced by every card under
-them.
+* There is **no `DELETE FROM cards` anywhere in `src/`**. The importer upserts;
+  it never reconciles the card table against the export, so a card the export has
+  never heard of is simply not considered.
+* `pruneFieldValues` — the one thing that does delete on import — is scoped
+  `WHERE card_id IN (SELECT card_id FROM import_field_keys)`, i.e. to the cards
+  in *this* import. Its own docstring says so: *"it can never touch a card that
+  came from an export not being re-read."*
+* And `template_fields.local = 1` is exempt from even that, which is decision 9
+  working exactly as intended.
+
+So the only open question is the FORMAT, and the corpus answers it:
+
+```plaintext
+cards            7,716   ALL exactly 8 chars   base62 [0-9A-Za-z]
+decks               39   all 8                 base62
+templates           10   all 8                 base62
+template_fields     32   31 × 8, 1 × 4         base62   (the 4 is `name`)
+LOCAL fields         3   10 / 12 / 18          contains `-`
+```
+
+**Mochi's alphabet is base62 and cannot produce a hyphen.** So an id containing
+one cannot collide with a Mochi id — *by construction, not by probability*. That
+is a stronger guarantee than a UUID, which is merely unlikely to collide, and it
+is 26 characters shorter in a value that appears in every wiki-link.
+
+**And the convention already exists in this repo.** Decision 9's local fields are
+`local-yomi`, `local-kana-primary`, `local-accent`. The same reasoning was applied
+once already, to the same problem, one level down.
+
+**Recommendation, for Zach to accept or reject in one line:**
+
+> A locally-created card gets `local-` followed by 8 base62 characters —
+> `local-k3Xp9QmA`. Hyphen ⇒ Mochi cannot generate it ⇒ no collision is possible.
+> Same rule for a locally-created deck or template.
+
+`cards.id` carries no CHECK constraint on format, so nothing has to change in the
+schema. `id` is UNIQUE, so even a same-device repeat is an insert error rather
+than silent corruption. For stage 11, two devices creating offline collide only if
+they draw the same 8 of 62⁸ ≈ 2.2 × 10¹⁴ — and that surfaces as a failed insert,
+not as merged cards.
+
+**What is genuinely left of create, once the format is settled**, is UI rather
+than identity: which deck, which template, and whether a new card enters the queue
+immediately or waits for the next session. Those are his, and they are smaller
+questions than the one this note originally posed.
 
 ## What this means for the order of work
 
