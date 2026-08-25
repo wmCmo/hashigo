@@ -46,7 +46,7 @@ import {
 import { cardAudioResolver } from "../src/cards/index.js";
 import { directionForTrackKind } from "../src/cards/index.js";
 import { prepareCard } from "../src/review/index.js";
-import { buildSession, type ReviewSession } from "../src/session/index.js";
+import { buildSession, type AnswerResult, type ReviewSession } from "../src/session/index.js";
 import { searchCards } from "../src/search/index.js";
 
 import { archiveSubtree, restoreArchive, scopeToSubtree } from "./deck-scope.js";
@@ -59,6 +59,7 @@ import type {
   DeckOpMessage,
   DeckOpRequest,
   DecksRequest,
+  UngradeRequest,
   PreviewRequest,
   SetFieldRequest,
   ResetRequest,
@@ -87,6 +88,16 @@ let cards: BrowserDb | null = null;
 let payloads: BrowserDb | null = null;
 let store: SqliteBlobStore | null = null;
 let session: ReviewSession | null = null;
+
+/**
+ * Every `AnswerResult` this session has produced, newest last.
+ *
+ * The undo of a grade needs the session's cursor and its decision-13 re-ask queue as
+ * well as the two database rows, and the session lives here — so the stack does too,
+ * and the page's undo entry carries nothing but its own intent. Cleared with the
+ * session in `open`.
+ */
+let answers: AnswerResult[] = [];
 
 function post(message: AppMessage): void {
   self.postMessage(message);
@@ -172,6 +183,7 @@ async function open(request: OpenRequest): Promise<void> {
   }
 
   session = buildSession(cards);
+  answers = [];
   post({
     kind: "opened",
     id: request.id,
@@ -269,6 +281,7 @@ function answer(request: AnswerRequest): void {
     ...(request.durationMs === null ? {} : { durationMs: request.durationMs }),
   });
   const writeMs = performance.now() - started;
+  answers.push(result);
   post({
     kind: "answered",
     id: request.id,
@@ -280,6 +293,35 @@ function answer(request: AnswerRequest): void {
     writeMs,
     openStatements: requireCards().openStatements,
     cachedStatements: requireCards().cachedStatements,
+  });
+}
+
+/**
+ * Undo the last grade — delete the review, restore the schedule, rewind the cursor.
+ *
+ * `ReviewSession.unanswer` does the database work first, so a refusal leaves the
+ * session and the database still agreeing. `ungradeTrack` refuses anything but the
+ * newest review on a track, which is why this pops rather than searching.
+ */
+function ungrade(request: UngradeRequest): void {
+  const active = requireSession();
+  const last = answers.pop();
+  if (last === undefined) throw new Error("nothing graded this session to undo");
+  try {
+    active.unanswer(last);
+  } catch (cause) {
+    // Put it back: the undo did not happen, so the stack must still describe reality.
+    answers.push(last);
+    throw cause;
+  }
+  post({
+    kind: "ungraded",
+    id: request.id,
+    describe: last.graded
+      ? `un-graded ${last.item.cardId} — the review is gone and the schedule is back`
+      : `stepped back over a re-ask (nothing was graded)`,
+    cardId: last.item.cardId,
+    progress: active.progress(),
   });
 }
 
@@ -954,6 +996,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "decks":
           decks(request);
+          break;
+        case "ungrade":
+          ungrade(request);
           break;
         case "browse":
           browse(request);

@@ -51,7 +51,7 @@ npm run app:dev -- --host ::              # phone / tunnel
 
 Gates: run **`npm run gates`** — one command, all seven, cheapest first, and a verdict
 that means what it says. `app:build` is new and was covered by nothing: `app:check` is
-`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 27 files / 803
+`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 28 files / 817
 passed / 1 skipped** (~97 s) · `npm run typecheck` → 0 · **`npm run app:check` → 0** ·
 `npm run build` → OK, 77 modules, 27 export subpaths · `npm run spike:check` → 0 ·
 `blobs … paths` → 0.
@@ -75,8 +75,8 @@ segfault. `npm test` alone must still not be chained on.
 
 ### CONFIRMED LIVE BUGS IN `app/db.worker.ts` — measured 2026-08-26, NOT fixed
 
-**THREE OF THESE ARE NOW FIXED** (1, 2, 3 — see `git log` and `app/deck-scope.ts`,
-which is the seam that made them testable). The rest stand. Every line
+**FOUR OF THESE ARE FIXED** (1, 2, 3, and the grading half of 5 — see `git log`,
+`app/deck-scope.ts` and `ungradeTrack` in `src/scheduler/tracks.ts`). The rest stand. Every line
 below was re-measured against `build/hashigo.db` before being written here. **Three
 were fixed** (the typing guard, the due-date timezone, and the gallery's misnamed sort
 value — see `git log`); these are the ones left, and they are left because each needs a
@@ -121,7 +121,7 @@ that page, so searching inside a deck silently under-reports. It is not a wrong 
 in a corner: with `limit: 300` over 7,716 cards, a query matching widely outside the
 deck can return almost nothing inside it.
 
-**5. Undo does not cover grading, which is the first action his #13 names.** He asked
+**5. PARTLY FIXED 2026-08-26 — GRADING is undoable now; `setField` and `createCard` are not.** He asked
 for *"ctrl+z ... whether create card, review card, remember card, forget card"*. There
 are exactly two `pushUndo` call sites in `app/main.ts`, both in the card/deck op path:
 grading, `setField` and `createCard` push nothing. Undoing a grade means deleting the

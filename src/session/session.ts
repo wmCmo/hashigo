@@ -97,8 +97,11 @@ import {
   gradeTrack,
   newTracks,
   nowInHostOffset,
+  snapshotTrack,
+  ungradeTrack,
   type GradedReview,
   type QueuedTrack,
+  type TrackSnapshot,
 } from "../scheduler/index.js";
 // TYPE-ONLY, exactly as `src/cards/load.ts` does it: the import is erased at
 // compile time, so nothing here pulls `src/db/browser.ts` (and its sqlite-wasm
@@ -171,6 +174,15 @@ export interface AnswerResult {
   readonly review: GradedReview | null;
   /** True when this answer queued the card for a decision-13 re-ask. */
   readonly queuedReask: boolean;
+  /**
+   * Everything `unanswer` needs to put this back — the track's schedule as it was
+   * BEFORE the grade, plus the review row's id.
+   *
+   * Null on a decision-13 re-ask, which writes nothing and so has nothing to undo
+   * beyond the cursor. `scheduler_state` is serialised FSRS memory and cannot be
+   * recomputed, which is why this is a snapshot rather than a derivation.
+   */
+  readonly undo: { readonly reviewId: number; readonly snapshot: TrackSnapshot } | null;
 }
 
 export interface SessionProgress {
@@ -342,9 +354,12 @@ export class ReviewSession {
 
     if (item.reask) {
       this.cursor += 1;
-      return { item, graded: false, review: null, queuedReask: false };
+      return { item, graded: false, review: null, queuedReask: false, undo: null };
     }
 
+    // BEFORE the write. `gradeTrack` advances the track in place, so this is the only
+    // moment the previous schedule exists to be read.
+    const snapshot = snapshotTrack(this.db, item.trackId);
     const review = gradeTrack(this.db, {
       trackId: item.trackId,
       remembered: remembered ? 1 : 0,
@@ -361,7 +376,39 @@ export class ReviewSession {
       queuedReask = true;
     }
     this.cursor += 1;
-    return { item, graded: true, review, queuedReask };
+    return { item, graded: true, review, queuedReask, undo: { reviewId: review.reviewId, snapshot } };
+  }
+
+  /**
+   * Undo the last `answer()` — his request 13, and the half that was missing.
+   *
+   * *"when you ctrl+z, it should undo your last action, whether create card, review
+   * card, remember card, forget card"*. Card and deck operations had it; grading, the
+   * first thing he named, did not. A grade writes a `reviews` row AND advances the
+   * FSRS schedule, so it was the one action in the app that could not be taken back.
+   *
+   * Three things move, and all three must, or the session and the database disagree:
+   *
+   *   the review row      deleted, by `ungradeTrack`
+   *   the track schedule  restored from the snapshot, not recomputed
+   *   the cursor          stepped back, and a queued re-ask popped
+   *
+   * Pass the `undo` handle from the `AnswerResult` this is reversing. Undoing out of
+   * order throws rather than corrupting: `ungradeTrack` refuses anything but the
+   * latest review on the track, because the schedule was computed from it.
+   */
+  unanswer(result: AnswerResult): void {
+    if (this.cursor === 0) throw new Error("nothing has been answered in this session");
+
+    // The DB first: if it throws, the cursor has not moved and the caller can retry
+    // or report. The other order leaves a session that disagrees with its database.
+    if (result.undo !== null) ungradeTrack(this.db, result.undo);
+
+    if (result.queuedReask) {
+      const popped = this.reasks.pop();
+      if (popped === undefined) throw new Error("queuedReask was true but no re-ask is queued");
+    }
+    this.cursor -= 1;
   }
 
   progress(): SessionProgress {

@@ -423,6 +423,129 @@ export function gradeTrack(db: SqliteHandle, input: GradeTrackInput): GradedRevi
   return run();
 }
 
+// ─── undoing one grade ───────────────────────────────────────────────────────
+
+/**
+ * THE SEVEN COLUMNS A GRADE MOVES, AS THEY WERE BEFORE IT MOVED THEM.
+ *
+ * `gradeTrack` writes a `reviews` row and then advances the track. Undoing it means
+ * putting both back, and the track half CANNOT BE RECOMPUTED: `scheduler_state` is
+ * the serialised FSRS memory, and deriving the previous value from the previous
+ * review would re-run the model rather than restore what was there. So the caller
+ * snapshots first and hands the snapshot back.
+ *
+ * That is the same shape as `app/deck-scope.ts`'s archive undo, for the same reason:
+ * an undo that recomputes is a second write, not a reversal.
+ */
+export interface TrackSnapshot {
+  readonly trackId: number;
+  readonly dueAt: string | null;
+  readonly scheduledDays: number | null;
+  readonly reps: number;
+  readonly lapses: number;
+  readonly lastReviewedAt: string | null;
+  readonly scheduler: string | null;
+  readonly schedulerState: string | null;
+}
+
+const SELECT_SNAPSHOT = `
+SELECT id, due_at, scheduled_days, reps, lapses, last_reviewed_at, scheduler, scheduler_state
+  FROM card_tracks WHERE id = ?`;
+
+/** Read the track's schedule state. Call this BEFORE `gradeTrack`. */
+export function snapshotTrack(db: SqliteHandle, trackId: number): TrackSnapshot {
+  const row = db.prepare(SELECT_SNAPSHOT).get(trackId) as
+    | {
+        id: number;
+        due_at: string | null;
+        scheduled_days: number | null;
+        reps: number;
+        lapses: number;
+        last_reviewed_at: string | null;
+        scheduler: string | null;
+        scheduler_state: string | null;
+      }
+    | undefined;
+  if (row === undefined) throw new Error(`no card_track ${trackId}`);
+  return {
+    trackId: row.id,
+    dueAt: row.due_at,
+    scheduledDays: row.scheduled_days,
+    reps: row.reps,
+    lapses: row.lapses,
+    lastReviewedAt: row.last_reviewed_at,
+    scheduler: row.scheduler,
+    schedulerState: row.scheduler_state,
+  };
+}
+
+const RESTORE_TRACK = `
+UPDATE card_tracks
+   SET due_at           = ?,
+       scheduled_days   = ?,
+       reps             = ?,
+       lapses           = ?,
+       last_reviewed_at = ?,
+       scheduler        = ?,
+       scheduler_state  = ?,
+       updated_at       = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+ WHERE id = ?`;
+
+/**
+ * Delete one review and put its track back exactly as `snapshot` found it.
+ *
+ * **ONLY THE LATEST REVIEW ON A TRACK CAN BE UNDONE, and this refuses otherwise.**
+ * The track's current schedule was computed FROM the newest review; removing an older
+ * one would leave a state derived from a review that no longer exists, and the
+ * arithmetic would never be right again. A reviewer undoing two grades has to undo
+ * them newest-first, which is what a stack does anyway.
+ *
+ * Both writes are one transaction: a deleted review beside an unrestored track is a
+ * card whose history and whose schedule disagree, which is worse than either alone.
+ */
+export function ungradeTrack(
+  db: SqliteHandle,
+  input: { readonly reviewId: number; readonly snapshot: TrackSnapshot },
+): void {
+  const run = db.transaction(() => {
+    const review = db
+      .prepare("SELECT id, track_id FROM reviews WHERE id = ?")
+      .get(input.reviewId) as { id: number; track_id: number } | undefined;
+    if (review === undefined) throw new Error(`no review ${input.reviewId} to undo`);
+    if (review.track_id !== input.snapshot.trackId) {
+      throw new Error(
+        `review ${input.reviewId} is on track ${review.track_id}, ` +
+          `but the snapshot is of track ${input.snapshot.trackId}`,
+      );
+    }
+
+    const newest = db
+      .prepare("SELECT max(id) AS id FROM reviews WHERE track_id = ?")
+      .get(review.track_id) as { id: number | null };
+    if (newest.id !== input.reviewId) {
+      throw new Error(
+        `review ${input.reviewId} is not the latest on track ${review.track_id} ` +
+          `(that is ${newest.id}). Undo newest-first — the track's schedule was ` +
+          `computed from the newest review, and removing an older one leaves it ` +
+          `derived from something that is gone.`,
+      );
+    }
+
+    db.prepare("DELETE FROM reviews WHERE id = ?").run(input.reviewId);
+    db.prepare(RESTORE_TRACK).run(
+      input.snapshot.dueAt,
+      input.snapshot.scheduledDays,
+      input.snapshot.reps,
+      input.snapshot.lapses,
+      input.snapshot.lastReviewedAt,
+      input.snapshot.scheduler,
+      input.snapshot.schedulerState,
+      input.snapshot.trackId,
+    );
+  });
+  run();
+}
+
 // ─── the eager seed, for anyone who wants it ─────────────────────────────────
 
 export interface SeedReport {

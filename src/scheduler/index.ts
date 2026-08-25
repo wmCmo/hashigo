@@ -79,13 +79,16 @@ export {
   nowInHostOffset,
   readTrack,
   seedTrackMemory,
+  snapshotTrack,
   targetRetentionForCard,
   trackMemory,
   trackObservations,
+  ungradeTrack,
   type GradeTrackInput,
   type GradedReview,
   type SeedReport,
   type TrackMemoryResult,
+  type TrackSnapshot,
   type TrackRow,
 } from "./tracks.js";
 

@@ -458,6 +458,23 @@ async function grade(remembered: boolean): Promise<void> {
         "good",
       );
     }
+    // HIS #13, and the action he named FIRST. A grade writes a `reviews` row and
+    // advances the FSRS schedule, so until this existed it was the only thing in the
+    // app that could not be taken back — a mis-tap moved a card's next due date by up
+    // to 383 days and the undo button stayed disabled.
+    //
+    // The entry carries nothing: the worker owns the stack of answers, because the
+    // undo needs the session's cursor and re-ask queue as well as the two rows.
+    pushUndo({
+      describe: `${remembered ? "remembered" : "forgot"} ${
+        previewOfCurrent?.loaded.name ?? "a card"
+      }`,
+      run: async () => {
+        const undone = await ask<"ungrade">({ kind: "ungrade" });
+        say(undone.describe);
+        await showNext();
+      },
+    });
     await showNext();
   } finally {
     forgotButton.disabled = false;

@@ -154,6 +154,27 @@ export interface CardOpMessage {
 /** Deck operations — his #14, and the answer to #8. */
 export type DeckOp = "archive" | "unarchive" | "rename" | "create" | "delete" | "restoreArchive";
 
+/**
+ * Undo the last grade — his request 13's first-named action.
+ *
+ * Carries NOTHING. The worker owns the stack of `AnswerResult`s it produced, because
+ * an undo needs the session's cursor and its decision-13 re-ask queue as well as the
+ * two database rows, and those live in the worker with the session. The page's undo
+ * entry only has to say "the last thing was a grade".
+ */
+export interface UngradeRequest {
+  readonly kind: "ungrade";
+  readonly id: number;
+}
+
+export interface UngradedMessage {
+  readonly kind: "ungraded";
+  readonly id: number;
+  readonly describe: string;
+  readonly cardId: string | null;
+  readonly progress: SessionProgress;
+}
+
 export interface DeckOpRequest {
   readonly kind: "deckOp";
   readonly id: number;
@@ -367,6 +388,7 @@ export type AppRequest =
   | CreateCardRequest
   | CardOpRequest
   | DeckOpRequest
+  | UngradeRequest
   | SetFieldRequest
   | ResetRequest;
 
@@ -480,6 +502,7 @@ export interface ErrorMessage {
 export type AppMessage =
   | CardOpMessage
   | DeckOpMessage
+  | UngradedMessage
   | CreateCardMessage
   | DecksMessage
   | BrowseMessage
@@ -511,4 +534,5 @@ export interface ReplyFor {
   readonly createCard: CreateCardMessage;
   readonly cardOp: CardOpMessage;
   readonly deckOp: DeckOpMessage;
+  readonly ungrade: UngradedMessage;
 }
