@@ -73,6 +73,79 @@ a complete summary line and zero failures, or it fails. That is stricter where i
 counts: a crash prints no summary and cannot pass, which is exactly what caught the
 segfault. `npm test` alone must still not be chained on.
 
+### CONFIRMED LIVE BUGS IN `app/db.worker.ts` — measured 2026-08-26, NOT fixed
+
+Found by an adversarial audit of `app/`, which has no integration tests. Every line
+below was re-measured against `build/hashigo.db` before being written here. **Three
+were fixed** (the typing guard, the due-date timezone, and the gallery's misnamed sort
+value — see `git log`); these are the ones left, and they are left because each needs a
+decision about intended behaviour rather than a corrected predicate. Do not treat this
+list as speculative: the numbers are real.
+
+**1. Archiving a deck archives only the deck's OWN cards, and reports success anyway.**
+`app/db.worker.ts:488` — `UPDATE cards SET archived = ? WHERE deck_id = ?`, no descent
+into sub-decks, then `describe = "archived <name> and its cards"`.
+
+```plaintext
+deck        own cards   subtree     so archiving it archives
+日本語            3       5,947      3 of 5,947, and says it worked
+English           0       1,258      NOTHING, and says it worked
+単語          3,702       3,742      3,702 of 3,742
+```
+
+His #14 is deck CRUD and his #8 is "I think my whole 数字 deck is supposed to be
+archived", so this is the exact operation he asked for. **The queue would also need to
+honour the deck flag** — `src/scheduler/queue.ts` filters `c.archived = 0` on the CARD
+only, and nothing reads `decks.archived` (`notes/zach-wants.md` says nothing reads or
+writes it; the app now WRITES it, so that note is stale in one direction).
+
+**2. Undo of a deck archive INVERTS rather than RESTORES, and 234 cards are exposed.**
+`app/db.worker.ts:491` records `undo = {op: "unarchive", deckId}`, which runs
+`UPDATE cards SET archived = 0 WHERE deck_id = ?` over every card in the deck. So one
+ctrl+Z after an accidental deck archive erases every per-card archive decision in that
+deck. **234 cards in the corpus are archived individually** and there is no in-app way
+back — the undo stack holds one entry and it is the thing that did the damage. A
+correct undo has to record the prior per-card state, not the inverse operation.
+
+**3. Clicking a parent deck opens an EMPTY gallery.** `app/db.worker.ts:718` and `:730`
+filter `c.deck_id = ?` exactly, and `:761` filters search hits by
+`hit.deckId === request.deckId`. The sidebar badge is a SUBTREE total (that is the
+whole point of `app/deck-tree.ts`), so English shows "1258" and opens 0 cards, 日本語
+shows "5947" and opens 3. Every deck with children is affected. Fixing it means a
+recursive CTE over `decks.parent_id`, which `deck_paths` may already give cheaply.
+
+**4. Deck-scoped search filters AFTER the limit.** Same site, `:761` — `searchCards`
+returns its top `limit` across the whole collection and the deck filter is applied to
+that page, so searching inside a deck silently under-reports. It is not a wrong count
+in a corner: with `limit: 300` over 7,716 cards, a query matching widely outside the
+deck can return almost nothing inside it.
+
+**5. Undo does not cover grading, which is the first action his #13 names.** He asked
+for *"ctrl+z ... whether create card, review card, remember card, forget card"*. There
+are exactly two `pushUndo` call sites in `app/main.ts`, both in the card/deck op path:
+grading, `setField` and `createCard` push nothing. Undoing a grade means deleting the
+`reviews` row AND restoring the previous `card_tracks` schedule state — a partial undo
+that leaves the schedule advanced is worse than none, which is presumably why it was
+skipped. Worth saying plainly because the commit and the code comment both read as
+though #13 is done.
+
+**6. Deleting the current review card hard-locks the session.** Confirmed by the audit;
+the card is gone, the session cursor still points at it, and the failure is invisible.
+`delete` is deliberately not undoable (the reviews go with it) and says so, which is
+right — the lock is the bug, not the irreversibility.
+
+**7. Smaller, all confirmed:** duplicating a card drops its per-card `reverse`
+override, so the copy loses its reverse track; the "card not found" preview layer is
+appended but never pushed onto the layer stack, so one Escape destroys the whole stack;
+and `app/env.d.ts` still claims `src/schema` cannot be imported in a browser, which has
+been false since the source moved.
+
+**The pattern worth naming:** six of these seven are in `app/db.worker.ts`, the file
+that owns every write, and none of them could have been caught by `npm run app:check`.
+`app/keys.ts`, `app/deck-tree.ts` and `app/review-boundary.ts` show the seam that makes
+a rule testable — a self-contained module with no imports, reachable from `test/`
+because the root `tsconfig.json` excludes `app/`. The worker's SQL has no such seam yet.
+
 **The only real fix is for no single file to need 60 s of its own wall clock.**
 `test/roundtrip.test.ts` needs 82 s and runs `importExports` over the full corpus five
 times. Splitting it is the repair; it is deliberately NOT done, because moving tests
