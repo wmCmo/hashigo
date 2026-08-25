@@ -111,6 +111,35 @@ export interface ResetMessage {
 }
 
 /**
+ * Write ONE field value on one card — his request 3, and the whole of it.
+ *
+ * "edit each field of the card right away". `card_field_values` is the table, and
+ * the app already writes it (the `Reading` toggle), so this generalises a path
+ * that runs rather than opening a new one.
+ *
+ * The worker validates rather than trusting this: the field must be DECLARED on
+ * the card's own template, and its type must be one whose stored value is the
+ * content. See `setField` there.
+ */
+export interface SetFieldRequest {
+  readonly kind: "setField";
+  readonly id: number;
+  readonly cardId: string;
+  readonly fieldId: string;
+  readonly value: string;
+}
+
+export interface SetFieldMessage {
+  readonly kind: "setField";
+  readonly id: number;
+  readonly cardId: string;
+  readonly fieldId: string;
+  readonly value: string;
+  /** True when the row was created rather than updated. */
+  readonly created: boolean;
+}
+
+/**
  * One card BY ID, for a preview layer — his request 2.
  *
  * Deliberately separate from `next`, which is session-bound. A preview is not a
@@ -146,6 +175,7 @@ export type AppRequest =
   | ReadingRequest
   | BackupRequest
   | PreviewRequest
+  | SetFieldRequest
   | ResetRequest;
 
 // ─── worker → page ───────────────────────────────────────────────────────────
@@ -256,6 +286,7 @@ export interface ErrorMessage {
 }
 
 export type AppMessage =
+  | SetFieldMessage
   | PreviewMessage
   | ResetMessage
   | LogMessage
@@ -277,4 +308,5 @@ export interface ReplyFor {
   readonly backup: BackupMessage;
   readonly reset: ResetMessage;
   readonly preview: PreviewMessage;
+  readonly setField: SetFieldMessage;
 }

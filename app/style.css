@@ -645,3 +645,80 @@ ruby rt:empty::after {
 body.layered {
   overflow: hidden;
 }
+
+/* ── his request 3: the editor, and it is another layer ── */
+
+.edit-row {
+  border-top: 1px solid var(--line);
+  display: block;
+  padding: 14px 0;
+}
+
+.edit-row:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.edit-label {
+  align-items: baseline;
+  color: var(--muted);
+  display: flex;
+  font-family: var(--mono);
+  font-size: 12px;
+  gap: 8px;
+  letter-spacing: 0.06em;
+  margin-bottom: 7px;
+}
+
+.edit-type {
+  color: var(--edge);
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.edit-input {
+  background: #17181b;
+  border: 1px solid var(--line-soft);
+  color: var(--ink-bright);
+  /* The JAPANESE stack, not the mono one: he is typing readings and head words,
+     and a monospace fallback renders kana at the wrong width. */
+  font: 16px/1.6 var(--jp), sans-serif;
+  padding: 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+/* 16px above is not a style choice — iOS Safari ZOOMS the viewport on focus for
+   anything smaller, which on a phone throws away his place in the card. */
+
+.edit-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.edit-check {
+  height: 22px;
+  width: 22px;
+  accent-color: var(--accent);
+}
+
+/* Said, not merely greyed out. A control that is disabled without a reason
+   teaches him the app is broken. */
+.edit-readonly {
+  color: var(--edge);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.edit-status {
+  color: var(--ok);
+  font-size: 12px;
+  min-height: 1.5em;
+  padding-top: 14px;
+}
+
+.edit-status.bad {
+  color: var(--no);
+}

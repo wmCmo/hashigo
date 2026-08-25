@@ -51,6 +51,7 @@ import { buildSession, type ReviewSession } from "../src/session/index.js";
 import type {
   AnswerRequest,
   PreviewRequest,
+  SetFieldRequest,
   ResetRequest,
   AppMessage,
   AppRequest,
@@ -339,6 +340,79 @@ async function reset(request: ResetRequest): Promise<void> {
 }
 
 /**
+ * Field types whose STORED VALUE is the content, and so may be edited.
+ *
+ * The exclusions are not caution, they are measured: `speech`, `translate` and
+ * `ai` have **zero non-empty values across the entire corpus** (10 + 5 + 4 fields,
+ * 0 values). Mochi keeps generated output in `component-cache`, addressed by
+ * generation identity — the field's own value has always been the empty string.
+ * Writing one would change nothing on screen and would put a value somewhere the
+ * renderer treats as a marker, so the editor shows them read-only instead.
+ *
+ *     plain    79,739 fields   79,549 non-empty
+ *     accent    7,660           7,660     (derived, but LOCAL — decision 9)
+ *     text      7,390           7,377
+ *     boolean   1,635           1,611
+ *     number       90              90
+ *     speech/translate/ai          0      <- these
+ */
+const EDITABLE_TYPES = new Set(["plain", "text", "boolean", "number", "accent"]);
+
+/**
+ * Write one field value.
+ *
+ * **Validated here rather than trusted from the page**, for the same reason the
+ * `Reading` toggle is: the page's field id arrived in a message, and a write that
+ * lands on the wrong field destroys data with no error. Two checks, and both have
+ * a real case behind them:
+ *
+ *   1. the field must be DECLARED on this card's own template — otherwise an edit
+ *      creates one of the 235 orphan values this corpus already carries, invisible
+ *      because nothing renders it;
+ *   2. the type must be one whose stored value is the content (see above).
+ */
+function setField(request: SetFieldRequest): void {
+  const db = requireCards();
+  const field = db
+    .prepare(
+      `SELECT tf.id AS id, tf.name AS name, tf.type AS type
+         FROM cards c JOIN template_fields tf ON tf.template_id = c.template_id
+        WHERE c.id = ? AND tf.id = ?`,
+    )
+    .get(request.cardId, request.fieldId) as { id: string; name: string; type: string } | undefined;
+  if (field === undefined) {
+    throw new Error(
+      `card ${request.cardId} has no field ${request.fieldId} on its own template. ` +
+        `Refusing to write — that would create an orphan value nothing renders.`,
+    );
+  }
+  if (!EDITABLE_TYPES.has(field.type)) {
+    throw new Error(
+      `${field.name} is a ${field.type} field: its content lives in the generation ` +
+        `cache, not in card_field_values, and every such field in this corpus stores ` +
+        `the empty string. Refusing to write.`,
+    );
+  }
+  const existed =
+    db
+      .prepare("SELECT 1 FROM card_field_values WHERE card_id = ? AND field_id = ?")
+      .get(request.cardId, request.fieldId) !== undefined;
+  db.prepare(
+    `INSERT INTO card_field_values (card_id, field_id, value)
+     VALUES (?, ?, ?)
+     ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`,
+  ).run(request.cardId, request.fieldId, request.value);
+  post({
+    kind: "setField",
+    id: request.id,
+    cardId: request.cardId,
+    fieldId: request.fieldId,
+    value: request.value,
+    created: !existed,
+  });
+}
+
+/**
  * One card by id, for a preview layer.
  *
  * A missing card is a REPLY, not an error: this corpus carries 8,958 tombstones,
@@ -403,6 +477,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "preview":
           preview(request);
+          break;
+        case "setField":
+          setField(request);
           break;
         case "reset":
           await reset(request);

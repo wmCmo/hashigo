@@ -66,7 +66,7 @@
 
 import { BlobUrlScope } from "../src/blobs/url.js";
 import { browserDocument, CLASS } from "../src/render/index.js";
-import { mountPrepared, type MountedCard } from "../src/review/index.js";
+import { mountPrepared, type MountedCard, type PreparedCard } from "../src/review/index.js";
 import type { RenderResult } from "../src/render/index.js";
 import type { ShadowingSide } from "../src/render/reveal.js";
 import type { AppMessage, AppRequest, ReplyFor } from "./protocol.js";
@@ -152,6 +152,8 @@ let tail: ShadowingSide<HTMLElement>[] = [];
 let shownAt = 0;
 let revealed = false;
 let currentCardId: string | null = null;
+/** The review card's prepared form, so `e` can edit it without re-fetching. */
+let previewOfCurrent: PreparedCard | null = null;
 
 /** `data-state` on the review view, which is what `style.css` switches on. */
 function setState(state: "prompt" | "revealed"): void {
@@ -227,6 +229,7 @@ async function showNext(): Promise<void> {
   releaseCard();
   revealed = false;
   currentCardId = reply.card.cardId;
+  previewOfCurrent = reply.card;
   scope = new BlobUrlScope();
 
   const card = mountPrepared<HTMLElement>(reply.card, {
@@ -588,9 +591,25 @@ document.addEventListener("keydown", (event) => {
       event.preventDefault();
       closeTop();
     }
+    // `e` over a PREVIEW opens the editor for the previewed card — his request 3
+    // is explicit that it works in both modes. Not while typing in the editor
+    // itself, or every `e` he types would open another one.
+    if (
+      event.key.toLowerCase() === "e" &&
+      !(event.target instanceof HTMLTextAreaElement) &&
+      !(event.target instanceof HTMLInputElement)
+    ) {
+      event.preventDefault();
+      openEditor();
+    }
     return;
   }
   if (reviewView.hidden) return;
+  if (event.key.toLowerCase() === "e") {
+    event.preventDefault();
+    openEditor();
+    return;
+  }
   const key = event.key.toLowerCase();
   if (key === " " || key === "enter") {
     event.preventDefault();
@@ -682,7 +701,10 @@ async function maybeReset(): Promise<boolean> {
  */
 interface Layer {
   readonly root: HTMLElement;
-  readonly mounted: MountedCard<HTMLElement>;
+  /** Null for a layer that renders no card — the editor, and "card not found". */
+  readonly mounted: MountedCard<HTMLElement> | null;
+  /** The prepared card, so `e` can edit whatever layer is on top. */
+  readonly prepared: PreparedCard | null;
   readonly cardId: string;
 }
 
@@ -754,7 +776,7 @@ async function openPreview(cardId: string): Promise<void> {
   document.body.classList.add("layered");
   close.focus();
 
-  layers.push({ root, mounted, cardId });
+  layers.push({ root, mounted, prepared: reply.card, cardId });
 }
 
 function closeIfTop(root: HTMLElement): void {
@@ -781,7 +803,8 @@ function closeTop(): void {
   }
   // Dispose BEFORE detaching: the mount releases its audio leases and revokes
   // every object URL it minted, and a detached tree would still be holding them.
-  top.mounted.dispose();
+  // Null on an editor layer, which renders no card and holds no lease.
+  top.mounted?.dispose();
   top.root.remove();
   if (layerHost.childElementCount === 0) document.body.classList.remove("layered");
   const next = layers.at(-1);
@@ -811,6 +834,166 @@ document.addEventListener(
   },
   true,
 );
+
+// ─── his request 3: `e` edits every field, from either mode ─────────────────
+
+/**
+ * *"whether the card is in the review mode or the pop up mode, you can press `e`
+ * for edit to edit each field of the card right away"*.
+ *
+ * **It is another LAYER**, which is what makes "from either mode" fall out rather
+ * than needing two implementations: the stack already knows what is on top, so
+ * `e` edits the previewed card when a preview is open and the review card
+ * otherwise. Escape peels it like any other layer.
+ *
+ * ─── WHY THIS IS THE SMALLEST QUARTER OF CRUD ──────────────────────────────
+ *
+ * `notes/crud-audit.md`: `card_field_values` is the one table the app already
+ * writes end to end — the `Reading` toggle has been doing page → worker → upsert
+ * since the shell existed. So this is a UI over a proven path, not a new one.
+ * The worker validates anyway (`setField` there), because the field id arrives in
+ * a message and a misdirected write destroys data silently.
+ *
+ * ─── WHAT IT DELIBERATELY WILL NOT LET HIM EDIT, AND WHY IT SAYS SO ────────
+ *
+ * `speech`, `translate` and `ai` fields are shown READ-ONLY with the reason on
+ * screen. Measured over the whole corpus: 19 such fields, **zero non-empty
+ * values**. Mochi keeps generated output in `component-cache` addressed by
+ * generation identity, so the field's own value has always been empty — typing
+ * into it would change nothing visible and would put text where the renderer
+ * expects a marker. Greying it out without saying why is how a UI teaches
+ * someone that it is broken.
+ */
+function editableCard(): { card: PreparedCard; onSaved: () => void } | null {
+  const top = layers.at(-1);
+  if (top !== undefined) {
+    return top.prepared === null
+      ? null
+      : { card: top.prepared, onSaved: () => { /* a preview does not re-render */ } };
+  }
+  if (mounted === null || previewOfCurrent === null) return null;
+  return { card: previewOfCurrent, onSaved: () => { /* applies on next appearance */ } };
+}
+
+function openEditor(): void {
+  const target = editableCard();
+  if (target === null) return;
+  const { card } = target;
+  const fields = card.loaded.template?.fields ?? [];
+  if (fields.length === 0) return;
+
+  const root = document.createElement("div");
+  root.className = "layer layer-edit";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.setAttribute("aria-label", `edit ${card.loaded.name}`);
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+  root.appendChild(backdrop);
+
+  const panel = document.createElement("div");
+  panel.className = "layer-panel";
+  const head = document.createElement("div");
+  head.className = "layer-head";
+  const title = document.createElement("span");
+  title.textContent = `edit · ${card.loaded.deckPath}`;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "layer-close";
+  close.setAttribute("aria-label", "close the editor");
+  close.textContent = "✕";
+  close.addEventListener("click", () => closeIfTop(root));
+  head.append(title, close);
+  panel.appendChild(head);
+
+  const body = document.createElement("div");
+  body.className = "layer-body";
+  panel.appendChild(body);
+  root.appendChild(panel);
+
+  const status = document.createElement("div");
+  status.className = "edit-status";
+  status.setAttribute("aria-live", "polite");
+
+  for (const field of fields) {
+    const value = card.loaded.values.get(field.id) ?? "";
+    const row = document.createElement("label");
+    row.className = "edit-row";
+
+    const label = document.createElement("span");
+    label.className = "edit-label";
+    label.textContent = field.name;
+    const type = document.createElement("i");
+    type.className = "edit-type";
+    type.textContent = field.type;
+    label.appendChild(type);
+    row.appendChild(label);
+
+    if (!EDITABLE_FIELD_TYPES.has(field.type)) {
+      const note = document.createElement("p");
+      note.className = "edit-readonly";
+      note.textContent =
+        `generated — its content lives in the generation cache, not on the card, ` +
+        `so there is nothing here to edit`;
+      row.appendChild(note);
+      body.appendChild(row);
+      continue;
+    }
+
+    const save = (next: string): void => {
+      void ask<"setField">({ kind: "setField", cardId: card.cardId, fieldId: field.id, value: next })
+        .then(() => {
+          status.textContent = `saved ${field.name}`;
+          status.classList.remove("bad");
+          // The card in front of him is NOT re-rendered. Re-mounting mid-edit
+          // would move the thing he is typing into; the change applies the next
+          // time the card is shown, and the status line says so.
+        })
+        .catch((cause: Error) => {
+          status.textContent = `${field.name}: ${cause.message}`;
+          status.classList.add("bad");
+        });
+    };
+
+    if (field.type === "boolean") {
+      // A checkbox, not a text box: `card_field_values.value` is TEXT and the
+      // importer writes "true"/"false", so a free-text box would happily store
+      // "maybe" and every gate in every template would read it as TRUE.
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.className = "edit-check";
+      box.checked = value.trim() !== "" && value.trim() !== "false";
+      box.addEventListener("change", () => save(box.checked ? "true" : "false"));
+      row.appendChild(box);
+    } else {
+      const area = document.createElement("textarea");
+      area.className = "edit-input";
+      area.value = value;
+      area.rows = value.includes("\n") ? 4 : 1;
+      area.spellcheck = false;
+      if (field.type === "number") area.inputMode = "numeric";
+      // On BLUR, not on every keystroke: a write per character would be ~1,777
+      // upserts for the longest field in the corpus, and each one is an OPFS
+      // write measured at 20-80 ms.
+      area.addEventListener("blur", () => {
+        if (area.value !== value) save(area.value);
+      });
+      row.appendChild(area);
+    }
+    body.appendChild(row);
+  }
+
+  body.appendChild(status);
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  layers.push({ root, mounted: null, prepared: null, cardId: card.cardId });
+  (body.querySelector(".edit-input, .edit-check") as HTMLElement | null)?.focus();
+}
+
+/** Mirrors the worker's `EDITABLE_TYPES`. Kept in sync by the worker REFUSING. */
+const EDITABLE_FIELD_TYPES = new Set(["plain", "text", "boolean", "number", "accent"]);
 
 async function boot(): Promise<void> {
   try {

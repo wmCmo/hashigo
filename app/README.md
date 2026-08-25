@@ -299,6 +299,45 @@ A link into a card this database does not have says so by id rather than showing
 an empty box — expected rather than exceptional, with 8,958 tombstones in the
 corpus.
 
+## `e` edits every field, from either mode (his request 3)
+
+*"whether the card is in the review mode or the pop up mode, you can press `e` for
+edit to edit each field of the card right away"*.
+
+**The editor is another LAYER**, which is what makes "from either mode" fall out
+instead of needing two implementations: the stack already knows what is on top, so
+`e` edits the previewed card when a preview is open and the review card otherwise.
+Escape peels it like anything else. Verified both ways — `e` in review opened the
+数字 card's three fields; `e` over a preview of a 単語 card stacked an editor on
+top of it showing all eleven.
+
+`notes/crud-audit.md` is why this was small: `card_field_values` is the one table
+the app already wrote end to end, so this is a UI over a proven path.
+
+**Three things it will not do, each for a measured reason:**
+
+* **`speech`, `translate` and `ai` fields are read-only, and it SAYS SO on
+  screen.** 19 such fields in the corpus, **zero non-empty values** — Mochi keeps
+  generated output in `component-cache` addressed by generation identity, so the
+  field's own value has always been empty. Typing into it would change nothing
+  visible and would put text where the renderer expects a marker. A control
+  disabled without a reason teaches him the app is broken.
+* **A `boolean` gets a CHECKBOX, not a text box.** `card_field_values.value` is
+  TEXT and the importer writes `"true"`/`"false"`; a free-text box would store
+  `"maybe"` and every `<<#Field>>` gate in every template would read it as true.
+* **It saves on BLUR, not per keystroke.** The longest field value in the corpus
+  is 1,777 characters and each save is an OPFS write measured at 20–80 ms.
+
+The worker validates independently of all that, because the field id arrives in a
+message and a misdirected write destroys data with no error: the field must be
+DECLARED on the card's own template — otherwise the edit creates one of the 235
+orphan values this corpus already carries, invisible because nothing renders it —
+and its type must be one whose stored value is the content.
+
+**The card in front of him is not re-rendered on save.** Re-mounting mid-edit
+would move the thing he is typing into; the change applies the next time the card
+is shown, and the status line says so.
+
 ## Found by his screenshot: the `<input>` widget is inert
 
 The 数字 template is `<< Voice >>` + `<input value=<<NoComma>>>` / `---` /
