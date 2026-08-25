@@ -318,4 +318,18 @@ His own words explaining WHY are not derivable from the code or from git.
   is being asked, a card that looks familiar and reads backwards is indistinguishable from
   one he has genuinely forgotten.
 
+
+- **THE FOURTEEN, 2026-08-23** — after being told the app was essentially finished:
+
+  > honestly, i haven't opened my phone yet, ive been using it on desktop, but man, there
+  > are like 100 things i wanna add, so now it's not about testing whether i like it,
+  > we're not even there yet
+
+  Full list, verbatim, in [notes/zach-wants.md](notes/zach-wants.md). **The mistake worth
+  not repeating: an agent measured "finished" against the six things he had mentioned
+  that morning, and mistook them for what he wanted.** He had not been asked. Six
+  requests volunteered on first sight of a running app are a reaction, not a
+  specification — and telling him to go validate it on his phone read as "stop asking for
+  things".
+
 ---

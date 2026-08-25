@@ -23,6 +23,18 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 
 ---
 
+> [!important] **READ [notes/zach-wants.md](notes/zach-wants.md) BEFORE ANYTHING ELSE.**
+> On 2026-08-23 an agent told him the app was "essentially finished". He answered with
+> **fourteen things off the top of his head** — a Notion-style card gallery, Ctrl+K
+> search, template editing, settings, undo, deck CRUD, mobile parity for every
+> operation. **The six requests earlier that day were not the specification**; they were
+> what came to mind the first time he saw it run. That file is what he wants, in his
+> words, and it reorders everything below.
+>
+> **The recurring principle in it is not one of the fourteen:** every 操作 available on
+> the desktop must be available on mobile. A keyboard shortcut is an accelerator, never
+> the only route.
+
 ## STATE RIGHT NOW — 2026-08-23, tree clean, THE APP RUNS
 
 **There is an app.** `app/` is a page, an OPFS database, audio on the device and grades
