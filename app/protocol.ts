@@ -110,6 +110,28 @@ export interface ResetMessage {
   readonly localReviews: number;
 }
 
+/**
+ * One card BY ID, for a preview layer — his request 2.
+ *
+ * Deliberately separate from `next`, which is session-bound. A preview is not a
+ * review (decision 30), so it takes no session state, advances nothing, and the
+ * worker does not care whether the card is due, archived or even in the plan.
+ */
+export interface PreviewRequest {
+  readonly kind: "preview";
+  readonly id: number;
+  readonly cardId: string;
+}
+
+export interface PreviewMessage {
+  readonly kind: "preview";
+  readonly id: number;
+  /** Null when the link points at a card this database does not have. */
+  readonly card: PreparedCard | null;
+  readonly deckPath: string;
+  readonly name: string;
+}
+
 /** Decision 17's archive, as JSON text, for the page to hand to a download. */
 export interface BackupRequest {
   readonly kind: "backup";
@@ -123,6 +145,7 @@ export type AppRequest =
   | AnswerRequest
   | ReadingRequest
   | BackupRequest
+  | PreviewRequest
   | ResetRequest;
 
 // ─── worker → page ───────────────────────────────────────────────────────────
@@ -233,6 +256,7 @@ export interface ErrorMessage {
 }
 
 export type AppMessage =
+  | PreviewMessage
   | ResetMessage
   | LogMessage
   | OpenedMessage
@@ -252,4 +276,5 @@ export interface ReplyFor {
   readonly reading: ReadingMessage;
   readonly backup: BackupMessage;
   readonly reset: ResetMessage;
+  readonly preview: PreviewMessage;
 }

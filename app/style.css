@@ -535,3 +535,113 @@ ruby rt:empty::after {
   font: inherit;
   padding: 14px 18px;
 }
+
+/* ── his request 2: preview layers, and they stack ──
+ *
+ * A PREVIEW IS NOT A REVIEW (decision 30): every side at once, fully revealed, no
+ * masks, no grading, nothing playing by itself. The visual job is only to say
+ * "this is on top of what you were doing, and you can get back".
+ */
+
+.layer {
+  inset: 0;
+  position: fixed;
+  z-index: 20;
+}
+
+/* Each layer dims again, so a stack of three is visibly deeper than one — which
+   is the affordance that tells him how far in he has gone. Deliberately not
+   opaque: seeing the card underneath is what makes this a layer and not a page. */
+.layer-backdrop {
+  background: rgb(0 0 0 / 55%);
+  inset: 0;
+  position: absolute;
+}
+
+.layer-panel {
+  background: var(--bg);
+  border: 1px solid var(--line-soft);
+  box-shadow: 0 18px 60px rgb(0 0 0 / 60%);
+  display: flex;
+  flex-direction: column;
+  /* Inset by a fixed amount per layer would be neater, but the stack is unbounded
+     (23 mutual link pairs in his corpus), so a per-layer offset would walk off the
+     screen. One geometry, and the deepening dim carries the depth instead. */
+  margin: 0 auto;
+  max-height: min(86vh, 900px);
+  max-width: 680px;
+  position: relative;
+  top: 50%;
+  transform: translateY(-50%);
+  width: calc(100% - 24px);
+}
+
+.layer-head {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  flex: none;
+  font-size: 12px;
+  gap: 12px;
+  justify-content: space-between;
+  letter-spacing: 0.06em;
+  padding: 12px 14px;
+  text-transform: uppercase;
+}
+
+.layer-close {
+  background: none;
+  border: 1px solid var(--edge);
+  color: var(--ink);
+  cursor: pointer;
+  flex: none;
+  font: inherit;
+  /* 40px: a thumb target, not a 12px glyph. He reviews one-handed. */
+  height: 40px;
+  width: 40px;
+}
+
+.layer-close:active {
+  background: #1b1d21;
+}
+
+.layer-body {
+  -webkit-overflow-scrolling: touch;
+  font-family: var(--jp), sans-serif;
+  overflow-y: auto;
+  padding: 18px 16px 24px;
+}
+
+.layer-missing {
+  color: var(--no);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* THE TWO OVERRIDES THAT MAKE IT A PREVIEW RATHER THAN A REVIEW.
+ *
+ * 1. Clozes are open and must not still be wearing the masked styling — the mask
+ *    span is display:none once revealed, but the dashed accent underline on the
+ *    answer would read as "still hidden".
+ * 2. The native <audio> control is SHOWN. In review it is hidden because the
+ *    renderer leaves media sourceless and a dead control is worse than none — but
+ *    here there is no reveal to hang playback on, and decision 30 says a clip
+ *    stays one deliberate tap away. The loop arms these, so a tap plays. */
+.layer .hashigo-cloze-answer {
+  color: var(--ink-bright);
+}
+
+.layer .hashigo-audio,
+.layer .hashigo-video {
+  display: block;
+  margin: 10px 0;
+  max-width: 100%;
+  width: 100%;
+}
+
+/* The review screen keeps scrolling underneath otherwise, which on a phone means
+   the card he is coming back to has moved. */
+body.layered {
+  overflow: hidden;
+}

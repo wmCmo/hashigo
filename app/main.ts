@@ -580,7 +580,17 @@ el("backup").addEventListener("click", () => void exportBackup());
 // `@media (hover:hover) and (pointer:fine)` in the stylesheet (decision 19: never
 // behind a hover affordance, and a phone has no hover).
 document.addEventListener("keydown", (event) => {
-  if (event.repeat || reviewView.hidden) return;
+  if (event.repeat) return;
+  // ESCAPE closes the top layer, and a layer swallows every other key. Without
+  // this, space would grade the card UNDERNEATH the preview he is reading.
+  if (layerHost.childElementCount > 0) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeTop();
+    }
+    return;
+  }
+  if (reviewView.hidden) return;
   const key = event.key.toLowerCase();
   if (key === " " || key === "enter") {
     event.preventDefault();
@@ -599,6 +609,10 @@ document.addEventListener(
   "click",
   (event) => {
     const target = event.target as HTMLElement | null;
+    // NOT from inside a layer. A preview's clozes are already open, and without
+    // this the click would reveal the REVIEW card sitting behind it — answering a
+    // question he has not been asked yet.
+    if (target?.closest(".layer") != null) return;
     if (target?.closest(`.${CLASS.cloze}`) === null || revealed) return;
     reveal();
   },
@@ -633,6 +647,170 @@ async function maybeReset(): Promise<boolean> {
   );
   return true;
 }
+
+
+// ─── his request 2: preview layers, and they STACK ──────────────────────────
+
+/**
+ * A PREVIEW IS NOT A REVIEW — decision 30, and it decides everything here.
+ *
+ * > showing a preview card is not the same as put the card into a review mode,
+ * > when you enter a review mode, everything goes as it is now, showing a
+ * > previewed card lets you view every sides at once
+ *
+ * So a layer renders every side at once, fully revealed, with no masks, no
+ * grading, and **nothing plays by itself**. A clip is one deliberate tap away, as
+ * it always is — which is why the native `<audio>` controls, hidden in review, are
+ * SHOWN in a layer: there is no reveal here to hang playback on.
+ *
+ * That also means a layer needs none of review's machinery. No `enter()` (which
+ * would ask the mode-2 question), no drill boundary, no one-clip arbitration —
+ * every side is unmasked with `{ silent: true }` and left alone.
+ *
+ * ─── THEY NEST, AND HIS OWN CORPUS SAYS THAT IS UNBOUNDED ───────────────────
+ *
+ * > when you click another link that's on the pop up modal, it opens another
+ * > layer on the top, and you can keep going in mochi, and i kinda like that
+ *
+ * Measured before building it: 8,744 links from 4,335 cards, the deepest acyclic
+ * chain is 9, and there are **23 MUTUAL pairs** — A links to B, B links back to A
+ * — so the stack can grow without bound on real data. No depth cap is imposed
+ * here, because the corpus does not impose one and a limit would be a decision
+ * nobody has made. What IS bounded is cost: each layer owns its mount and
+ * disposes it on close, so the audio controller and every object URL it minted go
+ * with it (`src/blobs/url.ts` rule 1 — the scope that mints revokes).
+ */
+interface Layer {
+  readonly root: HTMLElement;
+  readonly mounted: MountedCard<HTMLElement>;
+  readonly cardId: string;
+}
+
+const layerHost = el("layers");
+const layers: Layer[] = [];
+
+async function openPreview(cardId: string): Promise<void> {
+  const reply = await ask<"preview">({ kind: "preview", cardId });
+
+  const root = document.createElement("div");
+  root.className = "layer";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.setAttribute("aria-label", `preview: ${reply.name}`);
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  // Tap the dim to close the TOP layer, which is this one only while it is top.
+  backdrop.addEventListener("click", () => closeIfTop(root));
+  root.appendChild(backdrop);
+
+  const panel = document.createElement("div");
+  panel.className = "layer-panel";
+  root.appendChild(panel);
+
+  const head = document.createElement("div");
+  head.className = "layer-head";
+  const title = document.createElement("span");
+  title.textContent = reply.card === null ? "card not found" : `${reply.deckPath} · preview`;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "layer-close";
+  close.setAttribute("aria-label", "close this preview");
+  close.textContent = "✕";
+  close.addEventListener("click", () => closeIfTop(root));
+  head.append(title, close);
+  panel.appendChild(head);
+
+  const body = document.createElement("div");
+  body.className = "layer-body";
+  panel.appendChild(body);
+
+  if (reply.card === null) {
+    // 8,958 tombstones in this corpus, so a link into a deleted card is expected.
+    // Say which one, rather than showing an empty box.
+    const gone = document.createElement("p");
+    gone.className = "layer-missing";
+    gone.textContent = `${cardId} is not in this database — it was probably deleted in Mochi.`;
+    body.appendChild(gone);
+    layerHost.appendChild(root);
+    document.body.classList.add("layered");
+    return;
+  }
+
+  const mounted = mountPrepared<HTMLElement>(reply.card, {
+    document: browserDocument(document),
+    resolve: async (address) =>
+      (await ask<"payload">({ kind: "payload", cardId: reply.card!.cardId, address })).payload,
+  });
+
+  // Every side visible, every cloze open, and SILENT — decision 30's whole shape
+  // in three lines. `{ silent: true }` is what keeps it a preview rather than a
+  // reveal: unmask, do not sound.
+  for (const side of mounted.result.sides) side.element.hidden = side.empty;
+  for (const side of mounted.loop.sides) side.reveal("caller", { silent: true });
+
+  body.appendChild(mounted.result.root);
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  close.focus();
+
+  layers.push({ root, mounted, cardId });
+}
+
+function closeIfTop(root: HTMLElement): void {
+  if (layers.at(-1)?.root !== root) {
+    // Not the top layer. Removing it would strand everything above it, so the
+    // click does nothing — the same thing every stacked dialog does.
+    if (root.parentElement === layerHost && !layers.some((entry) => entry.root === root)) {
+      // A "card not found" layer, which carries no mount and is not on the stack.
+      root.remove();
+      if (layers.length === 0) document.body.classList.remove("layered");
+    }
+    return;
+  }
+  closeTop();
+}
+
+function closeTop(): void {
+  const top = layers.pop();
+  if (top === undefined) {
+    // The missing-card layer, which never joined the stack.
+    layerHost.lastElementChild?.remove();
+    if (layerHost.childElementCount === 0) document.body.classList.remove("layered");
+    return;
+  }
+  // Dispose BEFORE detaching: the mount releases its audio leases and revokes
+  // every object URL it minted, and a detached tree would still be holding them.
+  top.mounted.dispose();
+  top.root.remove();
+  if (layerHost.childElementCount === 0) document.body.classList.remove("layered");
+  const next = layers.at(-1);
+  (next?.root.querySelector(".layer-close") as HTMLElement | undefined)?.focus();
+}
+
+/**
+ * A card link opens a layer instead of navigating — his request 2, and the
+ * navigation is the part he is rejecting: *"it doesn't navigate away"*.
+ *
+ * Bound in the CAPTURE phase on the document so it catches links inside review
+ * AND inside any layer, which is what makes nesting fall out for free rather than
+ * needing per-layer wiring.
+ */
+document.addEventListener(
+  "click",
+  (event) => {
+    const anchor = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
+      `a.${CLASS.cardLink}`,
+    );
+    if (anchor === null || anchor === undefined) return;
+    const cardId = anchor.getAttribute("data-card-id");
+    if (cardId === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void openPreview(cardId);
+  },
+  true,
+);
 
 async function boot(): Promise<void> {
   try {

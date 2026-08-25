@@ -248,6 +248,57 @@ leaves the file — measured at 0.0 MiB of 639.0 MiB on Zach's own handset, and
 byte-for-byte the same on desktop. Anything that deletes audio must not be built
 on `unlink()`.
 
+## The card-link preview, and it STACKS (his request 2)
+
+A wiki-link opens a layer instead of navigating — *"it doesn't navigate away"* —
+and a link inside a layer opens another on top, *"and you can keep going in mochi,
+and i kinda like that system"*.
+
+**A preview is not a review (decision 30)**, which is what makes this small: every
+side at once, fully revealed, no masks, no grading, and nothing plays by itself.
+So a layer needs none of review's machinery — no `enter()` (which would ask the
+mode-2 question), no drill boundary, no one-clip arbitration. Every side is
+unmasked with `reveal(cause, { silent: true })` and left alone.
+
+Verified by driving it, four layers deep along a chain his corpus actually has:
+
+```plaintext
+open  hTFL12MG            depth 1   日本語/漢字 · preview
+click W39u5mf4            depth 2   English/Vocabulary · preview
+click X0JYAzzk            depth 3   English/Vocabulary · preview
+click 6XA87oSz            depth 4   English/Vocabulary · preview
+Escape ×4                 3 · 2 · 1 · 0     one layer at a time
+```
+
+The review card underneath is untouched throughout (`data-state` unchanged), and
+the body stops scrolling while a layer is open — otherwise the card he is coming
+back to has moved.
+
+**No depth cap.** His corpus has 8,744 links over 4,335 cards, a deepest acyclic
+chain of 9, and **23 MUTUAL pairs** — A links to B, B links back to A — so the
+stack is genuinely unbounded and a limit would be a decision nobody has made. What
+IS bounded is cost: each layer owns its mount and disposes it on close, so its
+audio controller and every object URL it minted go with it.
+
+Three details that came out of running it:
+
+* **The native `<audio>` control is SHOWN in a layer** and hidden in review. In
+  review the renderer leaves media sourceless and a dead control is worse than
+  none; in a preview there is no reveal to hang playback on, and decision 30 says
+  a clip stays one deliberate tap away. Measured: a preview opens with `0` plays
+  and the clip's state `idle`; a deliberate tap moves it to `missing` — the
+  resolver ran, the worker answered, and the clip is simply outside the 32 MiB
+  subset. The wiring is proven even where the bytes are not there.
+* **A layer swallows every key except Escape.** Without that, space would grade
+  the card underneath the preview he is reading.
+* **A click inside a layer does not reach the review card.** Its clozes are
+  already open, and the capture-phase reveal handler would otherwise answer a
+  question he has not been asked yet.
+
+A link into a card this database does not have says so by id rather than showing
+an empty box — expected rather than exceptional, with 8,958 tombstones in the
+corpus.
+
 ## Found by his screenshot: the `<input>` widget is inert
 
 The 数字 template is `<< Voice >>` + `<input value=<<NoComma>>>` / `---` /

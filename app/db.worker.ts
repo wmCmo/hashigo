@@ -50,6 +50,7 @@ import { buildSession, type ReviewSession } from "../src/session/index.js";
 
 import type {
   AnswerRequest,
+  PreviewRequest,
   ResetRequest,
   AppMessage,
   AppRequest,
@@ -337,6 +338,29 @@ async function reset(request: ResetRequest): Promise<void> {
   post({ kind: "reset", id: request.id, removed, localReviews });
 }
 
+/**
+ * One card by id, for a preview layer.
+ *
+ * A missing card is a REPLY, not an error: this corpus carries 8,958 tombstones,
+ * so a wiki-link into a card Mochi deleted is expected rather than exceptional and
+ * the page should say "that card is gone" rather than fail a boot.
+ *
+ * Always `forward`. A preview shows every side at once (decision 30), so the
+ * direction only permutes an order the reader can see all of anyway — and the
+ * AUTHORED order is the one that reads correctly.
+ */
+function preview(request: PreviewRequest): void {
+  const db = requireCards();
+  const card = prepareCard({ db, cardId: request.cardId, direction: "forward" });
+  post({
+    kind: "preview",
+    id: request.id,
+    card,
+    deckPath: card?.loaded.deckPath ?? "",
+    name: card?.loaded.name ?? request.cardId,
+  });
+}
+
 /** Decision 17's archive. Read-only; the page turns it into a file. */
 function backup(request: BackupRequest): void {
   const db = requireCards();
@@ -376,6 +400,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "backup":
           backup(request);
+          break;
+        case "preview":
+          preview(request);
           break;
         case "reset":
           await reset(request);
