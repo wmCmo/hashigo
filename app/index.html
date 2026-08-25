@@ -27,6 +27,21 @@
       <header>
         <span>梯子 · review</span>
         <span id="progress">—</span>
+        <!-- His request 4, and it sits INSIDE the header on purpose. Three
+             separately-sticky elements each claiming `top: 0` is how a header
+             ends up behind a banner — measured. One sticky thing, and the bar
+             rides its bottom edge, so there is no offset to keep in sync. -->
+        <div
+          id="progressbar"
+          class="progressbar"
+          role="progressbar"
+          aria-label="cards answered this session"
+          aria-valuemin="0"
+          aria-valuenow="0"
+          aria-valuemax="0"
+        >
+          <i id="progressfill"></i>
+        </div>
       </header>
 
       <main>

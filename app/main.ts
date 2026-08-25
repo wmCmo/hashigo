@@ -125,6 +125,8 @@ const deckLine = el("deck");
 const cardHost = el("cardhost");
 const hintLine = el("hint");
 const progressLabel = el("progress");
+const progressBar = el("progressbar");
+const progressFill = el("progressfill");
 const revealButton = el<HTMLButtonElement>("reveal");
 const forgotButton = el<HTMLButtonElement>("forgot");
 const rememberedButton = el<HTMLButtonElement>("remembered");
@@ -203,6 +205,16 @@ async function showNext(): Promise<void> {
     `${reply.progress.answered}/${reply.progress.planned}` +
     (reply.progress.reasksRemaining > 0 ? ` +${reply.progress.reasksRemaining}` : "");
 
+  // His request 4. The denominator is `planned` and NOT `planned + reasks`: a
+  // decision-13 re-ask is a card he already answered, so counting it would make
+  // the bar go BACKWARDS every time he forgets one. Re-asks are shown as the
+  // `+2` beside the count instead, where a growing number reads correctly.
+  const planned = Math.max(reply.progress.planned, 1);
+  const done = Math.min(reply.progress.answered, planned);
+  progressFill.style.width = `${((100 * done) / planned).toFixed(2)}%`;
+  progressBar.setAttribute("aria-valuenow", String(done));
+  progressBar.setAttribute("aria-valuemax", String(planned));
+
   if (reply.card === null) {
     releaseCard();
     reviewView.hidden = true;
@@ -261,6 +273,12 @@ async function showNext(): Promise<void> {
   deckLine.replaceChildren(document.createTextNode(reply.deckPath));
   if (reply.isNew) deckLine.appendChild(tag("new card", "newtag"));
   if (reply.reask) deckLine.appendChild(tag("again · not graded", "reasktag"));
+  // His request 6, and it is not decoration. A reversed track shows the SAME card
+  // with its sides permuted, so without the label a card that looks familiar and
+  // reads backwards is indistinguishable from one he has genuinely forgotten.
+  // 5,357 of his cards have reverse on (単語 and 漢字, all of them), so this is
+  // most of the corpus rather than an edge.
+  if (reply.card.direction === "reverse") deckLine.appendChild(tag("reversed", "reversetag"));
 
   readingButton.hidden = card.mode.readingFieldId === null;
   readingButton.textContent = card.mode.reading ? "Reading → false" : "Reading → true";
