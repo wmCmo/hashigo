@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { childrenOf, rootsOf, subtreeTotals, type TreeDeck } from "../app/deck-tree.js";
+import { isTypingTarget, survivesTyping } from "../app/keys.js";
 import {
   promptPositions,
   visiblePositions,
@@ -17,9 +18,10 @@ import {
  *
  * That is not evenly risky. A wrong colour is visible the moment he opens the page; a
  * wrong question boundary printed the answer above the question and was only caught
- * because a human was looking at the first card of a real session. So the two rules
- * pulled out of `main.ts` and pinned here are the two whose failure is SILENT:
+ * because a human was looking at the first card of a real session. So the rules pulled
+ * out of `main.ts` and pinned here are the ones whose failure is SILENT:
  *
+ *   keys.ts              is he typing? Shortcuts GRADED from the gallery filter box.
  *   review-boundary.ts   which sides are the question. Has been wrong in production.
  *   deck-tree.ts         a parent's totals, and the recursion that computes them.
  *
@@ -201,5 +203,61 @@ describe("the sidebar's deck tree", () => {
       deck("shared", "left", 10),
     ];
     expect(subtreeTotals(diamond, diamond[0]!).cards).toBe(13);
+  });
+});
+
+// ── the typing guard ──────────────────────────────────────────────────────────
+
+describe("the typing guard — the shortcut that must never fire while he types", () => {
+  /**
+   * The bug this pins: `a` archived, `d` prompted delete, and `j`/`f` GRADED, all
+   * while typing in the gallery filter box. Grades write a `reviews` row and advance
+   * the FSRS schedule, so this silently corrupted the study history from a search box.
+   *
+   * The reason it survived review is worth keeping next to the test: two of the three
+   * views DID guard their inputs, and `if (reviewView.hidden) return` looked like it
+   * covered the third — but the gallery is shown with `data-view` and CSS
+   * `display: none`, so the `hidden` PROPERTY was false the whole time.
+   */
+  it("blocks every text-entry element", () => {
+    expect(isTypingTarget({ tagName: "INPUT" })).toBe(true);
+    expect(isTypingTarget({ tagName: "TEXTAREA" })).toBe(true);
+    // A select eats letter keys to jump between options, so `a` in the gallery's sort
+    // dropdown must not archive a card either.
+    expect(isTypingTarget({ tagName: "SELECT" })).toBe(true);
+    expect(isTypingTarget({ tagName: "DIV", isContentEditable: true })).toBe(true);
+  });
+
+  it("allows the page's own elements, so the shortcuts still work", () => {
+    expect(isTypingTarget({ tagName: "BODY" })).toBe(false);
+    expect(isTypingTarget({ tagName: "BUTTON" })).toBe(false);
+    expect(isTypingTarget({ tagName: "SECTION" })).toBe(false);
+    expect(isTypingTarget({ tagName: "DIV", isContentEditable: false })).toBe(false);
+    // Nothing focused: the key belongs to the page. That is the normal case.
+    expect(isTypingTarget(null)).toBe(false);
+    expect(isTypingTarget(undefined)).toBe(false);
+  });
+
+  it("is case-insensitive about tagName, because not every source shouts", () => {
+    // `tagName` is upper-case on HTML elements, lower-case on XML/SVG ones. Reading
+    // the property rather than using `instanceof` is what makes this a real case.
+    expect(isTypingTarget({ tagName: "input" })).toBe(true);
+    expect(isTypingTarget({ tagName: "TextArea" })).toBe(true);
+  });
+
+  it("does NOT rely on instanceof, so a cross-realm element is still caught", () => {
+    // An element from an iframe fails every `instanceof HTMLInputElement` check
+    // against the parent realm's constructors. A plain object with a tagName stands
+    // in for exactly that: no prototype chain, still recognised.
+    const fromAnotherRealm = Object.create(null) as { tagName: string };
+    fromAnotherRealm.tagName = "INPUT";
+    expect(isTypingTarget(fromAnotherRealm)).toBe(true);
+  });
+
+  it("lets Escape through and nothing else, because Escape closes what he is typing in", () => {
+    expect(survivesTyping("Escape")).toBe(true);
+    for (const key of ["a", "d", "j", "f", "e", " ", "Enter", "ArrowRight", "/"]) {
+      expect(survivesTyping(key), `${key} must not survive a text field`).toBe(false);
+    }
   });
 });

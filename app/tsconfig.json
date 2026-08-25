@@ -19,5 +19,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["env.d.ts", "protocol.ts", "main.ts", "db.worker.ts", "deck-tree.ts", "review-boundary.ts"]
+  "include": ["env.d.ts", "protocol.ts", "main.ts", "db.worker.ts", "deck-tree.ts", "review-boundary.ts", "keys.ts"]
 }

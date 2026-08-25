@@ -73,6 +73,7 @@ import type { ShadowingSide } from "../src/render/reveal.js";
 // The two extracted rules. Import-free modules so `test/` can reach them; see
 // `test/app-logic.test.ts` and the headers of both files.
 import { childrenOf as treeChildrenOf, subtreeTotals } from "./deck-tree.js";
+import { isTypingTarget, survivesTyping, type KeyTarget } from "./keys.js";
 import {
   promptPositions as promptBoundary,
   visiblePositions,
@@ -664,8 +665,9 @@ document.addEventListener("keydown", (event) => {
 
   // His #3 and #13, and both are global: they work over a layer, over the
   // gallery, and mid-review, because that is what a palette and an undo are for.
-  const typing =
-    event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
+  // `./keys.js` owns this, over `tagName` rather than `instanceof`, so it is testable
+  // in Node and survives a cross-realm element. See that file's header.
+  const typing = isTypingTarget(event.target as KeyTarget | null);
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();
     openPalette();
@@ -676,6 +678,35 @@ document.addEventListener("keydown", (event) => {
     void runUndo();
     return;
   }
+
+  // ── TYPING MUST NEVER GRADE, ARCHIVE, OR DELETE ──
+  //
+  // Every branch below this point is a single-key review shortcut, and until this
+  // guard existed they all fired while he was typing in the GALLERY FILTER BOX.
+  //
+  // The reason it was not obvious: two of the three views DO guard their inputs (the
+  // layer branch checks `e`, the sidebar branch returns on an HTMLInputElement), and
+  // `if (reviewView.hidden) return` looks like it covers the rest. It does not. The
+  // gallery is shown by `data-view="gallery"` on the body and hidden in CSS
+  // (`body[data-view="gallery"] .review { display: none }`), so `reviewView.hidden`
+  // is FALSE the whole time the gallery is up — the `hidden` property is only ever
+  // touched for the boot/no-cards state.
+  //
+  // So typing a deck name into the filter did this, per keystroke:
+  //   a  ->  archived the review card behind the gallery
+  //   d  ->  opened the delete-confirm for it
+  //   j  ->  graded it REMEMBERED, if it had been revealed
+  //   f  ->  graded it FORGOT
+  //   space/enter -> revealed it, which is what made j and f live
+  // Typing "japanese" was an archive and a grade. Grades write a `reviews` row and
+  // advance the FSRS schedule, so this corrupted the study history it exists to
+  // protect, silently, from a search box.
+  //
+  // Escape is deliberately still allowed through: it closes the thing he is typing
+  // in, which is the one key that must work from inside a text field. The ctrl/meta
+  // combos above are also intentionally before this — ctrl+K over a filter box is a
+  // reasonable thing to press, and ctrl+Z already checks `typing` itself.
+  if (typing && !survivesTyping(event.key)) return;
   // ESCAPE closes the top layer, and a layer swallows every other key. Without
   // this, space would grade the card UNDERNEATH the preview he is reading.
   if (layerHost.childElementCount > 0) {
