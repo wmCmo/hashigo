@@ -693,6 +693,42 @@ right**: it holds his verbatim reasoning and this quotes it.
    review-mode key, and the edit surface is reachable from both. That is the one thing the
    split does NOT separate.
 
+31. **Proceed without asking.** Decided 2026-08-23, in the middle of being asked one
+   question too many:
+
+   > why do you have to wait for my goal every time, waiting for my go and asking me
+   > wastes more token than proceeding on your own
+
+   **This extends decision 24 from COMMITTING to DECIDING.** That one settled that an
+   agent does not ask permission to commit; this settles that it does not ask permission
+   to act. The default is to act.
+
+   **The economics are the argument and they are not subtle.** A round trip costs him
+   tokens to read the question, tokens to answer it, and tokens for the agent to re-state
+   the plan before doing the thing — for an answer that is usually "yes, obviously". He
+   raised this while on a weekly limit, which is the condition that makes the waste
+   visible rather than merely annoying.
+
+   **The line, because "never ask" would be the wrong lesson:**
+
+   ```plaintext
+   ACT      anything derivable from his TEMPLATE, from a MEASUREMENT, or from a
+            decision already in this file. Implementation, structure, naming, tests,
+            fixes to defects, and how a settled decision gets built.
+   ASK      taste about the screen he lives in, and anything that changes WHAT HE IS
+            DRILLED ON — because that is his study, not the app's behaviour.
+   ```
+
+   **The case that produced it is the model.** He asked whether his 数字 clip should play
+   on the first side. His template puts `<< Voice >>` there as the only content of the
+   side, and the side rendered blank and silent — so the template and a measurement both
+   answered it, and asking him to confirm was pure cost. The right move was to fix it and
+   say so.
+
+   **The failure mode this replaces is not caution, it is deference wearing caution's
+   clothes.** An agent that asks has not reduced the risk of being wrong; it has moved
+   the work of being right onto him, and charged him for the move.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

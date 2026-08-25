@@ -290,6 +290,12 @@ export function mountPrepared<E extends RenderElement>(
 
   const loop = shadowingLoop<E>(result, { audio });
   const mode = prepared.mode;
+  // Widgets per AUTHORED side index, for `promptsOnEntry`'s second arm — a side
+  // that says "produce your answer here" makes whatever is sounding the question.
+  const widgetsBySide = new Map<number, number>();
+  for (const widget of result.widgets) {
+    widgetsBySide.set(widget.side, (widgetsBySide.get(widget.side) ?? 0) + 1);
+  }
   // One question per entry. The policy lives here rather than in `prompt()` so
   // that `src/render/reveal.ts` stays a mechanism with no memory of modes.
   const asked = new Set<number>();
@@ -305,7 +311,10 @@ export function mountPrepared<E extends RenderElement>(
     enter(position: number): ShadowingSide<E> | null {
       const side = loop.enter(position);
       if (side === null) return null;
-      if (promptsOnEntry(mode.mode, side) && !asked.has(position)) {
+      if (
+        promptsOnEntry(mode.mode, side, widgetsBySide.get(side.index) ?? 0) &&
+        !asked.has(position)
+      ) {
         asked.add(position);
         side.prompt();
       }

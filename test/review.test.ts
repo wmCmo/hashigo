@@ -454,6 +454,111 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
     }
   });
 
+  it("数字 ASKS on entry — its clip is the question and a widget says so", () => {
+    // ZACH CAUGHT THIS, 2026-08-23, by asking why his 数字 deck looked reversed.
+    // His template is `<< Voice >>` + `<input value=<<NoComma>>>` / `---` /
+    // `<< Number >>`: hear a number, TYPE it, then see it. The clip never played,
+    // because the identify arm requires an `accent` field — a fact about 単語 and
+    // 言葉 encoded as if it were a rule.
+    //
+    // MEASURED BEFORE THE FIX: the question side rendered an empty input, no text
+    // and no sound. Ninety cards whose prompt was a blank screen.
+    const { db, store, close } = openCorpus();
+    try {
+      const ids = (
+        db
+          .prepare(
+            `SELECT c.id FROM cards c JOIN templates t ON t.id = c.template_id
+              WHERE t.name = '数字' AND c.archived = 0 ORDER BY c.id`,
+          )
+          .all() as { id: string }[]
+      ).map((r) => r.id);
+      // 78, not 90: twelve 数字 cards are ARCHIVED, and the queue excludes those
+      // (`src/scheduler/queue.ts`), so they are excluded here too.
+      expect(ids).toHaveLength(78);
+
+      let asked = 0;
+      let played = 0;
+      let answerShown = 0;
+      let widgets = 0;
+      for (const cardId of ids) {
+        const rec = recorder();
+        const card = mountCard<MemoryElement>({
+          db,
+          cardId,
+          document: memoryDocument(),
+          store,
+          playable: rec.playable,
+        });
+        if (card === null) continue;
+        // It is NOT in the pitch-accent drill and must not be dragged into it:
+        // 数字 declares no accent field, so the mode stays `produce`. The widget
+        // arm is what fires, and it is deliberately mode-blind.
+        expect(card.mode.mode).toBe("produce");
+        expect(card.mode.accentDrill).toBe(false);
+
+        const first = card.result.sides.filter((side) => !side.empty)[0]!;
+        widgets += card.result.widgets.filter((w) => w.side === first.index).length;
+        card.enter(first.position);
+        if (card.loop.log.some((e) => e.kind === "prompt")) asked += 1;
+        played += rec.plays.length;
+        // And the ANSWER — the number, on the next side — is untouched by asking.
+        for (const side of card.loop.sides) {
+          if (side.position === first.position) continue;
+          if (side.revealed) answerShown += 1;
+        }
+        card.dispose();
+      }
+      // eslint-disable-next-line no-console
+      console.log(
+        `数字, all ${ids.length}: ${asked} asked · ${played} play() calls · ` +
+          `${widgets} widgets on question sides · ${answerShown} answers wrongly shown`,
+      );
+      expect(asked).toBe(ids.length);
+      expect(widgets).toBe(ids.length);
+      expect(answerShown).toBe(0);
+      // The pairing: it really sounds, it is not merely "asked".
+      expect(played).toBeGreaterThan(0);
+    } finally {
+      close();
+    }
+  });
+
+  it("promptsOnEntry is mode-blind on the widget arm, and audio-gated on both", () => {
+    // The arm has no mode gate ON PURPOSE — 数字 is `produce` — so this states the
+    // contract directly rather than only through the corpus. A widget means
+    // "produce your answer here", so whatever sounds beside it is the question by
+    // construction, and there is nothing on the side that could be the answer.
+    const { db, store, close } = openCorpus();
+    try {
+      const [cardId] = (
+        db
+          .prepare(
+            `SELECT c.id FROM cards c JOIN templates t ON t.id = c.template_id
+              WHERE t.name = '数字' ORDER BY c.id LIMIT 1`,
+          )
+          .all() as { id: string }[]
+      ).map((r) => r.id);
+      const card = mountCard<MemoryElement>({
+        db,
+        cardId: cardId!,
+        document: memoryDocument(),
+        store,
+      })!;
+      const side = card.loop.sides.find((s) => s.audio.length > 0)!;
+      expect(promptsOnEntry("produce", side, 1)).toBe(true);
+      expect(promptsOnEntry("identify", side, 1)).toBe(true);
+      // No widget, no cloze, `produce` — the 敬語 / New Vocab shape, still silent.
+      expect(promptsOnEntry("produce", side, 0)).toBe(false);
+      // And nothing plays where there is nothing to play.
+      const silent = card.loop.sides.find((s) => s.audio.length === 0)!;
+      expect(promptsOnEntry("identify", silent, 5)).toBe(false);
+      card.dispose();
+    } finally {
+      close();
+    }
+  });
+
   it("the mode split over the whole corpus is 692 produce / 3,177 identify", () => {
     // The two numbers decision 29 rests on, regenerated from the database rather
     // than repeated. Everything outside the pitch-accent drill is `produce`,

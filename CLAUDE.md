@@ -388,6 +388,16 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     always is. **Review mode is UNCHANGED**, which also ratifies the progressive-sides
     reading the app already ships. See `DECISIONS.md` 30.
 
+31. **PROCEED WITHOUT ASKING. Asking costs more than doing.** Zach, 2026-08-23:
+    *"why do you have to wait for my goal every time, waiting for my go and asking me
+    wastes more token than proceeding on your own"*. This EXTENDS decision 24 from
+    committing to deciding. **The default is to act.** Ask only when the answer cannot
+    be derived from his template, a measurement, or a decision already recorded here —
+    and remember that his template answers most of it (see "READ THE TEMPLATE").
+    A question that costs him a round trip to say "yes, obviously" was not worth asking.
+    **What is still his:** taste about the screen he lives in, and anything that changes
+    what he is DRILLED on. See `DECISIONS.md` 31 for the line.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19

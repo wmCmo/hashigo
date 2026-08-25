@@ -166,13 +166,68 @@ export function reviewModeFor(loaded: LoadedCard): ReviewMode {
 /**
  * Does entering this side ask its question out loud?
  *
- * Only in `identify` mode, and only where something on the side is MASKED — see
- * the last section of this file's header. A side with nothing hidden gets the
- * deliberate gesture it has always had.
+ * TWO ways to qualify, and they are independent. A side with audio and neither
+ * gets the deliberate gesture it has always had.
+ *
+ * ─── 1. THE MASKED ARM: `identify` mode, and a cloze on the side ────────────
+ *
+ * Decision 29. The word is hidden and the clip is the question. Gated on the
+ * mode, because on a `produce` card the same shape means the opposite.
+ *
+ * ─── 2. THE WIDGET ARM, AND IT IS NOT GATED ON THE MODE AT ALL ──────────────
+ *
+ * **Zach caught this on 2026-08-23 and he was right.** His 数字 template is
+ *
+ *     << Voice >>
+ *     <input value=<<NoComma>>>
+ *     ---
+ *     << Number >>
+ *
+ * — hear a number, TYPE it, then see it. The clip is unambiguously the question,
+ * and it never played, because arm 1 requires `identify` and `identify` requires
+ * the template to declare an `accent` field. **That was a fact about 単語 and 言葉
+ * encoded as if it were a rule**, and it is the hardcoding he asked about: not a
+ * side index — `promptsOnEntry` has always been per-side — but an assumption that
+ * the pitch-accent drill is the only place audio can be a question.
+ *
+ * What it cost, measured before the fix: the 数字 question side rendered an empty
+ * input, no text and no sound. **Ninety cards whose prompt was a blank screen.**
+ *
+ * A WIDGET is the signal, and it is a better one than "the side shows no text"
+ * would be. `<input>` and `<draw>` mean *produce your answer here*, so whatever
+ * is sounding beside them is the question by construction — there is nothing on
+ * the side that could be the answer, because the answer is the thing he is being
+ * asked to make. That is why this arm needs no mode gate and cannot leak.
+ *
+ * Measured over every template's question side, which is what makes this precise
+ * rather than plausible:
+ *
+ *     template     cards  audio  cloze  widget  shows            arm
+ *     単語          3,477      1      2       0  型 + masks        1 (identify only)
+ *     漢字          1,662      0      0       0  the kanji         —
+ *     New Vocab    1,203      1      0       0  "strife"          — the word is RIGHT THERE
+ *     基本情報        471      0      3       0  masked text       —
+ *     言葉            392      1      1       0  型 + mask         1
+ *     数字             90      1      0       1  NOTHING           2
+ *     敬語             21      1      0       0  "会社"            — the word is RIGHT THERE
+ *
+ * 数字 is the only template on either side of that line, and 敬語 and New Vocab —
+ * the two this file has always protected, because they show the head word beside
+ * its clip — are untouched: neither has a widget.
  */
 export function promptsOnEntry<E extends RenderElement>(
   mode: ReviewMode,
   side: ShadowingSide<E>,
+  /**
+   * Widget mounts (`<input>`, `<draw>`) on this side. The caller counts them,
+   * because `ShadowingSide` deliberately carries only what the reveal loop needs
+   * and a widget is not that. Defaults to 0, so a caller that does not know
+   * cannot accidentally start playing.
+   */
+  widgets = 0,
 ): boolean {
-  return mode === "identify" && side.trigger === "cloze" && side.audio.length > 0;
+  if (side.audio.length === 0) return false;
+  const masked = mode === "identify" && side.trigger === "cloze";
+  const producesHere = widgets > 0;
+  return masked || producesHere;
 }

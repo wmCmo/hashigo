@@ -284,6 +284,20 @@ His own words explaining WHY are not derivable from the code or from git.
   without asking. Full reasoning in `DECISIONS.md` 30. **The pattern is his usual one: the
   pushback was a reframe, not a preference.**
 
+  **AND HE ENDED THE ASKING, 2026-08-23 — decision 31.** After being asked to confirm
+  something his own template already answered:
+
+  > why do you have to wait for my goal every time, waiting for my go and asking me
+  > wastes more token than proceeding on your own
+
+  It extends decision 24 from committing to DECIDING: the default is to act. Ask only
+  where the answer cannot come from his template, a measurement, or a recorded decision —
+  and his template answers most of it. **What stays his: taste about the screen, and
+  anything that changes what he is DRILLED on.** The failure mode this replaces is not
+  caution; it is deference wearing caution's clothes — an agent that asks has not become
+  less likely to be wrong, it has moved the work of being right onto him and charged him
+  for the move.
+
   **(6) is not decoration.** A reversed track shows the same card with the sides permuted,
   and on this corpus that changes which side is the question — the reason the review
   screen's prompt boundary had to become positional. If he cannot see which direction he
