@@ -2007,7 +2007,16 @@ function openDeckMenu(deck: DeckBrief, anchor: HTMLElement): void {
             pushUndo({
               describe: reply.describe,
               run: async () => {
-                await ask<"deckOp">({ kind: "deckOp", op: undo.op, deckId: undo.deckId });
+                // `cardIds` carries the exact rows the operation flipped, so a deck
+                // archive undoes to the state it found rather than to `archived = 0`
+                // across the whole subtree. Dropping it here silently reintroduces
+                // the bug — 234 cards in the corpus are archived individually.
+                await ask<"deckOp">({
+                  kind: "deckOp",
+                  op: undo.op,
+                  deckId: undo.deckId,
+                  ...(undo.cardIds === undefined ? {} : { cardIds: undo.cardIds }),
+                });
                 await refreshAfterOp();
               },
             });

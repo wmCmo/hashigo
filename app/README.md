@@ -416,8 +416,12 @@ but it is unrequested scope, so it is written down rather than built.
 
 ## What is NOT here yet
 
-* **Sync (stage 11) and the editor (stage 10).** The `Reading` toggle is the one
-  editor-shaped thing the shell has, and only because decision 29's audit loop
+* **Sync (stage 11), and the REST of the editor (stage 10).** Field editing SHIPS —
+  `e` opens it from review or from a preview and writes through `setField` (see the
+  layer section above, which contradicted this line until 2026-08-26). What stage 10
+  still owes is template and field editing (his #11) and deck CRUD (his #14). The
+  `Reading` toggle was the FIRST editor-shaped thing the shell had, because decision
+  29's audit loop
   dies without it.
 * **A service worker / manifest.** `spike/persist/` has a working pair and
   persistence was granted there on his handset **in a plain browser tab, not

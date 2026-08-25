@@ -48,7 +48,8 @@ question); exactly one clip per reveal, or 単語 sounds its word and its exampl
 at once; and a reverse identify track is silent on entry, which is CORRECT because the
 clip is the answer there.
 
-Two things that are built and do NOTHING, which is the opposite trap to rebuilding:
+Things that are built and do NOTHING, which is the opposite trap to rebuilding
+(the list grows; it is deliberately not numbered in the heading):
 
 * **`かな主流` renders on ZERO cards — and the FIRST diagnosis of this was wrong.**
   Corrected by a peer review 2026-08-23, verified before recording. **All six
@@ -74,7 +75,11 @@ Two things that are built and do NOTHING, which is the opposite trap to rebuildi
 * **The UI half of decision 17's backup — DONE 2026-08-23.** `app/` carries the
   non-dismissible banner when `persisted()` is false and the one-tap export, asking for
   persistence from the WINDOW because `navigator.storage.persist` is absent in a worker.
-  **Still missing: detecting an eviction that already happened.** The "add to home
+  **Eviction detection shipped too** (b308861), and was verified against a REAL wipe
+  rather than reasoned about — the receipt lives in `localStorage`, not in the database,
+  because a receipt inside the thing that went missing proves nothing. Seen working
+  2026-08-26: *"The database was gone (receipt from ...), but it held 0 local reviews."*
+  It cannot detect a full site-data clear, which takes the receipt too. The "add to home
   screen" prompt dropped in priority — persistence was granted on his handset in a
   plain browser tab, not installed.
 
@@ -119,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 26 files, 794 passed, 1 skipped (the FSRS refit, gated). ~90 s.
+npm test                # 27 files, 803 passed, 1 skipped (the FSRS refit, gated). ~90 s.
                         # STILL EXITS 1 ON A FULLY PASSING RUN. Use `npm run gates`,
                         # which reads the RESULT instead of the exit code.
                         # THE CAUSE WAS MISDIAGNOSED HERE FOR MONTHS, and the old text
@@ -451,7 +456,7 @@ built by `scripts/mockup-html.ts`, not by the template engine, so its always-vis
 word does not exist in the real render. Do not treat the mockup as a spec for structure —
 it is a spec for the LOOK (decision 23).
 
-## Three things he has already answered — DO NOT ASK AGAIN
+## Things he has already answered — DO NOT ASK AGAIN
 
 He has repeated each of these to a different agent, and the count is his:
 
@@ -462,9 +467,12 @@ He has repeated each of these to a different agent, and the count is his:
    regenerating clips, do not price it, do not treat `other-voice` clips or the missing
    ones as a task. **AND THE CONSEQUENCE AGENTS KEEP MISSING:** he is still reviewing in
    Mochi daily, so the review history in `build/hashigo.db` is FROZEN — the newest review
-   is **2026-08-18**. Every due-queue figure in this repo (443 due, the 10 new, the
-   forecast) is a snapshot of a stale history and **will change at the final import**
-   (decision 16). Quote those numbers as "as of the 2026-08-18 export", never as current.
+   is **2026-08-18**. Every due-queue figure in this repo is a snapshot and **will
+   change at the final import** (decision 16). Quote them as "as of <date>", never as
+   current. **TWO mechanisms move them and this file used to name only the first:** the
+   frozen history, and the fact that DUE GROWS EVERY DAY as scheduled dates pass. The
+   second is faster. Measured 2026-08-26: the old "443 due" figure is now **646**, with
+   no import and no grading in between.
 3. **Open-sourcing gets discussed AFTER development** — told to three agents. Not now.
    `notes/open-sourcing.md` holds what was already checked; leave it there.
 4. **HE USES IT ON BOTH — laptop AND phone** — told to two agents. *"on my laptop

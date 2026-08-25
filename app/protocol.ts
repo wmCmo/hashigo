@@ -152,7 +152,7 @@ export interface CardOpMessage {
 }
 
 /** Deck operations — his #14, and the answer to #8. */
-export type DeckOp = "archive" | "unarchive" | "rename" | "create" | "delete";
+export type DeckOp = "archive" | "unarchive" | "rename" | "create" | "delete" | "restoreArchive";
 
 export interface DeckOpRequest {
   readonly kind: "deckOp";
@@ -163,6 +163,8 @@ export interface DeckOpRequest {
   readonly name?: string;
   /** `create` only; null makes a top-level deck. */
   readonly parentId?: string | null;
+  /** `restoreArchive` only: the exact rows a previous archive/unarchive flipped. */
+  readonly cardIds?: readonly string[];
 }
 
 export interface DeckOpMessage {
@@ -171,7 +173,24 @@ export interface DeckOpMessage {
   readonly op: DeckOp;
   readonly deckId: string;
   readonly describe: string;
-  readonly undo: { readonly op: DeckOp; readonly deckId: string; readonly name?: string } | null;
+  readonly undo: {
+    readonly op: DeckOp;
+    readonly deckId: string;
+    readonly name?: string;
+    /**
+     * The cards this operation ACTUALLY CHANGED, for `restoreArchive`.
+     *
+     * An archive used to undo by running its inverse over the whole deck, which is
+     * not an undo — it is a second, different write. 234 cards in the corpus are
+     * archived individually, and one ctrl+Z after an accidental deck archive
+     * un-archived every one of them with no way back.
+     *
+     * So the op records the exact rows whose `archived` flag it flipped, and the
+     * undo restores only those. Cards that were already archived are never touched,
+     * because they were never changed.
+     */
+    readonly cardIds?: readonly string[];
+  } | null;
 }
 
 /**

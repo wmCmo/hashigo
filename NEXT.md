@@ -51,7 +51,7 @@ npm run app:dev -- --host ::              # phone / tunnel
 
 Gates: run **`npm run gates`** — one command, all seven, cheapest first, and a verdict
 that means what it says. `app:build` is new and was covered by nothing: `app:check` is
-`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 26 files / 794
+`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 27 files / 803
 passed / 1 skipped** (~97 s) · `npm run typecheck` → 0 · **`npm run app:check` → 0** ·
 `npm run build` → OK, 77 modules, 27 export subpaths · `npm run spike:check` → 0 ·
 `blobs … paths` → 0.
@@ -75,14 +75,15 @@ segfault. `npm test` alone must still not be chained on.
 
 ### CONFIRMED LIVE BUGS IN `app/db.worker.ts` — measured 2026-08-26, NOT fixed
 
-Found by an adversarial audit of `app/`, which has no integration tests. Every line
+**THREE OF THESE ARE NOW FIXED** (1, 2, 3 — see `git log` and `app/deck-scope.ts`,
+which is the seam that made them testable). The rest stand. Every line
 below was re-measured against `build/hashigo.db` before being written here. **Three
 were fixed** (the typing guard, the due-date timezone, and the gallery's misnamed sort
 value — see `git log`); these are the ones left, and they are left because each needs a
 decision about intended behaviour rather than a corrected predicate. Do not treat this
 list as speculative: the numbers are real.
 
-**1. Archiving a deck archives only the deck's OWN cards, and reports success anyway.**
+**1. FIXED 2026-08-26. Archiving a deck archived only the deck's OWN cards, and reported success anyway.**
 `app/db.worker.ts:488` — `UPDATE cards SET archived = ? WHERE deck_id = ?`, no descent
 into sub-decks, then `describe = "archived <name> and its cards"`.
 
@@ -99,7 +100,7 @@ honour the deck flag** — `src/scheduler/queue.ts` filters `c.archived = 0` on 
 only, and nothing reads `decks.archived` (`notes/zach-wants.md` says nothing reads or
 writes it; the app now WRITES it, so that note is stale in one direction).
 
-**2. Undo of a deck archive INVERTS rather than RESTORES, and 234 cards are exposed.**
+**2. FIXED 2026-08-26. Undo of a deck archive INVERTED rather than RESTORED, exposing 234 cards.**
 `app/db.worker.ts:491` records `undo = {op: "unarchive", deckId}`, which runs
 `UPDATE cards SET archived = 0 WHERE deck_id = ?` over every card in the deck. So one
 ctrl+Z after an accidental deck archive erases every per-card archive decision in that
@@ -107,7 +108,7 @@ deck. **234 cards in the corpus are archived individually** and there is no in-a
 back — the undo stack holds one entry and it is the thing that did the damage. A
 correct undo has to record the prior per-card state, not the inverse operation.
 
-**3. Clicking a parent deck opens an EMPTY gallery.** `app/db.worker.ts:718` and `:730`
+**3. FIXED 2026-08-26. Clicking a parent deck opened an EMPTY gallery.** `app/db.worker.ts:718` and `:730`
 filter `c.deck_id = ?` exactly, and `:761` filters search hits by
 `hit.deckId === request.deckId`. The sidebar badge is a SUBTREE total (that is the
 whole point of `app/deck-tree.ts`), so English shows "1258" and opens 0 cards, 日本語
@@ -389,7 +390,7 @@ him to re-decide something** — check `CLAUDE.md` "Decisions that are settled" 
 **Stage 6 — the scheduler — landed 2026-08-22.** `src/scheduler` grades a track, advances
 its FSRS-6 state and answers what is due. `src/scheduler/README.md` has the four things
 worth knowing before changing it; CLAUDE.md has the three that would have been
-whole-subsystem defects if guessed. Today's queue is **443 due, 328 of them overdue,
+whole-subsystem defects if guessed. The queue **as of 2026-08-22** was **443 due, 328 of them overdue,
 3,980 new** — `npx vite-node src/scheduler/cli.ts -- counts --db build/hashigo.db`.
 
 ### The composed audio pipeline is now pinned at corpus scale
@@ -883,7 +884,7 @@ statement makes `pauseVfs()` throw.
 | **the card mount, and the first real-browser evidence for the shipping reveal loop** | `src/review/README.md` |
 | **decision 17's backup: what it archives, and why not the database file** | `src/backup/README.md` |
 | **the chosen review-screen direction, and why** | `DECISIONS.md` decision 23 — the mockup at `/mock/` is a spec for the LOOK only; the built screen is `app/` |
-| what a fresh session must know | `CLAUDE.md` — auto-loads, and the 29 decisions as a one-line index |
+| what a fresh session must know | `CLAUDE.md` — auto-loads, and the 31 decisions as a one-line index |
 | **why a decision is what it is** | `DECISIONS.md` — the full derivations, split out of CLAUDE.md 2026-08-22 |
 | a point-in-time report, treated as a sample | `notes/archive/` — and its `README.md` first |
 | what to do next, in dependency order | `NEXT.md` |

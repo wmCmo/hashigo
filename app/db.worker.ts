@@ -49,11 +49,14 @@ import { prepareCard } from "../src/review/index.js";
 import { buildSession, type ReviewSession } from "../src/session/index.js";
 import { searchCards } from "../src/search/index.js";
 
+import { archiveSubtree, restoreArchive, scopeToSubtree } from "./deck-scope.js";
+
 import type {
   AnswerRequest,
   BrowseRequest,
   CardOpRequest,
   CreateCardRequest,
+  DeckOpMessage,
   DeckOpRequest,
   DecksRequest,
   PreviewRequest,
@@ -459,8 +462,10 @@ function cardOp(request: CardOpRequest): void {
 function deckOp(request: DeckOpRequest): void {
   const db = requireCards();
   let describe = "";
-  let undo: { op: "archive" | "unarchive" | "rename" | "create" | "delete"; deckId: string; name?: string } | null =
-    null;
+  // Taken from the message type rather than restated, so a new DeckOp cannot be
+  // added here and forgotten there. The duplicated union is how `restoreArchive`
+  // first failed to compile.
+  let undo: DeckOpMessage["undo"] = null;
   let deckId = request.deckId;
 
   if (request.op === "create") {
@@ -480,15 +485,35 @@ function deckOp(request: DeckOpRequest): void {
       case "archive":
       case "unarchive": {
         const to = request.op === "archive" ? 1 : 0;
-        // The deck AND its cards. The queue filters on the card, so marking only
-        // the deck would archive nothing he can see — two predicates that
-        // disagree is worse than one that is blunt.
+        // The deck AND its cards, THROUGH THE WHOLE SUBTREE. The queue filters on
+        // the card, so marking only the deck would archive nothing he can see —
+        // two predicates that disagree is worse than one that is blunt.
+        //
+        // It used to say `WHERE deck_id = ?`, the deck's OWN cards only, while
+        // reporting "and its cards". Measured: 日本語 owns 3 of the 5,947 in its
+        // subtree and English owns 0 of 1,258, so archiving either did essentially
+        // nothing and said it worked. His #8 is exactly this operation.
+        let result = { deckIds: [] as string[], changed: [] as string[] };
         db.transaction(() => {
-          db.prepare("UPDATE decks SET archived = ? WHERE id = ?").run(to, deckId);
-          db.prepare("UPDATE cards SET archived = ? WHERE deck_id = ?").run(to, deckId);
+          result = archiveSubtree(db, deckId, to);
         })();
-        describe = `${request.op}d ${deck.name} and its cards`;
-        undo = { op: request.op === "archive" ? "unarchive" : "archive", deckId };
+        const { deckIds, changed } = result;
+        const subdecks = deckIds.length === 1 ? "" : ` and ${deckIds.length - 1} subdeck(s)`;
+        describe = `${request.op}d ${deck.name}${subdecks} — ${changed.length} card(s)`;
+        undo = { op: "restoreArchive", deckId, cardIds: changed };
+        break;
+      }
+      case "restoreArchive": {
+        // The undo of the two above. It puts back EXACTLY the rows that were flipped
+        // and nothing else, so a card he archived by hand inside the deck keeps its
+        // state. `archived` is read from the card itself, inverted per row, because
+        // one restore may span both directions after a mixed operation.
+        const cardIds = request.cardIds ?? [];
+        db.transaction(() => {
+          restoreArchive(db, deckId, cardIds);
+        })();
+        describe = `restored ${deck.name} — ${cardIds.length} card(s)`;
+        undo = null;
         break;
       }
       case "rename":
@@ -710,15 +735,23 @@ function browse(request: BrowseRequest): void {
   const db = requireCards();
   const started = performance.now();
 
+  // THE DECK SCOPE IS THE SUBTREE, because the badge beside the deck is a subtree
+  // total. It used to be `c.deck_id = ?`, an exact match, so clicking a parent
+  // opened a gallery that disagreed with the number he clicked: English showed
+  // "1258" and listed 0 cards, 日本語 showed "5947" and listed 3. Every deck with
+  // children was affected, which is every deck he actually navigates through.
+  const { sql: scopeSql, args: scopeArgs } = scopeToSubtree(db, request.deckId);
+  const inScopeIds = request.deckId === null ? null : new Set(scopeArgs);
+
   if (request.query.trim() === "") {
     const rows = db
       .prepare(
         `SELECT c.id AS id, c.name AS name, c.archived AS archived, dp.path AS deck
            FROM cards c LEFT JOIN deck_paths dp ON dp.deck_id = c.deck_id
-          WHERE (? IS NULL OR c.deck_id = ?)
+          WHERE ${scopeSql}
           ORDER BY c.name LIMIT ?`,
       )
-      .all(request.deckId, request.deckId, request.limit) as {
+      .all(...scopeArgs, request.limit) as {
       id: string;
       name: string;
       archived: number;
@@ -727,8 +760,8 @@ function browse(request: BrowseRequest): void {
     const total = Number(
       (
         db
-          .prepare("SELECT count(*) AS n FROM cards c WHERE (? IS NULL OR c.deck_id = ?)")
-          .get(request.deckId, request.deckId) as { n: number }
+          .prepare(`SELECT count(*) AS n FROM cards c WHERE ${scopeSql}`)
+          .get(...scopeArgs) as { n: number }
       ).n,
     );
     post({
@@ -755,10 +788,12 @@ function browse(request: BrowseRequest): void {
       path: string;
     }[]).map((row) => [row.deck_id, row.path]),
   );
+  // Same subtree scope for the search path. Note this still filters AFTER
+  // `searchCards` has taken its top `limit` across the whole collection, so a
+  // deck-scoped search can under-report — recorded in NEXT.md rather than fixed
+  // here, because the fix belongs in `src/search` where the limit is applied.
   const filtered =
-    request.deckId === null
-      ? result.hits
-      : result.hits.filter((hit) => hit.deckId === request.deckId);
+    inScopeIds === null ? result.hits : result.hits.filter((hit) => inScopeIds.has(hit.deckId));
   post({
     kind: "browse",
     id: request.id,
