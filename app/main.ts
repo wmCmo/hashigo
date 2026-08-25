@@ -294,21 +294,36 @@ async function showNext(): Promise<void> {
   // card it asks the question and leaves every cloze masked.
   for (const position of prompt) card.enter(position);
 
-  // THE HINT DESCRIBES THE SCREEN, NOT THE CARD'S MODE, and that distinction was
-  // a live bug: a REVERSE identify 単語 track said "listen, name the word" with
-  // nothing to listen to. On a reverse track the permuted order puts 意味 first,
-  // so the prompt side carries a cloze and NO clip — the audio sits on a later
-  // side, where it is the ANSWER rather than the question.
+  // THE HINT DESCRIBES THE SCREEN, NOT THE CARD'S MODE, and that distinction has
+  // now been a live bug TWICE.
   //
-  // `promptsOnEntry` already gets that right, because it asks about the SIDE and
-  // not about the card. This only has to stop claiming otherwise, so it reads the
-  // loop's own log rather than re-deriving anything.
+  // First: a REVERSE identify 単語 track said "listen, name the word" with nothing
+  // to listen to, because the permuted order puts 意味 first and the audio sits on
+  // a later side where it is the ANSWER. `promptsOnEntry` already got that right,
+  // because it asks about the SIDE; the hint just had to stop claiming otherwise.
+  //
+  // Second, and Zach caught this one on a 数字 card: **"say the contour aloud" was
+  // being said on every template outside the accent drill.** `produce` is the
+  // fail-safe DEFAULT for 漢字, 敬語, New Vocab, 基本情報 and 数字 — it means "do
+  // not autoplay", not "this is a pitch-accent card" — so reading the mode alone
+  // put 単語's instruction on a card whose exercise is to hear a number and TYPE
+  // it. There is no contour on a 数字 card.
+  //
+  // So the contour line is gated on `accentDrill`, which is the only thing that
+  // actually means "naming a pitch pattern is the exercise here".
   const asked = card.loop.log.some((event) => event.kind === "prompt");
+  const typing = card.result.widgets.some((widget) => prompt.has(
+    card.result.sides.find((side) => side.index === widget.side)?.position ?? -1,
+  ));
   hintLine.textContent = asked
     ? "listen, name the word, then reveal"
     : card.mode.mode === "identify"
       ? "name it, then reveal"
-      : "say the contour aloud, then reveal";
+      : card.mode.accentDrill
+        ? "say the contour aloud, then reveal"
+        : typing
+          ? "answer on the card, then reveal"
+          : "answer, then reveal";
   shownAt = performance.now();
 }
 

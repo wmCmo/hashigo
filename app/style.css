@@ -244,8 +244,12 @@ body {
   margin-top: 26px;
 }
 
+/* GONE once he has answered, not merely dimmed. It said "then reveal" on a card
+   that was already revealed — which is how a revealed card reads as a prompt
+   leaking its own answer. Reported by Zach with a screenshot of exactly that on a
+   数字 card, 2026-08-23. The mockup had this rule; the port dropped it. */
 [data-state="revealed"] .hint {
-  color: var(--muted);
+  display: none;
 }
 
 .readingtoggle {

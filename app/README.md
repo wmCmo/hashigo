@@ -248,6 +248,25 @@ leaves the file — measured at 0.0 MiB of 639.0 MiB on Zach's own handset, and
 byte-for-byte the same on desktop. Anything that deletes audio must not be built
 on `unlink()`.
 
+## Found by his screenshot: the `<input>` widget is inert
+
+The 数字 template is `<< Voice >>` + `<input value=<<NoComma>>>` / `---` /
+`<< Number >>` — hear a number, TYPE it, then see it. `src/render` does its half
+completely: the box comes out as
+
+```html
+<input class="hashigo-input" data-widget="input" data-expect="267552680"
+       inputmode="numeric" type="text" autocomplete="off" spellcheck="false">
+```
+
+`data-expect` is the answer and `inputmode="numeric"` even gets him the right
+phone keyboard. **Nothing in `app/` reads either.** He can type into it and
+nothing checks, nothing marks it right or wrong, and revealing does not compare.
+
+90 cards, and it is the one template whose exercise is *producing an exact string*
+rather than recalling something. Small — read `data-expect`, compare on reveal —
+but it is unrequested scope, so it is written down rather than built.
+
 ## What is NOT here yet
 
 * **Sync (stage 11) and the editor (stage 10).** The `Reading` toggle is the one
