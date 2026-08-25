@@ -49,9 +49,35 @@ npm run app:dev -- --host 127.0.0.1       # local
 npm run app:dev -- --host ::              # phone / tunnel
 ```
 
-Gates, all six re-run on this tree: **`npm test` → 24 files / 757 passed / 1 skipped**
-(~90 s) · `npm run typecheck` → 0 · **`npm run app:check` → 0** · `npm run build` → OK,
-77 modules, 27 export subpaths · `npm run spike:check` → 0 · `blobs … paths` → 0.
+Gates: run **`npm run gates`** — one command, all seven, cheapest first, and a verdict
+that means what it says. `app:build` is new and was covered by nothing: `app:check` is
+`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 26 files / 789
+passed / 1 skipped** (~97 s) · `npm run typecheck` → 0 · **`npm run app:check` → 0** ·
+`npm run build` → OK, 77 modules, 27 export subpaths · `npm run spike:check` → 0 ·
+`blobs … paths` → 0.
+
+**`npm test` still exits 1 on a fully passing run — but the CAUSE was misdiagnosed for
+months, and there is now one honest command.** It is not the reporter and not load:
+birpc's RPC timeout is a hard-coded 60 s that vitest never overrides, `onTaskUpdate` is
+an awaited call, and exactly the two files that run over 60 s throw exactly two errors,
+every run. Cutting workers changed nothing; quieting the reporter changed nothing;
+`--no-isolate` made it worse.
+
+**`pool: "threads"` is NOT the fix, and it is recorded so nobody repeats it.** It
+removes the RPC errors — and segfaults (exit 139, SIGSEGV) on the third run, because
+`better-sqlite3` is a native addon and the suite loads it in six threads of one
+process. Two green runs of it proved nothing, which is the lesson.
+
+So: **`npm run gates`** decides the suite on its SUMMARY rather than its exit code —
+a complete summary line and zero failures, or it fails. That is stricter where it
+counts: a crash prints no summary and cannot pass, which is exactly what caught the
+segfault. `npm test` alone must still not be chained on.
+
+**The only real fix is for no single file to need 60 s of its own wall clock.**
+`test/roundtrip.test.ts` needs 82 s and runs `importExports` over the full corpus five
+times. Splitting it is the repair; it is deliberately NOT done, because moving tests
+that share a `beforeAll` import between files is where coverage silently changes and
+these are the oracle tests. Whoever does it should prove the pass count is unchanged.
 
 ### The three landings, newest first
 
@@ -191,7 +217,10 @@ forbids it. `src/cards/README.md` has both.
 > Obsidian; no agent reads it. Four settled decisions lived only there until today and one
 > (`型` placement, now decision 20) was reopened by an audit as an "open question" weeks
 > after he had settled it. If you settle something with him, write it into CLAUDE.md's
-> numbered list first. There are 22 decisions; read them before proposing anything.
+> numbered list first. There are 31 decisions; read them before proposing anything.
+> (This line said 22 until 2026-08-26. It sits below the HISTORY boundary, but unlike
+> the figures around it, it is an INSTRUCTION — a stale low count makes a cold session
+> under-read. `test/docs-figures.test.ts` now holds it to `DECISIONS.md`.)
 
 **THE DECISION QUEUE IS NO LONGER EMPTY — it has five items, and they are HIS, in his
 planner** — **four** of them now, D2-D5. **D1 IS DECIDED: see decision 23, the review

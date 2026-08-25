@@ -115,19 +115,31 @@ argument, or a second artifact gets created instead of updating this one.
 ## The commands
 
 ```bash
-npm test                # 24 files, 757 passed, 1 skipped (the FSRS refit, gated)
-                        # 32.7-87.7 s over six runs.
-                        # IT EXITS 1 ON A FULLY PASSING RUN. The "Timeout calling
-                        # onTaskUpdate" lines are Vitest's reporter RPC under load,
-                        # they count as `Errors`, and they set the exit code with
-                        # `734 passed` printed directly above. So read the pass
-                        # count -- not because the error line is noise, but because
-                        # $LASTEXITCODE is WRONG. Anything chaining on this gate
-                        # (CI, a hook, a `;`-joined line) reports a break that is
-                        # not there. Measured on a clean tree with zero edits.
+npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start here.
+                        # `npm run gates -- test` runs just one. app:build is in
+                        # here and in nothing else: app:check is `tsc --noEmit` and
+                        # cannot see a broken worker or wasm URL.
+npm test                # 26 files, 789 passed, 1 skipped (the FSRS refit, gated). ~90 s.
+                        # STILL EXITS 1 ON A FULLY PASSING RUN. Use `npm run gates`,
+                        # which reads the RESULT instead of the exit code.
+                        # THE CAUSE WAS MISDIAGNOSED HERE FOR MONTHS, and the old text
+                        # ("Vitest's reporter RPC under load") is wrong. Measured
+                        # 2026-08-26: birpc's timeout is a hard-coded 60 s that vitest
+                        # never overrides, `onTaskUpdate` is an AWAITED call, and
+                        # exactly the two files that run over 60 s throw exactly two
+                        # errors — every run. Cutting workers changed nothing; quieting
+                        # the reporter changed nothing; `--no-isolate` made it worse.
+                        # DO NOT SET `pool: "threads"`. It removes the errors and then
+                        # SEGFAULTS (exit 139) — better-sqlite3 is a native addon and
+                        # six threads in one process crash it. Two green runs of it
+                        # proved nothing. vitest.config.ts has all of this.
+                        # The only real fix is no file needing 60 s of its own wall
+                        # clock; roundtrip.test.ts needs 82 s. Not attempted yet.
 npm run typecheck       # exit 0
 npm run app:check       # exit 0 — app/ has its OWN tsconfig and this is a REQUIRED gate
 npm run build           # refuses to exit 0 unless dist/ actually imports (27 export subpaths)
+npm run rebuild -- --force   # the schema-bump chore as ONE command, with invariants
+                        # that fail loudly on the step everyone skips. See below.
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
 npm run dashboard -- --db build/hashigo.db --out dashboard.html   # English; --locale ja for the other
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 1 on any location

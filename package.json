@@ -127,6 +127,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "gates": "node scripts/gates.mjs",
+    "rebuild": "node scripts/rebuild.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "build": "node scripts/build.mjs",
     "build:verify": "node scripts/build.mjs --verify-only",

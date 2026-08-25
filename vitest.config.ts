@@ -45,6 +45,80 @@
  * memory per worker (a decoded 21 MB export plus 27,352 rendered sides) rather
  * than cores: with 16 workers the machine spends its time in GC and page faults.
  * A fixed 6 rather than a percentage so the numbers above reproduce.
+ *
+ * ── 2026-08-26: `maxWorkers: 6` WAS OUTGROWN, AND THE DIAGNOSIS ABOVE IS WRONG ──
+ *
+ * The suite went 541 -> 767 tests and the RPC errors came back. `npm test` exited 1
+ * on a fully passing run again, and both `CLAUDE.md` and `NEXT.md` had grown a bold
+ * warning saying so and telling the reader to ignore the exit code.
+ *
+ * That warning attributed it to "Vitest's reporter RPC under load". **It is not the
+ * reporter, and it is not load.** Measured cause, from the birpc source:
+ *
+ *   node_modules/vitest/dist/chunks/index.*.js:3   const DEFAULT_TIMEOUT = 6e4
+ *
+ * 60 seconds, and `onTaskUpdate` is an awaited CALL rather than a fire-and-forget
+ * event, so any test file whose own wall time crosses 60 s throws
+ * `Timeout calling "onTaskUpdate"` in its worker. Vitest counts that as an unhandled
+ * error and exits 1 on it. Nothing in the vitest config reaches that timeout —
+ * `getRpcOptions()` never passes one, in any of the four pool workers.
+ *
+ * The evidence is a count, not an argument. Exactly TWO files ran over 60 s:
+ *
+ *   test/roundtrip.test.ts   90,197 ms      (five full corpus imports)
+ *   test/dashboard.test.ts   64,180 ms
+ *   test/scheduler.test.ts   48,119 ms      <- under, and silent
+ *
+ * and there were exactly TWO errors, on every single run.
+ *
+ * FIVE CONFIGURATIONS, TWO RUNS EACH, ON A CLEAN TREE:
+ *
+ *   forks, maxWorkers 6 (as above)   exit 1 / 1   ·  2, 2 RPC errors  ·  98, 91 s
+ *   forks, maxWorkers 4              exit 1 / 1   ·  2, 2             ·  97, 95 s
+ *   forks, --reporter=dot            exit 1 / 1   ·  2, 2             ·  90, 102 s
+ *   forks, --no-isolate              exit 1 / 1   ·  5, 2             ·  98, 95 s
+ *   THREADS, maxThreads 6            exit 0 / 0   ·  0, 0             ·  97, 97 s
+ *
+ * Two of those rule out the old explanation on their own: cutting the worker count
+ * changed nothing (so it is not contention) and quieting the reporter changed
+ * nothing (so it is not reporter chatter). `--no-isolate` made it WORSE, which fits
+ * — sharing a worker across files makes the synchronous stretches longer, not
+ * shorter.
+ *
+ * ── AND THREADS IS NOT THE FIX. IT SEGFAULTS. DO NOT SET IT. ──
+ *
+ * `pool: "threads"` was applied on the strength of the two green runs above and then
+ * killed the suite on the third:
+ *
+ *   npm test   EXIT=139   Segmentation fault
+ *              after `✓ test/roundtrip.test.ts (13 tests) 82394ms`, no summary printed
+ *
+ * 139 is SIGSEGV. **`better-sqlite3` is a native addon and this suite loads it in six
+ * threads of one process**, which is the classic way to crash a module that is not
+ * context-aware. Forks give each worker its own process and its own copy, which is
+ * why the default is forks and why it must stay forks.
+ *
+ * Two runs are not a measurement when the failure is a race. The first two runs of
+ * `--pool=threads` were green and reported zero RPC errors, which is exactly what a
+ * nondeterministic native-addon crash looks like before it happens to you.
+ *
+ * ── SO THE STATE IS: FORKS, AND THE EXIT CODE IS STILL WRONG ──
+ *
+ * There is no configuration that fixes this. The 60 s ceiling is unreachable from
+ * config, and the only real fix is for no single test file to need 60 s of its own
+ * wall clock — `test/roundtrip.test.ts` needs 82 s and runs `importExports` over the
+ * full corpus five times. Splitting it is the honest repair and it is not done here,
+ * because moving tests that share a `beforeAll` import between files is where test
+ * coverage silently changes, and these are the oracle tests.
+ *
+ * WHAT IS DONE INSTEAD: `npm run gates` reads the RESULT rather than the exit code —
+ * the same thing the docs have always told a human to do, in a form a script can
+ * chain on. It requires a complete summary line and zero failed tests, so it reports
+ * green only when the suite actually finished and actually passed. That is what
+ * caught the segfault: a crash prints no summary, so it fails there rather than
+ * passing quietly.
+ *
+ * `npm test` on its own still exits 1 with everything passing. Do not chain on it.
  */
 import { defineConfig } from "vitest/config";
 
@@ -57,6 +131,9 @@ export default defineConfig({
     // which is 14 files at once, and still exited 1. The pool option is the one
     // that lands. Both spellings are set so the limit survives a `--pool` change.
     maxWorkers: 6,
+    // FORKS. Not threads — see the header. `pool: "threads"` removes the RPC errors
+    // and then SEGFAULTS (exit 139), because better-sqlite3 is a native addon and
+    // this suite loads it in six threads of one process.
     poolOptions: {
       forks: { maxForks: 6 },
       threads: { maxThreads: 6 },
