@@ -110,6 +110,85 @@ describe("the local archive", () => {
     }
   });
 
+  it("carries archived and pinned, and restoring puts them back", () => {
+    const source = fixture();
+    const target = fixture();
+    try {
+      source.prepare("UPDATE cards SET archived = 1 WHERE id = 'cardA'").run();
+      source.prepare("UPDATE cards SET pinned = 1 WHERE id = 'cardB'").run();
+      const a = exportLocalArchive(source, AT);
+      // Only the two non-default rows, not one per card.
+      expect(a.cardState).toEqual([
+        { cardId: "cardA", archived: true, pinned: false },
+        { cardId: "cardB", archived: false, pinned: true },
+      ]);
+
+      // `target` is what a rebuild produces: the import wrote both flags back to 0.
+      const flags = (db: typeof target): Record<string, string> =>
+        Object.fromEntries(
+          (db.prepare("SELECT id, archived, pinned FROM cards ORDER BY id").all() as {
+            id: string;
+            archived: number;
+            pinned: number;
+          }[]).map((r) => [r.id, `${r.archived}${r.pinned}`]),
+        );
+      expect(flags(target)).toEqual({ cardA: "00", cardB: "00" });
+
+      const report = applyLocalArchive(target, a);
+      expect(report.cardStateApplied).toBe(2);
+      expect(report.cardStateOrphaned).toBe(0);
+      expect(flags(target)).toEqual({ cardA: "10", cardB: "01" });
+    } finally {
+      source.close();
+      target.close();
+    }
+  });
+
+  it("NEVER CLEARS A FLAG THE ARCHIVE DOES NOT HOLD — a restore must not undo work", () => {
+    // The archive stores non-default rows only, so "absent" means "was 0 when the
+    // backup ran". Clearing on that basis would make restoring an OLD backup delete
+    // an archive he made after it. A backup that misses some work is survivable; a
+    // backup that removes work is not.
+    const source = fixture();
+    const target = fixture();
+    try {
+      source.prepare("UPDATE cards SET archived = 1 WHERE id = 'cardA'").run();
+      const a = exportLocalArchive(source, AT);
+      // Done AFTER the backup was taken, and it must survive the restore.
+      target.prepare("UPDATE cards SET pinned = 1 WHERE id = 'cardB'").run();
+      applyLocalArchive(target, a);
+      const row = target
+        .prepare("SELECT archived, pinned FROM cards WHERE id = 'cardB'")
+        .get() as { archived: number; pinned: number };
+      expect(row).toEqual({ archived: 0, pinned: 1 });
+    } finally {
+      source.close();
+      target.close();
+    }
+  });
+
+  it("READS AN ARCHIVE WRITTEN BEFORE `cardState` EXISTED — the version is not bumped", () => {
+    // `ARCHIVE_VERSION` is documented as bumped "only for a change no reader could
+    // otherwise survive". A reader survives this one by defaulting to []. Bumping
+    // would have rejected every backup he had already taken, at the one moment
+    // those files are the only copy — so the old shape has to keep working.
+    const source = fixture({ withLocal: true });
+    const target = fixture({ withLocal: true });
+    try {
+      const a = exportLocalArchive(source, AT);
+      const old = JSON.parse(JSON.stringify(a)) as Record<string, unknown>;
+      delete old["cardState"];
+      delete (old["counts"] as Record<string, number>)["cardState"];
+      expect(verifyLocalArchive(old as never)).toBeUndefined();
+      const report = applyLocalArchive(target, old as never);
+      expect(report.cardStateApplied).toBe(0);
+      expect(report.cardStateOrphaned).toBe(0);
+    } finally {
+      source.close();
+      target.close();
+    }
+  });
+
   it("SURVIVES A REBUILD THAT RENUMBERS THE TRACKS — the whole design, tested", () => {
     const source = fixture({ order: "ab", withLocal: true });
     const rebuilt = fixture({ order: "ba" }); // cards inserted the other way round
@@ -274,6 +353,12 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
         localFields: 6,
         fieldValues: 3_848,
         settings: 4,
+        // The 234 individually archived cards. They LOOK like something the export
+        // rebuilds and they are not: `UPSERT_CARD` writes `archived` from Mochi, and
+        // Mochi has no deck-level archive at all, so decision 16's final import
+        // returns every one of them to 0. Zero pinned — his export carries none, so
+        // every pin from here on is one he made in Hashigo.
+        cardState: 234,
       });
       // 102,020 imported reviews are NOT in here — that is the point.
       const bytes = JSON.stringify(a).length;

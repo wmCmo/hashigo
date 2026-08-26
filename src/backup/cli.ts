@@ -45,14 +45,16 @@ function doExport(): void {
         `  track state     ${archive.counts["trackState"]}\n` +
         `  local fields    ${archive.counts["localFields"]}\n` +
         `  field values    ${archive.counts["fieldValues"]}\n` +
-        `  settings        ${archive.counts["settings"]}\n`,
+        `  settings        ${archive.counts["settings"]}\n` +
+        `  card state      ${archive.counts["cardState"]} archived/pinned\n`,
     );
     if (archive.counts["reviews"] === 0) {
       process.stdout.write(
-        "\n  No local reviews yet, so this archive is only the local FIELDS and\n" +
-          "  settings. That is still worth keeping — decision 9's 読み / かな主流 rows\n" +
-          "  exist nowhere else — but the review history it will hold after decision\n" +
-          "  16's final import is the reason this command exists.\n",
+        "\n  No local reviews yet, so this archive is only the local FIELDS,\n" +
+          "  settings and collection state. That is still worth keeping — decision 9's\n" +
+          "  読み / かな主流 rows exist nowhere else, and an archived deck does not\n" +
+          "  survive decision 16's final import — but the review history it will hold\n" +
+          "  after that import is the reason this command exists.\n",
       );
     }
   } finally {
@@ -106,18 +108,21 @@ function printReport(report: ReturnType<typeof applyLocalArchive> | null): void 
       `  track state    ${report.trackStateApplied} applied\n` +
       `  local fields   ${report.fieldsUpserted} upserted\n` +
       `  field values   ${report.fieldValuesUpserted} upserted\n` +
-      `  settings       ${report.settingsUpserted} upserted\n`,
+      `  settings       ${report.settingsUpserted} upserted\n` +
+      `  card state     ${report.cardStateApplied} applied\n`,
   );
   const orphans =
     report.reviewsOrphaned +
     report.trackStateOrphaned +
     report.fieldsOrphaned +
-    report.fieldValuesOrphaned;
+    report.fieldValuesOrphaned +
+    report.cardStateOrphaned;
   if (orphans > 0) {
     process.stdout.write(
       `\n  ${orphans} row(s) had no home here and were SKIPPED, not written:\n` +
         `    reviews ${report.reviewsOrphaned} · track state ${report.trackStateOrphaned} · ` +
-        `fields ${report.fieldsOrphaned} · values ${report.fieldValuesOrphaned}\n` +
+        `fields ${report.fieldsOrphaned} · values ${report.fieldValuesOrphaned} · ` +
+        `card state ${report.cardStateOrphaned}\n` +
         `  That is expected when restoring into a database rebuilt from a NEWER\n` +
         `  export — Mochi deletes cards, and this corpus carries 8,958 tombstones.\n` +
         `  It is a signal to look, not a failure.\n`,

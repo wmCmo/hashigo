@@ -1241,3 +1241,61 @@ body[data-view="review"] .review main { padding-bottom: 210px; }
 .confirm-bar { display: flex; gap: 10px; margin-top: 20px; }
 .confirm-bar button { background: none; border: 1px solid var(--edge); color: var(--ink); cursor: pointer; flex: 1; font: inherit; padding: 12px; }
 .confirm-bar button.danger { border-color: var(--no-edge); color: var(--no); }
+
+/* ── his #6/#7: pin ─────────────────────────────────────────────────────────
+   A pin has to read at a glance across a grid, and it must not be confusable
+   with archive, which is the other mark a tile can carry AT THE SAME TIME (the
+   two are independent). So archive dims and pin brightens: opposite directions
+   on the same axis, legible together, and neither relies on colour alone —
+   there is a glyph and the meta line says the word.
+
+   Contrast is not decorative here. Japanese at body size needs it (see the
+   memory note on his design taste): 蟻 and 蠅 differ by strokes that vanish
+   first in a low-contrast rule. */
+.gcard.is-pinned {
+  border-color: var(--accent);
+}
+
+.gcard.is-pinned .gcard-name::before {
+  content: "📌 ";
+  font-size: 0.85em;
+}
+
+.op.on,
+.layer-op.on,
+.gcard-op.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The preview's operation bar. It sits between the title and the close button,
+   so it has to survive a narrow phone without pushing ✕ off the edge. */
+.layer-ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+  margin-right: 8px;
+}
+
+.layer-op {
+  background: none;
+  border: 1px solid var(--line-soft);
+  border-radius: 3px;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 2px 8px;
+}
+
+.layer-op:hover,
+.layer-op:focus-visible {
+  color: var(--ink);
+}
+
+.layer-op.danger:hover,
+.layer-op.danger:focus-visible {
+  border-color: var(--no);
+  color: var(--no);
+}

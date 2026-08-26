@@ -129,7 +129,20 @@ export interface ResetMessage {
  * **Undo (his #13) is why this reports `undo`.** Every operation returns what it
  * would take to reverse it, so the page can stack it without re-deriving anything.
  */
-export type CardOp = "archive" | "unarchive" | "delete" | "duplicate";
+/**
+ * `pin` and `unpin` were the last two of his #6's list to have no verb.
+ *
+ * **`cards.pinned` has existed since schema v1 and nothing ever wrote it** — the
+ * column, its CHECK, its partial index (`cards_pinned`) and the importer's
+ * `card["pinned?"]` read were all already there. His export carries **0** pinned
+ * cards, so every pin in this database from here on is one HE made in Hashigo.
+ *
+ * Which is worth knowing for one reason: `UPSERT_CARD` writes
+ * `pinned = excluded.pinned`, so decision 16's final import overwrites a local pin
+ * with Mochi's 0 — exactly as it overwrites a local archive. That is why the backup
+ * now carries per-card collection state (`src/backup/archive.ts`).
+ */
+export type CardOp = "archive" | "unarchive" | "pin" | "unpin" | "delete" | "duplicate";
 
 export interface CardOpRequest {
   readonly kind: "cardOp";
@@ -312,6 +325,8 @@ export interface BrowseHit {
   readonly deckPath: string;
   /** Archived cards are SHOWN and marked, never hidden — see `SearchOptions`. */
   readonly archived: boolean;
+  /** His #6. Pinned tiles sort to the front of the gallery, in every order. */
+  readonly pinned: boolean;
   readonly snippet: string | null;
 }
 
@@ -390,6 +405,9 @@ export interface PreviewMessage {
   readonly card: PreparedCard | null;
   readonly deckPath: string;
   readonly name: string;
+  /** Same reason as `CardMessage` — a preview carries the same operations. */
+  readonly pinned: boolean;
+  readonly archived: boolean;
 }
 
 /** Decision 17's archive, as JSON text, for the page to hand to a download. */
@@ -467,6 +485,13 @@ export interface CardMessage {
   readonly isNew: boolean;
   /** Decision 13: showing again, and it will not be graded. */
   readonly reask: boolean;
+  /**
+   * Collection state, so the screen's pin/archive controls can say which way they
+   * go. A toggle that guesses its own starting state is a toggle that lies half
+   * the time; the worker owns the row, so the worker says.
+   */
+  readonly pinned: boolean;
+  readonly archived: boolean;
   readonly progress: SessionProgress;
 }
 

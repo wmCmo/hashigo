@@ -173,6 +173,13 @@ let currentCardId: string | null = null;
 /** The review card's prepared form, so `e` can edit it without re-fetching. */
 let previewOfCurrent: PreparedCard | null = null;
 let drawHandles: DrawHandle[] = [];
+/**
+ * The review card's collection state, straight from the row (`collectionState` in
+ * the worker). It labels the two toggles and decides which verb they send, so it
+ * is READ rather than remembered — see that function's header.
+ */
+let currentPinned = false;
+let currentArchived = false;
 
 /**
  * Make every `<draw>` canvas on a card actually drawable — his #10.
@@ -305,6 +312,9 @@ async function showNext(): Promise<void> {
   peekOffset = 0;
   currentCardId = reply.card.cardId;
   previewOfCurrent = reply.card;
+  currentPinned = reply.pinned;
+  currentArchived = reply.archived;
+  paintCardOps();
   scope = new BlobUrlScope();
 
   const card = mountPrepared<HTMLElement>(reply.card, {
@@ -674,6 +684,28 @@ replayButton.addEventListener("click", () => {
 readingButton.addEventListener("click", () => void flipReading());
 el("backup").addEventListener("click", () => void exportBackup());
 
+/**
+ * The two toggles say which way they go — his #6 lists "archive, pin" beside each
+ * other and both are states, not actions.
+ *
+ * Repainted after every op rather than flipped in place: an undo, a gallery button
+ * and a keystroke can all change the same row, and three writers of one label is
+ * how a toggle starts lying.
+ */
+const pinButton = el<HTMLButtonElement>("oppin");
+const archiveButton = el<HTMLButtonElement>("oparchive");
+
+function paintCardOps(): void {
+  pinButton.firstChild!.textContent = currentPinned ? "unpin" : "pin";
+  pinButton.classList.toggle("on", currentPinned);
+  archiveButton.firstChild!.textContent = currentArchived ? "unarchive" : "archive";
+  archiveButton.classList.toggle("on", currentArchived);
+}
+
+pinButton.addEventListener("click", () => {
+  if (currentCardId !== null) void runCardOp(currentPinned ? "unpin" : "pin", currentCardId);
+});
+
 // Keys, for the desktop pointer only — the keycap HINTS are behind
 // `@media (hover:hover) and (pointer:fine)` in the stylesheet (decision 19: never
 // behind a hover affordance, and a phone has no hover).
@@ -731,16 +763,33 @@ document.addEventListener("keydown", (event) => {
       event.preventDefault();
       closeTop();
     }
+    const editing =
+      event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement;
     // `e` over a PREVIEW opens the editor for the previewed card — his request 3
     // is explicit that it works in both modes. Not while typing in the editor
     // itself, or every `e` he types would open another one.
-    if (
-      event.key.toLowerCase() === "e" &&
-      !(event.target instanceof HTMLTextAreaElement) &&
-      !(event.target instanceof HTMLInputElement)
-    ) {
+    if (event.key.toLowerCase() === "e" && !editing) {
       event.preventDefault();
       openEditor();
+      return;
+    }
+    // *"and this should work on both preview and review card"* — the same three
+    // operations, over whichever card the TOP layer is showing. `top.cardId` is ""
+    // on the editor and the confirm dialog, so those swallow the keys rather than
+    // acting on the card underneath.
+    const top = layers.at(-1);
+    if (top !== undefined && top.ops && !editing) {
+      const layerKey = event.key.toLowerCase();
+      if (layerKey === "p" && event.shiftKey) {
+        event.preventDefault();
+        void runCardOp(top.pinned ? "unpin" : "pin", top.cardId);
+      } else if (layerKey === "a") {
+        event.preventDefault();
+        void runCardOp(top.archived ? "unarchive" : "archive", top.cardId);
+      } else if (layerKey === "d") {
+        event.preventDefault();
+        confirmDelete(top.cardId, top.prepared?.loaded.name ?? top.cardId);
+      }
     }
     return;
   }
@@ -776,7 +825,15 @@ document.addEventListener("keydown", (event) => {
   // archiving are not answers, and none of them writes a review.
   if (key === "a" && currentCardId !== null) {
     event.preventDefault();
-    void runCardOp("archive", currentCardId);
+    void runCardOp(currentArchived ? "unarchive" : "archive", currentCardId);
+    return;
+  }
+  // *"shift + p to pin"*. SHIFT-qualified on purpose: `p` alone is one slip away
+  // from `o`, and unlike `a` and `d` this one has no visible consequence on the
+  // card — a silently pinned card is a card he finds later and cannot explain.
+  if (key === "p" && event.shiftKey && currentCardId !== null) {
+    event.preventDefault();
+    void runCardOp(currentPinned ? "unpin" : "pin", currentCardId);
     return;
   }
   if (key === "d" && currentCardId !== null) {
@@ -834,8 +891,10 @@ async function stepCard(delta: number): Promise<void> {
 
 el("prevcard").addEventListener("click", () => void stepCard(-1));
 el("nextcard").addEventListener("click", () => void stepCard(1));
-el("oparchive").addEventListener("click", () => {
-  if (currentCardId !== null) void runCardOp("archive", currentCardId);
+archiveButton.addEventListener("click", () => {
+  if (currentCardId !== null) {
+    void runCardOp(currentArchived ? "unarchive" : "archive", currentCardId);
+  }
 });
 el("opdelete").addEventListener("click", () => {
   if (currentCardId !== null) {
@@ -931,6 +990,19 @@ interface Layer {
   /** The prepared card, so `e` can edit whatever layer is on top. */
   readonly prepared: PreparedCard | null;
   readonly cardId: string;
+  /**
+   * Whether the single-key card operations act on this layer.
+   *
+   * TRUE for a preview only, and it is deliberately not derived from `cardId`. The
+   * EDITOR carries a card id too, and every one of its fields is an input — so a
+   * layer keyed on the id alone would archive the card he is editing the moment
+   * focus sat on the panel instead of a box. A preview has nothing to type into,
+   * which is exactly why the bare keys belong there and nowhere else.
+   */
+  readonly ops: boolean;
+  /** Repainted in place by `refreshAfterOp`, for the same reason the review bar is. */
+  pinned: boolean;
+  archived: boolean;
 }
 
 const layerHost = el("layers");
@@ -965,7 +1037,13 @@ async function openPreview(cardId: string): Promise<void> {
   close.setAttribute("aria-label", "close this preview");
   close.textContent = "✕";
   close.addEventListener("click", () => closeIfTop(root));
-  head.append(title, close);
+  // EVERY operation as a control, not only as a key — his standing rule, and a
+  // preview is where he browses on the phone. Built empty and filled by
+  // `paintLayerOps` once the state is known, so the labels cannot disagree with
+  // the row (`collectionState` in the worker says why that matters).
+  const ops = document.createElement("div");
+  ops.className = "layer-ops";
+  head.append(title, ops, close);
   panel.appendChild(head);
 
   const body = document.createElement("div");
@@ -990,7 +1068,15 @@ async function openPreview(cardId: string): Promise<void> {
     // layer BENEATH the one on screen and left the not-found box orphaned on top.
     // `closeTop` already tolerates a null mount (`top.mounted?.dispose()`), so this
     // needs no special case anywhere.
-    layers.push({ root, mounted: null, prepared: null, cardId });
+    layers.push({
+      root,
+      mounted: null,
+      prepared: null,
+      cardId,
+      ops: false,
+      pinned: false,
+      archived: false,
+    });
     close.focus();
     return;
   }
@@ -1014,7 +1100,53 @@ async function openPreview(cardId: string): Promise<void> {
   document.body.classList.add("layered");
   close.focus();
 
-  layers.push({ root, mounted, prepared: reply.card, cardId });
+  const layer: Layer = {
+    root,
+    mounted,
+    prepared: reply.card,
+    cardId,
+    ops: true,
+    pinned: reply.pinned,
+    archived: reply.archived,
+  };
+  layers.push(layer);
+  paintLayerOps(layer, ops);
+}
+
+/**
+ * Fill a preview's operation bar. Called on open and again after every op, because
+ * an undo or a gallery button can flip the same row from outside this layer.
+ */
+function paintLayerOps(layer: Layer, host: HTMLElement): void {
+  host.replaceChildren();
+  const buttons: readonly (readonly [string, boolean, () => void])[] = [
+    [
+      layer.pinned ? "unpin" : "pin",
+      layer.pinned,
+      () => void runCardOp(layer.pinned ? "unpin" : "pin", layer.cardId),
+    ],
+    [
+      layer.archived ? "unarchive" : "archive",
+      layer.archived,
+      () => void runCardOp(layer.archived ? "unarchive" : "archive", layer.cardId),
+    ],
+    ["edit", false, () => openEditor()],
+    [
+      "delete",
+      false,
+      () => confirmDelete(layer.cardId, layer.prepared?.loaded.name ?? layer.cardId),
+    ],
+  ];
+  for (const [label, on, run] of buttons) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "layer-op";
+    if (on) button.classList.add("on");
+    if (label === "delete") button.classList.add("danger");
+    button.textContent = label;
+    button.addEventListener("click", run);
+    host.appendChild(button);
+  }
 }
 
 function closeIfTop(root: HTMLElement): void {
@@ -1235,7 +1367,16 @@ function openEditorFor(card: PreparedCard): void {
   body.appendChild(status);
   layerHost.appendChild(root);
   document.body.classList.add("layered");
-  layers.push({ root, mounted: null, prepared: null, cardId: card.cardId });
+  // `ops: false` — this is the EDITOR. See `Layer.ops`.
+  layers.push({
+    root,
+    mounted: null,
+    prepared: null,
+    cardId: card.cardId,
+    ops: false,
+    pinned: false,
+    archived: false,
+  });
   (body.querySelector(".edit-input, .edit-check") as HTMLElement | null)?.focus();
 }
 
@@ -1545,7 +1686,7 @@ function openPalette(): void {
 
   layerHost.appendChild(root);
   document.body.classList.add("layered");
-  layers.push({ root, mounted: null, prepared: null, cardId: "" });
+  layers.push({ root, mounted: null, prepared: null, cardId: "", ops: false, pinned: false, archived: false });
   input.focus();
   void run();
 }
@@ -1772,6 +1913,12 @@ async function paintGallery(): Promise<void> {
   let hits = [...reply.hits];
   if (!gallery.includeArchived) hits = hits.filter((hit) => !hit.archived);
   if (gallery.sort === "name") hits.sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  // PINNED FIRST, IN BOTH ORDERS — including relevance, which is the one that looks
+  // arguable. It is not: a pin is a statement about the collection and a ranking is a
+  // statement about the query, so the pin is the outer key and the ranking decides
+  // ties within each half. A stable sort keeps whatever order arrived underneath,
+  // which is `name` above or the search ranking as `browse` returned it.
+  hits.sort((a, b) => Number(b.pinned) - Number(a.pinned));
 
   galleryCount.textContent =
     hits.length < reply.total
@@ -1792,13 +1939,18 @@ function galleryCard(hit: BrowseHit): HTMLElement {
   const tile = document.createElement("article");
   tile.className = "gcard";
   if (hit.archived) tile.classList.add("is-archived");
+  // Pin and archive are INDEPENDENT (see the worker's `pin` case), so a tile can
+  // legitimately carry both marks and the meta line has to be able to say both.
+  if (hit.pinned) tile.classList.add("is-pinned");
 
   const name = document.createElement("h3");
   name.className = "gcard-name";
   name.textContent = hit.name === "" ? hit.cardId : hit.name;
   const meta = document.createElement("p");
   meta.className = "gcard-meta";
-  meta.textContent = hit.archived ? `${hit.deckPath} · archived` : hit.deckPath;
+  meta.textContent = [hit.deckPath, hit.pinned ? "pinned" : null, hit.archived ? "archived" : null]
+    .filter((part) => part !== null && part !== "")
+    .join(" · ");
   tile.append(name, meta);
   if (hit.snippet !== null && hit.snippet !== "") {
     const snip = document.createElement("p");
@@ -1815,7 +1967,14 @@ function galleryCard(hit: BrowseHit): HTMLElement {
   const ops: readonly (readonly [string, () => void])[] = [
     ["preview", () => void openPreview(hit.cardId)],
     ["edit", () => void openEditorById(hit.cardId)],
-    [hit.archived ? "unarchive" : "archive", () => void runCardOp(hit.archived ? "unarchive" : "archive", hit.cardId)],
+    [
+      hit.pinned ? "unpin" : "pin",
+      () => void runCardOp(hit.pinned ? "unpin" : "pin", hit.cardId),
+    ],
+    [
+      hit.archived ? "unarchive" : "archive",
+      () => void runCardOp(hit.archived ? "unarchive" : "archive", hit.cardId),
+    ],
     ["duplicate", () => void runCardOp("duplicate", hit.cardId)],
     ["delete", () => void confirmDelete(hit.cardId, hit.name)],
   ];
@@ -1960,8 +2119,31 @@ async function runCardOp(op: CardOp, cardId: string): Promise<void> {
   }
 }
 
+/**
+ * Everything that displays collection state, re-read from the database.
+ *
+ * Three surfaces can show the same card at once — the review bar, an open preview
+ * and the gallery behind it — and any of them, plus an undo, can flip the row. So
+ * after every operation the state is fetched again rather than patched: patching
+ * three copies from one event is how the gallery ends up offering "pin" under a
+ * tile that is already marked pinned.
+ */
 async function refreshAfterOp(): Promise<void> {
   await loadDecks(true);
+  if (currentCardId !== null) {
+    const state = await ask<"preview">({ kind: "preview", cardId: currentCardId });
+    currentPinned = state.pinned;
+    currentArchived = state.archived;
+    paintCardOps();
+  }
+  for (const layer of layers) {
+    if (!layer.ops) continue;
+    const state = await ask<"preview">({ kind: "preview", cardId: layer.cardId });
+    layer.pinned = state.pinned;
+    layer.archived = state.archived;
+    const host = layer.root.querySelector(".layer-ops");
+    if (host instanceof HTMLElement) paintLayerOps(layer, host);
+  }
   if (document.body.getAttribute("data-view") === "gallery") await paintGallery();
 }
 
@@ -2012,7 +2194,7 @@ function openConfirm(title: string, body: string, verb: string, run: () => void)
   root.append(backdrop, panel);
   layerHost.appendChild(root);
   document.body.classList.add("layered");
-  layers.push({ root, mounted: null, prepared: null, cardId: "" });
+  layers.push({ root, mounted: null, prepared: null, cardId: "", ops: false, pinned: false, archived: false });
   cancel.focus();
 }
 

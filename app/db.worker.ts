@@ -59,6 +59,7 @@ import { archiveSubtree, restoreArchive, scopeToSubtree } from "./deck-scope.js"
 import type {
   AnswerRequest,
   BrowseRequest,
+  CardOp,
   CardOpRequest,
   CreateCardRequest,
   DeckOpMessage,
@@ -221,6 +222,23 @@ function requireCards(): BrowserDb {
   return cards;
 }
 
+/**
+ * `pinned` and `archived` for one card, as booleans.
+ *
+ * Sent with every card and every preview so the screen's controls can label
+ * themselves — "pin" or "unpin", "archive" or "unarchive". The page could remember
+ * what it last did instead; it must not. Two surfaces act on the same card (the
+ * gallery tile and the review bar), a duplicate lands unpinned while its original
+ * is pinned, and an undo flips a row the page never touched. The row is the truth
+ * and it is one join-free read.
+ */
+function collectionState(db: BrowserDb, cardId: string): { pinned: boolean; archived: boolean } {
+  const row = db.prepare("SELECT pinned, archived FROM cards WHERE id = ?").get(cardId) as
+    | { pinned: number; archived: number }
+    | undefined;
+  return { pinned: row?.pinned === 1, archived: row?.archived === 1 };
+}
+
 function next(request: NextRequest): void {
   const active = requireSession();
   const db = requireCards();
@@ -234,6 +252,8 @@ function next(request: NextRequest): void {
       deckPath: "",
       isNew: false,
       reask: false,
+      pinned: false,
+      archived: false,
       progress: active.progress(),
     });
     return;
@@ -257,6 +277,7 @@ function next(request: NextRequest): void {
     // Decision 25: the label is per TRACK, and `origin` already is.
     isNew: item.origin === "new",
     reask: item.reask,
+    ...collectionState(db, item.cardId),
     progress: active.progress(),
   });
 }
@@ -415,16 +436,23 @@ async function reset(request: ResetRequest): Promise<void> {
  */
 function cardOp(request: CardOpRequest): void {
   const db = requireCards();
-  const card = db.prepare("SELECT id, name, deck_id, template_id, archived FROM cards WHERE id = ?").get(
-    request.cardId,
-  ) as
-    | { id: string; name: string; deck_id: string; template_id: string | null; archived: number }
+  const card = db
+    .prepare("SELECT id, name, deck_id, template_id, archived, pinned FROM cards WHERE id = ?")
+    .get(request.cardId) as
+    | {
+        id: string;
+        name: string;
+        deck_id: string;
+        template_id: string | null;
+        archived: number;
+        pinned: number;
+      }
     | undefined;
   if (card === undefined) throw new Error(`no card ${request.cardId}`);
 
   const name = card.name === "" ? card.id : card.name;
   let resultCardId = card.id;
-  let undo: { op: "archive" | "unarchive" | "delete" | "duplicate"; cardId: string } | null = null;
+  let undo: { op: CardOp; cardId: string } | null = null;
   let describe = "";
 
   switch (request.op) {
@@ -437,6 +465,23 @@ function cardOp(request: CardOpRequest): void {
       db.prepare("UPDATE cards SET archived = 0 WHERE id = ?").run(card.id);
       undo = { op: "archive", cardId: card.id };
       describe = `unarchived ${name}`;
+      break;
+    // PIN IS NOT ARCHIVE'S OPPOSITE and the two are deliberately independent.
+    // Archive means "stop scheduling this"; pin means "keep this in front of me".
+    // A card can be both — an archived card he is still looking at — so neither
+    // clears the other.
+    //
+    // It touches NO schedule and writes no review, which is why it is safe to hang
+    // on a bare keystroke in review.
+    case "pin":
+      db.prepare("UPDATE cards SET pinned = 1 WHERE id = ?").run(card.id);
+      undo = { op: "unpin", cardId: card.id };
+      describe = `pinned ${name}`;
+      break;
+    case "unpin":
+      db.prepare("UPDATE cards SET pinned = 0 WHERE id = ?").run(card.id);
+      undo = { op: "pin", cardId: card.id };
+      describe = `unpinned ${name}`;
       break;
     case "delete":
       // The cascades do the rest. Counted first so the message can say what went.
@@ -811,7 +856,8 @@ function browse(request: BrowseRequest): void {
   if (request.query.trim() === "") {
     const rows = db
       .prepare(
-        `SELECT c.id AS id, c.name AS name, c.archived AS archived, dp.path AS deck
+        `SELECT c.id AS id, c.name AS name, c.archived AS archived, c.pinned AS pinned,
+                dp.path AS deck
            FROM cards c LEFT JOIN deck_paths dp ON dp.deck_id = c.deck_id
           WHERE ${scopeSql}
           ORDER BY c.name LIMIT ?`,
@@ -820,6 +866,7 @@ function browse(request: BrowseRequest): void {
       id: string;
       name: string;
       archived: number;
+      pinned: number;
       deck: string | null;
     }[];
     const total = Number(
@@ -837,6 +884,7 @@ function browse(request: BrowseRequest): void {
         name: row.name,
         deckPath: row.deck ?? "",
         archived: row.archived === 1,
+        pinned: row.pinned === 1,
         snippet: null,
       })),
       total,
@@ -861,6 +909,16 @@ function browse(request: BrowseRequest): void {
   // No post-filter any more — `searchCards` did the scoping, so `result.total` is the
   // real number of matches INSIDE the deck rather than across the collection.
   const filtered = result.hits;
+  // The whole pinned set, not a lookup per hit. `cards_pinned` is a PARTIAL index
+  // (`WHERE pinned = 1`) so this reads exactly the pinned rows — and pinning is a
+  // hand operation, so the set is the size of his attention, not of the corpus.
+  // `searchCards` deliberately does not carry it: pinning is a property of the
+  // collection, not of the match.
+  const pinnedIds = new Set(
+    (db.prepare("SELECT id FROM cards WHERE pinned = 1").all() as { id: string }[]).map(
+      (row) => row.id,
+    ),
+  );
   post({
     kind: "browse",
     id: request.id,
@@ -869,6 +927,7 @@ function browse(request: BrowseRequest): void {
       name: hit.name,
       deckPath: deckPaths.get(hit.deckId) ?? "",
       archived: hit.archived,
+      pinned: pinnedIds.has(hit.cardId),
       snippet: hit.snippet?.text ?? null,
     })),
     total: result.total,
@@ -983,6 +1042,7 @@ function preview(request: PreviewRequest): void {
     card,
     deckPath: card?.loaded.deckPath ?? "",
     name: card?.loaded.name ?? request.cardId,
+    ...collectionState(db, request.cardId),
   });
 }
 

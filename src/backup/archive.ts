@@ -18,6 +18,25 @@
  *     9's locally-authored fields (`読み`, `かな主流`, `型`). Mochi never had them,
  *     so nothing else has them either.
  *   * `settings`.
+ *   * **`cards.archived` and `cards.pinned`, wherever either is 1** — see below.
+ *
+ * ─── WHY COLLECTION STATE IS IN HERE, AND WAS NOT ───────────────────────────
+ *
+ * It looks like something `exports/` rebuilds, and for `archived` it half does:
+ * the importer writes `archived = excluded.archived` from the export. That is
+ * precisely the problem. **Mochi has no deck-level archive at all**
+ * (`src/import/entities.ts`), so the deck Zach archived in Hashigo — his #8, the
+ * 数字 deck — arrives back UNARCHIVED after decision 16's one final import, and
+ * `pinned` comes back 0 on every card because his export carries none.
+ *
+ * So these two columns are the one kind of state that is authored HERE, looks
+ * imported, and is silently overwritten by the import. Everything else in this
+ * file is either obviously local (a grade) or obviously Mochi's (a card).
+ *
+ * Only the non-default rows are stored — 234 archived and 0 pinned today — so this
+ * costs the archive a few kilobytes rather than a row per card. Restoring is
+ * therefore additive: it sets the flags it holds and never clears one it does not,
+ * which is the right direction for a backup (see `applyLocalArchive`).
  *
  * Cards, decks, templates, tags, links and the 102,020 imported reviews all rebuild
  * from `exports/` in about fifteen seconds, and the blobs are content-addressed and
@@ -120,6 +139,19 @@ export interface ArchivedSetting {
   readonly value: string;
 }
 
+/**
+ * One card's collection state. Only rows where at least one flag is 1 are stored.
+ *
+ * Keyed on `cards.id`, which is the Mochi card id and therefore stable across a
+ * rebuild — the same property that makes `(card_id, kind)` safe for tracks, and
+ * for the same reason: it is an identity, not a rowid.
+ */
+export interface ArchivedCardState {
+  readonly cardId: string;
+  readonly archived: boolean;
+  readonly pinned: boolean;
+}
+
 export interface LocalArchive {
   readonly archiveVersion: number;
   /** `PRAGMA user_version` of the database it came from. Read, not imported. */
@@ -130,6 +162,15 @@ export interface LocalArchive {
   readonly localFields: readonly ArchivedField[];
   readonly fieldValues: readonly ArchivedFieldValue[];
   readonly settings: readonly ArchivedSetting[];
+  /**
+   * OPTIONAL, and it stays optional. An archive written before this field existed
+   * is still a good archive — absent means "no collection state recorded", which
+   * is a complete and correct reading. `ARCHIVE_VERSION` says it is bumped "only
+   * for a change no reader could otherwise survive", and a reader survives this
+   * one by defaulting to `[]`. Bumping would have rejected every backup he has
+   * already taken, at the moment those files are the only copy.
+   */
+  readonly cardState?: readonly ArchivedCardState[];
   /**
    * Self-describing counts, so a truncated or hand-edited file is detectable
    * before it is applied. `verifyLocalArchive` checks them.
@@ -159,6 +200,9 @@ export interface ApplyReport {
    */
   readonly fieldValuesOrphaned: number;
   readonly settingsUpserted: number;
+  readonly cardStateApplied: number;
+  /** Cards the archive marks that this database no longer has. */
+  readonly cardStateOrphaned: number;
   /** True when nothing needed doing — the "ALREADY APPLIED" shape. */
   readonly noop: boolean;
 }
@@ -199,6 +243,15 @@ SELECT v.card_id, v.field_id, v.value
  ORDER BY v.card_id, v.field_id`;
 
 const SELECT_SETTINGS = `SELECT key, value FROM settings ORDER BY key`;
+
+/**
+ * Non-default rows only. `cards_pinned` is a partial index and `archived` is 234
+ * of 7,716, so this reads the exceptions rather than the collection.
+ */
+const SELECT_CARD_STATE = `
+SELECT id AS card_id, archived, pinned
+  FROM cards WHERE archived = 1 OR pinned = 1
+ ORDER BY id`;
 
 function userVersion(db: SqliteHandle): number {
   const row = db.prepare("PRAGMA user_version").get() as
@@ -272,6 +325,14 @@ export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive 
     (r): ArchivedSetting => ({ key: String(r["key"]), value: String(r["value"]) }),
   );
 
+  const cardState = (db.prepare(SELECT_CARD_STATE).all() as Record<string, unknown>[]).map(
+    (r): ArchivedCardState => ({
+      cardId: String(r["card_id"]),
+      archived: Number(r["archived"]) === 1,
+      pinned: Number(r["pinned"]) === 1,
+    }),
+  );
+
   return {
     archiveVersion: ARCHIVE_VERSION,
     schemaVersion: userVersion(db),
@@ -281,12 +342,14 @@ export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive 
     localFields,
     fieldValues,
     settings,
+    cardState,
     counts: {
       reviews: reviews.length,
       trackState: trackState.length,
       localFields: localFields.length,
       fieldValues: fieldValues.length,
       settings: settings.length,
+      cardState: cardState.length,
     },
   };
 }
@@ -317,6 +380,9 @@ export function verifyLocalArchive(archive: LocalArchive): void {
     localFields: archive.localFields.length,
     fieldValues: archive.fieldValues.length,
     settings: archive.settings.length,
+    // `?? []` and not `?.length ?? 0`: an OLD archive has no `cardState` key in
+    // `counts` either, so the loop below never asks about it. A NEW one has both.
+    cardState: (archive.cardState ?? []).length,
   };
   for (const [name, expected] of Object.entries(archive.counts)) {
     if (actual[name] !== expected) {
@@ -373,6 +439,20 @@ const UPSERT_SETTING = `
 INSERT INTO settings (key, value) VALUES (?, ?)
 ON CONFLICT (key) DO UPDATE SET
   value = excluded.value, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
+
+/**
+ * ADDITIVE, on purpose: it sets the flags the archive holds and clears nothing.
+ *
+ * The archive stores only non-default rows, so "absent" means "was 0 when the
+ * backup was taken" — and clearing on that basis would make a restore UNDO an
+ * archive he made after the backup. A backup that removes work is worse than one
+ * that misses some, so the omission is the safe direction and the only one.
+ */
+const UPDATE_CARD_STATE = `
+UPDATE cards
+   SET archived = max(archived, ?), pinned = max(pinned, ?),
+       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+ WHERE id = ?`;
 
 /**
  * Restore an archive into a database, idempotently.
@@ -492,6 +572,18 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
     settingsUpserted += 1;
   }
 
+  let cardStateApplied = 0;
+  let cardStateOrphaned = 0;
+  const updateCardState = db.prepare(UPDATE_CARD_STATE);
+  for (const c of archive.cardState ?? []) {
+    if (cardExists.get(c.cardId) === undefined) {
+      cardStateOrphaned += 1;
+      continue;
+    }
+    updateCardState.run(c.archived ? 1 : 0, c.pinned ? 1 : 0, c.cardId);
+    cardStateApplied += 1;
+  }
+
   return {
     reviewsInserted,
     reviewsSkipped,
@@ -503,6 +595,8 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
     fieldValuesUpserted,
     fieldValuesOrphaned,
     settingsUpserted,
+    cardStateApplied,
+    cardStateOrphaned,
     // The honest reading of "nothing to do": no review was added. Upserts always
     // run, so counting them would make `noop` permanently false.
     noop: reviewsInserted === 0,
