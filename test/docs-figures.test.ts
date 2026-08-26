@@ -49,18 +49,23 @@ function read(name: string): string {
 }
 
 /**
- * NEXT.md keeps everything below this heading as a deliberate record of what was
- * true at the time, so its figures are allowed to be old. Only the live half is
- * held to the present. CLAUDE.md has no such split; all of it is live.
+ * The half of a document that is held to the PRESENT.
+ *
+ * NEXT.md used to keep a record of what was true at the time below a HISTORY heading,
+ * and its figures were allowed to be old. That record moved to
+ * `notes/archive/next-history.md` on 2026-08-26 — 803 of the file's 1,057 lines — so
+ * there is normally no boundary left and the whole file is live, which is STRICTER:
+ * every figure in it is now held to the present rather than three quarters being
+ * exempt.
+ *
+ * The boundary is still honoured if it comes back. Requiring its ABSENCE would be a
+ * gate on a formatting choice rather than on truth, and someone may reasonably start
+ * a new record.
  */
 function liveHalf(name: string): string {
   const text = read(name);
-  if (name !== "NEXT.md") return text;
   const cut = text.indexOf("## The record below this line is HISTORY");
-  expect(cut, "NEXT.md lost its HISTORY boundary — the live/record split is gone").toBeGreaterThan(
-    -1,
-  );
-  return text.slice(0, cut);
+  return cut === -1 ? text : text.slice(0, cut);
 }
 
 describe("the figures a routine change invalidates", () => {

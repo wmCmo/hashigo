@@ -1,6 +1,6 @@
 # notes/archive — point-in-time reports. NOT the current state.
 
-**Every number in this directory is a sample, not a fact.** These seven files were
+**Every number in this directory is a sample, not a fact.** These files were
 accurate when written and were never rewritten afterwards. Where a figure here
 disagrees with `CLAUDE.md`, `DECISIONS.md`, `NEXT.md`, `BACKTEST.md` or a
 `src/*/README.md`, **those are right and this is stale** — the direction is one-way.
@@ -20,6 +20,7 @@ when code does. A path can at least warn you.
 | `PHONE-TEST.md` | a handset session | what was actually observed on the phone, once |
 | `SPIKE.md` | what the browser spike settled | why `spike/` is a throwaway harness and not the app shell |
 | `persistence.md` | OPFS durability | the one-tap export prescription (`:204`) that decision 17 rests on |
+| `next-history.md` | the bottom three quarters of `NEXT.md`, moved 2026-08-26 | why the app is shaped as it is — the landed-work notes and the reasoning behind them. 803 lines, byte-identical to what sat under `NEXT.md`'s own HISTORY heading |
 | `browser-feasibility.md` | OPFS measurements | §4's blob-store numbers; §5 is **superseded** — it called `crypto.subtle` "the one genuinely invasive change" and `src/blobs/sha256.ts` had already made that false |
 
 **Two specific things in here that are known-wrong and were acted on anyway,
