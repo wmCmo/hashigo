@@ -44,7 +44,11 @@
  * invariance explicitly so that nobody re-derives the wrong conclusion.
  */
 
-import type { Db } from "../db/index.js";
+// `SqliteHandle`, not better-sqlite3's `Db`: the dashboard runs in the OPFS worker
+// now (his #1), and everything in this file uses `prepare`, `get`, `all` and one
+// `pragma` — the four members both handles share. A type-only import, so nothing
+// here reaches a `node:` module at runtime.
+import type { SqliteHandle } from "../db/browser.js";
 import { INTERVAL_BASES, type IntervalBasis } from "../schema/index.js";
 import { queueCounts, reviewForecast } from "../scheduler/queue.js";
 
@@ -83,11 +87,11 @@ export function calendarYear(year: number): DateWindow {
 
 type Params = Record<string, string | number | null>;
 
-function all<T>(db: Db, sql: string, params: Params = {}): T[] {
+function all<T>(db: SqliteHandle, sql: string, params: Params = {}): T[] {
   return db.prepare(sql).all(params) as T[];
 }
 
-function one<T>(db: Db, sql: string, params: Params = {}): T | undefined {
+function one<T>(db: SqliteHandle, sql: string, params: Params = {}): T | undefined {
   return db.prepare(sql).get(params) as T | undefined;
 }
 
@@ -218,7 +222,7 @@ interface SpanRow {
   days_elapsed: number;
 }
 
-export function totals(db: Db, window: DateWindow, options: TotalsOptions = {}): Totals {
+export function totals(db: SqliteHandle, window: DateWindow, options: TotalsOptions = {}): Totals {
   const row = one<TotalsRow>(db, TOTALS_SQL, scope(window));
   if (!row) throw new Error("totals query returned no row");
   const span = one<SpanRow>(db, SPAN_SQL, { ...scope(window), as_of: options.asOf ?? null });
@@ -311,7 +315,7 @@ interface DayRow {
   cumulative_cards: number;
 }
 
-export function activityByDay(db: Db, window: DateWindow): DayActivity[] {
+export function activityByDay(db: SqliteHandle, window: DateWindow): DayActivity[] {
   return all<DayRow>(db, DAYS_SQL, scope(window)).map((r) => ({
     date: r.date,
     reviews: r.reviews,
@@ -378,7 +382,7 @@ interface MonthRow {
   hours: number;
 }
 
-export function activityByMonth(db: Db, window: DateWindow): MonthActivity[] {
+export function activityByMonth(db: SqliteHandle, window: DateWindow): MonthActivity[] {
   return all<MonthRow>(db, MONTHS_SQL, scope(window)).map((r) => ({
     month: r.month,
     reviews: r.reviews,
@@ -420,7 +424,7 @@ interface YearRow {
   hours: number;
 }
 
-export function activityByYear(db: Db, window: DateWindow = ALL_TIME): YearSummary[] {
+export function activityByYear(db: SqliteHandle, window: DateWindow = ALL_TIME): YearSummary[] {
   return all<YearRow>(db, YEARS_SQL, scope(window)).map((r) => ({
     year: r.year,
     reviews: r.reviews,
@@ -535,7 +539,7 @@ interface IntervalRow {
  * exists to prevent.
  */
 export function retentionByInterval(
-  db: Db,
+  db: SqliteHandle,
   window: DateWindow,
   basis: IntervalBasis,
 ): IntervalBucket[] {
@@ -578,7 +582,7 @@ export interface IntervalsByBasis {
   readonly scheduled: readonly IntervalBucket[];
 }
 
-export function retentionByIntervalBothBases(db: Db, window: DateWindow): IntervalsByBasis {
+export function retentionByIntervalBothBases(db: SqliteHandle, window: DateWindow): IntervalsByBasis {
   return {
     elapsed: retentionByInterval(db, window, "elapsed"),
     scheduled: retentionByInterval(db, window, "scheduled"),
@@ -698,7 +702,7 @@ SELECT (SELECT reviews   FROM observed)                                  AS obse
        (SELECT max(t.due_at) ${LIVE_TRACKS} AND t.scheduled_days > @cap) AS last_due_at
 `;
 
-export function longIntervalOutlook(db: Db): LongIntervalOutlook {
+export function longIntervalOutlook(db: SqliteHandle): LongIntervalOutlook {
   const row = one<{
     observed_beyond_year: number;
     observed_retention: number | null;
@@ -832,7 +836,7 @@ interface DeckRetentionRow {
   direct_reverse_passed: number;
 }
 
-export function retentionByDeck(db: Db, window: DateWindow): DeckRetention[] {
+export function retentionByDeck(db: SqliteHandle, window: DateWindow): DeckRetention[] {
   return all<DeckRetentionRow>(db, DECK_RETENTION_SQL, scope(window)).map((r) => ({
     deckId: r.deck_id,
     path: r.path,
@@ -937,7 +941,7 @@ interface DeckProgressRow {
   direct_mature_tracks: number;
 }
 
-export function deckProgress(db: Db): DeckProgress[] {
+export function deckProgress(db: SqliteHandle): DeckProgress[] {
   return all<DeckProgressRow>(db, DECK_PROGRESS_SQL).map((r) => ({
     deckId: r.deck_id,
     path: r.path,
@@ -1018,7 +1022,7 @@ SELECT sum(CASE WHEN t.scheduler = 'fsrs6' THEN 1 ELSE 0 END) AS hashigo,
  * review date in the log, not the wall clock — so `dashboard.html` is
  * reproducible and its byte-identity test means something.
  */
-export function resolveAsOf(db: Db, asOf: string | null = null): string {
+export function resolveAsOf(db: SqliteHandle, asOf: string | null = null): string {
   const row = one<{ as_of: string | null }>(
     db,
     `SELECT coalesce(:as_of, max(local_date)) AS as_of FROM review_log`,
@@ -1030,7 +1034,7 @@ export function resolveAsOf(db: Db, asOf: string | null = null): string {
   return row?.as_of ?? asOf ?? MIN_DATE;
 }
 
-export function forecast(db: Db, asOf: string | null = null, horizonDays = 30): ForecastReport {
+export function forecast(db: SqliteHandle, asOf: string | null = null, horizonDays = 30): ForecastReport {
   const on = resolveAsOf(db, asOf);
   // Only the local DATE of this instant is read; see src/scheduler/queue.ts.
   const now = `${on}T00:00:00Z`;
@@ -1125,7 +1129,7 @@ export interface CollectOptions extends TotalsOptions {
   readonly generatedAt?: string;
 }
 
-function windowReport(db: Db, window: DateWindow, options: TotalsOptions): WindowReport {
+function windowReport(db: SqliteHandle, window: DateWindow, options: TotalsOptions): WindowReport {
   return {
     totals: totals(db, window, options),
     days: activityByDay(db, window),
@@ -1135,7 +1139,7 @@ function windowReport(db: Db, window: DateWindow, options: TotalsOptions): Windo
   };
 }
 
-export function collect(db: Db, options: CollectOptions = {}): DashboardData {
+export function collect(db: SqliteHandle, options: CollectOptions = {}): DashboardData {
   const asOf = options.asOf ?? null;
   const primary = windowReport(db, ALL_TIME, { asOf });
   const comparison = windowReport(db, calendarYear(options.comparisonYear ?? 2026), { asOf });

@@ -68,6 +68,11 @@ import { BlobUrlScope } from "../src/blobs/url.js";
 import { browserDocument, CLASS } from "../src/render/index.js";
 import { mountPrepared, type MountedCard, type PreparedCard } from "../src/review/index.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
+// The template editor's two rules, from the modules that own them. `referencedNames`
+// is the same lexer the parser uses (`FIELD_TOKEN`), so the 'not a field' check on
+// screen cannot disagree with what the renderer will actually resolve.
+import { referencedNames } from "../src/template/index.js";
+import { moveWithin } from "../src/schema/index.js";
 import type { RenderResult } from "../src/render/index.js";
 import type { ShadowingSide } from "../src/render/reveal.js";
 // The two extracted rules. Import-free modules so `test/` can reach them; see
@@ -85,6 +90,9 @@ import type {
   BrowseHit,
   CardOp,
   DeckOp,
+  TemplateDetail,
+  TemplateFieldRow,
+  TemplateOpRequest,
   DeckBrief,
   ReplyFor,
   TemplateBrief,
@@ -2209,7 +2217,25 @@ function confirmDelete(cardId: string, name: string): void {
   );
 }
 
-function openConfirm(title: string, body: string, verb: string, run: () => void): void {
+/**
+ * `tone` exists because this dialog stopped being only about deletion.
+ *
+ * It grew from one caller (delete a card) to eight, and four of them are not
+ * destructive at all: building the dashboard, changing target retention, unarchiving
+ * a deck, turning reverse on. A red confirm button on "build it" teaches him that red
+ * means "the app wants you to read this", which is exactly the meaning it must NOT
+ * have by the time he sees it on "delete 3,467 reviews".
+ *
+ * Default stays `danger`, so a caller that does not think about it gets the cautious
+ * one.
+ */
+function openConfirm(
+  title: string,
+  body: string,
+  verb: string,
+  run: () => void,
+  tone: "danger" | "normal" = "danger",
+): void {
   const root = document.createElement("div");
   root.className = "layer layer-confirm";
   root.setAttribute("role", "dialog");
@@ -2231,7 +2257,7 @@ function openConfirm(title: string, body: string, verb: string, run: () => void)
   cancel.addEventListener("click", () => closeIfTop(root));
   const go = document.createElement("button");
   go.type = "button";
-  go.className = "danger";
+  if (tone === "danger") go.className = "danger";
   go.textContent = verb;
   go.addEventListener("click", () => {
     closeIfTop(root);
@@ -2256,36 +2282,551 @@ async function openEditorById(cardId: string): Promise<void> {
 
 /**
  * *"where can i edit my template? there should be a modal for editing template and
- * fields"* — his #11. This is the FIELD LIST and the body; it is deliberately not
- * a field-type editor yet, because changing a field's type is a data migration and
- * not a form.
+ * fields"* — his #11.
+ *
+ * ─── THE ONE THING THAT MAKES THIS DIFFERENT FROM THE CARD EDITOR ───────────
+ *
+ * A card edit changes one card. **A template edit changes every card on it**, and
+ * the count is on screen for that reason: 単語 is 3,742. So every row here states
+ * its blast radius before he touches it, and the two irreversible-looking ones
+ * (rename a field, delete a field) both say what happens to the text underneath.
+ *
+ * ─── RENAMING A FIELD REWRITES THE BODY, AND HE IS TOLD SO ──────────────────
+ *
+ * The resolver binds `<<Field>>` by NAME, so a rename that stopped at
+ * `template_fields` would unbind every marker in silence. The worker rewrites the
+ * body and every generator prompt in the same transaction; this screen shows the
+ * reference COUNT beside each field so the number in "rewrote 6 reference(s)" is
+ * one he could have predicted.
+ *
+ * ─── WHAT IS NOT HERE ───────────────────────────────────────────────────────
+ *
+ * Changing a field's TYPE, and repointing a generator's source. Both reinterpret
+ * every existing value at once — a migration, not a form control — and the worker
+ * refuses them rather than this screen hiding them. `templateOp` says why.
  */
-function openTemplateEditor(template: TemplateBrief): void {
-  openConfirm(
-    `${template.name} · ${template.fields} fields`,
-    "Template editing is not built yet. What exists today is per-CARD field " +
-      "editing (press e on any card). Editing the template BODY changes how every " +
-      "card on it renders, and editing a field's type is a data migration — both " +
-      "want more care than a text box.",
-    "ok",
-    () => {},
-  );
+function openTemplateEditor(brief: TemplateBrief): void {
+  void openTemplateEditorById(brief.id);
 }
 
-/** His #1: the dashboard, from the sidebar. */
+async function openTemplateEditorById(templateId: string): Promise<void> {
+  const reply = await ask<"template">({ kind: "template", templateId });
+  if (reply.template === null) {
+    say(`no template ${templateId}`, true);
+    return;
+  }
+
+  const root = document.createElement("div");
+  root.className = "layer layer-edit layer-template";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.setAttribute("aria-label", `edit template ${reply.template.name}`);
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+  root.appendChild(backdrop);
+
+  const panel = document.createElement("div");
+  panel.className = "layer-panel";
+  const head = document.createElement("div");
+  head.className = "layer-head";
+  const title = document.createElement("span");
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "layer-close";
+  close.setAttribute("aria-label", "close the template editor");
+  close.textContent = "✕";
+  close.addEventListener("click", () => closeIfTop(root));
+  head.append(title, close);
+  panel.appendChild(head);
+
+  const body = document.createElement("div");
+  body.className = "layer-body";
+  panel.appendChild(body);
+  root.appendChild(panel);
+
+  let detail = reply.template;
+
+  /** Run one op, then repaint from the row the worker sent back. */
+  const run: TemplateRunner = async (request) => {
+    try {
+      const done = await ask<"templateOp">({ kind: "templateOp", ...request });
+      say(done.describe);
+      if (done.template !== null) {
+        detail = done.template;
+        paint();
+      }
+      if (done.undo !== null) {
+        const entry = done.undo;
+        pushUndo({
+          describe: done.describe,
+          run: async () => {
+            const back = await ask<"templateOp">({ kind: "templateOp", ...entry });
+            if (back.template !== null && layers.some((layer) => layer.root === root)) {
+              detail = back.template;
+              paint();
+            }
+            await refreshAfterOp();
+          },
+        });
+      }
+      await loadDecks(true);
+    } catch (cause) {
+      say((cause as Error).message, true);
+    }
+  };
+
+  function paint(): void {
+    title.textContent = `${detail.name} · ${detail.cards.toLocaleString()} card(s)`;
+    body.replaceChildren();
+
+    // ── the name ──
+    const nameRow = document.createElement("div");
+    nameRow.className = "edit-row";
+    const nameLabel = document.createElement("span");
+    nameLabel.className = "edit-label";
+    nameLabel.textContent = "template name";
+    const nameInput = document.createElement("input");
+    nameInput.className = "edit-input";
+    nameInput.type = "text";
+    nameInput.value = detail.name;
+    nameInput.addEventListener("change", () => {
+      if (nameInput.value.trim() !== detail.name) {
+        void run({ op: "rename", templateId: detail.id, name: nameInput.value.trim() });
+      }
+    });
+    nameRow.append(nameLabel, nameInput);
+    body.appendChild(nameRow);
+
+    // ── the fields ──
+    const fieldsHead = document.createElement("h3");
+    fieldsHead.className = "tpl-head";
+    fieldsHead.textContent = `fields (${detail.fields.length})`;
+    body.appendChild(fieldsHead);
+
+    const list = document.createElement("div");
+    list.className = "tpl-fields";
+    detail.fields.forEach((field, index) => {
+      list.appendChild(templateFieldRow(detail, field, index, run));
+    });
+    body.appendChild(list);
+
+    // ── add ──
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "tree-add";
+    add.textContent = "+ add a field";
+    add.addEventListener("click", () => openAddField(detail, run));
+    body.appendChild(add);
+
+    // ── the body ──
+    const bodyHead = document.createElement("h3");
+    bodyHead.className = "tpl-head";
+    bodyHead.textContent = "body";
+    body.appendChild(bodyHead);
+
+    const why = document.createElement("p");
+    why.className = "settings-note";
+    why.textContent =
+      `This is what every one of the ${detail.cards.toLocaleString()} cards on this ` +
+      `template renders. '---' starts a new side and '___' is a rule within one. ` +
+      `<<Field>> interpolates, <<#Field>> and <<^Field>> gate a block on a boolean, ` +
+      `{{...}} is a cloze. A name that is not a field of this template resolves to ` +
+      `nothing — silently — so the check below is the one that matters.`;
+    body.appendChild(why);
+
+    const area = document.createElement("textarea");
+    area.className = "edit-input tpl-body";
+    area.rows = 14;
+    area.spellcheck = false;
+    area.value = detail.content;
+    const unknown = document.createElement("p");
+    unknown.className = "settings-bad";
+    unknown.hidden = true;
+
+    // AN UNRESOLVED `<<X>>` IS AN EMPTY STRING, NOT AN ERROR. So the one useful
+    // check on a body is "does every name it uses exist here", and it runs while
+    // he types rather than after he saves.
+    const check = (): void => {
+      const known = new Set(detail.fields.map((entry) => entry.name));
+      const missing = [...referencedNames(area.value)].filter((name) => !known.has(name));
+      unknown.hidden = missing.length === 0;
+      unknown.textContent =
+        `${missing.join(", ")} — not a field of ${detail.name}. Those markers will ` +
+        `render as nothing, on every card.`;
+    };
+    area.addEventListener("input", check);
+    // On BLUR, like the card editor: an OPFS write is 20-80 ms and a keystroke is
+    // not a save. The template is one row, but it is a row 3,742 cards read.
+    area.addEventListener("blur", () => {
+      if (area.value !== detail.content) {
+        void run({ op: "body", templateId: detail.id, content: area.value });
+      }
+    });
+    check();
+    body.append(area, unknown);
+  }
+
+  paint();
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  layers.push({
+    root,
+    mounted: null,
+    prepared: null,
+    cardId: "",
+    ops: false,
+    pinned: false,
+    archived: false,
+  });
+  close.focus();
+}
+
+/** What every row in the template editor is handed to write with. */
+type TemplateRunner = (request: Omit<TemplateOpRequest, "kind" | "id">) => Promise<void>;
+
+function templateFieldRow(
+  detail: TemplateDetail,
+  field: TemplateFieldRow,
+  index: number,
+  run: TemplateRunner,
+): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "tpl-field";
+  if (field.local) row.classList.add("is-local");
+
+  const name = document.createElement("input");
+  name.className = "edit-input tpl-name";
+  name.type = "text";
+  name.value = field.name;
+  name.addEventListener("change", () => {
+    if (name.value.trim() !== field.name) {
+      void run({
+        op: "renameField",
+        templateId: detail.id,
+        fieldId: field.id,
+        name: name.value.trim(),
+      });
+    }
+  });
+
+  const facts = document.createElement("p");
+  facts.className = "tpl-facts";
+  facts.textContent = [
+    field.type,
+    field.local ? "local (decision 9 — protected from re-import)" : null,
+    `${field.references} reference(s) in the body`,
+    field.values === 0 ? null : `${field.values.toLocaleString()} value(s)`,
+    field.dependents.length === 0 ? null : `feeds ${field.dependents.join(", ")}`,
+  ]
+    .filter((part) => part !== null)
+    .join(" · ");
+
+  const ops = document.createElement("div");
+  ops.className = "tpl-ops";
+  const order = detail.fields.map((entry) => entry.id);
+
+  const step = (delta: number): void => {
+    const to = index + delta;
+    if (to < 0 || to >= order.length) return;
+    // `before` is the id to land in FRONT of. Moving DOWN has to land in front of
+    // the field AFTER the one being passed, or the swap is a no-op.
+    const before = delta < 0 ? order[to] : (order[to + 1] ?? null);
+    void run({
+      op: "orderFields",
+      templateId: detail.id,
+      order: moveWithin(order, field.id, before ?? null),
+    });
+  };
+
+  const button = (label: string, title: string, on: () => void, danger = false): void => {
+    const element = document.createElement("button");
+    element.type = "button";
+    element.className = "gcard-op";
+    if (danger) element.classList.add("danger");
+    element.textContent = label;
+    element.title = title;
+    element.addEventListener("click", on);
+    ops.appendChild(element);
+  };
+
+  button("↑", "move up", () => step(-1));
+  button("↓", "move down", () => step(1));
+  button(
+    "delete",
+    field.dependents.length > 0 ? `${field.dependents.join(", ")} generate from this` : "remove it",
+    () => {
+      openConfirm(
+        `Remove ${field.name} from ${detail.name}?`,
+        (field.values === 0
+          ? "No card carries a value for it. "
+          : `${field.values.toLocaleString()} card(s) carry a value for it. Those ` +
+            `values are NOT deleted — 'card_field_values' is deliberately not ` +
+            `foreign-keyed to the field, because losing four years of authored text ` +
+            `is worse than an orphan row. Undo puts the field back and the text is ` +
+            `still under it. `) +
+          (field.references === 0
+            ? "Nothing in the body references it."
+            : `The body references it ${field.references} time(s); those markers will ` +
+              `render as nothing until you edit the body.`),
+        "remove the field",
+        () => void run({ op: "deleteField", templateId: detail.id, fieldId: field.id }),
+      );
+    },
+    true,
+  );
+
+  row.append(name, facts, ops);
+  return row;
+}
+
+function openAddField(detail: TemplateDetail, run: TemplateRunner): void {
+  // Only the types a person AUTHORS. The generated ones (`speech`, `ai`,
+  // `translate`, `furigana`, `dictionary`, `image-search`) need options and a source
+  // that this form cannot ask for sensibly, and their VALUES are empty by design —
+  // Mochi keeps generated output in `component-cache`, addressed by generation
+  // identity. Offering them here would create a field that can never show anything.
+  const TYPES: readonly (readonly [string, string])[] = [
+    ["plain", "plain — one line of text"],
+    ["text", "text — several lines"],
+    ["boolean", "boolean — true/false, gates <<#Field>> blocks"],
+    ["number", "number"],
+    ["accent", "accent — 平板 / 頭高 / 中高 / 尾高 (decision 20's 型)"],
+  ];
+
+  const root = document.createElement("div");
+  root.className = "layer layer-confirm";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+
+  const panel = document.createElement("div");
+  panel.className = "confirm-panel";
+  const heading = document.createElement("h2");
+  heading.textContent = `Add a field to ${detail.name}`;
+  const text = document.createElement("p");
+  text.textContent =
+    "It is created LOCAL (decision 9), which is what stops a re-import pruning its " +
+    "values — that is the flag whose absence once threw away 3,454 型 labels. It " +
+    "renders nowhere until you put <<Name>> in the body.";
+
+  const nameRow = document.createElement("label");
+  nameRow.className = "edit-row";
+  const nameLabel = document.createElement("span");
+  nameLabel.className = "edit-label";
+  nameLabel.textContent = "name";
+  const nameInput = document.createElement("input");
+  nameInput.className = "edit-input";
+  nameInput.type = "text";
+  nameRow.append(nameLabel, nameInput);
+
+  const typeRow = document.createElement("label");
+  typeRow.className = "edit-row";
+  const typeLabel = document.createElement("span");
+  typeLabel.className = "edit-label";
+  typeLabel.textContent = "type";
+  const typeSelect = document.createElement("select");
+  typeSelect.className = "edit-input";
+  for (const [value, label] of TYPES) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    typeSelect.appendChild(option);
+  }
+  typeRow.append(typeLabel, typeSelect);
+
+  const bar = document.createElement("div");
+  bar.className = "confirm-bar";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "cancel";
+  cancel.addEventListener("click", () => closeIfTop(root));
+  const go = document.createElement("button");
+  go.type = "button";
+  go.textContent = "add";
+  go.addEventListener("click", () => {
+    const value = nameInput.value.trim();
+    if (value === "") {
+      nameInput.focus();
+      return;
+    }
+    closeIfTop(root);
+    void run({
+      op: "addField",
+      templateId: detail.id,
+      name: value,
+      fieldType: typeSelect.value,
+    });
+  });
+  bar.append(cancel, go);
+
+  panel.append(heading, text, nameRow, typeRow, bar);
+  root.append(backdrop, panel);
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  layers.push({
+    root,
+    mounted: null,
+    prepared: null,
+    cardId: "",
+    ops: false,
+    pinned: false,
+    archived: false,
+  });
+  nameInput.focus();
+}
+
+/**
+ * His #1: *"i want dashboard to be accessible from the side bar"*.
+ *
+ * **The port turned out to be a TYPE.** The stub here used to say wiring it in
+ * meant "porting src/dashboard to run against the OPFS database in the worker —
+ * real work, not a link". It was not: `src/dashboard/metrics.ts` was already a
+ * pinned browser entry point, and the only thing between it and this was that it
+ * named better-sqlite3's `Db` where it needed the `SqliteHandle` both handles
+ * implement. Four members — `prepare`, `get`, `all`, one `pragma`.
+ *
+ * ─── AN IFRAME, AND THAT IS THE POINT RATHER THAN A SHORTCUT ────────────────
+ *
+ * The dashboard is a COMPLETE document with its own stylesheet and **zero
+ * JavaScript** (SPEC problem #1 is battery). Injecting its body into this page
+ * would put two full stylesheets in one document and let each restyle the other —
+ * it sets rules on `body`, `table`, `h1`. `srcdoc` gives it its own document, and
+ * since it runs no script there is nothing to sandbox against.
+ *
+ * ─── IT ASKS BEFORE IT RUNS, AND THE REASON IS A MEASUREMENT ────────────────
+ *
+ * **81,060 ms in the worker**, in Chromium on this desktop, over the real corpus —
+ * against **10.3 s** for the same `collect` under better-sqlite3 in Node. An 8x
+ * penalty, and none of it is one hot query: it is roughly fourteen full passes over
+ * 102,020 rows through views that recompute `date(datetime(reviewed_at, ...))` per
+ * row. The slowest single piece is `totals` at 1.3 s in Node.
+ *
+ * The cost that matters is not the wait. **sqlite-wasm is synchronous and there is
+ * one worker**, so for as long as this runs, nothing else can touch the database —
+ * no grade, no next card, no field edit. A control that silently freezes grading for
+ * a minute and a half is worse than one that says so, so this states the number and
+ * waits to be told to go.
+ *
+ * The estimate is the LAST measured run, kept for the session, because the first
+ * one on his handset is the only honest source for what it costs there.
+ *
+ * `notes/` carries the optimisation this is waiting for; it is a real refactor of
+ * `src/dashboard/metrics.ts` guarded by a byte-identical golden file, not a tweak.
+ */
 async function openDashboard(): Promise<void> {
   closeSidebar();
   openConfirm(
-    "Dashboard",
-    "The dashboard is generated by `npm run dashboard` as a standalone HTML file " +
-      "with zero JavaScript (SPEC problem #1, battery). Wiring it into the app " +
-      "means porting src/dashboard to run against the OPFS database in the worker — " +
-      "real work, not a link. Recorded rather than faked.",
-    "ok",
-    () => {},
+    "Build the dashboard?",
+    `It reads the whole review history — 102,020 rows, about fourteen passes — and ` +
+      `SQLite runs synchronously in the one worker, so nothing else can touch the ` +
+      `database until it finishes: no grading, no next card. ` +
+      (dashboardLastMs === null
+        ? `On a desktop it measured 81 seconds.`
+        : `Last run on this device: ${(dashboardLastMs / 1000).toFixed(0)} seconds.`),
+    "build it",
+    () => void buildDashboard(),
+    "normal",
   );
 }
 
+async function buildDashboard(): Promise<void> {
+  say("building the dashboard — the database is busy until it finishes…");
+  let reply: ReplyFor["dashboard"];
+  try {
+    reply = await ask<"dashboard">({ kind: "dashboard", locale: dashboardLocale });
+  } catch (cause) {
+    say((cause as Error).message, true);
+    return;
+  }
+  dashboardLastMs = reply.elapsedMs;
+
+  const root = document.createElement("div");
+  root.className = "layer layer-dashboard";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.setAttribute("aria-label", "dashboard");
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+  root.appendChild(backdrop);
+
+  const panel = document.createElement("div");
+  panel.className = "layer-panel";
+  const head = document.createElement("div");
+  head.className = "layer-head";
+  const title = document.createElement("span");
+  title.textContent =
+    `dashboard · ${(reply.bytes / 1024).toFixed(0)} KB · ` +
+    `${reply.elapsedMs.toFixed(0)} ms`;
+
+  const ops = document.createElement("div");
+  ops.className = "layer-ops";
+  // Decision: English by default, `ja` byte-identical to a committed golden file.
+  // Both are one render, so the toggle re-asks rather than translating on screen.
+  const language = document.createElement("button");
+  language.type = "button";
+  language.className = "layer-op";
+  language.textContent = dashboardLocale === "ja" ? "English" : "日本語";
+  language.addEventListener("click", () => {
+    dashboardLocale = dashboardLocale === "ja" ? "en" : "ja";
+    closeIfTop(root);
+    // Straight to the build: he has already agreed to the cost once, and asking
+    // again for the same data in the other language is a question with one answer.
+    void buildDashboard();
+  });
+  ops.appendChild(language);
+
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "layer-close";
+  close.setAttribute("aria-label", "close the dashboard");
+  close.textContent = "✕";
+  close.addEventListener("click", () => closeIfTop(root));
+  head.append(title, ops, close);
+  panel.appendChild(head);
+
+  const frame = document.createElement("iframe");
+  frame.className = "dashboard-frame";
+  frame.setAttribute("title", "dashboard");
+  // No `allow-scripts`: the document contains none, and saying so here is what
+  // makes that a guarantee rather than an observation.
+  frame.setAttribute("sandbox", "");
+  frame.srcdoc = reply.html;
+  panel.appendChild(frame);
+  root.appendChild(panel);
+
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  layers.push({
+    root,
+    mounted: null,
+    prepared: null,
+    cardId: "",
+    ops: false,
+    pinned: false,
+    archived: false,
+  });
+  close.focus();
+  say(`dashboard: ${reply.elapsedMs.toFixed(0)} ms over the whole history`);
+}
+
+/** Remembered for the session only; the render is per open either way. */
+let dashboardLocale = "en";
+
+/**
+ * What the last build actually cost HERE.
+ *
+ * Null until one has run, and the fallback is the desktop figure said as a desktop
+ * figure. His phone wrote the corpus 1.44x faster than this machine, so quoting 81
+ * seconds at him there would be wrong in the direction that reads as a warning —
+ * which is the direction that stops him using something that works.
+ */
+let dashboardLastMs: number | null = null;
 
 // ─── his #12: settings ──────────────────────────────────────────────────────
 
@@ -2578,7 +3119,7 @@ function settingRow(
       void saveSetting(row.key, value, current, status);
     };
     if (row.confirm === undefined) write();
-    else openConfirm(row.confirm.title, row.confirm.body, "change it", write);
+    else openConfirm(row.confirm.title, row.confirm.body, "change it", write, "normal");
   };
   // `change`, not `input`: a number box fires `input` on every keystroke, so
   // typing "20" over "1" would write 2 and then 20 — two rows in the undo stack
@@ -2889,6 +3430,9 @@ function openDeckMenu(deck: DeckBrief): void {
           `there arrived here unarchived.`,
         deck.archived ? "unarchive deck" : "archive deck",
         () => void runDeckOp({ op: deck.archived ? "unarchive" : "archive", deckId: deck.id }),
+        // Undo restores exactly the rows it flipped, and no history is destroyed
+        // either way — an archived track goes dormant, it does not lose its reviews.
+        "normal",
       );
     },
   );

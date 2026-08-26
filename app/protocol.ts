@@ -427,6 +427,138 @@ export interface PreviewMessage {
   readonly archived: boolean;
 }
 
+/**
+ * His #11: *"where can i edit my template? there should be a modal for editing
+ * template and fields"*.
+ *
+ * ─── RENAMING A FIELD IS A BODY EDIT, AND THAT DECIDES THIS WHOLE SHAPE ─────
+ *
+ * `src/template/resolve.ts` binds `<<Field>>` **by NAME**. So a rename that touches
+ * only `template_fields` unbinds every marker in the body — silently, because an
+ * unresolved `<<X>>` is an empty string and not an error. On 単語 that is decision
+ * 29's `<<#Reading>>` gate: the entire mode split, off, with nothing to see.
+ *
+ * The rewrite therefore happens in the SAME transaction as the rename, over the
+ * body and over every generator prompt beside it (`schema.sql`: 例文's only
+ * dependency is named inside its own prompt text). `src/template/rename.ts` owns
+ * the rewrite and a test round-trips it over every field of every real template.
+ */
+export interface TemplateFieldRow {
+  readonly id: string;
+  readonly name: string;
+  readonly type: string;
+  readonly sourceFieldId: string | null;
+  readonly options: string;
+  readonly pos: string;
+  /** Decision 9: 1 = added here, and protected from `pruneFieldValues`. */
+  readonly local: boolean;
+  /** Values on cards. Shown because deleting a field does NOT delete them. */
+  readonly values: number;
+  /** How many times the body references it. A rename rewrites exactly these. */
+  readonly references: number;
+  /** Fields whose `source_field_id` is this one. A delete would unbind them. */
+  readonly dependents: readonly string[];
+}
+
+export interface TemplateDetail {
+  readonly id: string;
+  readonly name: string;
+  readonly content: string;
+  readonly cards: number;
+  readonly fields: readonly TemplateFieldRow[];
+}
+
+export interface TemplateRequest {
+  readonly kind: "template";
+  readonly id: number;
+  readonly templateId: string;
+}
+
+export interface TemplateMessage {
+  readonly kind: "template";
+  readonly id: number;
+  readonly template: TemplateDetail | null;
+}
+
+export type TemplateOp =
+  | "rename"
+  | "body"
+  | "addField"
+  | "renameField"
+  | "deleteField"
+  | "restoreField"
+  | "orderFields";
+
+export interface TemplateOpRequest {
+  readonly kind: "templateOp";
+  readonly id: number;
+  readonly op: TemplateOp;
+  readonly templateId: string;
+  /** `rename` (template) and `addField` / `renameField` (the field's name). */
+  readonly name?: string;
+  /** `body` only. */
+  readonly content?: string;
+  /** Everything that acts on one field. */
+  readonly fieldId?: string;
+  /** `addField` only. Validated against the schema CHECK in the worker. */
+  readonly fieldType?: string;
+  /** `orderFields` only: every field id, in the order they should sit. */
+  readonly order?: readonly string[];
+  /** `restoreField` only: the row a delete removed, put back verbatim. */
+  readonly field?: TemplateFieldRow;
+}
+
+export interface TemplateOpMessage {
+  readonly kind: "templateOp";
+  readonly id: number;
+  readonly op: TemplateOp;
+  readonly describe: string;
+  /** The template as it now stands, so the editor repaints from the row. */
+  readonly template: TemplateDetail | null;
+  readonly undo: {
+    readonly op: TemplateOp;
+    readonly templateId: string;
+    readonly name?: string;
+    readonly content?: string;
+    readonly fieldId?: string;
+    readonly order?: readonly string[];
+    readonly field?: TemplateFieldRow;
+  } | null;
+}
+
+/**
+ * His #1: *"i want dashboard to be accessible from the side bar"*.
+ *
+ * ─── IT IS THE SAME RENDERER, RUN IN THE WORKER ─────────────────────────────
+ *
+ * `npm run dashboard` writes a standalone file with **zero JavaScript** — SPEC
+ * problem #1 is battery, and a page that computes nothing after load costs nothing
+ * to look at. That property is exactly what makes it embeddable: the reply is a
+ * complete HTML document, and the page puts it in an `<iframe srcdoc>` where its
+ * own stylesheet cannot touch the app's and vice versa.
+ *
+ * `src/dashboard/metrics.ts` was already a pinned browser entry point; the only
+ * thing standing between it and this was its `Db` type, which named
+ * better-sqlite3's handle instead of the shared `SqliteHandle` both implement.
+ *
+ * The `locale` is his: decision — English by default, `ja` byte-identical to a
+ * committed golden file.
+ */
+export interface DashboardRequest {
+  readonly kind: "dashboard";
+  readonly id: number;
+  readonly locale: string;
+}
+
+export interface DashboardMessage {
+  readonly kind: "dashboard";
+  readonly id: number;
+  /** A complete document, zero JavaScript. */
+  readonly html: string;
+  readonly bytes: number;
+  readonly elapsedMs: number;
+}
+
 /** Decision 17's archive, as JSON text, for the page to hand to a download. */
 export interface BackupRequest {
   readonly kind: "backup";
@@ -527,6 +659,9 @@ export type AppRequest =
   | DeckOpRequest
   | UngradeRequest
   | SetFieldRequest
+  | TemplateRequest
+  | TemplateOpRequest
+  | DashboardRequest
   | SettingsRequest
   | SetSettingRequest
   | ResetRequest;
@@ -664,6 +799,9 @@ export type AppMessage =
   | BackupMessage
   | SettingsMessage
   | SetSettingMessage
+  | TemplateMessage
+  | TemplateOpMessage
+  | DashboardMessage
   | ErrorMessage;
 
 /** The reply kind each request expects. Keeps the page's typing honest. */
@@ -677,6 +815,9 @@ export interface ReplyFor {
   readonly reset: ResetMessage;
   readonly preview: PreviewMessage;
   readonly setField: SetFieldMessage;
+  readonly dashboard: DashboardMessage;
+  readonly template: TemplateMessage;
+  readonly templateOp: TemplateOpMessage;
   readonly settings: SettingsMessage;
   readonly setSetting: SetSettingMessage;
   readonly decks: DecksMessage;

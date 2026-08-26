@@ -1441,3 +1441,117 @@ body[data-view="review"] .review main { padding-bottom: 210px; }
   max-height: min(80vh, 640px);
   overflow-y: auto;
 }
+
+/* ── his #11: the template editor ───────────────────────────────────────────
+   Denser than the card editor, because a field row carries FACTS as well as a
+   control: how many cards hold a value, how many times the body names it, what
+   generates from it. Those are what make a delete a decision instead of a
+   guess, so they are on the row rather than behind a tooltip. */
+.tpl-head {
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  margin: 22px 0 10px;
+  padding-top: 14px;
+  text-transform: lowercase;
+}
+
+.tpl-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tpl-field {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  display: grid;
+  gap: 4px 10px;
+  grid-template-columns: minmax(10ch, 24ch) 1fr auto;
+  padding: 8px 10px;
+}
+
+/* Decision 9's fields are the ones a re-import cannot take away. Marked, because
+   the difference decides whether an edit here survives the final import. */
+.tpl-field.is-local {
+  border-left: 2px solid var(--accent);
+}
+
+.tpl-name {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.tpl-facts {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.74rem;
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+}
+
+.tpl-ops {
+  align-self: center;
+  display: flex;
+  gap: 4px;
+  grid-column: 3;
+  grid-row: 1;
+}
+
+@media (max-width: 640px) {
+  .tpl-field {
+    grid-template-columns: 1fr;
+  }
+
+  .tpl-name,
+  .tpl-facts,
+  .tpl-ops {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+/* The body is authored text in a mono face with the Japanese fallback behind it —
+   `--mono` already chains to `--jp`, so 単語 and `<<` line up in one box. */
+.tpl-body {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  min-height: 12em;
+  resize: vertical;
+  white-space: pre;
+  width: 100%;
+}
+
+.layer-template .layer-panel {
+  max-width: min(900px, 94vw);
+}
+
+/* ── his #1: the dashboard ──────────────────────────────────────────────────
+   An iframe, not injected markup. The dashboard is a complete document with its
+   own stylesheet setting rules on `body`, `table` and `h1`; two full stylesheets
+   in one document restyle each other. `srcdoc` gives it its own, and it runs no
+   script, so `sandbox=""` costs it nothing.
+
+   White is deliberate here and nowhere else in this app: the standalone file is
+   the same bytes `npm run dashboard` writes, and it must stay byte-identical to
+   the committed golden. Theming it from out here would fork it. */
+.layer-dashboard .layer-panel {
+  height: min(92vh, 1100px);
+  max-width: min(1200px, 96vw);
+  width: 100%;
+}
+
+.dashboard-frame {
+  background: #fff;
+  border: 0;
+  border-radius: 0 0 4px 4px;
+  display: block;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+}

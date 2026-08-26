@@ -34,6 +34,12 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 > **The recurring principle in it is not one of the fourteen:** every 操作 available on
 > the desktop must be available on mobile. A keyboard shortcut is an accelerator, never
 > the only route.
+>
+> **ALL FOURTEEN CARRY WORKING CODE as of 2026-08-26.** The last three — the dashboard
+> from the sidebar (1), template and field editing (11), settings (12) — landed with
+> pin (6, 7). What that does NOT mean is in `notes/zach-wants.md`: the dashboard costs
+> 81 seconds in the worker and says so before running, and the template editor refuses
+> two edits on purpose. **He has still never run any of it on his phone.**
 
 ## STATE RIGHT NOW — 2026-08-26, tree clean, THE APP RUNS
 
@@ -52,7 +58,7 @@ npm run app:dev -- --host ::              # phone / tunnel
 
 Gates: run **`npm run gates`** — one command, all seven, cheapest first, and a verdict
 that means what it says. `app:build` is new and was covered by nothing: `app:check` is
-`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 30 files / 848
+`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 32 files / 873
 passed / 1 skipped** (~97 s) · `npm run typecheck` → 0 · **`npm run app:check` → 0** ·
 `npm run build` → OK, 77 modules, 27 export subpaths · `npm run spike:check` → 0 ·
 `blobs … paths` → 0.
@@ -246,12 +252,43 @@ session looks to decide what to pick up.
 
 | | what | state |
 |---|---|---|
-| **1** | **Run the app on his phone** | The one thing that needs HIM. `npm run app:dev -- --host ::` plus a tunnel; the bind-address trap is in `app/README.md` |
+| **1** | **Run the app on his phone** | The one thing that needs HIM, and it is now the ONLY thing on this table that his fourteen did not touch. `npm run app:dev -- --host ::` plus a tunnel; the bind-address trap is in `app/README.md` |
 | **2** | **Stage 11, sync** | The only STRUCTURAL blocker. He uses both devices — laptop to create, phone to review — and without sync they hold separate OPFS databases, so his stated workflow is impossible. Unspecified in shape. Decision 18: the TTS key never goes in the client |
-| **3** | **The rest of stage 10** | Field editing SHIPS (`e`, from review or a preview, undoable). What it still owes is **template and field editing** (his #11) and **deck CRUD beyond archive/rename/create/delete** (his #14) |
-| **4** | **Settings** (his #12) | Decision 12's new-card limit is called "a SETTING" and there is no surface for it. Recorded want, not an invisible gap |
-| **5** | **The dashboard from the sidebar** (his #1) | The button exists and links out; he asked for it in the shell |
-| — | Everything else in [notes/zach-wants.md](notes/zach-wants.md) | At least ten of the fourteen carry working code. That file is the WANT; this table is the state |
+| **3** | **Make the dashboard usable on the device** | It WORKS and it costs **81,060 ms** in the worker against **10.3 s** for the same `collect` in Node — an 8x wasm penalty, and sqlite-wasm is synchronous in the one worker, so nothing can grade while it runs. It asks before running and states the number. See below for where the time goes |
+| — | Everything in [notes/zach-wants.md](notes/zach-wants.md) | **All fourteen carry working code.** That file is the WANT; this table is the state |
+
+### WHERE THE DASHBOARD'S 81 SECONDS GO — measured 2026-08-26, not yet fixed
+
+`collect` over the real corpus, timed per metric under better-sqlite3 in Node
+(`build/probe-dash5.ts`, throwaway). Multiply by roughly 8 for sqlite-wasm on OPFS:
+
+```plaintext
+totals            all 1,269 ms   2026   886 ms
+retentionByIntervalBothBases  620          380
+activityByDay                 356          213
+activityByMonth               372          224
+retentionByDeck               137           84
+longIntervalOutlook           567
+activityByYear                265
+deckProgress                   21
+                              ────────────────
+                              ~5.4 s of the measured 10.3 s total
+```
+
+**There is no hot query to fix.** `review_log` itself is 56 ms for all 102,020 rows,
+and `deck_paths` — the recursive view it joins — costs 45 ms. The cost is roughly
+**fourteen full passes**, each recomputing `date(datetime(reviewed_at, printf('%+d
+minutes', tz_offset_minutes)))` per row, and `collect` runs the whole set TWICE (all
+time, then calendar 2026).
+
+The obvious repair is to materialise `review_log`'s scalar columns into a TEMP TABLE
+once per `collect` and point the metrics at it. It is a real refactor of
+`src/dashboard/metrics.ts` — and it has the best possible safety net:
+`test/dashboard.test.ts` compares the rendered file **byte-for-byte** against a
+committed golden, so a change that alters one number cannot pass.
+
+**Do NOT reach for a cache instead.** A dashboard that can go stale is a dashboard
+that quietly reports yesterday, and the number he would act on is today's.
 
 ### Three things RUNNING it found, which reasoning had not
 

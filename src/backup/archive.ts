@@ -14,11 +14,15 @@
  *   * `reviews` where `source = 'local'` — grades made in Hashigo. THE thing.
  *   * the scheduling state of any track that has one — `due_at`, `scheduled_days`,
  *     `reps`, `lapses`, `last_reviewed_at`, `scheduler`, `scheduler_state`.
- *   * `template_fields` where `local = 1` and their `card_field_values` — decision
- *     9's locally-authored fields (`読み`, `かな主流`, `型`). Mochi never had them,
- *     so nothing else has them either.
+ *   * `template_fields` — ALL of them, and their `card_field_values` for the
+ *     `local = 1` ones. Decision 9's locally-authored fields (`読み`, `かな主流`,
+ *     `型`) were always in here because Mochi never had them; the Mochi-owned ones
+ *     joined when the app grew a template editor, for the reason under
+ *     "TEMPLATES" below — a renamed field and an edited body have to come back
+ *     together or the body's markers name a field that no longer exists.
  *   * `settings`.
  *   * **`cards.archived` and `cards.pinned`, wherever either is 1** — see below.
+ *   * **`templates.name` and `templates.content`** — see "TEMPLATES", below.
  *
  * ─── WHY COLLECTION STATE IS IN HERE, AND WAS NOT ───────────────────────────
  *
@@ -37,6 +41,29 @@
  * costs the archive a few kilobytes rather than a row per card. Restoring is
  * therefore additive: it sets the flags it holds and never clears one it does not,
  * which is the right direction for a backup (see `applyLocalArchive`).
+ *
+ * ─── TEMPLATES, FOR THE SAME REASON AND WITH A SHARPER EDGE ─────────────────
+ *
+ * `templates.content` is a Mochi column and `UPSERT_TEMPLATE` writes it from the
+ * export, so an edited body does not survive decision 16's final import. That was
+ * true before the app could edit one and it was already costing something:
+ * `scripts/accent-field-apply.ts` writes decision 20's `型` gating INTO the body,
+ * which is why re-running it is a documented step of the rebuild chore. Now that
+ * the app has a template editor (his #11) it is a hole he can fall into by typing.
+ *
+ * **The field rows come with it, all of them, and that is not optional.** Renaming
+ * a field rewrites the body's `<<Field>>` markers in the same transaction, because
+ * the resolver binds by name. Archiving the body without the field NAMES would
+ * restore a body whose markers point at names the fields no longer carry — every
+ * one of them resolving to an empty string, silently. The two halves are one fact.
+ *
+ * `local` is carried per row rather than assumed, because it decides whether
+ * `pruneFieldValues` deletes a field's values on the next import. An archive
+ * written before this change has no `local` on its rows and every row in it was
+ * `local = 1` by construction, so absent reads as `true` — the old file restores
+ * exactly as it always did.
+ *
+ * 10 templates and 49 fields: the whole addition is a few kilobytes.
  *
  * Cards, decks, templates, tags, links and the 102,020 imported reviews all rebuild
  * from `exports/` in about fifteen seconds, and the blobs are content-addressed and
@@ -126,6 +153,27 @@ export interface ArchivedField {
    * this was caught by reading the real rows rather than the column list.
    */
   readonly pos: string;
+  /**
+   * OPTIONAL, and absent means `true`.
+   *
+   * Every row in an archive written before templates were carried was `local = 1`
+   * by construction (the SELECT had `WHERE local = 1`), so defaulting to true makes
+   * an old file restore exactly as it used to. It matters because `local` is what
+   * stops `pruneFieldValues` deleting the field's values on the next import.
+   */
+  readonly local?: boolean;
+}
+
+/**
+ * One template's editable surface.
+ *
+ * `reverse_permutation` and `pos` are deliberately absent: neither is reachable
+ * from the editor, so archiving them would claim a scope the backup does not have.
+ */
+export interface ArchivedTemplate {
+  readonly id: string;
+  readonly name: string;
+  readonly content: string;
 }
 
 export interface ArchivedFieldValue {
@@ -160,6 +208,8 @@ export interface LocalArchive {
   readonly reviews: readonly ArchivedReview[];
   readonly trackState: readonly ArchivedTrackState[];
   readonly localFields: readonly ArchivedField[];
+  /** OPTIONAL for the same reason `cardState` is — an older archive predates it. */
+  readonly templates?: readonly ArchivedTemplate[];
   readonly fieldValues: readonly ArchivedFieldValue[];
   readonly settings: readonly ArchivedSetting[];
   /**
@@ -200,6 +250,9 @@ export interface ApplyReport {
    */
   readonly fieldValuesOrphaned: number;
   readonly settingsUpserted: number;
+  readonly templatesApplied: number;
+  /** Templates the archive holds that this database no longer has. */
+  readonly templatesOrphaned: number;
   readonly cardStateApplied: number;
   /** Cards the archive marks that this database no longer has. */
   readonly cardStateOrphaned: number;
@@ -231,9 +284,18 @@ SELECT t.card_id AS card_id, t.kind AS kind, t.due_at, t.scheduled_days, t.reps,
     OR EXISTS (SELECT 1 FROM reviews r WHERE r.track_id = t.id AND r.source = 'local')
  ORDER BY t.card_id, t.kind`;
 
+/**
+ * ALL fields, not only `local = 1`.
+ *
+ * The `WHERE local = 1` this replaces was right while the only fields authored here
+ * were ones Mochi never had. Once a template's body and its field names can both be
+ * edited in the app, they have to be archived as one thing — see "TEMPLATES" above.
+ */
 const SELECT_FIELDS = `
-SELECT template_id, id, name, type, source_field_id, options, pos
-  FROM template_fields WHERE local = 1 ORDER BY template_id, pos, id`;
+SELECT template_id, id, name, type, source_field_id, options, pos, local
+  FROM template_fields ORDER BY template_id, pos, id`;
+
+const SELECT_TEMPLATES = `SELECT id, name, content FROM templates ORDER BY id`;
 
 /** Values of locally-authored fields only. A Mochi field's values are in the export. */
 const SELECT_FIELD_VALUES = `
@@ -310,6 +372,15 @@ export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive 
       sourceFieldId: r["source_field_id"] === null ? null : String(r["source_field_id"]),
       options: r["options"] === null ? null : String(r["options"]),
       pos: String(r["pos"]),
+      local: Number(r["local"]) === 1,
+    }),
+  );
+
+  const templates = (db.prepare(SELECT_TEMPLATES).all() as Record<string, unknown>[]).map(
+    (r): ArchivedTemplate => ({
+      id: String(r["id"]),
+      name: String(r["name"]),
+      content: String(r["content"]),
     }),
   );
 
@@ -340,6 +411,7 @@ export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive 
     reviews,
     trackState,
     localFields,
+    templates,
     fieldValues,
     settings,
     cardState,
@@ -347,6 +419,7 @@ export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive 
       reviews: reviews.length,
       trackState: trackState.length,
       localFields: localFields.length,
+      templates: templates.length,
       fieldValues: fieldValues.length,
       settings: settings.length,
       cardState: cardState.length,
@@ -378,6 +451,7 @@ export function verifyLocalArchive(archive: LocalArchive): void {
     reviews: archive.reviews.length,
     trackState: archive.trackState.length,
     localFields: archive.localFields.length,
+    templates: (archive.templates ?? []).length,
     fieldValues: archive.fieldValues.length,
     settings: archive.settings.length,
     // `?? []` and not `?.length ?? 0`: an OLD archive has no `cardState` key in
@@ -421,15 +495,29 @@ UPDATE card_tracks
        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
  WHERE id = ?`;
 
+/**
+ * `local` is a PARAMETER now, not the literal 1.
+ *
+ * It used to be hard-coded because the SELECT only ever produced local rows. With
+ * every field archived, writing 1 for all of them would mark Mochi's fields as
+ * locally-authored and stop `pruneFieldValues` ever cleaning up a field Mochi
+ * genuinely deleted — turning a backup into a slow leak.
+ */
 const UPSERT_FIELD = `
 INSERT INTO template_fields
   (template_id, id, name, type, source_field_id, options, pos, local)
-VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (template_id, id) DO UPDATE SET
   name = excluded.name, type = excluded.type,
   source_field_id = excluded.source_field_id, options = excluded.options,
-  pos = excluded.pos, local = 1,
+  pos = excluded.pos, local = excluded.local,
   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
+
+const UPDATE_TEMPLATE = `
+UPDATE templates
+   SET name = ?, content = ?,
+       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+ WHERE id = ?`;
 
 const UPSERT_VALUE = `
 INSERT INTO card_field_values (card_id, field_id, value) VALUES (?, ?, ?)
@@ -494,8 +582,35 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
       fieldsOrphaned += 1;
       continue;
     }
-    upsertField.run(f.templateId, f.id, f.name, f.type, f.sourceFieldId, f.options, f.pos);
+    // `?? true` is the old-archive default — see `ArchivedField.local`.
+    upsertField.run(
+      f.templateId,
+      f.id,
+      f.name,
+      f.type,
+      f.sourceFieldId,
+      f.options,
+      f.pos,
+      (f.local ?? true) ? 1 : 0,
+    );
     fieldsUpserted += 1;
+  }
+
+  // AFTER the fields, and that order is load-bearing: a restored body's `<<Field>>`
+  // markers name fields by NAME, so the names have to be back before the body that
+  // uses them. Both are in the caller's one transaction either way, but the order
+  // is what makes an interrupted restore leave the readable half rather than a body
+  // whose markers resolve to nothing.
+  let templatesApplied = 0;
+  let templatesOrphaned = 0;
+  const updateTemplate = db.prepare(UPDATE_TEMPLATE);
+  for (const t of archive.templates ?? []) {
+    if (templateExists.get(t.id) === undefined) {
+      templatesOrphaned += 1;
+      continue;
+    }
+    updateTemplate.run(t.name, t.content, t.id);
+    templatesApplied += 1;
   }
 
   let fieldValuesUpserted = 0;
@@ -595,6 +710,8 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
     fieldValuesUpserted,
     fieldValuesOrphaned,
     settingsUpserted,
+    templatesApplied,
+    templatesOrphaned,
     cardStateApplied,
     cardStateOrphaned,
     // The honest reading of "nothing to do": no review was added. Upserts always

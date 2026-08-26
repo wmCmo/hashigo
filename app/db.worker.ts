@@ -45,7 +45,7 @@ import {
 } from "../src/db/browser.js";
 import { cardAudioResolver } from "../src/cards/index.js";
 import { directionForTrackKind } from "../src/cards/index.js";
-import { prepareCard } from "../src/review/index.js";
+import { ACCENT_FIELD_TYPE, READING_FIELD, prepareCard } from "../src/review/index.js";
 import {
   buildSession,
   readSessionSettings,
@@ -54,6 +54,9 @@ import {
   type ReviewSession,
 } from "../src/session/index.js";
 import { searchCards } from "../src/search/index.js";
+import { collect, renderDashboard } from "../src/dashboard/index.js";
+import { countReferences, renameFieldEverywhere } from "../src/template/index.js";
+import { positionKeys, FIELD_TYPES } from "../src/schema/index.js";
 // The SQL fragments for "live" and "due", from the module that owns them. This
 // query is why that module exists: it used to spell the due comparison with
 // `date()`, which converts an offset timestamp to UTC and made this count 704
@@ -74,6 +77,12 @@ import type {
   UngradeRequest,
   PreviewRequest,
   SetFieldRequest,
+  TemplateDetail,
+  TemplateFieldRow,
+  TemplateOpMessage,
+  TemplateOpRequest,
+  TemplateRequest,
+  DashboardRequest,
   SettingsRequest,
   SetSettingRequest,
   ResetRequest,
@@ -1238,6 +1247,403 @@ function setSetting(request: SetSettingRequest): void {
   });
 }
 
+
+// ─── his #11: templates and their fields ────────────────────────────────────
+
+/**
+ * One template, everything the editor needs to make an informed change.
+ *
+ * The three derived numbers per field are the point. Each one answers a question
+ * the editor would otherwise have to ask him:
+ *
+ *   `values`      how many cards carry a value for it. `card_field_values` is
+ *                 deliberately NOT foreign-keyed to `template_fields` — a value
+ *                 must survive its field being deleted (schema.sql says losing four
+ *                 years of authored text is worse than an orphan row) — so a delete
+ *                 hides text rather than destroying it, and the count is how much.
+ *   `references`  how many `<<Field>>` tokens in the body name it. A rename rewrites
+ *                 exactly these, and 0 means the field renders nowhere.
+ *   `dependents`  fields whose `source_field_id` is this one. The composite FK is
+ *                 ON DELETE SET NULL, so deleting a source SILENTLY unbinds every
+ *                 generator that fed on it. That is refused, not warned about.
+ */
+function templateDetail(db: BrowserDb, templateId: string): TemplateDetail | null {
+  const row = db.prepare("SELECT id, name, content FROM templates WHERE id = ?").get(templateId) as
+    | { id: string; name: string; content: string }
+    | undefined;
+  if (row === undefined) return null;
+
+  const fields = db
+    .prepare(
+      `SELECT f.id AS id, f.name AS name, f.type AS type, f.source_field_id AS source,
+              f.options AS options, f.pos AS pos, f.local AS local,
+              (SELECT count(*) FROM card_field_values v
+                WHERE v.field_id = f.id
+                  AND v.card_id IN (SELECT id FROM cards WHERE template_id = f.template_id)
+                  AND v.value <> '') AS values_
+         FROM template_fields f
+        WHERE f.template_id = ?
+        ORDER BY f.pos, f.id`,
+    )
+    .all(templateId) as {
+    id: string;
+    name: string;
+    type: string;
+    source: string | null;
+    options: string;
+    pos: string;
+    local: number;
+    values_: number;
+  }[];
+
+  const dependentsOf = new Map<string, string[]>();
+  for (const field of fields) {
+    if (field.source === null) continue;
+    const list = dependentsOf.get(field.source) ?? [];
+    list.push(field.name);
+    dependentsOf.set(field.source, list);
+  }
+
+  return {
+    id: row.id,
+    name: row.name,
+    content: row.content,
+    cards: Number(
+      (
+        db.prepare("SELECT count(*) AS n FROM cards WHERE template_id = ?").get(templateId) as {
+          n: number;
+        }
+      ).n,
+    ),
+    fields: fields.map(
+      (field): TemplateFieldRow => ({
+        id: field.id,
+        name: field.name,
+        type: field.type,
+        sourceFieldId: field.source,
+        options: field.options,
+        pos: field.pos,
+        local: field.local === 1,
+        values: Number(field.values_),
+        references: countReferences(row.content, field.name),
+        dependents: dependentsOf.get(field.id) ?? [],
+      }),
+    ),
+  };
+}
+
+function template(request: TemplateRequest): void {
+  post({
+    kind: "template",
+    id: request.id,
+    template: templateDetail(requireCards(), request.templateId),
+  });
+}
+
+/** A field id that cannot collide with Mochi's, and says where it came from. */
+function newFieldId(db: BrowserDb, templateId: string): string {
+  const taken = db.prepare("SELECT 1 FROM template_fields WHERE template_id = ? AND id = ?");
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
+    let id = "local-";
+    for (const byte of bytes) id += ID_ALPHABET[byte % ID_ALPHABET.length];
+    if (taken.get(templateId, id) === undefined) return id;
+  }
+  throw new Error("could not mint a field id in 32 attempts");
+}
+
+/**
+ * Every template and field edit, each one atomic and each one undoable.
+ *
+ * ─── WHAT THIS DELIBERATELY REFUSES ─────────────────────────────────────────
+ *
+ * **Changing a field's TYPE.** `template_fields.type` decides how the resolver
+ * reads a value and how the renderer draws it, and the stored text does not
+ * change with it: a `boolean` holds `"true"`, a `number` holds digits, and a
+ * `speech` field's value has always been EMPTY because Mochi keeps generated output
+ * in `component-cache` addressed by generation identity (measured: 19 generated
+ * fields, zero non-empty values). Flipping a type reinterprets every existing value
+ * at once, which is a migration and not a form control. Add a field and move the
+ * values if that is what he wants — that is a decision with a diff.
+ *
+ * **Deleting a field another field generates from.** The composite foreign key is
+ * ON DELETE SET NULL, so it would succeed and quietly leave `Speech` with no input.
+ *
+ * ─── AND WHAT IT ALLOWS THAT LOOKS RISKIER THAN IT IS ───────────────────────
+ *
+ * Deleting a field does not delete its values, by schema design. So a delete is
+ * recoverable: `restoreField` puts the row back and the values are still under it.
+ * That is why delete here has an undo and card `delete` does not.
+ */
+function templateOp(request: TemplateOpRequest): void {
+  const db = requireCards();
+  const before = templateDetail(db, request.templateId);
+  if (before === null) throw new Error(`no template ${request.templateId}`);
+
+  let describe = "";
+  let undo: TemplateOpMessage["undo"] = null;
+
+  const field = (id: string): TemplateFieldRow => {
+    const found = before.fields.find((entry) => entry.id === id);
+    if (found === undefined) throw new Error(`no field ${id} on ${before.name}`);
+    return found;
+  };
+
+  /**
+   * ─── ONE FIELD IS LOAD-BEARING BY NAME, IN CODE ─────────────────────────────
+   *
+   * Found by running this editor rather than by reading it. `src/review/mode.ts`
+   * decides decision 29's two modes with `READING_FIELD = "Reading"` — a NAME
+   * comparison, against a field that must also be `boolean`. So renaming or
+   * removing it on an accent-drill template does not break a render; it flips all
+   * **692** `produce` cards to `identify`, which means autoplay on entry and the
+   * accent given away before he has produced it. That is the exact defect decision
+   * 29 exists to prevent, arriving from a text box, with no error anywhere.
+   *
+   * The body rewrite makes it MORE dangerous, not less: `<<#Reading>>` follows the
+   * rename perfectly, so the template still renders and only the mode is wrong.
+   *
+   * Refused rather than warned. Making it work needs a code change (the constant),
+   * and a UI that lets him do half of a two-part change is a UI that breaks the
+   * app on his behalf. Scoped to templates that actually run the drill, so 漢字 —
+   * which declares a PLAIN field called `Reading` holding コウ / ショウ on 1,662
+   * cards — is untouched, and so is any template of his own.
+   */
+  const guardReadingField = (target: TemplateFieldRow, verb: string): void => {
+    const drills = before.fields.some((entry) => entry.type === ACCENT_FIELD_TYPE);
+    if (!drills) return;
+    if (target.name.trim() !== READING_FIELD || target.type !== "boolean") return;
+    throw new Error(
+      `${verb} ${READING_FIELD} on ${before.name} would silently change what these ` +
+        `cards DRILL. src/review/mode.ts finds it by name and type to choose ` +
+        `decision 29's two modes, so the cards would still render and every ` +
+        `produce card would start autoplaying its answer instead. Changing this ` +
+        `needs the code constant changed with it.`,
+    );
+  };
+
+  switch (request.op) {
+    case "rename": {
+      const name = (request.name ?? "").trim();
+      if (name === "") throw new Error("a template needs a name");
+      db.prepare("UPDATE templates SET name = ? WHERE id = ?").run(name, before.id);
+      describe = `renamed template ${before.name} to ${name}`;
+      undo = { op: "rename", templateId: before.id, name: before.name };
+      break;
+    }
+
+    case "body": {
+      const content = request.content ?? "";
+      // NO PARSE CHECK, and that is deliberate rather than an omission. `parseTemplate`
+      // accepts essentially any text — an unknown `<<X>>` resolves to nothing and a
+      // stray `---` makes a side — so "does it parse" would pass everything and read
+      // as a validation that happened. What the editor shows instead is which field
+      // names the new body references and which of them do not exist, which is the
+      // question a body edit can actually get wrong.
+      db.prepare("UPDATE templates SET content = ? WHERE id = ?").run(content, before.id);
+      describe = `edited ${before.name}'s body (${before.cards.toLocaleString()} cards render it)`;
+      undo = { op: "body", templateId: before.id, content: before.content };
+      break;
+    }
+
+    case "addField": {
+      const name = (request.name ?? "").trim();
+      const type = request.fieldType ?? "plain";
+      if (name === "") throw new Error("a field needs a name");
+      if (before.fields.some((entry) => entry.name === name)) {
+        // The resolver binds by name and takes the FIRST match, so a duplicate name
+        // makes the second field unreachable rather than ambiguous.
+        throw new Error(`${before.name} already has a field called ${name}`);
+      }
+      if (!(FIELD_TYPES as readonly string[]).includes(type)) {
+        throw new Error(`${type} is not a field type`);
+      }
+      const id = newFieldId(db, before.id);
+      const keys = positionKeys(before.fields.length + 1);
+      db.transaction(() => {
+        db.prepare(
+          // `local = 1` is decision 9, and it is not cosmetic: `pruneFieldValues`
+          // deletes any `card_field_values` row the export does not carry, which is
+          // right for a field Mochi DELETED and catastrophic for one Mochi never
+          // had. Without it a re-import silently threw away 3,454 型 labels.
+          `INSERT INTO template_fields (template_id, id, name, type, source_field_id,
+                                        options, pos, local)
+           VALUES (?, ?, ?, ?, NULL, '{}', ?, 1)`,
+        ).run(before.id, id, name, type, keys[before.fields.length]);
+        renumber(db, before.id, [...before.fields.map((entry) => entry.id), id]);
+      })();
+      describe = `added ${name} (${type}) to ${before.name} — put <<${name}>> in the body to show it`;
+      undo = { op: "deleteField", templateId: before.id, fieldId: id };
+      break;
+    }
+
+    case "renameField": {
+      const target = field(request.fieldId ?? "");
+      const name = (request.name ?? "").trim();
+      if (name === "") throw new Error("a field needs a name");
+      if (name !== target.name) guardReadingField(target, "renaming");
+      if (name !== target.name && before.fields.some((entry) => entry.name === name)) {
+        throw new Error(`${before.name} already has a field called ${name}`);
+      }
+      // THE BODY AND THE PROMPTS GO WITH IT, IN ONE TRANSACTION. See this file's
+      // header and `src/template/rename.ts`: the resolver binds by name, so leaving
+      // the body alone unbinds every marker silently.
+      const rewritten = renameFieldEverywhere(
+        before.content,
+        before.fields.map((entry) => ({ fieldId: entry.id, options: entry.options })),
+        target.name,
+        name,
+      );
+      db.transaction(() => {
+        db.prepare(
+          "UPDATE template_fields SET name = ? WHERE template_id = ? AND id = ?",
+        ).run(name, before.id, target.id);
+        db.prepare("UPDATE templates SET content = ? WHERE id = ?").run(rewritten.body, before.id);
+        for (const entry of rewritten.options) {
+          db.prepare(
+            "UPDATE template_fields SET options = ? WHERE template_id = ? AND id = ?",
+          ).run(entry.options, before.id, entry.fieldId);
+        }
+      })();
+      describe =
+        `renamed ${target.name} to ${name}` +
+        (rewritten.rewrites === 0
+          ? " — nothing referenced it"
+          : ` and rewrote ${rewritten.rewrites} reference(s)`);
+      undo = { op: "renameField", templateId: before.id, fieldId: target.id, name: target.name };
+      break;
+    }
+
+    case "deleteField": {
+      const target = field(request.fieldId ?? "");
+      guardReadingField(target, "removing");
+      if (target.dependents.length > 0) {
+        throw new Error(
+          `${target.name} is the source for ${target.dependents.join(", ")}. The foreign ` +
+            `key is ON DELETE SET NULL, so deleting it would succeed and leave those ` +
+            `generators with no input — silently. Repoint them first.`,
+        );
+      }
+      db.transaction(() => {
+        db.prepare("DELETE FROM template_fields WHERE template_id = ? AND id = ?").run(
+          before.id,
+          target.id,
+        );
+        renumber(
+          db,
+          before.id,
+          before.fields.filter((entry) => entry.id !== target.id).map((entry) => entry.id),
+        );
+      })();
+      describe =
+        `removed ${target.name} from ${before.name}` +
+        (target.values === 0
+          ? ""
+          : ` — its ${target.values.toLocaleString()} value(s) are KEPT and come back if you undo`);
+      undo = { op: "restoreField", templateId: before.id, field: target };
+      break;
+    }
+
+    case "restoreField": {
+      const row = request.field;
+      if (row === undefined) throw new Error("restoreField needs the field it is restoring");
+      db.transaction(() => {
+        db.prepare(
+          `INSERT INTO template_fields (template_id, id, name, type, source_field_id,
+                                        options, pos, local)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          before.id,
+          row.id,
+          row.name,
+          row.type,
+          row.sourceFieldId,
+          row.options,
+          row.pos,
+          row.local ? 1 : 0,
+        );
+      })();
+      describe = `restored ${row.name} to ${before.name}`;
+      undo = { op: "deleteField", templateId: before.id, fieldId: row.id };
+      break;
+    }
+
+    case "orderFields": {
+      const order = request.order ?? [];
+      const known = new Set(before.fields.map((entry) => entry.id));
+      if (order.length !== known.size || order.some((id) => !known.has(id))) {
+        // A partial order would renumber some rows and leave others, which sorts
+        // into an arrangement nobody asked for. Refuse rather than approximate.
+        throw new Error(
+          `the order must name all ${known.size} field(s) of ${before.name}, once each`,
+        );
+      }
+      db.transaction(() => {
+        renumber(db, before.id, order);
+      })();
+      describe = `reordered ${before.name}'s fields`;
+      undo = {
+        op: "orderFields",
+        templateId: before.id,
+        order: before.fields.map((entry) => entry.id),
+      };
+      break;
+    }
+  }
+
+  post({
+    kind: "templateOp",
+    id: request.id,
+    op: request.op,
+    describe,
+    template: templateDetail(db, request.templateId),
+    undo,
+  });
+}
+
+/**
+ * Rewrite every `pos` in a template from an explicit order.
+ *
+ * The whole template, not one row: `src/schema/order.ts` explains why renumbering
+ * beats a fractional insert for 11 rows edited from one screen. The caller owns the
+ * transaction — a half-renumbered template sorts into an arrangement nobody chose.
+ */
+function renumber(db: BrowserDb, templateId: string, order: readonly string[]): void {
+  const keys = positionKeys(order.length);
+  const update = db.prepare("UPDATE template_fields SET pos = ? WHERE template_id = ? AND id = ?");
+  order.forEach((fieldId, index) => {
+    update.run(keys[index], templateId, fieldId);
+  });
+}
+
+/**
+ * His #1. The whole dashboard, computed here and handed over as one string.
+ *
+ * ─── WHY THIS IS NOT STREAMED, PAGED, OR CACHED ─────────────────────────────
+ *
+ * It is one pass over 102,020 reviews and it produces a document with no script in
+ * it, so there is nothing to stream INTO and nothing to update afterwards. The
+ * elapsed time comes back with it rather than being guessed at: if it turns out to
+ * cost more than a card mount on his handset, that is a measurement to act on, not
+ * a reason to build a cache before anyone has felt it slow.
+ *
+ * `source` says where the numbers came from, because the standalone file names a
+ * path and this one cannot — the database is a slot in an OPFS pool.
+ */
+function dashboard(request: DashboardRequest): void {
+  const db = requireCards();
+  const started = performance.now();
+  const data = collect(db, { source: "OPFS · this device" });
+  const html = renderDashboard(data, { locale: request.locale === "ja" ? "ja" : "en" });
+  post({
+    kind: "dashboard",
+    id: request.id,
+    html,
+    bytes: new TextEncoder().encode(html).length,
+    elapsedMs: performance.now() - started,
+  });
+}
+
 self.onmessage = (event: MessageEvent<AppRequest>): void => {
   const request = event.data;
   void (async () => {
@@ -1266,6 +1672,15 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "setField":
           setField(request);
+          break;
+        case "dashboard":
+          dashboard(request);
+          break;
+        case "template":
+          template(request);
+          break;
+        case "templateOp":
+          templateOp(request);
           break;
         case "settings":
           await settings(request);

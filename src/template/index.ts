@@ -10,6 +10,10 @@
  *   parse.ts    `parseTemplate` (surface 2) and `parseContent` (surface 1),
  *               plus the `<<Field>>` lexer both share
  *   resolve.ts  sections, interpolation, sides, and the reverse permutation
+ *   rename.ts   rewriting `<<Field>>` tokens when a field is renamed, which
+ *               is a BODY edit and not only a `template_fields` one — the
+ *               resolver binds by NAME, so a rename without it unbinds every
+ *               marker silently
  *
  * Read the header of each for the measured reasoning; `test/template.test.ts`
  * re-derives every figure quoted in them from the real exports.
@@ -17,4 +21,5 @@
 
 export * from "./ast.js";
 export * from "./parse.js";
+export * from "./rename.js";
 export * from "./resolve.js";

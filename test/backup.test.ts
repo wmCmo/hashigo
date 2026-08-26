@@ -98,7 +98,12 @@ describe("the local archive", () => {
         scheduler: "fsrs6",
         schedulerState: '{"s":4.2,"d":5.1}',
       });
+      // ALL fields now, not only `local = 1` — the template editor made a body and
+      // its field names one fact (see the module header). The fixture's template has
+      // the local 読み and nothing else, so the count is unchanged here; the corpus
+      // test below is where the change shows.
       expect(a.localFields).toHaveLength(1);
+      expect(a.localFields[0]).toMatchObject({ id: "local-yomi", local: true });
       expect(a.fieldValues).toEqual([
         { cardId: "cardA", fieldId: "local-yomi", value: "はし" },
       ]);
@@ -107,6 +112,86 @@ describe("the local archive", () => {
       expect(JSON.stringify(a)).not.toMatch(/"trackId"/);
     } finally {
       db.close();
+    }
+  });
+
+  it("carries the template BODY, which the final import overwrites", () => {
+    const source = fixture({ withLocal: true });
+    const target = fixture({ withLocal: true });
+    try {
+      source
+        .prepare("UPDATE templates SET content = ?, name = ? WHERE id = 'tpl'")
+        .run("<<読み>>\n---\n<<単語>>", "単語v2");
+      const a = exportLocalArchive(source, AT);
+      expect(a.templates).toEqual([
+        { id: "tpl", name: "単語v2", content: "<<読み>>\n---\n<<単語>>" },
+      ]);
+
+      const report = applyLocalArchive(target, a);
+      expect(report.templatesApplied).toBe(1);
+      expect(report.templatesOrphaned).toBe(0);
+      expect(
+        target.prepare("SELECT name, content FROM templates WHERE id = 'tpl'").get(),
+      ).toEqual({ name: "単語v2", content: "<<読み>>\n---\n<<単語>>" });
+    } finally {
+      source.close();
+      target.close();
+    }
+  });
+
+  it("RESTORES A MOCHI FIELD WITHOUT MARKING IT LOCAL — that would leak values forever", () => {
+    // `local` used to be the literal 1 in the UPSERT, because the SELECT only ever
+    // produced local rows. Now that every field is archived, writing 1 for all of
+    // them would tell `pruneFieldValues` never to clean up a field Mochi genuinely
+    // deleted — a backup that turns into a slow leak.
+    const source = fixture({ withLocal: true });
+    const target = fixture({ withLocal: true });
+    try {
+      source
+        .prepare(
+          `INSERT INTO template_fields (template_id, id, name, type, pos, local)
+           VALUES ('tpl', 'mochiField', '意味', 'plain', 'zz', 0)`,
+        )
+        .run();
+      const a = exportLocalArchive(source, AT);
+      applyLocalArchive(target, a);
+      const rows = Object.fromEntries(
+        (target
+          .prepare("SELECT id, local FROM template_fields WHERE template_id = 'tpl'")
+          .all() as { id: string; local: number }[]).map((r) => [r.id, r.local]),
+      );
+      expect(rows["mochiField"]).toBe(0);
+      expect(rows["local-yomi"]).toBe(1);
+    } finally {
+      source.close();
+      target.close();
+    }
+  });
+
+  it("an OLD archive's fields default to local, which is what they all were", () => {
+    const source = fixture({ withLocal: true });
+    const target = fixture({ withLocal: true });
+    try {
+      const a = exportLocalArchive(source, AT);
+      const old = JSON.parse(JSON.stringify(a)) as Record<string, unknown>;
+      // Exactly the shape a pre-templates archive has: no `local` on the rows, and
+      // no `templates` key at all.
+      for (const field of old["localFields"] as Record<string, unknown>[]) {
+        delete field["local"];
+      }
+      delete old["templates"];
+      delete (old["counts"] as Record<string, number>)["templates"];
+      target.prepare("UPDATE template_fields SET local = 0 WHERE id = 'local-yomi'").run();
+      const report = applyLocalArchive(target, old as never);
+      expect(report.templatesApplied).toBe(0);
+      expect(
+        (target
+          .prepare("SELECT local FROM template_fields WHERE id = 'local-yomi'")
+          .get() as { local: number }).local,
+      ).toBe(1);
+    } finally {
+      source.close();
+      target.close();
     }
   });
 
@@ -350,7 +435,11 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
       expect(a.counts).toEqual({
         reviews: 0,
         trackState: 0,
-        localFields: 6,
+        // WAS 6 — the six `local = 1` rows. It is every field now: a rename
+        // rewrites the body's `<<Field>>` markers, so restoring a body without the
+        // field NAMES gives back a body whose every marker resolves to nothing.
+        localFields: 47,
+        templates: 10,
         fieldValues: 3_848,
         settings: 4,
         // The 234 individually archived cards. They LOOK like something the export

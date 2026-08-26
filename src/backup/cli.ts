@@ -43,7 +43,8 @@ function doExport(): void {
       `wrote ${out} — ${bytes} bytes on disk (UTF-8), schema v${archive.schemaVersion}\n` +
         `  local reviews   ${archive.counts["reviews"]}\n` +
         `  track state     ${archive.counts["trackState"]}\n` +
-        `  local fields    ${archive.counts["localFields"]}\n` +
+        `  fields          ${archive.counts["localFields"]}\n` +
+        `  templates       ${archive.counts["templates"]}\n` +
         `  field values    ${archive.counts["fieldValues"]}\n` +
         `  settings        ${archive.counts["settings"]}\n` +
         `  card state      ${archive.counts["cardState"]} archived/pinned\n`,
@@ -106,7 +107,8 @@ function printReport(report: ReturnType<typeof applyLocalArchive> | null): void 
   process.stdout.write(
     `  reviews        ${report.reviewsInserted} inserted, ${report.reviewsSkipped} already there\n` +
       `  track state    ${report.trackStateApplied} applied\n` +
-      `  local fields   ${report.fieldsUpserted} upserted\n` +
+      `  fields         ${report.fieldsUpserted} upserted\n` +
+      `  templates      ${report.templatesApplied} applied\n` +
       `  field values   ${report.fieldValuesUpserted} upserted\n` +
       `  settings       ${report.settingsUpserted} upserted\n` +
       `  card state     ${report.cardStateApplied} applied\n`,
@@ -116,13 +118,14 @@ function printReport(report: ReturnType<typeof applyLocalArchive> | null): void 
     report.trackStateOrphaned +
     report.fieldsOrphaned +
     report.fieldValuesOrphaned +
-    report.cardStateOrphaned;
+    report.cardStateOrphaned +
+    report.templatesOrphaned;
   if (orphans > 0) {
     process.stdout.write(
       `\n  ${orphans} row(s) had no home here and were SKIPPED, not written:\n` +
         `    reviews ${report.reviewsOrphaned} · track state ${report.trackStateOrphaned} · ` +
         `fields ${report.fieldsOrphaned} · values ${report.fieldValuesOrphaned} · ` +
-        `card state ${report.cardStateOrphaned}\n` +
+        `card state ${report.cardStateOrphaned} · templates ${report.templatesOrphaned}\n` +
         `  That is expected when restoring into a database rebuilt from a NEWER\n` +
         `  export — Mochi deletes cards, and this corpus carries 8,958 tombstones.\n` +
         `  It is a signal to look, not a failure.\n`,

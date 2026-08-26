@@ -4,12 +4,27 @@ Written down because an agent told him the app was "essentially finished" while 
 was holding this, and because a list this size must not live in a chat log. **This
 is not a backlog someone derived; it is his, in his words.**
 
-**STATUS, 2026-08-26 — this file said "Nothing here has been started" for three days
-after the navigation rebuild shipped most of it.** At least ten of the fourteen now
-carry working code (2, 3, 4, 5, 6, 7, 9, 10, 13, 14); 8 is answered below and its
-filtering exists. **Read `NEXT.md` for what actually runs — this file is the WANT, not
-the state**, and the gap between the two is what made it misleading. Items 1, 11 and 12
-(dashboard from the sidebar, template editing, settings) are the clearest gaps.
+**STATUS, 2026-08-26 — ALL FOURTEEN CARRY WORKING CODE.** The last three landed
+today: **1** the dashboard renders in the worker and opens from the sidebar, **11**
+templates and their fields are editable, **12** every setting this app has is on one
+screen. Pin (**6**, **7**) landed with them — `cards.pinned` had existed since schema
+v1 with nothing that could write it.
+
+**"Carries working code" is not "finished", and two of them come with a measured
+caveat rather than a claim:**
+
+* **1, the dashboard, costs 81 seconds in the worker** (10.3 s for the same `collect`
+  in Node). sqlite-wasm is synchronous and there is one worker, so for that whole time
+  nothing can grade. It therefore asks before it runs and says the number. The
+  optimisation is real work in `src/dashboard/metrics.ts` and is in `NEXT.md`.
+* **11 refuses two things on purpose** — changing a field's TYPE, and renaming the
+  `Reading` field on an accent-drill template. The second was found by running the
+  editor: `src/review/mode.ts` finds that field BY NAME, so a rename would have
+  flipped all 692 of decision 29's produce cards to identify mode, silently, while
+  the template still rendered perfectly.
+
+**Read `NEXT.md` for what actually runs — this file is the WANT, not the state**, and
+the gap between the two is what made it misleading before.
 
 > honestly, i haven't opened my phone yet, ive been using it on desktop, but man,
 > there are like 100 things i wanna add, so now it's not about testing whether i

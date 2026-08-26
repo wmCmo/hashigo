@@ -30,6 +30,7 @@ export {
   type ArchivedFieldValue,
   type ArchivedReview,
   type ArchivedSetting,
+  type ArchivedTemplate,
   type ArchivedTrackState,
   type LocalArchive,
   type TrackKey,

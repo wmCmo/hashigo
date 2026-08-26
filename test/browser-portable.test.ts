@@ -49,6 +49,9 @@ const BROWSER_ENTRY_POINTS = [
   "src/scheduler/index.ts",
   "src/scheduler/policy.ts",
   "src/dashboard/metrics.ts",
+  // Joined the list when the dashboard started rendering INSIDE the OPFS worker
+  // (his #1). It was already Node-free; unpinned is how that stops being true.
+  "src/dashboard/render.ts",
   "src/text/index.ts",
   "src/search/index.ts",
   "src/accent/store.ts",

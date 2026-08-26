@@ -470,3 +470,5 @@ export function isFieldType(value: string): value is FieldType {
 export function isBlobKind(value: string): value is BlobKind {
   return (BLOB_KINDS as readonly string[]).includes(value);
 }
+
+export { moveWithin, positionKeys } from "./order.js";

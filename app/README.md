@@ -414,15 +414,61 @@ nothing checks, nothing marks it right or wrong, and revealing does not compare.
 rather than recalling something. Small — read `data-expect`, compare on reveal —
 but it is unrequested scope, so it is written down rather than built.
 
+## Two things his #11 and #1 found by RUNNING them
+
+Both were invisible to reading, and both changed what shipped.
+
+### Renaming a field would have silently killed decision 29
+
+`src/template/resolve.ts` binds `<<Field>>` **by NAME**. So the template editor's
+rename rewrites the body and every generator prompt in the same transaction — that
+much was designed. What running it found is the second binding: **`src/review/mode.ts`
+finds the `Reading` field by name too** (`READING_FIELD = "Reading"`, plus a type
+check for `boolean`).
+
+So renaming that one field would have flipped all **692** of decision 29's `produce`
+cards into `identify` — autoplay on entry, the accent handed over before he has
+produced it, which is the exact defect decision 29 exists to prevent. And the body
+rewrite makes it WORSE, not better: `<<#Reading>>` follows the rename perfectly, so
+the template still renders and only the exercise is wrong. Nothing to see.
+
+It is refused, scoped to templates that declare an `accent` field. 漢字 declares a
+PLAIN field called `Reading` holding コウ / ショウ on 1,662 cards and is untouched.
+
+```plaintext
+rename Reading on 単語   refused, body unchanged at 498 bytes
+rename Reading -> X      (before the guard) 8 references rewritten, mode silently flipped
+```
+
+### The dashboard works, and costs 81 seconds
+
+Measured, in Chromium, over the real corpus. The port itself was a TYPE —
+`src/dashboard/metrics.ts` was already a pinned browser entry point and only named
+better-sqlite3's `Db` where it needed the shared `SqliteHandle`.
+
+```plaintext
+collect + render, worker (sqlite-wasm on OPFS)   81,060 ms   454 KB, zero JavaScript
+collect + render, Node (better-sqlite3)          10,298 ms   same document
+```
+
+An 8x wasm penalty over roughly fourteen full passes of 102,020 rows. **The cost that
+matters is not the wait**: sqlite-wasm is synchronous and there is one worker, so for
+that whole time nothing can grade, load a card or save a field. A control that
+silently freezes grading for a minute and a half is worse than one that says so, so it
+asks first and quotes the last measured run. `NEXT.md` carries where the time goes and
+why a cache is the wrong repair.
+
+It renders in an `<iframe srcdoc sandbox="">`: the dashboard is a complete document
+with its own stylesheet setting rules on `body`, `table` and `h1`, and two full
+stylesheets in one document restyle each other. It runs no script, so the empty
+sandbox costs it nothing.
+
 ## What is NOT here yet
 
-* **Sync (stage 11), and the REST of the editor (stage 10).** Field editing SHIPS —
-  `e` opens it from review or from a preview and writes through `setField` (see the
-  layer section above, which contradicted this line until 2026-08-26). What stage 10
-  still owes is template and field editing (his #11) and deck CRUD (his #14). The
-  `Reading` toggle was the FIRST editor-shaped thing the shell had, because decision
-  29's audit loop
-  dies without it.
+* **Sync (stage 11).** The last structural gap. Stage 10 is now complete: field
+  editing (`e`), template and field editing (his #11), deck CRUD including `move`
+  (his #14). The `Reading` toggle was the FIRST editor-shaped thing the shell had,
+  because decision 29's audit loop dies without it.
 * **A service worker / manifest.** `spike/persist/` has a working pair and
   persistence was granted there on his handset **in a plain browser tab, not
   installed** — so install is not the precondition the notes assumed. Decision
