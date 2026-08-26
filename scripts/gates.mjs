@@ -35,6 +35,8 @@
  * Pretending otherwise is how the original advice became a trap.
  */
 import { spawnSync } from "node:child_process";
+
+import { testVerdict } from "./test-verdict.mjs";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -125,45 +127,16 @@ for (const gate of selected) {
   }
 
   if (gate.name === "test") {
-    // THE EXIT CODE OF `npm test` IS NOT USABLE, so this gate is decided by the
-    // SUMMARY instead. That is not leniency — it is stricter in the way that matters:
-    // a run must have finished (a summary line exists) and have zero failures. A
-    // crash prints no summary and therefore cannot pass, which is what caught
-    // `pool: "threads"` segfaulting on its third run.
-    const passed = /Tests\s+(?:.*?\| )?(\d[\d,]*) passed/.exec(plain);
-    const failed = /Tests\s+(\d[\d,]*) failed/.exec(plain);
-    const files = /Test Files\s+(?:.*?\| )?(\d+) passed/.exec(plain);
-    const skipped = /(\d[\d,]*) skipped/.exec(plain);
-    const rpc = (plain.match(/Timeout calling "onTaskUpdate"/g) ?? []).length;
-
-    const slow = [...plain.matchAll(/(test\/\S+\.test\.ts) \((\d+) tests?[^)]*\) (\d+)ms/g)]
-      .map((m) => ({ file: m[1], ms: Number(m[3]) }))
-      .filter((f) => f.ms > 60_000)
-      .map((f) => `${f.file} (${(f.ms / 1000).toFixed(1)}s)`);
-
-    if (passed === null) {
-      // No summary at all: the process died. Segfault, OOM, or a killed worker.
-      verdict = "FAIL";
-      detail =
-        `THE SUITE DID NOT FINISH — no summary line was printed, exit ${proc.status}` +
-        (proc.status === 139 ? " (SIGSEGV)" : "") +
-        `. This is a crash, not a failing test. Do not re-run and hope.`;
-    } else if (failed !== null) {
-      verdict = "FAIL";
-      detail = `${files?.[1] ?? "?"} files, ${passed[1]} passed, ${failed[1]} FAILED`;
-    } else {
-      // Finished, nothing failed. Green — whatever the exit code says.
-      verdict = "PASS";
-      detail = `${files?.[1] ?? "?"} files, ${passed[1]} passed`;
-      if (skipped) detail += `, ${skipped[1]} skipped`;
-      if (rpc > 0) {
-        detail +=
-          `  [exit ${proc.status}: ${rpc} × onTaskUpdate timeout — birpc's ceiling is a` +
-          ` hard-coded 60s and vitest does not expose it` +
-          (slow.length > 0 ? `; over 60s: ${slow.join(", ")}` : "") +
-          `. The suite passed; the runner could not say so.]`;
-      }
-    }
+    // THE EXIT CODE OF vitest IS NOT USABLE, so this gate is decided by the SUMMARY
+    // instead — and that is stricter, not lenient: a run must have FINISHED and have
+    // zero failures. `./test-verdict.mjs` owns the rule and explains both halves.
+    //
+    // It used to be spelled out here and nowhere else, so `npm test` and
+    // `npm run gates` disagreed about the same run and the honest answer was
+    // reachable only by knowing which command to type. One copy now, two callers.
+    const result = testVerdict(output, proc.status);
+    verdict = result.ok ? "PASS" : "FAIL";
+    detail = result.detail;
   }
 
   if (verdict === "FAIL") hardFailure = true;

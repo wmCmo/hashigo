@@ -124,22 +124,34 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 33 files, 883 passed, 1 skipped (the FSRS refit, gated). ~90 s.
-                        # STILL EXITS 1 ON A FULLY PASSING RUN. Use `npm run gates`,
-                        # which reads the RESULT instead of the exit code.
-                        # THE CAUSE: birpc's timeout is a hard-coded 60 s that vitest
-                        # never overrides, `onTaskUpdate` is an AWAITED call, and
-                        # exactly the files that run over 60 s throw one error each,
-                        # every run. It is not the reporter and not load — cutting
-                        # workers and quieting the reporter both change nothing, and
+npm test                # 34 files, 902 passed, 1 skipped (the FSRS refit, gated). ~90 s.
+                        # EXITS 0 ON A PASSING RUN as of 2026-08-26. It is a wrapper
+                        # (`scripts/test.mjs`) that reads the SUMMARY, which is
+                        # STRICTER than the exit code, not looser: the run must have
+                        # FINISHED (a summary line exists) and have zero failures. A
+                        # crash prints no summary and cannot pass — that is what
+                        # caught `pool: "threads"` segfaulting. `scripts/test-verdict.mjs`
+                        # owns the rule and `npm run gates` imports the same one, so
+                        # the two cannot disagree about the same run any more.
+                        # Arguments pass through: `npm test -- test/glance.test.ts`.
+                        # `npm run test:raw` is unwrapped vitest, for when the exit
+                        # code itself is what you are investigating.
+                        # WHY RAW VITEST EXITS 1: birpc's timeout is a hard-coded 60 s
+                        # that vitest never overrides, `onTaskUpdate` is an AWAITED
+                        # call, and exactly the files that run over 60 s throw one
+                        # error each, every run. Not the reporter and not load —
+                        # cutting workers and quieting the reporter change nothing,
                         # `--no-isolate` makes it worse.
                         # DO NOT SET `pool: "threads"`. It removes the errors and then
                         # SEGFAULTS (exit 139) — better-sqlite3 is a native addon and
                         # six threads in one process crash it. It passes twice first,
                         # so two green runs are not evidence. vitest.config.ts has the
                         # ten measured runs.
-                        # The only real fix is no file needing 60 s of its own wall
-                        # clock; roundtrip.test.ts needs 82 s. Not attempted yet.
+                        # The underlying fix is still no file needing 60 s of its own
+                        # wall clock; roundtrip.test.ts needs 67 s. Splitting it means
+                        # a second full corpus import (~12 s) in the new file, so it
+                        # trades ~24 s of suite time for a cosmetic win the wrapper
+                        # already covers. Deliberately not done.
 npm run typecheck       # exit 0
 npm run app:check       # exit 0 — app/ has its OWN tsconfig and this is a REQUIRED gate
 npm run build           # refuses to exit 0 unless dist/ actually imports (27 export subpaths)

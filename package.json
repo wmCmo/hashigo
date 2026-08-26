@@ -125,7 +125,8 @@
     "dist"
   ],
   "scripts": {
-    "test": "vitest run",
+    "test": "node scripts/test.mjs",
+    "test:raw": "vitest run",
     "test:watch": "vitest",
     "gates": "node scripts/gates.mjs",
     "rebuild": "node scripts/rebuild.mjs",

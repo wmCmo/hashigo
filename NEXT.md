@@ -58,16 +58,22 @@ npm run app:dev -- --host ::              # phone / tunnel
 
 Gates: run **`npm run gates`** — one command, all seven, cheapest first, and a verdict
 that means what it says. `app:build` is new and was covered by nothing: `app:check` is
-`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 33 files / 883
+`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 34 files / 902
 passed / 1 skipped** (~97 s) · `npm run typecheck` → 0 · **`npm run app:check` → 0** ·
 `npm run build` → OK, 77 modules, 27 export subpaths · `npm run spike:check` → 0 ·
 `blobs … paths` → 0.
 
-**`npm test` still exits 1 on a fully passing run, and there is now one honest command.**
-It is not the reporter and not load: birpc's RPC timeout is a hard-coded 60 s that
-vitest never overrides, `onTaskUpdate` is an awaited call, and exactly the files that
-run over 60 s throw one error each, every run. Cutting workers changes nothing;
-quieting the reporter changes nothing; `--no-isolate` makes it worse.
+**`npm test` EXITS 0 ON A PASSING RUN as of 2026-08-26**, and both commands now
+decide it the same way. It is a wrapper (`scripts/test.mjs`) over the rule in
+`scripts/test-verdict.mjs`, which `npm run gates` imports as well — that rule used to
+be spelled out inside `gates.mjs` and nowhere else, so the two commands disagreed
+about the same run and the honest answer was reachable only by knowing which one to
+type. `npm run test:raw` is unwrapped vitest.
+
+Raw vitest still exits 1, and the cause is unchanged: birpc's RPC timeout is a
+hard-coded 60 s that vitest never overrides, `onTaskUpdate` is an awaited call, and
+exactly the files that run over 60 s throw one error each, every run. Cutting workers
+changes nothing; quieting the reporter changes nothing; `--no-isolate` makes it worse.
 
 **`pool: "threads"` is NOT the fix, and it is recorded so nobody repeats it.** It
 removes the RPC errors — and segfaults (exit 139, SIGSEGV) on the third run, because

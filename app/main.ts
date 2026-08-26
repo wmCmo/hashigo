@@ -84,7 +84,8 @@ import type { ShadowingSide } from "../src/render/reveal.js";
 // The two extracted rules. Import-free modules so `test/` can reach them; see
 // `test/app-logic.test.ts` and the headers of both files.
 import { childrenOf as treeChildrenOf, subtreeTotals } from "./deck-tree.js";
-import { isTypingTarget, survivesTyping, type KeyTarget } from "./keys.js";
+import { isTypingTarget, type KeyTarget } from "./keys.js";
+import { reviewAction } from "./review-keys.js";
 import {
   promptPositions as promptBoundary,
   visiblePositions,
@@ -890,171 +891,117 @@ pinButton.addEventListener("click", () => {
   if (currentCardId !== null) void runCardOp(currentPinned ? "unpin" : "pin", currentCardId);
 });
 
-// Keys, for the desktop pointer only — the keycap HINTS are behind
-// `@media (hover:hover) and (pointer:fine)` in the stylesheet (decision 19: never
-// behind a hover affordance, and a phone has no hover).
+/**
+ * ONE DECISION, THEN ONE CALL EACH.
+ *
+ * The rule — which key does what, given what is on screen — moved to
+ * `./review-keys.ts`, an import-free module `test/` can reach. **That file's header
+ * is the reason**: this handler is where the app's two most expensive bugs lived,
+ * and both were the same shape — a key correct in one state doing something
+ * destructive in another, with nothing on screen to say so. Typing a deck name into
+ * the gallery's filter box archived and GRADED the card behind it; grading during a
+ * look-ahead moves a due date on a card he is not reading.
+ *
+ * Neither is visible when it happens, and both were one boolean in a long `if`
+ * chain. The chain is a table now, and `test/app-keys.test.ts` enumerates it.
+ *
+ * What stays here is the mapping from an action to a call — and the keycap HINTS
+ * stay behind `@media (hover:hover) and (pointer:fine)` in the stylesheet
+ * (decision 19: never behind a hover affordance, and a phone has no hover).
+ */
 document.addEventListener("keydown", (event) => {
-  if (event.repeat) return;
+  const action = reviewAction(event, {
+    // `./keys.js` owns this, over `tagName` rather than `instanceof`, so it is
+    // testable in Node and survives a cross-realm element. See that file's header.
+    typing: isTypingTarget(event.target as KeyTarget | null),
+    layerOpen: layerHost.childElementCount > 0,
+    layerActs: layers.at(-1)?.ops === true,
+    sidebarOpen: document.body.classList.contains("sidebar-open"),
+    reviewHidden: reviewView.hidden,
+    revealed,
+    peeking: peekOffset !== 0,
+    hasCard: currentCardId !== null,
+  });
+  if (action === null) return;
 
-  // His #3 and #13, and both are global: they work over a layer, over the
-  // gallery, and mid-review, because that is what a palette and an undo are for.
-  // `./keys.js` owns this, over `tagName` rather than `instanceof`, so it is testable
-  // in Node and survives a cross-realm element. See that file's header.
-  const typing = isTypingTarget(event.target as KeyTarget | null);
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-    event.preventDefault();
-    openPalette();
-    return;
-  }
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !typing) {
-    event.preventDefault();
-    void runUndo();
-    return;
-  }
+  // Every action below is one the app is handling, so none of them should also do
+  // whatever the browser would have done — scroll on space, quick-find on `/`.
+  event.preventDefault();
 
-  // ── TYPING MUST NEVER GRADE, ARCHIVE, OR DELETE ──
-  //
-  // Every branch below this point is a single-key review shortcut, and until this
-  // guard existed they all fired while he was typing in the GALLERY FILTER BOX.
-  //
-  // The reason it was not obvious: two of the three views DO guard their inputs (the
-  // layer branch checks `e`, the sidebar branch returns on an HTMLInputElement), and
-  // `if (reviewView.hidden) return` looks like it covers the rest. It does not. The
-  // gallery is shown by `data-view="gallery"` on the body and hidden in CSS
-  // (`body[data-view="gallery"] .review { display: none }`), so `reviewView.hidden`
-  // is FALSE the whole time the gallery is up — the `hidden` property is only ever
-  // touched for the boot/no-cards state.
-  //
-  // So typing a deck name into the filter did this, per keystroke:
-  //   a  ->  archived the review card behind the gallery
-  //   d  ->  opened the delete-confirm for it
-  //   j  ->  graded it REMEMBERED, if it had been revealed
-  //   f  ->  graded it FORGOT
-  //   space/enter -> revealed it, which is what made j and f live
-  // Typing "japanese" was an archive and a grade. Grades write a `reviews` row and
-  // advance the FSRS schedule, so this corrupted the study history it exists to
-  // protect, silently, from a search box.
-  //
-  // Escape is deliberately still allowed through: it closes the thing he is typing
-  // in, which is the one key that must work from inside a text field. The ctrl/meta
-  // combos above are also intentionally before this — ctrl+K over a filter box is a
-  // reasonable thing to press, and ctrl+Z already checks `typing` itself.
-  if (typing && !survivesTyping(event.key)) return;
-  // ESCAPE closes the top layer, and a layer swallows every other key. Without
-  // this, space would grade the card UNDERNEATH the preview he is reading.
-  if (layerHost.childElementCount > 0) {
-    if (event.key === "Escape") {
-      event.preventDefault();
+  const top = layers.at(-1);
+  switch (action) {
+    case "palette":
+      openPalette();
+      return;
+    case "undo":
+      void runUndo();
+      return;
+    case "closeLayer":
       closeTop();
-    }
-    const editing =
-      event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement;
-    // `e` over a PREVIEW opens the editor for the previewed card — his request 3
-    // is explicit that it works in both modes. Not while typing in the editor
-    // itself, or every `e` he types would open another one.
-    if (event.key.toLowerCase() === "e" && !editing) {
-      event.preventDefault();
+      return;
+    case "editLayer":
       openEditor();
       return;
-    }
-    // *"and this should work on both preview and review card"* — the same three
-    // operations, over whichever card the TOP layer is showing. `top.cardId` is ""
-    // on the editor and the confirm dialog, so those swallow the keys rather than
-    // acting on the card underneath.
-    const top = layers.at(-1);
-    if (top !== undefined && top.ops && !editing) {
-      const layerKey = event.key.toLowerCase();
-      if (layerKey === "p" && event.shiftKey) {
-        event.preventDefault();
-        void runCardOp(top.pinned ? "unpin" : "pin", top.cardId);
-      } else if (layerKey === "a") {
-        event.preventDefault();
+    case "layerPin":
+      if (top !== undefined) void runCardOp(top.pinned ? "unpin" : "pin", top.cardId);
+      return;
+    case "layerArchive":
+      if (top !== undefined) {
         void runCardOp(top.archived ? "unarchive" : "archive", top.cardId);
-      } else if (layerKey === "d") {
-        event.preventDefault();
+      }
+      return;
+    case "layerDelete":
+      if (top !== undefined) {
         confirmDelete(top.cardId, top.prepared?.loaded.name ?? top.cardId);
       }
-    }
-    return;
-  }
-  // The sidebar is navigation, so it answers to keys only when no layer is over
-  // it — a layer is a thing he opened on purpose and owns the keyboard.
-  if (document.body.classList.contains("sidebar-open")) {
-    if (event.key === "Escape") {
-      event.preventDefault();
+      return;
+    case "closeSidebar":
       closeSidebar();
       return;
-    }
-    // Anything else belongs to the search box he is typing into.
-    if (event.target instanceof HTMLInputElement) return;
+    case "openSidebar":
+      openSidebar();
+      return;
+    case "edit":
+      openEditor();
+      return;
+    case "reveal":
+      reveal();
+      return;
+    case "archive":
+      if (currentCardId !== null) {
+        void runCardOp(currentArchived ? "unarchive" : "archive", currentCardId);
+      }
+      return;
+    case "pin":
+      if (currentCardId !== null) void runCardOp(currentPinned ? "unpin" : "pin", currentCardId);
+      return;
+    case "delete":
+      if (currentCardId !== null) {
+        confirmDelete(currentCardId, previewOfCurrent?.loaded.name ?? currentCardId);
+      }
+      return;
+    case "next":
+      void stepCard(1);
+      return;
+    case "previous":
+      void stepCard(-1);
+      return;
+    case "backToCard":
+      void showSessionCard();
+      return;
+    case "gradeBlocked":
+      say("looking ahead — press ← or Escape to get back to your card first");
+      return;
+    case "gradeForgot":
+      void grade(false);
+      return;
+    case "gradeRemembered":
+      void grade(true);
+      return;
+    case "replay":
+      drill?.replay();
+      return;
   }
-  if (event.key === "/" && !(event.target instanceof HTMLInputElement)) {
-    event.preventDefault();
-    openSidebar();
-    return;
-  }
-  if (reviewView.hidden) return;
-  if (event.key.toLowerCase() === "e") {
-    event.preventDefault();
-    openEditor();
-    return;
-  }
-  const key = event.key.toLowerCase();
-  if (key === " " || key === "enter") {
-    event.preventDefault();
-    if (!revealed) reveal();
-    return;
-  }
-  // His #7 and #9, on the review card. These act WITHOUT grading — stepping and
-  // archiving are not answers, and none of them writes a review.
-  if (key === "a" && currentCardId !== null) {
-    event.preventDefault();
-    void runCardOp(currentArchived ? "unarchive" : "archive", currentCardId);
-    return;
-  }
-  // *"shift + p to pin"*. SHIFT-qualified on purpose: `p` alone is one slip away
-  // from `o`, and unlike `a` and `d` this one has no visible consequence on the
-  // card — a silently pinned card is a card he finds later and cannot explain.
-  if (key === "p" && event.shiftKey && currentCardId !== null) {
-    event.preventDefault();
-    void runCardOp(currentPinned ? "unpin" : "pin", currentCardId);
-    return;
-  }
-  if (key === "d" && currentCardId !== null) {
-    event.preventDefault();
-    confirmDelete(currentCardId, previewOfCurrent?.loaded.name ?? currentCardId);
-    return;
-  }
-  if (event.key === "ArrowRight") {
-    event.preventDefault();
-    void stepCard(1);
-    return;
-  }
-  if (event.key === "ArrowLeft") {
-    event.preventDefault();
-    void stepCard(-1);
-    return;
-  }
-  // Escape from a look-ahead lands back on his card. Nothing else in review
-  // answers to Escape, and coming back is the thing he most wants one key for.
-  if (event.key === "Escape" && peekOffset !== 0) {
-    event.preventDefault();
-    void showSessionCard();
-    return;
-  }
-  if (!revealed) return;
-  // GRADING IS THE SESSION'S CURSOR, NOT THE SCREEN'S. `answer()` grades whatever
-  // the session is on, so a keystroke here while looking ahead would move a due
-  // date on a card he is not reading. The buttons are already disabled; this is
-  // the same rule for the keyboard, and it says which key comes back.
-  if (peekOffset !== 0 && (key === "f" || key === "j")) {
-    event.preventDefault();
-    say("looking ahead — press ← or Escape to get back to your card first");
-    return;
-  }
-  if (key === "f") void grade(false);
-  else if (key === "j") void grade(true);
-  else if (key === "r") drill?.replay();
 });
 
 /**
