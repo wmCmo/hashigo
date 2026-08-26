@@ -22,6 +22,7 @@ import { PARAMETERS_ARE_PROVISIONAL, SCHEDULER_ALGORITHM, SCHEDULER_POLICY } fro
 import { dueTracks, newTracks, queueCounts, reviewForecast } from "./queue.js";
 import { nowInHostOffset } from "./tracks.js";
 import { seedTrackMemory } from "./tracks.js";
+import { arg } from "../cli/args.js";
 
 // Japanese deck and card names go to a cp932 console otherwise. Every script in
 // this repo sets its own encoding rather than asking the caller for an env
@@ -29,15 +30,6 @@ import { seedTrackMemory } from "./tracks.js";
 // there. See CLAUDE.md "Environment".
 process.stdout.setDefaultEncoding("utf8");
 
-function arg(name: string, fallback?: string): string {
-  const index = process.argv.indexOf(`--${name}`);
-  const value = index === -1 ? undefined : process.argv[index + 1];
-  if (value === undefined || value.startsWith("--")) {
-    if (fallback !== undefined) return fallback;
-    throw new Error(`missing --${name}`);
-  }
-  return value;
-}
 
 /**
  * Display width, counting a CJK wide character as two columns.

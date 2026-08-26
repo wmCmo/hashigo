@@ -57,6 +57,7 @@ import {
   normaliseLineEndings,
   stripMarkers,
   substituteMarkers,
+  findSectionClose,
 } from "./parse.js";
 
 // ─── inputs ──────────────────────────────────────────────────────────────────
@@ -234,7 +235,7 @@ function gateSections(
       i += 1;
       continue;
     }
-    const close = findClose(lines, i + 1, marker.name, tokens);
+    const close = findSectionClose(lines, i + 1, marker.name, tokens);
     if (close < 0) {
       warnings.push({ kind: "stray-section-marker", detail: marker.source });
       i += 1;
@@ -250,22 +251,6 @@ function gateSections(
   return out;
 }
 
-function findClose(
-  lines: readonly string[],
-  from: number,
-  name: string,
-  tokens: readonly FieldToken[],
-): number {
-  let depth = 0;
-  for (let i = from; i < lines.length; i += 1) {
-    const marker = readSectionMarker(lines[i] ?? "", tokens);
-    if (marker === null || marker.name !== name) continue;
-    if (marker.sigil !== "/") depth += 1;
-    else if (depth === 0) return i;
-    else depth -= 1;
-  }
-  return -1;
-}
 
 // ─── resolving ───────────────────────────────────────────────────────────────
 

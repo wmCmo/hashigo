@@ -446,7 +446,14 @@ function startsBlock(line: string, next: string, tokens: readonly FieldToken[]):
 }
 
 /** Index of the `<</name>>` line closing a section, honouring nesting. */
-function findSectionClose(
+/**
+ * The matching `<</name>>` for a section opener, honouring nesting.
+ *
+ * EXPORTED because `resolve.ts` had a byte-identical copy called `findClose`.
+ * Two scanners for one grammar is two chances to disagree about nesting, and the
+ * grammar is the template engine's whole contract.
+ */
+export function findSectionClose(
   lines: readonly string[],
   from: number,
   name: string,

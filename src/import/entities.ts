@@ -45,6 +45,8 @@
 import {
   FIELD_TYPES,
   type FieldType,
+  resolveReverseInheritance,
+  type ReverseInheritance,
   type ReverseMode,
   isFieldType,
 } from "../schema/index.js";
@@ -536,20 +538,15 @@ export function resolveDeckReverse(
   decks: ReadonlyMap<string, DeckRow>,
   fallback: "on" | "off" = "off",
 ): Map<string, "on" | "off"> {
-  const resolved = new Map<string, "on" | "off">();
+  // An ADAPTER now. The rule lives in `src/schema` beside the SQL view that also
+  // states it — there were three implementations of this and one disagreed.
+  const nodes = new Map<string, ReverseInheritance>();
   for (const deck of decks.values()) {
-    const seen = new Set<string>();
-    let current: DeckRow | undefined = deck;
-    let answer: "on" | "off" = fallback;
-    while (current && !seen.has(current.id)) {
-      seen.add(current.id);
-      if (current.reverse !== "inherit") {
-        answer = current.reverse;
-        break;
-      }
-      current = current.parent_id ? decks.get(current.parent_id) : undefined;
-    }
-    resolved.set(deck.id, answer);
+    nodes.set(deck.id, { id: deck.id, parentId: deck.parent_id ?? null, reverse: deck.reverse });
+  }
+  const resolved = new Map<string, "on" | "off">();
+  for (const id of decks.keys()) {
+    resolved.set(id, resolveReverseInheritance(nodes, id, fallback));
   }
   return resolved;
 }

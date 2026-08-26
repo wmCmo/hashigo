@@ -16,6 +16,7 @@ import { openDatabase } from "../db/index.js";
 import { accentKey, readingLooksUnanalysed } from "./key.js";
 import { applyOjadAdjudications } from "./ojad.js";
 import { accentFor, loadAccents, materialiseAccents, type AccentRow } from "./store.js";
+import { arg } from "../cli/args.js";
 
 /**
  * The head words, by the SAME basis as the distribution table in
@@ -50,15 +51,6 @@ interface DerivedLine {
   analyser?: string;
 }
 
-function arg(name: string, fallback?: string): string {
-  const index = process.argv.indexOf(`--${name}`);
-  const value = index === -1 ? undefined : process.argv[index + 1];
-  if (value === undefined || value.startsWith("--")) {
-    if (fallback !== undefined) return fallback;
-    throw new Error(`missing --${name}`);
-  }
-  return value;
-}
 
 function main(): number {
   const command = process.argv[2];

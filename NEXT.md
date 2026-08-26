@@ -52,7 +52,7 @@ npm run app:dev -- --host ::              # phone / tunnel
 
 Gates: run **`npm run gates`** — one command, all seven, cheapest first, and a verdict
 that means what it says. `app:build` is new and was covered by nothing: `app:check` is
-`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 28 files / 823
+`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 30 files / 845
 passed / 1 skipped** (~97 s) · `npm run typecheck` → 0 · **`npm run app:check` → 0** ·
 `npm run build` → OK, 77 modules, 27 export subpaths · `npm run spike:check` → 0 ·
 `blobs … paths` → 0.
@@ -154,6 +154,48 @@ because the root `tsconfig.json` excludes `app/`. The worker's SQL has no such s
 times. Splitting it is the repair; it is deliberately NOT done, because moving tests
 that share a `beforeAll` import between files is where coverage silently changes and
 these are the oracle tests. Whoever does it should prove the pass count is unchanged.
+
+### SINGLE SOURCE OF TRUTH AND ACID — 2026-08-26
+
+Both were asked for directly, and both turned out to be narrower problems than they
+sound. Recorded because the SHAPE of each is the thing worth reusing.
+
+**ACID was already true; nothing was checking it.** `foreign_keys = ON` is set in all
+three open paths and two of them verify the pragma read back — good practice that no
+test exercised. Every genuine multi-statement write is already in a transaction; the
+five "bare" ones a scan flags are upserts or run inside a caller's transaction.
+`test/acid.test.ts` now pins all four properties, including `PRAGMA foreign_key_check`
+and `integrity_check` over the real 74 MB database, which nothing had ever run.
+
+**The one real ACID defect was in the PAGE, not the database.** `runUndo` popped its
+entry BEFORE awaiting the undo, with no `catch`. Undo state lives in two stacks — the
+page's and the worker's `answers` — and a failed undo left them off by one, so the NEXT
+ctrl+Z undid a different grade than the one named on the button. Silently. It now peeks,
+runs, and pops only on success.
+
+**SSOT: one rule had THREE implementations and one of them disagreed.** `views.sql`
+resolves `reverse` inheritance in SQL, and says beside the neighbouring voice view
+exactly why that should be the only definition — *"so there is one definition of the
+inheritance rather than a SQL one and a TypeScript one that drift"*. There were three.
+`src/import/reviews.ts` walked PAST an explicit `off` looking for an `on` above it, so a
+deck deliberately excepted under an enabled parent resolved `on` there and `off`
+everywhere else. Unreachable from a Mochi export only by accident — `mochiDeckReverse`
+never yields `off` — and reachable the moment request 14's deck CRUD writes one.
+`resolveReverseInheritance` in `src/schema` is now the rule; both importers adapt to it;
+and `test/reverse-inheritance.test.ts` pins the TypeScript against the SQL view for all
+7,716 cards, because that half cannot be deduplicated away.
+
+**Also unified:** the live-track and due-date SQL fragments (`src/scheduler/predicates.ts`
+— the due comparison is the one that diverged into the 704-vs-646 bug), `arg()` (four
+byte-identical copies, now `src/cli/args.ts`), and `findClose`/`findSectionClose` (two
+byte-identical scanners for one grammar).
+
+**What could NOT be deduplicated is pinned instead.** `app/deck-tree.ts` walks the deck
+tree in TypeScript over an in-memory array; `app/deck-scope.ts` walks it in SQL. They
+are on opposite sides of a `postMessage` boundary with different data shapes and neither
+can call the other. A test now requires them to return the same subtree for every deck
+in the corpus — the sidebar's badge comes from one and the gallery's contents from the
+other, and them disagreeing was a real bug two commits earlier.
 
 ### The three landings, newest first
 

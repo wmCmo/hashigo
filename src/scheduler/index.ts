@@ -73,6 +73,14 @@ export {
 } from "./schedule.js";
 
 export {
+  dueAfter,
+  dueBefore,
+  dueOnOrBefore,
+  isNewTrack,
+  liveTrack,
+} from "./predicates.js";
+
+export {
   DormantTrackError,
   TrackNotFoundError,
   gradeTrack,

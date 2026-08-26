@@ -20,21 +20,13 @@
 import { openDatabase } from "../db/index.js";
 import { nowInHostOffset } from "../scheduler/index.js";
 import { DEFAULT_NEW_LIMIT, buildSession, type InterleavePolicy } from "./index.js";
+import { arg } from "../cli/args.js";
 
 // Japanese card names go to a cp932 console otherwise. Every script here sets its
 // own encoding rather than asking for an env prefix: his shell is PowerShell 5.1,
 // where `VAR=value cmd` is a parser error. See CLAUDE.md "Environment".
 process.stdout.setDefaultEncoding("utf8");
 
-function arg(name: string, fallback?: string): string {
-  const index = process.argv.indexOf(`--${name}`);
-  const value = index === -1 ? undefined : process.argv[index + 1];
-  if (value === undefined || value.startsWith("--")) {
-    if (fallback !== undefined) return fallback;
-    throw new Error(`missing --${name}`);
-  }
-  return value;
-}
 
 const ORDERS = new Set<string>(["new-first", "due-first", "spread"]);
 

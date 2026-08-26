@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { childrenOf } from "../app/deck-tree.js";
 import {
   archiveSubtree,
   restoreArchive,
@@ -207,5 +208,90 @@ describe.skipIf(!haveCorpus)("archiving a deck, and undoing it without losing an
       (db.prepare("SELECT archived FROM decks WHERE id = ?").get(suuji) as { archived: number })
         .archived,
     ).toBe(wasArchived);
+  });
+});
+
+// ── the two walks that must agree ────────────────────────────────────────────
+
+/**
+ * "WHAT IS UNDER THIS DECK" IS IMPLEMENTED TWICE, ON PURPOSE, AND NOTHING PINNED IT.
+ *
+ * `app/deck-tree.ts` walks `parentId` over an in-memory array, because the PAGE has a
+ * flat list of `DeckBrief` and no database. `app/deck-scope.ts` walks `parent_id` in a
+ * recursive CTE, because the WORKER has SQLite and no array. Neither can call the
+ * other: they are on opposite sides of a `postMessage` boundary with different data
+ * shapes, so this is one of the few duplications that cannot be removed.
+ *
+ * They can still DISAGREE, and they already guard cycles differently — a `seen` set in
+ * one, `UNION` in the other. A disagreement is not cosmetic: the sidebar's badge comes
+ * from one and the gallery's contents and the archive operation come from the other,
+ * so a divergence is a number that does not match what clicking it does. That was a
+ * real bug two commits ago, from the same mismatch.
+ *
+ * What cannot be deduplicated gets pinned instead.
+ */
+describe.skipIf(!haveCorpus)("the page walk and the worker walk agree", () => {
+  /** `app/deck-tree.ts`'s shape, from the same rows the worker would send. */
+  function pageDecks(): { id: string; parentId: string | null; cards: number; due: number }[] {
+    return (
+      db.prepare("SELECT id, parent_id FROM decks").all() as {
+        id: string;
+        parent_id: string | null;
+      }[]
+    ).map((row) => ({ id: row.id, parentId: row.parent_id, cards: 0, due: 0 }));
+  }
+
+  /** The page's subtree, by walking children the way `subtreeTotals` does. */
+  function pageSubtree(rootId: string): Set<string> {
+    const decks = pageDecks();
+    const out = new Set<string>();
+    const walk = (id: string): void => {
+      if (out.has(id)) return;
+      out.add(id);
+      for (const child of childrenOf(decks, id)) walk(child.id);
+    };
+    walk(rootId);
+    return out;
+  }
+
+  it("returns the same set of decks for EVERY deck in the corpus", () => {
+    const all = (db.prepare("SELECT id FROM decks").all() as { id: string }[]).map((r) => r.id);
+    expect(all.length).toBeGreaterThan(30);
+
+    const disagreements: string[] = [];
+    for (const id of all) {
+      const fromSql = [...subtreeDeckIds(scoped(), id)].sort();
+      const fromPage = [...pageSubtree(id)].sort();
+      if (JSON.stringify(fromSql) !== JSON.stringify(fromPage)) {
+        disagreements.push(`${id}: SQL ${fromSql.length} decks, page ${fromPage.length}`);
+      }
+    }
+    expect(disagreements, `the two subtree walks disagree:\n  ${disagreements.join("\n  ")}`)
+      .toEqual([]);
+  });
+
+  it("agrees that a deck is in its own subtree", () => {
+    const ja = deckIdNamed("日本語");
+    expect(subtreeDeckIds(scoped(), ja)).toContain(ja);
+    expect(pageSubtree(ja).has(ja)).toBe(true);
+  });
+
+  it("agrees on the card total the sidebar shows and the gallery lists", () => {
+    // The failure this pins, stated as the two numbers a reader compares: the badge
+    // beside a deck, and what opening it lists.
+    for (const name of ["日本語", "単語", "English", "数字"]) {
+      const id = deckIdNamed(name);
+      const sqlIds = subtreeDeckIds(scoped(), id);
+      const pageIds = [...pageSubtree(id)];
+      const count = (ids: readonly string[]): number =>
+        (
+          db
+            .prepare(
+              `SELECT count(*) AS n FROM cards WHERE deck_id IN (${ids.map(() => "?").join(", ")})`,
+            )
+            .get(...ids) as { n: number }
+        ).n;
+      expect(count(sqlIds), `${name} disagrees`).toBe(count(pageIds));
+    }
   });
 });

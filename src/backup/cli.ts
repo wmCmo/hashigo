@@ -20,21 +20,13 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { openDatabase } from "../db/index.js";
 import { applyLocalArchive, exportLocalArchive, verifyLocalArchive } from "./archive.js";
 import type { LocalArchive } from "./archive.js";
+import { arg } from "../cli/args.js";
 
 // Japanese field names and card ids go to a cp932 console otherwise. Every script
 // here sets its own encoding rather than asking for an env prefix — PowerShell 5.1
 // treats `VAR=value cmd` as a parser error. See CLAUDE.md "Environment".
 process.stdout.setDefaultEncoding("utf8");
 
-function arg(name: string, fallback?: string): string {
-  const index = process.argv.indexOf(`--${name}`);
-  const value = index === -1 ? undefined : process.argv[index + 1];
-  if (value === undefined || value.startsWith("--")) {
-    if (fallback !== undefined) return fallback;
-    throw new Error(`missing --${name}`);
-  }
-  return value;
-}
 
 function doExport(): void {
   const db = openDatabase(arg("db"), { readOnly: true, applySchema: false });

@@ -1887,12 +1887,38 @@ function paintUndo(): void {
   undoButton.title = top === undefined ? "nothing to undo" : `undo: ${top.describe}`;
 }
 
+/**
+ * PEEK, RUN, THEN POP — and the order is the whole point.
+ *
+ * This used to `pop()` before awaiting `run()`, with no `catch`. Undo state lives in
+ * TWO places: this stack, and the worker's stack of `AnswerResult`s that `ungrade`
+ * pops. They stay in step only because each grade pushes exactly one entry to each,
+ * LIFO on both sides.
+ *
+ * A failed `run()` broke that. The entry was already gone from here while the worker's
+ * was intact, so the two were off by one — and the NEXT ctrl+Z would pop this stack's
+ * previous entry while the worker popped its latest, undoing a different grade than
+ * the one named on the button. Silently, because an unawaited rejection says nothing.
+ *
+ * Popping only on success keeps the two stacks the same length at every point where
+ * anything can observe them. It also makes a failed undo retryable, which is the
+ * behaviour a reader expects from a button that did not visibly do anything.
+ */
 async function runUndo(): Promise<void> {
-  const entry = undoStack.pop();
-  paintUndo();
+  const entry = undoStack.at(-1);
   if (entry === undefined) return;
-  await entry.run();
-  say(`undid: ${entry.describe}`);
+  undoButton.disabled = true;
+  try {
+    await entry.run();
+    undoStack.pop();
+    say(`undid: ${entry.describe}`);
+  } catch (cause) {
+    // Loud, and the entry stays. The alternative is the two stacks disagreeing
+    // about what the next ctrl+Z means.
+    say(`could not undo ${entry.describe}: ${(cause as Error).message}`, true);
+  } finally {
+    paintUndo();
+  }
 }
 
 undoButton.addEventListener("click", () => void runUndo());

@@ -82,7 +82,13 @@
  */
 
 import type { Db } from "../db/index.js";
-import { clozeTrack, type ReverseMode, type TrackKind } from "../schema/index.js";
+import {
+  clozeTrack,
+  resolveReverseInheritance,
+  type ReverseInheritance,
+  type ReverseMode,
+  type TrackKind,
+} from "../schema/index.js";
 
 /**
  * Asia/Tokyo, minutes east of UTC. Japan has no DST, so this is constant for
@@ -380,16 +386,20 @@ export function resolveDeckReverse(
   decks: ReadonlyMap<string, MochiDeck>,
   workspaceDefault: ResolvedReverse = "off",
 ): ResolvedReverse {
-  const seen = new Set<string>();
-  let id = deckId ?? null;
-  while (id !== null && !seen.has(id)) {
-    seen.add(id);
-    const deck = decks.get(id);
-    if (deck === undefined) break;
-    if (mochiDeckReverse(deck) === "on") return "on";
-    id = deck["parent-id"] ?? null;
+  // An ADAPTER now, and this is the one that used to disagree: it walked PAST an
+  // explicit `off` looking for an `on` above it, so a deck deliberately excepted
+  // under an enabled parent resolved `on` here and `off` in `entities.ts` and in
+  // `deck_reverse_resolved`. Unreachable from a Mochi export — `mochiDeckReverse`
+  // never yields `off` — and reachable the moment deck CRUD writes one.
+  const nodes = new Map<string, ReverseInheritance>();
+  for (const [id, deck] of decks) {
+    nodes.set(id, {
+      id,
+      parentId: deck["parent-id"] ?? null,
+      reverse: mochiDeckReverse(deck),
+    });
   }
-  return workspaceDefault;
+  return resolveReverseInheritance(nodes, deckId, workspaceDefault);
 }
 
 /** Every deck's resolved reverse, for handing to `importReviews`. */

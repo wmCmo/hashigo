@@ -75,6 +75,60 @@ export const SCHEMA_VERSION = 8;
 export const REVERSE_MODES = ["inherit", "on", "off"] as const;
 export type ReverseMode = (typeof REVERSE_MODES)[number];
 
+/** A node in the inheritance chain — a deck, reduced to what the rule reads. */
+export interface ReverseInheritance {
+  readonly id: string;
+  readonly parentId: string | null;
+  readonly reverse: ReverseMode;
+}
+
+/**
+ * THE ONE DEFINITION of how `inherit` resolves up the deck tree.
+ *
+ * `views.sql` states the rule in SQL (`deck_reverse_resolved`: nearest ancestor by
+ * depth whose `reverse <> 'inherit'`, then `settings`, then `off`) and says beside
+ * the neighbouring voice view exactly why that should be the only one — *"so there
+ * is one definition of the inheritance rather than a SQL one and a TypeScript one
+ * that drift"*.
+ *
+ * IT HAD THREE, AND ONE OF THEM DISAGREED. `src/import/entities.ts` matched the
+ * view. `src/import/reviews.ts` walked PAST an explicit `off` and kept looking for
+ * an `on` above it, so a deck deliberately excepted under an enabled parent resolved
+ * to `on` there and `off` everywhere else.
+ *
+ * That divergence is unreachable from a Mochi export today, and only by accident:
+ * `mochiDeckReverse` maps a falsy `review-reverse?` to `inherit` rather than to
+ * `off`, so an explicit `off` never exists in imported data. `decks.reverse` is a
+ * real column with three states, and request 14's deck CRUD is what puts an `off`
+ * in it — at which point two importers would have disagreed about which cards have
+ * reverse tracks, and a track is what the scheduler schedules.
+ *
+ * So both callers now adapt their own shape to `ReverseInheritance` and call this.
+ * `test/reverse-inheritance.test.ts` pins the result against the SQL view over the
+ * real corpus, which is the only check that can catch the two drifting again.
+ *
+ * Cycle-safe: a deck that is its own ancestor stops rather than looping, and
+ * resolves to `fallback`. Malformed exports have produced exactly that.
+ */
+export function resolveReverseInheritance(
+  nodes: ReadonlyMap<string, ReverseInheritance>,
+  deckId: string | null | undefined,
+  fallback: "on" | "off" = "off",
+): "on" | "off" {
+  const seen = new Set<string>();
+  let id = deckId ?? null;
+  while (id !== null && !seen.has(id)) {
+    seen.add(id);
+    const node = nodes.get(id);
+    if (node === undefined) break;
+    // The NEAREST explicit value wins, whichever way it points. Taking only `on`
+    // here is the bug this function replaced.
+    if (node.reverse !== "inherit") return node.reverse;
+    id = node.parentId;
+  }
+  return fallback;
+}
+
 /**
  * A card has N independent review tracks, each separately scheduled. Mochi's
  * three parallel arrays — reviews, reverse-reviews, cloze/reviews — all map onto

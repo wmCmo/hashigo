@@ -49,6 +49,7 @@
 
 import type { SqliteHandle } from "../db/browser.js";
 
+import { dueAfter, dueBefore, dueOnOrBefore, liveTrack } from "./predicates.js";
 import { localDate, localDayNumber } from "./day.js";
 import { dailyOrderKey } from "./schedule.js";
 import { nowInHostOffset } from "./tracks.js";
@@ -136,7 +137,10 @@ interface RawQueueRow {
  *     turning a card's reverse off stops scheduling it without destroying its
  *     history — SPEC: "No scheduling toggle should ever destroy four years."
  */
-const LIVE = `t.dormant = 0 AND c.archived = 0`;
+// The live-track predicate, from `./predicates.js` — which exists because this
+// exact rule and the due comparison below were re-derived by hand at every call
+// site, and `app/db.worker.ts` re-derived the due half DIFFERENTLY.
+const LIVE = liveTrack();
 
 interface Filter {
   readonly sql: string;
@@ -205,7 +209,7 @@ export function dueTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
   const kind = kindFilter(options);
   const cap = limitClause(options);
   const sql =
-    `${COLUMNS} WHERE ${LIVE} AND t.due_at IS NOT NULL AND substr(t.due_at, 1, 10) <= ?` +
+    `${COLUMNS} WHERE ${LIVE} AND t.due_at IS NOT NULL AND ${dueOnOrBefore()}` +
     `${deck.sql}${kind.sql} ORDER BY t.due_at, t.id${cap.sql}`;
   const rows = db.prepare(sql).all(today, ...deck.params, ...kind.params, ...cap.params) as
     RawQueueRow[];
@@ -303,13 +307,13 @@ export interface QueueCounts {
 // twice was paying twice for nothing.
 const COUNTS = `
 SELECT sum(CASE WHEN t.dormant = 0 AND t.due_at IS NOT NULL
-                 AND substr(t.due_at, 1, 10) <= ? THEN 1 ELSE 0 END)   AS due,
+                 AND ${dueOnOrBefore()} THEN 1 ELSE 0 END)   AS due,
        sum(CASE WHEN t.dormant = 0 AND t.due_at IS NOT NULL
-                 AND substr(t.due_at, 1, 10) <  ? THEN 1 ELSE 0 END)   AS overdue,
+                 AND ${dueBefore()} THEN 1 ELSE 0 END)   AS overdue,
        sum(CASE WHEN t.dormant = 0 AND t.due_at IS NULL AND t.reps = 0
                 THEN 1 ELSE 0 END)                                     AS fresh,
        sum(CASE WHEN t.dormant = 0 AND t.due_at IS NOT NULL
-                 AND substr(t.due_at, 1, 10) >  ? THEN 1 ELSE 0 END)   AS scheduled,
+                 AND ${dueAfter()} THEN 1 ELSE 0 END)   AS scheduled,
        sum(CASE WHEN t.dormant = 1 THEN 1 ELSE 0 END)                  AS dormant
   FROM card_tracks t
   JOIN cards c ON c.id = t.card_id
@@ -359,8 +363,8 @@ SELECT substr(t.due_at, 1, 10) AS date, count(*) AS count
   JOIN cards c ON c.id = t.card_id
  WHERE t.dormant = 0 AND c.archived = 0
    AND t.due_at IS NOT NULL
-   AND substr(t.due_at, 1, 10) > ?
-   AND substr(t.due_at, 1, 10) <= ?`;
+   AND ${dueAfter()}
+   AND ${dueOnOrBefore()}`;
 
 /**
  * 復習予測 — the one dashboard tile SPEC defers until the scheduler exists.

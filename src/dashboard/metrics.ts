@@ -1004,12 +1004,14 @@ export interface ForecastReport {
   readonly peak: ForecastDayCount | null;
 }
 
+import { dueAfter, liveTrack } from "../scheduler/index.js";
+
 const FORECAST_PROVENANCE_SQL = `
 SELECT sum(CASE WHEN t.scheduler = 'fsrs6' THEN 1 ELSE 0 END) AS hashigo,
        sum(CASE WHEN t.scheduler IS NULL OR t.scheduler <> 'fsrs6' THEN 1 ELSE 0 END) AS mochi
   FROM card_tracks t JOIN cards c ON c.id = t.card_id
- WHERE t.dormant = 0 AND c.archived = 0 AND t.due_at IS NOT NULL
-   AND substr(t.due_at, 1, 10) > :as_of`;
+ WHERE ${liveTrack()} AND t.due_at IS NOT NULL
+   AND ${dueAfter("t", ":as_of")}`;
 
 /**
  * `asOf` resolves the same way every other figure on the page does — the last
