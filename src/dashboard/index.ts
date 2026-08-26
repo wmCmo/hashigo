@@ -56,3 +56,12 @@ export {
 } from "./metrics.js";
 
 export { renderDashboard, type RenderOptions } from "./render.js";
+
+export {
+  collectGlance,
+  shiftDate,
+  type Glance,
+  type GlanceDay,
+  type GlanceForecastDay,
+  type GlanceOptions,
+} from "./glance.js";

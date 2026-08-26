@@ -58,7 +58,7 @@ npm run app:dev -- --host ::              # phone / tunnel
 
 Gates: run **`npm run gates`** — one command, all seven, cheapest first, and a verdict
 that means what it says. `app:build` is new and was covered by nothing: `app:check` is
-`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 32 files / 873
+`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 33 files / 878
 passed / 1 skipped** (~97 s) · `npm run typecheck` → 0 · **`npm run app:check` → 0** ·
 `npm run build` → OK, 77 modules, 27 export subpaths · `npm run spike:check` → 0 ·
 `blobs … paths` → 0.
@@ -254,7 +254,7 @@ session looks to decide what to pick up.
 |---|---|---|
 | **1** | **Run the app on his phone** | The one thing that needs HIM, and it is now the ONLY thing on this table that his fourteen did not touch. `npm run app:dev -- --host ::` plus a tunnel; the bind-address trap is in `app/README.md` |
 | **2** | **Stage 11, sync** | The only STRUCTURAL blocker. He uses both devices — laptop to create, phone to review — and without sync they hold separate OPFS databases, so his stated workflow is impossible. Unspecified in shape. Decision 18: the TTS key never goes in the client |
-| **3** | **Make the dashboard usable on the device** | It WORKS and it costs **81,060 ms** in the worker against **10.3 s** for the same `collect` in Node — an 8x wasm penalty, and sqlite-wasm is synchronous in the one worker, so nothing can grade while it runs. It asks before running and states the number. See below for where the time goes |
+| **3** | **The full report is still 81 s** | The DAILY dashboard is 1.25 s and is what the sidebar opens (`src/dashboard/glance.ts`). The four-year report is a button inside it, behind a confirm that states the cost. Its "obvious" optimisation was tried and is **5x slower** — see below before reaching for it again |
 | — | Everything in [notes/zach-wants.md](notes/zach-wants.md) | **All fourteen carry working code.** That file is the WANT; this table is the state |
 
 ### WHERE THE DASHBOARD'S 81 SECONDS GO — measured 2026-08-26, not yet fixed
@@ -281,14 +281,55 @@ and `deck_paths` — the recursive view it joins — costs 45 ms. The cost is ro
 minutes', tz_offset_minutes)))` per row, and `collect` runs the whole set TWICE (all
 time, then calendar 2026).
 
-The obvious repair is to materialise `review_log`'s scalar columns into a TEMP TABLE
-once per `collect` and point the metrics at it. It is a real refactor of
-`src/dashboard/metrics.ts` — and it has the best possible safety net:
-`test/dashboard.test.ts` compares the rendered file **byte-for-byte** against a
-committed golden, so a change that alters one number cannot pass.
+### THE REPAIR THIS FILE RECOMMENDED IS WRONG. It was tried, 2026-08-26.
 
-**Do NOT reach for a cache instead.** A dashboard that can go stale is a dashboard
-that quietly reports yesterday, and the number he would act on is today's.
+The paragraph that used to sit here said to materialise `review_log` into a TEMP
+TABLE once per `collect` and point the metrics at it. **That was reasoned, not
+measured, and measuring it falsified it:**
+
+```plaintext
+as shipped                        6,389 ms   458,141 chars
+temp table shadows review_log    31,657 ms   458,141 chars   (+272 ms to build it)
+```
+
+Byte-identical output and **five times slower**. SQLite was already flattening the
+view and pushing the date predicates down into indexed scans of `reviews`;
+materialising it threw every index away and left fourteen full scans of a temp
+table. The per-row date arithmetic was never the dominant cost, so removing it
+bought nothing and cost the indexes.
+
+It is left here rather than deleted because the reasoning was plausible and would
+be re-derived by the next person to look at this. **The full report has no known
+cheap repair.** What worked instead was not making it faster: see below.
+
+### WHAT DID WORK — the daily dashboard, 81 s -> 1.25 s
+
+Zach asked whether the "scientific dashboard" belongs on mobile at all, and
+proposed simple-on-phone / full-on-laptop. The split is right; **the axis is not
+device** — he reviews on the laptop too, and a laptop tab runs the same sqlite-wasm
+in the same one worker, so the full report costs the same 81 seconds there.
+
+`src/dashboard/glance.ts` is the split done by what the numbers are FOR. Two things
+make it fast, both measured over the real corpus (621 ms -> 87 ms in Node,
+7,174 ms -> **1,253 ms** in the worker):
+
+1. **`substr(reviewed_at, 1, 10)` IS the local date.** `reviewed_at` is stored with
+   its offset, so its first ten characters are already the local calendar date — no
+   `datetime()` round trip, and `reviewed_at` carries an index (`reviews_when`), so
+   a range on it is a seek. Checked against `review_log`'s own expression across all
+   102,020 rows: **0 disagreements**, pinned by `test/glance.test.ts` including a
+   non-Tokyo-offset case, because the corpus is entirely +09:00 and could not tell
+   "the rule holds" from "every row shares one offset".
+2. **One windowed query; today, the last 30 days, the last 14 and the streak are all
+   derived from it in TypeScript.** Asking the database four times for four
+   overlapping slices of the same rows was the actual cost.
+
+It also skips `review_log` entirely, which joins `card_tracks`, `cards` and the
+recursive `deck_paths` — and not one of these numbers is per-deck.
+
+**Do NOT reach for a cache for the full report.** A dashboard that can go stale is a
+dashboard that quietly reports yesterday, and the number he would act on is
+today's.
 
 ### Three things RUNNING it found, which reasoning had not
 

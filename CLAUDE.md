@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 32 files, 873 passed, 1 skipped (the FSRS refit, gated). ~90 s.
+npm test                # 33 files, 878 passed, 1 skipped (the FSRS refit, gated). ~90 s.
                         # STILL EXITS 1 ON A FULLY PASSING RUN. Use `npm run gates`,
                         # which reads the RESULT instead of the exit code.
                         # THE CAUSE: birpc's timeout is a hard-coded 60 s that vitest

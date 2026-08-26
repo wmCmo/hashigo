@@ -32,6 +32,7 @@
 import type { AudioAddress } from "../src/render/audio.js";
 import type { BlobPayload } from "../src/blobs/url.js";
 import type { PreparedCard } from "../src/review/index.js";
+import type { Glance } from "../src/dashboard/index.js";
 import type { SessionProgress } from "../src/session/index.js";
 
 // ─── page → worker ───────────────────────────────────────────────────────────
@@ -544,6 +545,34 @@ export interface TemplateOpMessage {
  * The `locale` is his: decision — English by default, `ja` byte-identical to a
  * committed golden file.
  */
+/**
+ * The daily dashboard — his answer to his own question, refined.
+ *
+ * He asked whether the "scientific dashboard" belongs on mobile, and proposed
+ * simple-on-phone / full-on-laptop. **The split is right and the axis is not
+ * device**: he reviews on the laptop too, and a laptop tab runs the same
+ * sqlite-wasm in the same one worker, so it is the same 81 seconds there.
+ *
+ * It splits by what the numbers are FOR. `src/dashboard/glance.ts` is "how am I
+ * doing" and is fast on both machines; `src/dashboard/metrics.ts` is "what does four
+ * years of data say" and stays one button away, behind the cost it charges.
+ *
+ * This returns NUMBERS, not HTML. The full report is a complete document with its
+ * own white stylesheet and has to be an iframe; the glance is a dozen figures and
+ * belongs in the app's own palette, on the phone especially.
+ */
+export interface GlanceRequest {
+  readonly kind: "glance";
+  readonly id: number;
+}
+
+export interface GlanceMessage {
+  readonly kind: "glance";
+  readonly id: number;
+  readonly glance: Glance;
+  readonly elapsedMs: number;
+}
+
 export interface DashboardRequest {
   readonly kind: "dashboard";
   readonly id: number;
@@ -661,6 +690,7 @@ export type AppRequest =
   | SetFieldRequest
   | TemplateRequest
   | TemplateOpRequest
+  | GlanceRequest
   | DashboardRequest
   | SettingsRequest
   | SetSettingRequest
@@ -801,6 +831,7 @@ export type AppMessage =
   | SetSettingMessage
   | TemplateMessage
   | TemplateOpMessage
+  | GlanceMessage
   | DashboardMessage
   | ErrorMessage;
 
@@ -815,6 +846,7 @@ export interface ReplyFor {
   readonly reset: ResetMessage;
   readonly preview: PreviewMessage;
   readonly setField: SetFieldMessage;
+  readonly glance: GlanceMessage;
   readonly dashboard: DashboardMessage;
   readonly template: TemplateMessage;
   readonly templateOp: TemplateOpMessage;

@@ -2877,57 +2877,213 @@ function openAddField(detail: TemplateDetail, run: TemplateRunner): void {
 }
 
 /**
- * His #1: *"i want dashboard to be accessible from the side bar"*.
+ * His #1, and the answer to *"what about just simple dashboard in mobile app and
+ * full suit dashboard on laptop?"*
  *
- * **The port turned out to be a TYPE.** The stub here used to say wiring it in
- * meant "porting src/dashboard to run against the OPFS database in the worker —
- * real work, not a link". It was not: `src/dashboard/metrics.ts` was already a
- * pinned browser entry point, and the only thing between it and this was that it
- * named better-sqlite3's `Db` where it needed the `SqliteHandle` both handles
- * implement. Four members — `prepare`, `get`, `all`, one `pragma`.
+ * **The split is right; the axis is not device.** He reviews on the laptop too, and
+ * a laptop tab runs the same sqlite-wasm in the same one worker — so the full
+ * report is the same 81 seconds there. It splits by what the numbers are FOR: this
+ * is "how am I doing", and the four-year analysis is a button inside it.
  *
- * ─── AN IFRAME, AND THAT IS THE POINT RATHER THAN A SHORTCUT ────────────────
- *
- * The dashboard is a COMPLETE document with its own stylesheet and **zero
- * JavaScript** (SPEC problem #1 is battery). Injecting its body into this page
- * would put two full stylesheets in one document and let each restyle the other —
- * it sets rules on `body`, `table`, `h1`. `srcdoc` gives it its own document, and
- * since it runs no script there is nothing to sandbox against.
- *
- * ─── IT ASKS BEFORE IT RUNS, AND THE REASON IS A MEASUREMENT ────────────────
- *
- * **81,060 ms in the worker**, in Chromium on this desktop, over the real corpus —
- * against **10.3 s** for the same `collect` under better-sqlite3 in Node. An 8x
- * penalty, and none of it is one hot query: it is roughly fourteen full passes over
- * 102,020 rows through views that recompute `date(datetime(reviewed_at, ...))` per
- * row. The slowest single piece is `totals` at 1.3 s in Node.
- *
- * The cost that matters is not the wait. **sqlite-wasm is synchronous and there is
- * one worker**, so for as long as this runs, nothing else can touch the database —
- * no grade, no next card, no field edit. A control that silently freezes grading for
- * a minute and a half is worse than one that says so, so this states the number and
- * waits to be told to go.
- *
- * The estimate is the LAST measured run, kept for the session, because the first
- * one on his handset is the only honest source for what it costs there.
- *
- * `notes/` carries the optimisation this is waiting for; it is a real refactor of
- * `src/dashboard/metrics.ts` guarded by a byte-identical golden file, not a tweak.
+ * Rendered in the app's own palette rather than in an iframe, which is the other
+ * half of his question. The full report is a complete document with its own white
+ * stylesheet and has no choice; a dozen figures do, and on a phone a white sheet
+ * dropped into a dark app at night is its own answer.
  */
 async function openDashboard(): Promise<void> {
   closeSidebar();
-  openConfirm(
-    "Build the dashboard?",
-    `It reads the whole review history — 102,020 rows, about fourteen passes — and ` +
-      `SQLite runs synchronously in the one worker, so nothing else can touch the ` +
-      `database until it finishes: no grading, no next card. ` +
-      (dashboardLastMs === null
-        ? `On a desktop it measured 81 seconds.`
-        : `Last run on this device: ${(dashboardLastMs / 1000).toFixed(0)} seconds.`),
-    "build it",
-    () => void buildDashboard(),
-    "normal",
+  let reply: ReplyFor["glance"];
+  try {
+    reply = await ask<"glance">({ kind: "glance" });
+  } catch (cause) {
+    say((cause as Error).message, true);
+    return;
+  }
+  const g = reply.glance;
+
+  const root = document.createElement("div");
+  root.className = "layer layer-edit layer-glance";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.setAttribute("aria-label", "dashboard");
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+  root.appendChild(backdrop);
+
+  const panel = document.createElement("div");
+  panel.className = "layer-panel";
+  const head = document.createElement("div");
+  head.className = "layer-head";
+  const title = document.createElement("span");
+  title.textContent = `dashboard · ${reply.elapsedMs.toFixed(0)} ms`;
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "layer-close";
+  close.setAttribute("aria-label", "close the dashboard");
+  close.textContent = "✕";
+  close.addEventListener("click", () => closeIfTop(root));
+  head.append(title, close);
+  panel.appendChild(head);
+
+  const body = document.createElement("div");
+  body.className = "layer-body";
+  panel.appendChild(body);
+  root.appendChild(panel);
+
+  const pct = (r: number | null): string => (r === null ? "—" : `${(100 * r).toFixed(1)}%`);
+
+  // ── today, and the streak ──
+  body.appendChild(
+    glanceTiles([
+      ["due now", g.today.due.toLocaleString(), `${g.today.fresh} new waiting`],
+      [
+        "done today",
+        g.today.reviews.toLocaleString(),
+        g.today.reviews === 0 ? "not started" : `${pct(g.today.remembered / g.today.reviews)} kept`,
+      ],
+      [
+        "streak",
+        `${g.streakDays}`,
+        // Said out loud because the number is generous on purpose — see
+        // `Glance.streakDays`. A streak that reads 0 at breakfast is a number that
+        // punishes him for the time of day.
+        g.today.reviews === 0 && g.streakDays > 0 ? "through yesterday" : "days",
+      ],
+      ["live tracks", g.collection.live.toLocaleString(), `of ${g.collection.tracks.toLocaleString()}`],
+    ]),
   );
+
+  // ── the last 14 active days ──
+  body.appendChild(glanceHead("the last 14 days you studied"));
+  body.appendChild(
+    glanceBars(
+      g.recent.map((day) => ({
+        label: day.date.slice(5),
+        value: day.reviews,
+        // Retention as the bar's TONE, not a second bar. Two bars per day on a
+        // 375px screen is four pixels each.
+        good: day.reviews === 0 ? null : day.remembered / day.reviews,
+      })),
+    ),
+  );
+
+  // ── what is coming ──
+  body.appendChild(glanceHead("scheduled, next 14 days"));
+  body.appendChild(
+    glanceBars(
+      g.forecast.map((day) => ({ label: day.date.slice(5), value: day.due, good: null })),
+    ),
+  );
+
+  // ── the two windows ──
+  body.appendChild(glanceHead("windows"));
+  body.appendChild(
+    glanceTiles([
+      [
+        "last 30 days",
+        g.last30.reviews.toLocaleString(),
+        `${pct(g.last30.retention)} · ${g.last30.activeDays} active days`,
+      ],
+      [
+        "all time",
+        g.allTime.reviews.toLocaleString(),
+        `${pct(g.allTime.retention)} · ${g.allTime.firstDate ?? "—"} → ${g.allTime.lastDate ?? "—"}`,
+      ],
+    ]),
+  );
+
+  // ── the full report ──
+  const note = document.createElement("p");
+  note.className = "settings-note";
+  note.textContent =
+    `The full analysis — retention by interval, by deck, by track, the heatmap, the ` +
+    `long-interval outlook — is the same document \`npm run dashboard\` writes. It ` +
+    `reads the whole history and SQLite runs synchronously in the one worker, so ` +
+    `nothing can grade while it builds. ` +
+    (dashboardLastMs === null
+      ? `On a desktop it measured 81 seconds.`
+      : `Last run here: ${(dashboardLastMs / 1000).toFixed(0)} seconds.`);
+  const full = document.createElement("button");
+  full.type = "button";
+  full.className = "sidebar-action";
+  full.textContent = "build the full report";
+  full.addEventListener("click", () => void buildDashboard());
+  body.append(glanceHead("the four-year report"), note, full);
+
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  layers.push({
+    root,
+    mounted: null,
+    prepared: null,
+    cardId: "",
+    ops: false,
+    pinned: false,
+    archived: false,
+  });
+  close.focus();
+}
+
+function glanceHead(text: string): HTMLElement {
+  const head = document.createElement("h3");
+  head.className = "tpl-head";
+  head.textContent = text;
+  return head;
+}
+
+function glanceTiles(rows: readonly (readonly [string, string, string])[]): HTMLElement {
+  const grid = document.createElement("div");
+  grid.className = "glance-tiles";
+  for (const [label, value, note] of rows) {
+    const tile = document.createElement("div");
+    tile.className = "glance-tile";
+    const l = document.createElement("span");
+    l.className = "glance-label";
+    l.textContent = label;
+    const v = document.createElement("b");
+    v.className = "glance-value";
+    v.textContent = value;
+    const n = document.createElement("i");
+    n.className = "glance-note";
+    n.textContent = note;
+    tile.append(l, v, n);
+    grid.appendChild(tile);
+  }
+  return grid;
+}
+
+/**
+ * A bar row in CSS, with no chart library and no canvas.
+ *
+ * SPEC problem #1 is battery: this is the same reason the standalone dashboard
+ * ships zero JavaScript. A `<div>` with a percentage height computes once at layout
+ * and never again.
+ */
+function glanceBars(
+  days: readonly { label: string; value: number; good: number | null }[],
+): HTMLElement {
+  const chart = document.createElement("div");
+  chart.className = "glance-bars";
+  const peak = Math.max(1, ...days.map((day) => day.value));
+  for (const day of days) {
+    const column = document.createElement("div");
+    column.className = "glance-col";
+    column.title = `${day.label}: ${day.value}`;
+    const bar = document.createElement("i");
+    bar.className = "glance-bar";
+    // A zero-review day still gets a hairline, so a GAP reads as a gap rather
+    // than as a day the chart forgot.
+    bar.style.height = `${Math.max(2, Math.round((100 * day.value) / peak))}%`;
+    if (day.good !== null && day.good < 0.85) bar.classList.add("is-low");
+    const label = document.createElement("span");
+    label.className = "glance-tick";
+    label.textContent = day.label;
+    column.append(bar, label);
+    chart.appendChild(column);
+  }
+  return chart;
 }
 
 async function buildDashboard(): Promise<void> {

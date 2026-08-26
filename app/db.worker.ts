@@ -54,7 +54,7 @@ import {
   type ReviewSession,
 } from "../src/session/index.js";
 import { searchCards } from "../src/search/index.js";
-import { collect, renderDashboard } from "../src/dashboard/index.js";
+import { collect, collectGlance, renderDashboard } from "../src/dashboard/index.js";
 import { countReferences, renameFieldEverywhere } from "../src/template/index.js";
 import { positionKeys, FIELD_TYPES } from "../src/schema/index.js";
 // The SQL fragments for "live" and "due", from the module that owns them. This
@@ -83,6 +83,7 @@ import type {
   TemplateOpRequest,
   TemplateRequest,
   DashboardRequest,
+  GlanceRequest,
   SettingsRequest,
   SetSettingRequest,
   ResetRequest,
@@ -1630,6 +1631,22 @@ function renumber(db: BrowserDb, templateId: string, order: readonly string[]): 
  * `source` says where the numbers came from, because the standalone file names a
  * path and this one cannot — the database is a slot in an OPFS pool.
  */
+/**
+ * The daily numbers. Every query here is bounded by a date window or an index —
+ * see `src/dashboard/glance.ts`, which also records why the full report's "obvious"
+ * optimisation was measured and found to be five times SLOWER.
+ */
+function glance(request: GlanceRequest): void {
+  const started = performance.now();
+  const result = collectGlance(requireCards());
+  post({
+    kind: "glance",
+    id: request.id,
+    glance: result,
+    elapsedMs: performance.now() - started,
+  });
+}
+
 function dashboard(request: DashboardRequest): void {
   const db = requireCards();
   const started = performance.now();
@@ -1672,6 +1689,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "setField":
           setField(request);
+          break;
+        case "glance":
+          glance(request);
           break;
         case "dashboard":
           dashboard(request);
