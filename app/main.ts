@@ -68,6 +68,12 @@ import { BlobUrlScope } from "../src/blobs/url.js";
 import { browserDocument, CLASS } from "../src/render/index.js";
 import { mountPrepared, type MountedCard, type PreparedCard } from "../src/review/index.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
+import {
+  attachInput,
+  type AnswerCheck,
+  type InputHandle,
+  type InputSurface,
+} from "../src/render/input.js";
 // The template editor's two rules, from the modules that own them. `referencedNames`
 // is the same lexer the parser uses (`FIELD_TOKEN`), so the 'not a field' check on
 // screen cannot disagree with what the renderer will actually resolve.
@@ -151,6 +157,7 @@ const reviewView = el("review");
 const deckLine = el("deck");
 const cardHost = el("cardhost");
 const hintLine = el("hint");
+const peekLine = el("peek");
 const progressLabel = el("progress");
 const progressBar = el("progressbar");
 const progressFill = el("progressfill");
@@ -182,6 +189,7 @@ let currentCardId: string | null = null;
 /** The review card's prepared form, so `e` can edit it without re-fetching. */
 let previewOfCurrent: PreparedCard | null = null;
 let drawHandles: DrawHandle[] = [];
+let inputHandles: InputHandle[] = [];
 /**
  * The review card's collection state, straight from the row (`collectionState` in
  * the worker). It labels the two toggles and decides which verb they send, so it
@@ -189,6 +197,16 @@ let drawHandles: DrawHandle[] = [];
  */
 let currentPinned = false;
 let currentArchived = false;
+/**
+ * How far the screen is from the session's cursor — his #9.
+ *
+ * `0` is the card he is being asked. Anything else is a look-ahead (or a
+ * look-back), and while it is non-zero **nothing can be graded**: `answer()` acts
+ * on the session's item, not on what is displayed, so a grade from here would move
+ * a due date on a card he is not reading. `paintPeek` is where that is enforced
+ * and shown; `showSessionCard` is how every other caller gets back to 0.
+ */
+let peekOffset = 0;
 
 /**
  * Make every `<draw>` canvas on a card actually drawable — his #10.
@@ -242,6 +260,82 @@ function makeDrawable(result: { widgets: readonly { element: HTMLElement; name: 
   return handles;
 }
 
+/**
+ * `--footer-h`: the real height of the bottom controls, in pixels.
+ *
+ * THIS EXISTS BECAUSE THE HAND-TUNED VERSION WAS WRONG, measured. The operations
+ * row and the reveal/grade bar were two separately-fixed elements, each with its
+ * own `bottom:` offset, and on a 375x812 viewport the lower one covered the upper
+ * by **19px** — the bottom of every operation button, gone. The offsets could not
+ * have stayed right: `.bar`'s height is whatever its font and padding make it, so
+ * either changing moves it over its neighbour silently.
+ *
+ * They are one fixed box now, stacked in normal flow, so overlapping is not
+ * expressible. What is left is everything that has to CLEAR them — the card's
+ * bottom padding, the replay button, the status strip — and those read this
+ * variable rather than each carrying a copy of the number.
+ *
+ * A ResizeObserver rather than one measurement at boot: the row is taller when a
+ * label wraps, the safe-area inset arrives late on iOS, and the browser's own font
+ * size is a setting he can change.
+ */
+const footer = el("footer");
+const measureFooter = (): void => {
+  document.documentElement.style.setProperty("--footer-h", `${footer.offsetHeight}px`);
+};
+new ResizeObserver(measureFooter).observe(footer);
+measureFooter();
+
+/**
+ * Make every rendered `<input>` check its own answer — the second half of his #10's
+ * shape, and the one that was still open.
+ *
+ * **`attachInput` has existed since stage 4 and nothing had ever called it.** The
+ * exact same defect as the drawing field: the renderer emits the box, puts the
+ * authored answer in `data-expect` (it is the EXPECTED ANSWER, not a prefill — the
+ * 数字 template reads a number aloud and reveals the formatted one), and stops
+ * there, because "what a right answer means to the scheduler" is not the
+ * renderer's. Nothing downstream picked it up, so the box took typing and reported
+ * nothing, on all 90 数字 cards.
+ *
+ * ─── WHAT A VERDICT DOES AND DELIBERATELY DOES NOT DO ───────────────────────
+ *
+ * It marks the box and reveals. It does **not** grade. Decision 2 is that grades are
+ * binary and HIS — the app cannot know whether he wants a typo counted as forgotten,
+ * and `checkAnswer` folds width, case and kana precisely because the answer to that
+ * is "not on a technicality". So Enter reveals and shows the comparison; `f` and `j`
+ * still decide.
+ *
+ * `normaliseAnswer` is why this is not `===`: 数字 answers arrive as full-width
+ * digits, with commas, from an IME. NFKC plus separator-stripping is what makes
+ * `１，０００` and `1000` the same answer.
+ */
+function makeCheckable(
+  result: {
+    widgets: readonly {
+      element: HTMLElement;
+      name: string;
+      expected: string | null;
+    }[];
+  },
+  onSubmit: ((check: AnswerCheck | null) => void) | null,
+): InputHandle[] {
+  const handles: InputHandle[] = [];
+  for (const widget of result.widgets) {
+    if (widget.name !== "input") continue;
+    if (!(widget.element instanceof HTMLInputElement)) continue;
+    handles.push(
+      attachInput(widget, widget.element as unknown as InputSurface, {
+        // Kana folding on: a 数字 answer typed through an IME can arrive as kana
+        // or as digits, and both are the same answer to the exercise.
+        foldKana: true,
+        ...(onSubmit === null ? {} : { onSubmit }),
+      }),
+    );
+  }
+  return handles;
+}
+
 /** `data-state` on the review view, which is what `style.css` switches on. */
 function setState(state: "prompt" | "revealed"): void {
   reviewView.setAttribute("data-state", state);
@@ -282,6 +376,8 @@ function boundarySides(result: RenderResult<HTMLElement>): BoundarySide[] {
 function releaseCard(): void {
   for (const handle of drawHandles) handle.detach();
   drawHandles = [];
+  for (const handle of inputHandles) handle.detach();
+  inputHandles = [];
   mounted?.dispose();
   scope?.releaseAll();
   mounted = null;
@@ -291,8 +387,30 @@ function releaseCard(): void {
   cardHost.replaceChildren();
 }
 
-async function showNext(): Promise<void> {
-  const reply = await ask<"next">({ kind: "next" });
+/**
+ * Show the card at `peekOffset` from the session cursor. `0` is the card he is on.
+ *
+ * ─── WHY THIS REPLACED A PREVIEW LAYER ──────────────────────────────────────
+ *
+ * The first version of his #9 opened the neighbouring card as a PREVIEW layer, and
+ * he rejected it in two words: *"you can only press it once, not what i intended"*.
+ * Both halves of that were the same mistake.
+ *
+ * A layer swallows the keyboard — deliberately, so that space cannot grade the card
+ * underneath a preview he is reading — so the second arrow press had nowhere to go.
+ * And a preview is decision 30's OTHER mode: every side at once, fully revealed,
+ * nothing masked. Which is exactly wrong for *"just wanna see what's next"*: it
+ * hands him the answer to the card he is about to be asked.
+ *
+ * So stepping happens in the review view itself. The card arrives masked, in its
+ * own mode, with its own audio behaviour — the card as he will meet it. What
+ * changes is that the session cursor has not moved, so **nothing can be graded from
+ * here**, and the screen says so rather than letting a keystroke write a review
+ * against the wrong card.
+ */
+async function showCardAt(): Promise<void> {
+  const reply = await ask<"next">({ kind: "next", offset: peekOffset });
+  maxLookBehind = reply.progress.answered;
   progressLabel.textContent =
     `${reply.progress.answered}/${reply.progress.planned}` +
     (reply.progress.reasksRemaining > 0 ? ` +${reply.progress.reasksRemaining}` : "");
@@ -308,6 +426,15 @@ async function showNext(): Promise<void> {
   progressBar.setAttribute("aria-valuemax", String(planned));
 
   if (reply.card === null) {
+    // Only the real cursor can finish the session. Running off the end of a
+    // look-ahead means "there is nothing further ahead", not "you are done" —
+    // showing the done screen there would end a session he is mid-way through.
+    if (peekOffset !== 0) {
+      peekOffset = 0;
+      await showCardAt();
+      say("that is the end of the plan — back to your card");
+      return;
+    }
     releaseCard();
     reviewView.hidden = true;
     doneView.hidden = false;
@@ -318,7 +445,6 @@ async function showNext(): Promise<void> {
 
   releaseCard();
   revealed = false;
-  peekOffset = 0;
   currentCardId = reply.card.cardId;
   previewOfCurrent = reply.card;
   currentPinned = reply.pinned;
@@ -370,6 +496,17 @@ async function showNext(): Promise<void> {
   // AFTER it is in the document: `attachDraw` sizes the backing store from the
   // element's laid-out box, and a detached canvas has none.
   drawHandles = makeDrawable(card.result as never);
+  // Enter in the box reveals, and says whether it matched. It does NOT grade —
+  // see `makeCheckable`: decision 2's binary grade is his, and a typo is not the
+  // app's call to make.
+  inputHandles = makeCheckable(card.result as never, (check) => {
+    if (check !== null) {
+      hintLine.textContent = check.ok
+        ? `correct — ${check.expected}`
+        : `you typed ${check.typed || "nothing"} · the card says ${check.expected}`;
+    }
+    if (!revealed) reveal();
+  });
   deckLine.replaceChildren(document.createTextNode(reply.deckPath));
   if (reply.isNew) deckLine.appendChild(tag("new card", "newtag"));
   if (reply.reask) deckLine.appendChild(tag("again · not graded", "reasktag"));
@@ -425,6 +562,44 @@ async function showNext(): Promise<void> {
           ? "answer on the card, then reveal"
           : "answer, then reveal";
   shownAt = performance.now();
+  paintPeek();
+}
+
+/**
+ * The look-ahead banner, and the reason grading is locked while it is up.
+ *
+ * `answer()` grades **the session's current item**, not whatever is on screen. So a
+ * grade pressed while looking ahead would write a review, move a due date and burn
+ * a card — against a DIFFERENT card from the one he is reading. That is silent
+ * corruption of the study history, from one keystroke, and it is the whole reason
+ * this state is visible rather than subtle: the buttons go dead, they say why, and
+ * one press of the other arrow comes back.
+ *
+ * Reveal stays live. Looking at the answer of a card he has not been asked yet is
+ * exactly what he asked for, and it writes nothing.
+ */
+function paintPeek(): void {
+  const peeking = peekOffset !== 0;
+  reviewView.toggleAttribute("data-peek", peeking);
+  forgotButton.disabled = peeking;
+  rememberedButton.disabled = peeking;
+  peekLine.hidden = !peeking;
+  peekLine.textContent = peeking
+    ? `${peekOffset > 0 ? "+" : ""}${peekOffset} from your card — nothing here can be graded`
+    : "";
+}
+
+/**
+ * Show the card the SESSION is on, clearing any look-ahead.
+ *
+ * Every caller outside the arrows means this: after a grade, after an undo, after
+ * an operation moved the cursor, at boot. Keeping it a separate name from
+ * `showCardAt` is what stops "advance the session" and "look at a neighbour" being
+ * the same call — they were, and the offset survived a grade.
+ */
+async function showSessionCard(): Promise<void> {
+  peekOffset = 0;
+  await showCardAt();
 }
 
 function tag(text: string, className: string): HTMLElement {
@@ -491,10 +666,10 @@ async function grade(remembered: boolean): Promise<void> {
       run: async () => {
         const undone = await ask<"ungrade">({ kind: "ungrade" });
         say(undone.describe);
-        await showNext();
+        await showSessionCard();
       },
     });
-    await showNext();
+    await showSessionCard();
   } finally {
     forgotButton.disabled = false;
     rememberedButton.disabled = false;
@@ -860,43 +1035,62 @@ document.addEventListener("keydown", (event) => {
     void stepCard(-1);
     return;
   }
+  // Escape from a look-ahead lands back on his card. Nothing else in review
+  // answers to Escape, and coming back is the thing he most wants one key for.
+  if (event.key === "Escape" && peekOffset !== 0) {
+    event.preventDefault();
+    void showSessionCard();
+    return;
+  }
   if (!revealed) return;
+  // GRADING IS THE SESSION'S CURSOR, NOT THE SCREEN'S. `answer()` grades whatever
+  // the session is on, so a keystroke here while looking ahead would move a due
+  // date on a card he is not reading. The buttons are already disabled; this is
+  // the same rule for the keyboard, and it says which key comes back.
+  if (peekOffset !== 0 && (key === "f" || key === "j")) {
+    event.preventDefault();
+    say("looking ahead — press ← or Escape to get back to your card first");
+    return;
+  }
   if (key === "f") void grade(false);
   else if (key === "j") void grade(true);
   else if (key === "r") drill?.replay();
 });
 
 /**
- * His #9: step between cards WITHOUT registering a review.
+ * His #9: *"use arrows (left and right) to move to next card and move back,
+ * without registering any reviewing record, just wanna see what's next"*.
  *
- * *"just wanna see what's next"*. So this does not touch the session cursor and
- * writes nothing — it PREVIEWS the neighbouring card, which is the honest way to
- * look ahead without answering. Moving the session cursor would either skip a card
- * or grade it, and both are worse than a preview.
+ * It moves `peekOffset` and re-renders the review view. It does NOT move the
+ * session cursor, open a layer, or write anything — see `showCardAt` for why the
+ * first version's preview layer was wrong twice over, and `paintPeek` for why
+ * grading is locked while the offset is not zero.
+ *
+ * Repeatable in both directions, which is the half he reported: nothing here
+ * swallows the keyboard, so the twentieth press works like the first.
  */
-let peekOffset = 0;
-
 async function stepCard(delta: number): Promise<void> {
   const next = peekOffset + delta;
-  const reply = await ask<"next">({ kind: "next", offset: next });
-  if (reply.card === null) {
-    say(next > 0 ? "nothing further ahead" : "that is the first card");
+  if (next < -maxLookBehind) {
+    say("that is as far back as this session goes");
     return;
   }
+  const previous = peekOffset;
   peekOffset = next;
-  if (peekOffset === 0) {
-    // Back to the card he is actually on: close the look-ahead and show the real
-    // one, so `reveal` and the grade buttons act on what he can see.
-    await showNext();
-    say("back to the card you were on");
-    return;
-  }
-  await openPreview(reply.card.cardId);
-  say(
-    `${peekOffset > 0 ? "+" : ""}${peekOffset} — looking ahead, nothing graded ` +
-      `(${reply.progress.answered}/${reply.progress.planned})`,
-  );
+  await showCardAt();
+  if (peekOffset === previous) return; // showCardAt bounced off the end
+  if (peekOffset === 0) say("back to the card you were on");
 }
+
+/**
+ * How far back the arrows reach.
+ *
+ * `ReviewSession.peek` returns null below index 0, so the floor is the start of
+ * the PLAN and not the start of the session — a card he already answered is still
+ * in the plan behind the cursor, and looking back at it is exactly the "move back"
+ * he asked for. `progress.answered` is that distance.
+ */
+let maxLookBehind = 0;
 
 el("prevcard").addEventListener("click", () => void stepCard(-1));
 el("nextcard").addEventListener("click", () => void stepCard(1));
@@ -1106,6 +1300,9 @@ async function openPreview(cardId: string): Promise<void> {
   layerHost.appendChild(root);
   // A preview shows every side, so 漢字's canvas is on screen there too.
   makeDrawable(mounted.result as never);
+  // Checkable in a preview as well, with no reveal to trigger: decision 30 says a
+  // preview is already fully revealed, so Enter marks the box and nothing more.
+  makeCheckable(mounted.result as never, null);
   document.body.classList.add("layered");
   close.focus();
 
@@ -2168,7 +2365,7 @@ async function runCardOp(op: CardOp, cardId: string): Promise<void> {
     // The worker advances the SESSION when the op took the current card; the page has
     // to advance the SCREEN to match, or a deleted card stays visible over a session
     // that has already moved on.
-    if (reply.advanced) await showNext();
+    if (reply.advanced) await showSessionCard();
     await refreshAfterOp();
   } catch (cause) {
     say((cause as Error).message, true);
@@ -3568,7 +3765,7 @@ async function boot(): Promise<void> {
     await checkPersistence();
     bootView.hidden = true;
     reviewView.hidden = false;
-    await showNext();
+    await showSessionCard();
   } catch (cause) {
     line(String((cause as Error).message), "bad");
     line("nothing was written. Fix the above and reload.", "bad");

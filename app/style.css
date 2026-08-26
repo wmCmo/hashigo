@@ -398,17 +398,30 @@ ruby rt:empty::after {
 
 /* ── the pinned controls ── */
 
-.bar {
-  background: var(--bg);
-  border-top: 1px solid var(--line);
+/* ── the bottom controls ────────────────────────────────────────────────────
+   ONE fixed box, two rows in normal flow inside it. They used to be two fixed
+   elements with separate hand-tuned `bottom:` values, and the lower one covered
+   the upper by 19px — `.bar`'s height comes from its font and padding, so any
+   change to either moved it over its neighbour with nothing to catch it.
+
+   `--footer-h` is written by a ResizeObserver in main.ts. Everything that has to
+   clear these controls reads it, so there is exactly one number and the browser
+   measures it. */
+.footer {
   bottom: 0;
-  display: flex;
-  gap: 10px;
   left: 0;
-  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
   position: fixed;
   right: 0;
   z-index: 5;
+}
+
+.bar {
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
 }
 
 .bar button {
@@ -466,7 +479,9 @@ ruby rt:empty::after {
   background: #1b1d21;
   border: 1px solid var(--edge);
   border-radius: 50%;
-  bottom: calc(86px + env(safe-area-inset-bottom));
+  /* Overridden by the `--footer-h` rule further down; this is the value before
+     the footer has been measured, which is one frame at most. */
+  bottom: calc(150px + env(safe-area-inset-bottom));
   box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
   color: var(--accent);
   cursor: pointer;
@@ -1187,14 +1202,9 @@ body[data-view="gallery"] .review { display: none; }
 .ops {
   background: var(--bg);
   border-top: 1px solid var(--line);
-  bottom: calc(62px + env(safe-area-inset-bottom));
   display: flex;
   gap: 6px;
-  left: 0;
   padding: 8px 12px;
-  position: fixed;
-  right: 0;
-  z-index: 5;
 }
 
 .op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; flex: 1; font: inherit; font-size: 12px; padding: 10px 4px; }
@@ -1202,16 +1212,23 @@ body[data-view="gallery"] .review { display: none; }
 .op[disabled] { opacity: .35; }
 .op.danger { border-color: var(--no-edge); color: var(--no); }
 
-/* Clear the taller control stack. */
-body[data-view="review"] .review main { padding-bottom: 210px; }
-.replay { bottom: calc(140px + env(safe-area-inset-bottom)); }
+/* MEASURED, not guessed. `--footer-h` is the footer's real height, written by a
+   ResizeObserver — so a longer button label, a bigger font or a second row of
+   operations moves all three of these at once and none of them can drift. */
+body[data-view="review"] .review main {
+  padding-bottom: calc(var(--footer-h, 150px) + 24px);
+}
+
+.replay {
+  bottom: calc(var(--footer-h, 150px) + 12px);
+}
 
 /* ── the status strip and the confirm dialog ── */
 
 .say {
   background: #17181b;
   border: 1px solid var(--line-soft);
-  bottom: calc(120px + env(safe-area-inset-bottom));
+  bottom: calc(var(--footer-h, 150px) + 12px);
   color: var(--ink);
   font-size: 12px;
   left: 50%;
@@ -1554,4 +1571,43 @@ body[data-view="review"] .review main { padding-bottom: 210px; }
   height: 100%;
   min-height: 0;
   width: 100%;
+}
+
+/* ── his #9: the look-ahead ─────────────────────────────────────────────────
+   Loud on purpose. It is not decoration — it is the state where `f` and `j`,
+   the two keys he presses a hundred times a day, are pointed at a card he is
+   not looking at. The dead buttons say the same thing; this says why. */
+.peek {
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  margin: 14px 0 0;
+  padding: 8px 10px;
+}
+
+/* The arrows are the way OUT of this state, so they are the only two controls
+   that stay lit while it is on. */
+[data-peek] .op:not(#prevcard):not(#nextcard) {
+  opacity: 0.45;
+}
+
+/* ── the answer box's verdict ───────────────────────────────────────────────
+   `data-answer` is set by `attachInput` and removed on the next keystroke — a
+   red box that stays red while he fixes a typo is a lie about the contents.
+
+   Colour is not the only signal: correct thickens the border and incorrect adds
+   an inset rule. Japanese at body size needs contrast, and a green/red pair is
+   the exact distinction a colour-blind reader loses. */
+input[data-answer="correct"] {
+  border-color: var(--ok-edge) !important;
+  box-shadow: inset 0 0 0 1px var(--ok-edge);
+  color: var(--ok) !important;
+}
+
+input[data-answer="incorrect"] {
+  border-color: var(--no-edge) !important;
+  box-shadow: inset 0 -2px 0 0 var(--no-edge);
+  color: var(--no) !important;
 }

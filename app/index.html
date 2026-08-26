@@ -55,6 +55,10 @@
              comes from that module; style.css targets those names. -->
         <div id="cardhost" class="cardhost"></div>
         <div id="hint" class="hint"></div>
+        <!-- His #9's look-ahead. Visible rather than subtle, because the state it
+             announces is one where a familiar keystroke would do the wrong thing
+             to a card he cannot see. -->
+        <div id="peek" class="peek" role="status" hidden></div>
         <button id="readingtoggle" class="readingtoggle" hidden></button>
       </main>
 
@@ -65,6 +69,17 @@
         &#9654;
       </button>
 
+      <!-- ONE FIXED FOOTER, AND IT IS THE FIX FOR A REAL BUG.
+           These two rows used to be separately `position: fixed`, each with its
+           own hand-tuned `bottom:` — and the reveal bar covered the row above it
+           by 19px on a 375x812 viewport, hiding the bottom of every operation
+           button. The offsets could not stay right: `.bar`'s height is set by its
+           font and its padding, so any change to either silently moved it over
+           its neighbour. Stacked in normal flow inside one fixed box, they cannot
+           overlap at any size. `--footer-h` is measured from this element (see
+           main.ts) so the card's bottom padding and the replay button follow it
+           instead of guessing. -->
+      <div id="footer" class="footer">
       <!-- His #9 and #7 on mobile: every review operation as a real control.
            Arrows step between cards WITHOUT grading; the rest act on the card. -->
       <div class="ops">
@@ -86,6 +101,7 @@
             remembered<span class="kbd">j</span>
           </button>
         </div>
+      </div>
       </div>
     </section>
 
