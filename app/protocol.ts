@@ -173,7 +173,22 @@ export interface CardOpMessage {
 }
 
 /** Deck operations — his #14, and the answer to #8. */
-export type DeckOp = "archive" | "unarchive" | "rename" | "create" | "delete" | "restoreArchive";
+/**
+ * `move` is the one his #2 and #5 imply rather than name.
+ *
+ * *"why are templates not nesting like notion pages on the side bar"* and *"nesting
+ * deck on the side bar should be togglable"* describe a tree he arranges, and a
+ * tree with no reparent is a tree he can only build in the order he thought of it.
+ * The worker guards it against cycles — see `deckOp`.
+ */
+export type DeckOp =
+  | "archive"
+  | "unarchive"
+  | "rename"
+  | "create"
+  | "move"
+  | "delete"
+  | "restoreArchive";
 
 /**
  * Undo the last grade — his request 13's first-named action.
@@ -203,7 +218,7 @@ export interface DeckOpRequest {
   readonly deckId: string;
   /** `rename` and `create` only. */
   readonly name?: string;
-  /** `create` only; null makes a top-level deck. */
+  /** `create` and `move`; null makes a top-level deck. */
   readonly parentId?: string | null;
   /** `restoreArchive` only: the exact rows a previous archive/unarchive flipped. */
   readonly cardIds?: readonly string[];
@@ -219,6 +234,8 @@ export interface DeckOpMessage {
     readonly op: DeckOp;
     readonly deckId: string;
     readonly name?: string;
+    /** `move` only: where it came from. `null` is a real value — top level. */
+    readonly parentId?: string | null;
     /**
      * The cards this operation ACTUALLY CHANGED, for `restoreArchive`.
      *

@@ -1346,3 +1346,98 @@ body[data-view="review"] .review main { padding-bottom: 210px; }
 .layer-settings select.edit-input {
   appearance: auto;
 }
+
+/* ── his #14: the deck menu ─────────────────────────────────────────────────
+   The `⋯` handle is a SPAN, not a button — `navRow` returns a `<button>` and a
+   button inside a button is invalid, which browsers repair by hoisting it out of
+   the row entirely. It is sized for a thumb (his phone is the review surface)
+   and shown at all times rather than on hover: decision 19 says an affordance
+   must never live behind a hover, because a phone has none. */
+.tree-more {
+  border-radius: 3px;
+  color: var(--muted);
+  flex: 0 0 auto;
+  font-size: 0.9rem;
+  line-height: 1;
+  margin-left: 6px;
+  padding: 4px 6px;
+}
+
+.tree-more:hover,
+.tree-more:focus-visible {
+  background: var(--line);
+  color: var(--ink);
+}
+
+.tree-add {
+  background: none;
+  border: 1px dashed var(--line-soft);
+  border-radius: 3px;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  margin: 10px 0 4px;
+  padding: 6px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.tree-add:hover,
+.tree-add:focus-visible {
+  border-color: var(--edge);
+  color: var(--ink);
+}
+
+/* A menu of decisions, not a list of verbs: every item carries the sentence that
+   says what it costs. `openConfirm` still guards the two that are expensive. */
+.menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 14px;
+}
+
+.menu-item {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--ink);
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  padding: 8px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--line);
+  border-color: var(--line-soft);
+}
+
+.menu-item b {
+  display: block;
+  font-weight: 500;
+}
+
+.menu-item i {
+  color: var(--muted);
+  display: block;
+  font-size: 0.76rem;
+  font-style: normal;
+  margin-top: 2px;
+}
+
+.menu-item.danger:hover,
+.menu-item.danger:focus-visible {
+  border-color: var(--no-edge);
+  color: var(--no);
+}
+
+/* The move list can be 39 rows; the panel must scroll rather than the page. */
+.layer-menu .confirm-panel {
+  max-height: min(80vh, 640px);
+  overflow-y: auto;
+}

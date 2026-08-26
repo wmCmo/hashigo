@@ -649,6 +649,54 @@ function deckOp(request: DeckOpRequest): void {
         describe = `renamed ${deck.name} to ${request.name ?? deck.name}`;
         undo = { op: "rename", deckId, name: deck.name };
         break;
+      case "move": {
+        // ─── THE CYCLE GUARD IS THE WHOLE OF THIS OPERATION ──────────────────
+        //
+        // `decks.parent_id` has no constraint that can stop a deck becoming its own
+        // ancestor, and the damage is not a bad row — it is `deck_ancestry`, a
+        // RECURSIVE view with no depth bound, which every path, count, reverse
+        // resolution and target-retention lookup goes through. One cycle and those
+        // queries do not return. The page has a cycle report in its tree walk for
+        // the same reason; this is the write side of it, and it is cheaper to
+        // refuse here than to detect there.
+        //
+        // `deck_ancestry` includes the deck itself at depth 0, so this one check
+        // covers both "into itself" and "into its own descendant".
+        const target = request.parentId ?? null;
+        if (target !== null) {
+          const wouldCycle = db
+            .prepare("SELECT 1 FROM deck_ancestry WHERE deck_id = ? AND ancestor_id = ? LIMIT 1")
+            .get(target, deckId);
+          if (wouldCycle !== undefined) {
+            throw new Error(
+              `${deck.name} cannot go inside itself or one of its own sub-decks — ` +
+                `that makes the deck tree a loop, and every path and count query ` +
+                `walks it recursively.`,
+            );
+          }
+          if (db.prepare("SELECT 1 FROM decks WHERE id = ?").get(target) === undefined) {
+            throw new Error(`no deck ${target} to move into`);
+          }
+        }
+        const from = db.prepare("SELECT parent_id FROM decks WHERE id = ?").get(deckId) as {
+          parent_id: string | null;
+        };
+        db.prepare("UPDATE decks SET parent_id = ? WHERE id = ?").run(target, deckId);
+        // The NAME, not the id. `say()` puts this in front of him and an 8-character
+        // base62 id is not a place he can recognise — and it is the string the undo
+        // button then repeats back.
+        const into =
+          target === null
+            ? "the top level"
+            : ((
+                db.prepare("SELECT path FROM deck_paths WHERE deck_id = ?").get(target) as
+                  | { path: string }
+                  | undefined
+              )?.path ?? target);
+        describe = `moved ${deck.name} into ${into}`;
+        undo = { op: "move", deckId, parentId: from.parent_id };
+        break;
+      }
       case "delete": {
         // `cards.deck_id` is ON DELETE RESTRICT, deliberately: deleting a deck
         // must never silently take its cards. So this refuses rather than

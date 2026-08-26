@@ -84,6 +84,7 @@ import type {
   AppRequest,
   BrowseHit,
   CardOp,
+  DeckOp,
   DeckBrief,
   ReplyFor,
   TemplateBrief,
@@ -1496,8 +1497,23 @@ let cycleReported = false;
 
 function paintTree(total: number): void {
   deckList.replaceChildren();
-  deckList.appendChild(navRow("everything", total, 0, 0, null, false));
+  const everything = navRow("everything", total, 0, 0, null, false);
+  everything.addEventListener("click", () => void openGallery(null));
+  deckList.appendChild(everything);
   for (const root of childrenOf(null)) deckList.appendChild(deckNode(root, 0));
+
+  // CREATE, the letter of his #14 that had no route at all. At the root, because a
+  // sub-deck is made from its parent's menu and a top-level deck has no parent to
+  // hang the action off.
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "tree-add";
+  add.textContent = "+ new top-level deck";
+  add.addEventListener("click", () => {
+    openPrompt("New deck", "It starts empty, at the top level, with reverse set to inherit.",
+      "name", "", (name) => void runDeckOp({ op: "create", deckId: "", name, parentId: null }));
+  });
+  deckList.appendChild(add);
 
   // Templates, as their own collapsible group — his #2. They are not decks and do
   // not nest into them, but they are the other thing he navigates by.
@@ -1522,13 +1538,41 @@ function deckNode(deck: DeckBrief, depth: number): HTMLElement {
   const under = subtreeCards(deck);
   const row = navRow(deck.name, under.cards, under.due, depth, kids.length > 0 ? deck.id : null, false);
   if (deck.archived) row.classList.add("is-archived");
+
+  // A VISIBLE HANDLE, not only a right-click. Deck operations used to be reachable
+  // by `contextmenu` alone, which on his phone is nothing at all — and the phone is
+  // where he reviews. His standing rule is that every 操作 on the desktop exists on
+  // mobile; a gesture with no mobile equivalent is the exact failure it names.
+  //
+  // A `<span>` rather than a `<button>`: `navRow` returns a `<button>` and a button
+  // inside a button is invalid, which browsers repair by hoisting it OUT of the row.
+  // The twist control is a span for the same reason.
+  const more = document.createElement("span");
+  more.className = "tree-more";
+  more.setAttribute("role", "button");
+  more.tabIndex = 0;
+  more.setAttribute("aria-label", `actions for ${deck.name}`);
+  more.textContent = "\u22ef";
+  const openMenu = (event: Event): void => {
+    event.stopPropagation();
+    event.preventDefault();
+    openDeckMenu(deck);
+  };
+  more.addEventListener("click", openMenu);
+  more.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") openMenu(event);
+  });
+  row.appendChild(more);
+
   row.addEventListener("click", (event) => {
-    if ((event.target as HTMLElement).classList.contains("tree-twist")) return;
+    const hit = event.target as HTMLElement;
+    if (hit.classList.contains("tree-twist") || hit.classList.contains("tree-more")) return;
     void openGallery(deck.id);
   });
+  // Kept as an accelerator, now that it is not the only route.
   row.addEventListener("contextmenu", (event) => {
     event.preventDefault();
-    openDeckMenu(deck, row);
+    openDeckMenu(deck);
   });
   wrap.appendChild(row);
   if (kids.length > 0 && expanded.has(deck.id)) {
@@ -2622,52 +2666,339 @@ function settingsState(reply: ReplyFor["settings"]): HTMLElement {
   return box;
 }
 
-/** Right-click a deck: his #14. */
-function openDeckMenu(deck: DeckBrief, anchor: HTMLElement): void {
-  void anchor;
-  openConfirm(
-    deck.path,
-    `${deck.cards} cards. Archiving a deck marks the deck AND its cards, because ` +
-      `the review queue filters on the card — two predicates that disagree is worse ` +
-      `than one that is blunt. This is also the answer to your 数字 question: Mochi ` +
-      `has no deck-level archive at all, so a deck you archived there arrived here ` +
-      `unarchived.`,
-    deck.archived ? "unarchive deck" : "archive deck",
-    () => {
-      void (async () => {
-        try {
-          const reply = await ask<"deckOp">({
+/**
+ * A one-field dialog: a name, a button, Enter and Escape.
+ *
+ * `window.prompt()` is what this replaces and it is not usable here. It blocks the
+ * event loop (so the worker's replies queue behind it), it cannot be styled, and on
+ * a phone it is a system sheet that reads as the browser interrupting rather than
+ * the app asking. It also cannot say WHY it is asking, and every use of this one
+ * has a consequence worth a sentence.
+ */
+function openPrompt(
+  title: string,
+  body: string,
+  label: string,
+  initial: string,
+  run: (value: string) => void,
+): void {
+  const root = document.createElement("div");
+  root.className = "layer layer-confirm";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+
+  const panel = document.createElement("div");
+  panel.className = "confirm-panel";
+  const heading = document.createElement("h2");
+  heading.textContent = title;
+  const text = document.createElement("p");
+  text.textContent = body;
+
+  const field = document.createElement("label");
+  field.className = "edit-row";
+  const name = document.createElement("span");
+  name.className = "edit-label";
+  name.textContent = label;
+  const input = document.createElement("input");
+  input.className = "edit-input";
+  input.type = "text";
+  input.value = initial;
+  field.append(name, input);
+
+  const bar = document.createElement("div");
+  bar.className = "confirm-bar";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "cancel";
+  cancel.addEventListener("click", () => closeIfTop(root));
+  const go = document.createElement("button");
+  go.type = "button";
+  go.textContent = "ok";
+  const submit = (): void => {
+    const value = input.value.trim();
+    // An empty name is refused rather than accepted-and-defaulted: a deck called
+    // "new deck" that he meant to name something is a deck he has to find again.
+    if (value === "") {
+      input.focus();
+      return;
+    }
+    closeIfTop(root);
+    run(value);
+  };
+  go.addEventListener("click", submit);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submit();
+    }
+  });
+  bar.append(cancel, go);
+  panel.append(heading, text, field, bar);
+  root.append(backdrop, panel);
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  layers.push({
+    root,
+    mounted: null,
+    prepared: null,
+    cardId: "",
+    ops: false,
+    pinned: false,
+    archived: false,
+  });
+  input.focus();
+  input.select();
+}
+
+/**
+ * Every deck operation goes through here, so undo and the error path exist once.
+ *
+ * The undo is spread from `reply.undo` rather than rebuilt: `restoreArchive`
+ * carries the exact card ids the archive flipped, and reconstructing the inverse
+ * op instead of replaying the recorded one is the bug that un-archived 234
+ * individually-archived cards on a single ctrl+Z.
+ */
+async function runDeckOp(request: {
+  op: DeckOp;
+  deckId: string;
+  name?: string;
+  parentId?: string | null;
+}): Promise<void> {
+  try {
+    const reply = await ask<"deckOp">({ kind: "deckOp", ...request });
+    say(reply.describe);
+    if (reply.undo !== null) {
+      const undo = reply.undo;
+      pushUndo({
+        describe: reply.describe,
+        run: async () => {
+          await ask<"deckOp">({
             kind: "deckOp",
-            op: deck.archived ? "unarchive" : "archive",
-            deckId: deck.id,
+            op: undo.op,
+            deckId: undo.deckId,
+            ...(undo.name === undefined ? {} : { name: undo.name }),
+            ...(undo.parentId === undefined ? {} : { parentId: undo.parentId }),
+            ...(undo.cardIds === undefined ? {} : { cardIds: undo.cardIds }),
           });
-          say(reply.describe);
-          if (reply.undo !== null) {
-            const undo = reply.undo;
-            pushUndo({
-              describe: reply.describe,
-              run: async () => {
-                // `cardIds` carries the exact rows the operation flipped, so a deck
-                // archive undoes to the state it found rather than to `archived = 0`
-                // across the whole subtree. Dropping it here silently reintroduces
-                // the bug — 234 cards in the corpus are archived individually.
-                await ask<"deckOp">({
-                  kind: "deckOp",
-                  op: undo.op,
-                  deckId: undo.deckId,
-                  ...(undo.cardIds === undefined ? {} : { cardIds: undo.cardIds }),
-                });
-                await refreshAfterOp();
-              },
-            });
-          }
           await refreshAfterOp();
-        } catch (cause) {
-          say((cause as Error).message, true);
-        }
-      })();
+        },
+      });
+    }
+    await refreshAfterOp();
+  } catch (cause) {
+    // The worker refuses a delete that would take cards and a move that would make
+    // a cycle, and both messages explain themselves. Shown as-is.
+    say((cause as Error).message, true);
+  }
+}
+
+/**
+ * His #14, in full: *"and also, we need CRUD for decks"*.
+ *
+ * Every operation the worker supports, each with the sentence that makes it a
+ * decision rather than a button. It is a LAYER like everything else, so Escape
+ * peels it and the review underneath is untouched.
+ *
+ * ─── WHAT IS DELIBERATELY NOT HERE ──────────────────────────────────────────
+ *
+ * Per-deck `reverse` and `target_retention` overrides. Both are real columns with
+ * real resolution views, and both change what he is DRILLED on — the line decision
+ * 31 draws around what stays his. The workspace defaults are in settings, where a
+ * change is one row and obvious; a per-deck override buried in a context menu is
+ * how a deck ends up scheduled differently for a reason nobody remembers.
+ */
+function openDeckMenu(deck: DeckBrief): void {
+  const root = document.createElement("div");
+  root.className = "layer layer-confirm layer-menu";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.setAttribute("aria-label", `${deck.path} actions`);
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+
+  const panel = document.createElement("div");
+  panel.className = "confirm-panel";
+  const heading = document.createElement("h2");
+  heading.textContent = deck.path;
+  const totals = subtreeCards(deck);
+  const text = document.createElement("p");
+  text.textContent =
+    `${totals.cards.toLocaleString()} card(s) in this deck and everything under it` +
+    (deck.cards === totals.cards ? "" : ` · ${deck.cards.toLocaleString()} directly in it`) +
+    (deck.archived ? " · archived" : "");
+  panel.append(heading, text);
+
+  const list = document.createElement("div");
+  list.className = "menu-list";
+  const item = (label: string, note: string, run: () => void, danger = false): void => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "menu-item";
+    if (danger) button.classList.add("danger");
+    const name = document.createElement("b");
+    name.textContent = label;
+    const why = document.createElement("i");
+    why.textContent = note;
+    button.append(name, why);
+    button.addEventListener("click", () => {
+      closeIfTop(root);
+      run();
+    });
+    list.appendChild(button);
+  };
+
+  item("open", "see its cards in the gallery", () => void openGallery(deck.id));
+
+  item("rename", "the name only — nothing moves", () => {
+    openPrompt("Rename deck", `Currently ${deck.path}.`, "name", deck.name, (name) =>
+      void runDeckOp({ op: "rename", deckId: deck.id, name }),
+    );
+  });
+
+  item("new sub-deck", "empty, inside this one", () => {
+    openPrompt(
+      "New sub-deck",
+      `It goes inside ${deck.name} and starts empty. Reverse is 'inherit', so it ` +
+        `follows whatever ${deck.name} resolves to.`,
+      "name",
+      "",
+      (name) => void runDeckOp({ op: "create", deckId: "", name, parentId: deck.id }),
+    );
+  });
+
+  item("move", "put it under another deck, or at the top", () => openDeckMove(deck));
+
+  item(
+    deck.archived ? "unarchive" : "archive",
+    deck.archived
+      ? "put it and its cards back in the queue"
+      : "this deck AND every card under it stop being scheduled",
+    () => {
+      openConfirm(
+        deck.path,
+        `${deck.archived ? "Unarchiving" : "Archiving"} marks the deck AND every ` +
+          `card in its subtree (${totals.cards.toLocaleString()}), because the review ` +
+          `queue filters on the CARD — two predicates that disagree is worse than one ` +
+          `that is blunt. Undo restores exactly the rows this flips, so cards you ` +
+          `archived by hand keep their state. This is also the answer to your 数字 ` +
+          `question: Mochi has no deck-level archive at all, so a deck you archived ` +
+          `there arrived here unarchived.`,
+        deck.archived ? "unarchive deck" : "archive deck",
+        () => void runDeckOp({ op: deck.archived ? "unarchive" : "archive", deckId: deck.id }),
+      );
     },
   );
+
+  item(
+    "delete",
+    "only an empty deck — the schema refuses to take cards with it",
+    () => {
+      openConfirm(
+        `Delete ${deck.name}?`,
+        totals.cards > 0
+          ? `It holds ${totals.cards.toLocaleString()} card(s) in its subtree. ` +
+            `\`cards.deck_id\` is ON DELETE RESTRICT, deliberately — deleting a deck ` +
+            `must never silently take four years of cards with it. Move them, or ` +
+            `archive the deck instead.`
+          : `It is empty, so nothing goes with it. There is no undo for a deleted ` +
+            `deck; making it again is one action.`,
+        "delete",
+        () => void runDeckOp({ op: "delete", deckId: deck.id }),
+      );
+    },
+    true,
+  );
+
+  panel.appendChild(list);
+  root.append(backdrop, panel);
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  layers.push({
+    root,
+    mounted: null,
+    prepared: null,
+    cardId: "",
+    ops: false,
+    pinned: false,
+    archived: false,
+  });
+  (list.firstElementChild as HTMLElement | null)?.focus();
+}
+
+/**
+ * Choose a new parent.
+ *
+ * The list EXCLUDES the deck and everything under it, because moving a deck into
+ * its own descendant makes `deck_ancestry` — a recursive view with no depth bound —
+ * loop, and every path, count and inheritance query goes through it. The worker
+ * refuses it as well; this stops him getting as far as an error message.
+ */
+function openDeckMove(deck: DeckBrief): void {
+  const under = new Set<string>();
+  const walk = (id: string): void => {
+    under.add(id);
+    for (const child of childrenOf(id)) walk(child.id);
+  };
+  walk(deck.id);
+
+  const root = document.createElement("div");
+  root.className = "layer layer-confirm layer-menu";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+
+  const panel = document.createElement("div");
+  panel.className = "confirm-panel";
+  const heading = document.createElement("h2");
+  heading.textContent = `Move ${deck.name}`;
+  const text = document.createElement("p");
+  text.textContent =
+    "Its cards and sub-decks come with it. Its own sub-decks are not listed — a " +
+    "deck cannot go inside itself.";
+  panel.append(heading, text);
+
+  const list = document.createElement("div");
+  list.className = "menu-list";
+  const choose = (label: string, parentId: string | null): void => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "menu-item";
+    const name = document.createElement("b");
+    name.textContent = label;
+    button.appendChild(name);
+    button.addEventListener("click", () => {
+      closeIfTop(root);
+      void runDeckOp({ op: "move", deckId: deck.id, parentId });
+    });
+    list.appendChild(button);
+  };
+  choose("the top level", null);
+  for (const candidate of deckIndex) {
+    if (under.has(candidate.id)) continue;
+    if (candidate.id === deck.parentId) continue;
+    choose(candidate.path, candidate.id);
+  }
+
+  panel.appendChild(list);
+  root.append(backdrop, panel);
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  layers.push({
+    root,
+    mounted: null,
+    prepared: null,
+    cardId: "",
+    ops: false,
+    pinned: false,
+    archived: false,
+  });
+  (list.firstElementChild as HTMLElement | null)?.focus();
 }
 
 async function boot(): Promise<void> {
