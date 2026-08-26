@@ -532,8 +532,12 @@ function cardOp(request: CardOpRequest): void {
             // overridden to `on` means the copy has no reverse track at all.
             // `pinned` and `archived` deliberately do NOT come: those describe a
             // relationship with the collection, and a fresh copy has none yet.
-            `INSERT INTO cards (id, deck_id, template_id, name, content, reverse, voice, archived)
-             SELECT ?, deck_id, template_id, name, content, reverse, voice, 0
+            // `local = 1` on the COPY whatever the original was: the duplicate exists
+            // only here, so it needs the same protection a created card does. The
+            // original's own flag is irrelevant to that.
+            `INSERT INTO cards (id, deck_id, template_id, name, content, reverse, voice,
+                                archived, local)
+             SELECT ?, deck_id, template_id, name, content, reverse, voice, 0, 1
                FROM cards WHERE id = ?`,
           ).run(copyId, card.id);
           db.prepare(
@@ -802,8 +806,12 @@ function createCard(request: CreateCardRequest): void {
   const tracks: string[] = [];
   db.transaction(() => {
     db.prepare(
-      `INSERT INTO cards (id, deck_id, template_id, name, content, archived)
-       VALUES (?, ?, ?, ?, '', 0)`,
+      // `local = 1`: schema v9, and the reason is the backup. `src/backup/archive.ts`
+      // carries only what `exports/` cannot rebuild, so it archives no cards — right
+      // for the 7,716 imported ones and silent loss for this one. Nothing else can
+      // tell them apart; a locally-created card is otherwise an ordinary row.
+      `INSERT INTO cards (id, deck_id, template_id, name, content, archived, local)
+       VALUES (?, ?, ?, ?, '', 0, 1)`,
     ).run(cardId, request.deckId, request.templateId, request.name);
 
     // The template's PRIMARY field carries the head word on every template here

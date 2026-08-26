@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 33 files, 878 passed, 1 skipped (the FSRS refit, gated). ~90 s.
+npm test                # 33 files, 883 passed, 1 skipped (the FSRS refit, gated). ~90 s.
                         # STILL EXITS 1 ON A FULLY PASSING RUN. Use `npm run gates`,
                         # which reads the RESULT instead of the exit code.
                         # THE CAUSE: birpc's timeout is a hard-coded 60 s that vitest
@@ -209,7 +209,7 @@ npx vite-node scripts/mockup-cards.ts    # then mockup-html.ts -- regenerates /m
 
 ## A schema bump means RE-IMPORT, not migrate
 
-`SCHEMA_VERSION` is **8** and `applySchema` refuses any other version outright.
+`SCHEMA_VERSION` is **9** and `applySchema` refuses any other version outright.
 That is deliberate — every database here rebuilds from `exports/` in about
 fifteen seconds and the reviews still come from the export — but it means a
 schema change is a three-step chore, and skipping the third breaks a test:

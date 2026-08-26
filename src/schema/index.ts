@@ -23,6 +23,15 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
 /**
  * Bumped only by a migration. `PRAGMA user_version` holds this.
  *
+ * 9 adds `cards.local`, so a card CREATED in the app can be told apart from the
+ * 7,716 imported ones. The backup carries only what `exports/` cannot rebuild and
+ * therefore archived no cards at all — correct for every imported card and silent
+ * data loss for one he wrote himself, which the app has been able to make since
+ * 2026-08-26. Decision 9's rule for fields, applied to the card. The importer does
+ * not write the column, so decision 16's final import leaves it alone.
+ *
+ * 8 adds `cards.pinned`'s partial index and the accent pipeline's last views.
+ *
  * 7 adds `template_fields.local`, so a field that exists HERE and not in any
  * Mochi export survives a re-import. `pruneFieldValues` could not tell a field
  * Mochi DELETED from one Mochi NEVER HAD, and threw away all 3,454 materialised
@@ -64,7 +73,7 @@ import { renderPlainTextParts, stripInvisible } from "../text/index.js";
  * longer exist and every database in the project is rebuildable from
  * `exports/` in about fifteen seconds. Re-import rather than migrate.
  */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 /**
  * Three-state, on both cards and decks. `inherit` resolves up the deck tree and

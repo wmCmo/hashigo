@@ -205,6 +205,17 @@ CREATE TABLE cards (
   -- clip regenerated, not a template-wide change and not a re-import.
   voice          TEXT,
   pinned         INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+  -- 1 = this card was CREATED HERE and is in no Mochi export.  Decision 9's rule
+  -- for fields, applied to the card itself, and for the same reason: the backup
+  -- deliberately carries only what `exports/` cannot rebuild, so it archives no
+  -- cards at all -- correct for 7,716 imported ones and silent data loss for a
+  -- card he wrote in the app.  Without this column there is no way to tell them
+  -- apart, because a locally-created card is otherwise an ordinary row.
+  --
+  -- It is NOT written by the importer (`UPSERT_CARD` does not name it, so the
+  -- default holds for a new row and an existing value is preserved), which is
+  -- what makes decision 16's one final import safe for these cards.
+  local          INTEGER NOT NULL DEFAULT 0 CHECK (local IN (0, 1)),
   archived       INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
   needs_rereview INTEGER NOT NULL DEFAULT 0 CHECK (needs_rereview IN (0, 1)),
   pos            TEXT NOT NULL DEFAULT '',
@@ -216,6 +227,9 @@ CREATE INDEX cards_deck     ON cards (deck_id, pos);
 CREATE INDEX cards_template ON cards (template_id);
 CREATE INDEX cards_updated  ON cards (updated_at);
 CREATE INDEX cards_pinned   ON cards (deck_id) WHERE pinned = 1;
+-- Partial, like cards_pinned: the backup reads exactly these rows and there are
+-- 0 of them today.
+CREATE INDEX cards_local    ON cards (id) WHERE local = 1;
 CREATE INDEX cards_rereview ON cards (deck_id) WHERE needs_rereview = 1;
 
 -- card_field_values -- kept verbatim, and deliberately NOT foreign-keyed to

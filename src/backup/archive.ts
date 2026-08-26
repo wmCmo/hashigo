@@ -23,6 +23,8 @@
  *   * `settings`.
  *   * **`cards.archived` and `cards.pinned`, wherever either is 1** — see below.
  *   * **`templates.name` and `templates.content`** — see "TEMPLATES", below.
+ *   * **Cards where `local = 1`**, with their field values and their tracks — see
+ *     "LOCALLY-CREATED CARDS", below.
  *
  * ─── WHY COLLECTION STATE IS IN HERE, AND WAS NOT ───────────────────────────
  *
@@ -65,8 +67,31 @@
  *
  * 10 templates and 49 fields: the whole addition is a few kilobytes.
  *
- * Cards, decks, templates, tags, links and the 102,020 imported reviews all rebuild
- * from `exports/` in about fifteen seconds, and the blobs are content-addressed and
+ * ─── LOCALLY-CREATED CARDS ──────────────────────────────────────────────────
+ *
+ * "Cards rebuild from `exports/`" is true of 7,716 cards and false of any card he
+ * writes in the app — and the app has been able to write them since 2026-08-26.
+ * Until schema v9 there was no way to tell the two apart, because a created card is
+ * otherwise an ordinary row, so this file archived NO cards and a card he made was
+ * protected by nothing at all. `cards.local` is decision 9's rule for fields
+ * applied to the card itself.
+ *
+ * Its `card_field_values` come too, all of them — the `local = 1` restriction on
+ * values is about a MOCHI card's Mochi-owned fields, which the export holds. A
+ * created card's values are in no export at all.
+ *
+ * Its tracks come as `trackState` like any other, but the SELECT there wants
+ * scheduler state or a local review, and a card created five minutes ago has
+ * neither. So a fresh track is archived explicitly: without it a restored card
+ * comes back with no track and is never scheduled — present, and permanently
+ * invisible, which is the worst of the three possible outcomes.
+ *
+ * Decks are NOT archived with it. A card whose deck is gone is reported as an
+ * orphan and skipped, exactly as one whose template is gone; inventing a deck on
+ * restore would put his cards somewhere he did not choose.
+ *
+ * Everything else — decks, templates, tags, links and the 102,020 imported reviews
+ * — rebuilds from `exports/` in about fifteen seconds, and the blobs are content-addressed and
  * re-fetchable. Backing them up would turn a ~330 KB archive into 690 MB and make
  * the one-tap export something he would not tap.
  *
@@ -170,6 +195,24 @@ export interface ArchivedField {
  * `reverse_permutation` and `pos` are deliberately absent: neither is reachable
  * from the editor, so archiving them would claim a scope the backup does not have.
  */
+/**
+ * One card that exists only here. The columns a create or a duplicate can set;
+ * `search_text` is derived and `pos` is ordering the app does not expose.
+ */
+export interface ArchivedCard {
+  readonly id: string;
+  readonly deckId: string;
+  readonly templateId: string | null;
+  readonly name: string;
+  readonly content: string;
+  readonly reverse: string;
+  readonly voice: string | null;
+  readonly archived: boolean;
+  readonly pinned: boolean;
+  /** `kind` for each of its tracks, so a restored card is scheduled. */
+  readonly tracks: readonly string[];
+}
+
 export interface ArchivedTemplate {
   readonly id: string;
   readonly name: string;
@@ -210,6 +253,8 @@ export interface LocalArchive {
   readonly localFields: readonly ArchivedField[];
   /** OPTIONAL for the same reason `cardState` is — an older archive predates it. */
   readonly templates?: readonly ArchivedTemplate[];
+  /** Cards created in the app. Optional; absent means "none recorded". */
+  readonly localCards?: readonly ArchivedCard[];
   readonly fieldValues: readonly ArchivedFieldValue[];
   readonly settings: readonly ArchivedSetting[];
   /**
@@ -250,6 +295,10 @@ export interface ApplyReport {
    */
   readonly fieldValuesOrphaned: number;
   readonly settingsUpserted: number;
+  readonly localCardsInserted: number;
+  readonly localCardsSkipped: number;
+  /** Cards whose DECK is not in this database. Restoring would invent one. */
+  readonly localCardsOrphaned: number;
   readonly templatesApplied: number;
   /** Templates the archive holds that this database no longer has. */
   readonly templatesOrphaned: number;
@@ -296,6 +345,21 @@ SELECT template_id, id, name, type, source_field_id, options, pos, local
   FROM template_fields ORDER BY template_id, pos, id`;
 
 const SELECT_TEMPLATES = `SELECT id, name, content FROM templates ORDER BY id`;
+
+const SELECT_LOCAL_CARDS = `
+SELECT id, deck_id, template_id, name, content, reverse, voice, archived, pinned
+  FROM cards WHERE local = 1 ORDER BY id`;
+
+const SELECT_LOCAL_TRACKS = `
+SELECT t.card_id, t.kind
+  FROM card_tracks t JOIN cards c ON c.id = t.card_id
+ WHERE c.local = 1 ORDER BY t.card_id, t.kind`;
+
+/** Every value on a locally-created card, not only the locally-authored fields. */
+const SELECT_LOCAL_CARD_VALUES = `
+SELECT v.card_id, v.field_id, v.value
+  FROM card_field_values v JOIN cards c ON c.id = v.card_id
+ WHERE c.local = 1 ORDER BY v.card_id, v.field_id`;
 
 /** Values of locally-authored fields only. A Mochi field's values are in the export. */
 const SELECT_FIELD_VALUES = `
@@ -376,6 +440,28 @@ export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive 
     }),
   );
 
+  const tracksByCard = new Map<string, string[]>();
+  for (const row of db.prepare(SELECT_LOCAL_TRACKS).all() as Record<string, unknown>[]) {
+    const id = String(row["card_id"]);
+    const list = tracksByCard.get(id) ?? [];
+    list.push(String(row["kind"]));
+    tracksByCard.set(id, list);
+  }
+  const localCards = (db.prepare(SELECT_LOCAL_CARDS).all() as Record<string, unknown>[]).map(
+    (r): ArchivedCard => ({
+      id: String(r["id"]),
+      deckId: String(r["deck_id"]),
+      templateId: r["template_id"] === null ? null : String(r["template_id"]),
+      name: String(r["name"]),
+      content: String(r["content"]),
+      reverse: String(r["reverse"]),
+      voice: r["voice"] === null ? null : String(r["voice"]),
+      archived: Number(r["archived"]) === 1,
+      pinned: Number(r["pinned"]) === 1,
+      tracks: tracksByCard.get(String(r["id"])) ?? [],
+    }),
+  );
+
   const templates = (db.prepare(SELECT_TEMPLATES).all() as Record<string, unknown>[]).map(
     (r): ArchivedTemplate => ({
       id: String(r["id"]),
@@ -384,12 +470,24 @@ export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive 
     }),
   );
 
-  const fieldValues = (db.prepare(SELECT_FIELD_VALUES).all() as Record<string, unknown>[]).map(
-    (r): ArchivedFieldValue => ({
-      cardId: String(r["card_id"]),
-      fieldId: String(r["field_id"]),
-      value: String(r["value"]),
-    }),
+  // TWO SOURCES, ONE LIST, DEDUPLICATED. A value can qualify twice — decision 9's
+  // 読み on a card he created here matches both "the field is local" and "the card
+  // is local" — and a duplicate would break the self-describing count check in
+  // `verifyLocalArchive` on a file that is perfectly good.
+  const valueRows = new Map<string, ArchivedFieldValue>();
+  for (const sql of [SELECT_FIELD_VALUES, SELECT_LOCAL_CARD_VALUES]) {
+    for (const r of db.prepare(sql).all() as Record<string, unknown>[]) {
+      const cardId = String(r["card_id"]);
+      const fieldId = String(r["field_id"]);
+      valueRows.set(`${cardId}\u0000${fieldId}`, {
+        cardId,
+        fieldId,
+        value: String(r["value"]),
+      });
+    }
+  }
+  const fieldValues = [...valueRows.values()].sort((a, b) =>
+    a.cardId === b.cardId ? a.fieldId.localeCompare(b.fieldId) : a.cardId.localeCompare(b.cardId),
   );
 
   const settings = (db.prepare(SELECT_SETTINGS).all() as Record<string, unknown>[]).map(
@@ -411,6 +509,7 @@ export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive 
     reviews,
     trackState,
     localFields,
+    localCards,
     templates,
     fieldValues,
     settings,
@@ -419,6 +518,7 @@ export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive 
       reviews: reviews.length,
       trackState: trackState.length,
       localFields: localFields.length,
+      localCards: localCards.length,
       templates: templates.length,
       fieldValues: fieldValues.length,
       settings: settings.length,
@@ -451,6 +551,7 @@ export function verifyLocalArchive(archive: LocalArchive): void {
     reviews: archive.reviews.length,
     trackState: archive.trackState.length,
     localFields: archive.localFields.length,
+    localCards: (archive.localCards ?? []).length,
     templates: (archive.templates ?? []).length,
     fieldValues: archive.fieldValues.length,
     settings: archive.settings.length,
@@ -512,6 +613,35 @@ ON CONFLICT (template_id, id) DO UPDATE SET
   source_field_id = excluded.source_field_id, options = excluded.options,
   pos = excluded.pos, local = excluded.local,
   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
+
+const DECK_EXISTS = `SELECT 1 FROM decks WHERE id = ? LIMIT 1`;
+
+/**
+ * `INSERT OR IGNORE`, deliberately, and it is the difference between a backup and
+ * an overwrite.
+ *
+ * A card id is unique, so a card that is already here is the SAME card — restoring
+ * over it would replace whatever he has done to it since the backup with the older
+ * copy. Skipped and counted instead. The archive is a floor, not a snapshot to
+ * revert to; every other write in this file has the same shape for the same reason.
+ */
+const INSERT_LOCAL_CARD = `
+INSERT OR IGNORE INTO cards
+  (id, deck_id, template_id, name, content, reverse, voice, archived, pinned, local)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`;
+
+/**
+ * A track per kind the archive recorded.
+ *
+ * Unscheduled — `due_at` NULL is a NEW card, which is what a restored card should
+ * be if its schedule was never backed up. When the archive DOES carry state for it,
+ * `trackState` runs after this and is the last word.
+ */
+const INSERT_LOCAL_TRACK = `
+INSERT OR IGNORE INTO card_tracks
+  (card_id, kind, dormant, needs_rereview, due_at, scheduled_days, reps, lapses,
+   last_reviewed_at, scheduler, scheduler_state)
+VALUES (?, ?, 0, 0, NULL, NULL, 0, 0, NULL, NULL, NULL)`;
 
 const UPDATE_TEMPLATE = `
 UPDATE templates
@@ -613,6 +743,41 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
     templatesApplied += 1;
   }
 
+  // BEFORE the field values and before the reviews: both have foreign keys to
+  // `cards`, so a restored card has to exist before anything can point at it.
+  // Without this ordering every value and every review on a created card would be
+  // counted as an orphan and skipped — a restore that reports success and drops the
+  // card's entire contents.
+  let localCardsInserted = 0;
+  let localCardsSkipped = 0;
+  let localCardsOrphaned = 0;
+  const deckExists = db.prepare(DECK_EXISTS);
+  const insertCard = db.prepare(INSERT_LOCAL_CARD);
+  const insertTrack = db.prepare(INSERT_LOCAL_TRACK);
+  for (const card of archive.localCards ?? []) {
+    // The deck is NOT restored with the card — inventing one would put his cards
+    // somewhere he did not choose. Reported, never fatal.
+    if (deckExists.get(card.deckId) === undefined) {
+      localCardsOrphaned += 1;
+      continue;
+    }
+    const existed = cardExists.get(card.id) !== undefined;
+    insertCard.run(
+      card.id,
+      card.deckId,
+      card.templateId,
+      card.name,
+      card.content,
+      card.reverse,
+      card.voice,
+      card.archived ? 1 : 0,
+      card.pinned ? 1 : 0,
+    );
+    if (existed) localCardsSkipped += 1;
+    else localCardsInserted += 1;
+    for (const kind of card.tracks) insertTrack.run(card.id, kind);
+  }
+
   let fieldValuesUpserted = 0;
   let fieldValuesOrphaned = 0;
   const upsertValue = db.prepare(UPSERT_VALUE);
@@ -710,6 +875,9 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
     fieldValuesUpserted,
     fieldValuesOrphaned,
     settingsUpserted,
+    localCardsInserted,
+    localCardsSkipped,
+    localCardsOrphaned,
     templatesApplied,
     templatesOrphaned,
     cardStateApplied,

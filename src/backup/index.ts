@@ -25,6 +25,7 @@ export {
   exportLocalArchive,
   verifyLocalArchive,
   type ApplyReport,
+  type ArchivedCard,
   type ArchivedCardState,
   type ArchivedField,
   type ArchivedFieldValue,

@@ -115,6 +115,142 @@ describe("the local archive", () => {
     }
   });
 
+  it("CARRIES A CARD HE MADE HERE — nothing else in the project does", () => {
+    const source = fixture({ withLocal: true });
+    const target = fixture({ withLocal: true });
+    try {
+      // The shape `createCard` writes: `local = 1`, a value on the primary field,
+      // and one fresh track.
+      source
+        .prepare(
+          `INSERT INTO cards (id, deck_id, template_id, name, content, archived, local)
+           VALUES ('mine', 'd', 'tpl', '造語', '', 0, 1)`,
+        )
+        .run();
+      source
+        .prepare("INSERT INTO card_tracks (card_id, kind) VALUES ('mine', 'forward')")
+        .run();
+      source
+        .prepare(
+          `INSERT INTO card_field_values (card_id, field_id, value)
+           VALUES ('mine', 'local-yomi', 'ぞうご')`,
+        )
+        .run();
+
+      const a = exportLocalArchive(source, AT);
+      expect(a.localCards).toEqual([
+        {
+          id: "mine",
+          deckId: "d",
+          templateId: "tpl",
+          name: "造語",
+          content: "",
+          reverse: "inherit",
+          voice: null,
+          archived: false,
+          pinned: false,
+          tracks: ["forward"],
+        },
+      ]);
+      // The 7,716 imported cards are NOT in here — that is the whole design.
+      expect(a.localCards).toHaveLength(1);
+
+      const report = applyLocalArchive(target, a);
+      expect(report.localCardsInserted).toBe(1);
+      expect(report.localCardsOrphaned).toBe(0);
+      // THE TRACK CAME WITH IT. Without one the card is restored and never
+      // scheduled — present and permanently invisible, the worst of the three
+      // possible outcomes.
+      expect(
+        (target
+          .prepare("SELECT count(*) AS n FROM card_tracks WHERE card_id = 'mine'")
+          .get() as { n: number }).n,
+      ).toBe(1);
+      // And its value, which no export holds either.
+      expect(
+        (target
+          .prepare("SELECT value FROM card_field_values WHERE card_id = 'mine'")
+          .get() as { value: string }).value,
+      ).toBe("ぞうご");
+    } finally {
+      source.close();
+      target.close();
+    }
+  });
+
+  it("SKIPS a card that is already here rather than overwriting it", () => {
+    // A card id is unique, so a card that is already present is the SAME card.
+    // Restoring over it would replace whatever he has done since the backup with
+    // the older copy. The archive is a floor, not a snapshot to revert to.
+    const source = fixture({ withLocal: true });
+    const target = fixture({ withLocal: true });
+    try {
+      for (const db of [source, target]) {
+        db.prepare(
+          `INSERT INTO cards (id, deck_id, template_id, name, content, archived, local)
+           VALUES ('mine', 'd', 'tpl', ?, '', 0, 1)`,
+        ).run(db === source ? "old name" : "the name he changed it to");
+        db.prepare("INSERT INTO card_tracks (card_id, kind) VALUES ('mine', 'forward')").run();
+      }
+      const report = applyLocalArchive(target, exportLocalArchive(source, AT));
+      expect(report.localCardsInserted).toBe(0);
+      expect(report.localCardsSkipped).toBe(1);
+      expect(
+        (target.prepare("SELECT name FROM cards WHERE id = 'mine'").get() as { name: string })
+          .name,
+      ).toBe("the name he changed it to");
+    } finally {
+      source.close();
+      target.close();
+    }
+  });
+
+  it("reports a card whose DECK is gone instead of inventing one", () => {
+    const source = fixture({ withLocal: true });
+    const target = fixture({ withLocal: true });
+    try {
+      source.prepare("INSERT INTO decks (id, name) VALUES ('gone', '消えたデッキ')").run();
+      source
+        .prepare(
+          `INSERT INTO cards (id, deck_id, template_id, name, content, archived, local)
+           VALUES ('orphan', 'gone', 'tpl', 'みなしご', '', 0, 1)`,
+        )
+        .run();
+      const report = applyLocalArchive(target, exportLocalArchive(source, AT));
+      expect(report.localCardsOrphaned).toBe(1);
+      expect(report.localCardsInserted).toBe(0);
+      // Reported, never fatal — and the deck is NOT created, because putting his
+      // cards somewhere he did not choose is worse than telling him one is missing.
+      expect(target.prepare("SELECT 1 FROM decks WHERE id = 'gone'").get()).toBeUndefined();
+    } finally {
+      source.close();
+      target.close();
+    }
+  });
+
+  it("does not DOUBLE-COUNT a local field's value on a local card", () => {
+    // The value qualifies twice — the field is `local = 1` and so is the card —
+    // and a duplicate row would fail `verifyLocalArchive`'s own count check on a
+    // file that is perfectly good.
+    const db = fixture({ withLocal: true });
+    try {
+      db.prepare(
+        `INSERT INTO cards (id, deck_id, template_id, name, content, archived, local)
+         VALUES ('mine', 'd', 'tpl', 'x', '', 0, 1)`,
+      ).run();
+      db.prepare(
+        `INSERT INTO card_field_values (card_id, field_id, value)
+         VALUES ('mine', 'local-yomi', 'えっくす')`,
+      ).run();
+      const a = exportLocalArchive(db, AT);
+      const keys = a.fieldValues.map((v) => `${v.cardId}/${v.fieldId}`);
+      expect(new Set(keys).size).toBe(keys.length);
+      expect(verifyLocalArchive(a)).toBeUndefined();
+    } finally {
+      db.close();
+    }
+  });
+
   it("carries the template BODY, which the final import overwrites", () => {
     const source = fixture({ withLocal: true });
     const target = fixture({ withLocal: true });
@@ -439,6 +575,7 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
         // rewrites the body's `<<Field>>` markers, so restoring a body without the
         // field NAMES gives back a body whose every marker resolves to nothing.
         localFields: 47,
+        localCards: 0,
         templates: 10,
         fieldValues: 3_848,
         settings: 4,
