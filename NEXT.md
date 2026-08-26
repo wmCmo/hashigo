@@ -52,22 +52,21 @@ npm run app:dev -- --host ::              # phone / tunnel
 
 Gates: run **`npm run gates`** — one command, all seven, cheapest first, and a verdict
 that means what it says. `app:build` is new and was covered by nothing: `app:check` is
-`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 30 files / 845
+`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 30 files / 848
 passed / 1 skipped** (~97 s) · `npm run typecheck` → 0 · **`npm run app:check` → 0** ·
 `npm run build` → OK, 77 modules, 27 export subpaths · `npm run spike:check` → 0 ·
 `blobs … paths` → 0.
 
-**`npm test` still exits 1 on a fully passing run — but the CAUSE was misdiagnosed for
-months, and there is now one honest command.** It is not the reporter and not load:
-birpc's RPC timeout is a hard-coded 60 s that vitest never overrides, `onTaskUpdate` is
-an awaited call, and exactly the two files that run over 60 s throw exactly two errors,
-every run. Cutting workers changed nothing; quieting the reporter changed nothing;
-`--no-isolate` made it worse.
+**`npm test` still exits 1 on a fully passing run, and there is now one honest command.**
+It is not the reporter and not load: birpc's RPC timeout is a hard-coded 60 s that
+vitest never overrides, `onTaskUpdate` is an awaited call, and exactly the files that
+run over 60 s throw one error each, every run. Cutting workers changes nothing;
+quieting the reporter changes nothing; `--no-isolate` makes it worse.
 
 **`pool: "threads"` is NOT the fix, and it is recorded so nobody repeats it.** It
 removes the RPC errors — and segfaults (exit 139, SIGSEGV) on the third run, because
 `better-sqlite3` is a native addon and the suite loads it in six threads of one
-process. Two green runs of it proved nothing, which is the lesson.
+process. It passes twice first, so two green runs are not evidence.
 
 So: **`npm run gates`** decides the suite on its SUMMARY rather than its exit code —
 a complete summary line and zero failures, or it fails. That is stricter where it
@@ -76,14 +75,14 @@ segfault. `npm test` alone must still not be chained on.
 
 ### THE SEVEN BUGS AN AUDIT FOUND IN `app/` — measured AND FIXED 2026-08-26
 
-**ALL SEVEN ARE NOW FIXED** (2026-08-26). Kept in full rather than deleted, because
-each one's SHAPE is the lesson and the list is the evidence for the structural finding
-at the bottom. `git log` has the fix for each; the tests are named in the commits. Every line
-below was re-measured against `build/hashigo.db` before being written here. **Three
-were fixed** (the typing guard, the due-date timezone, and the gallery's misnamed sort
-value — see `git log`); these are the ones left, and they are left because each needs a
-decision about intended behaviour rather than a corrected predicate. Do not treat this
-list as speculative: the numbers are real.
+**ALL SEVEN ARE FIXED.** Every figure below was measured against `build/hashigo.db`
+before being written, and each entry describes the bug as it WAS — `git log` carries the
+fix and names the test that pins it.
+
+The list is kept rather than deleted because each one's shape is the lesson, and
+together they are the evidence for the structural finding at the bottom: six of the
+seven lived in `app/db.worker.ts`, the file that owns every write and the one `test/`
+could not import.
 
 **1. FIXED 2026-08-26. Archiving a deck archived only the deck's OWN cards, and reported success anyway.**
 `app/db.worker.ts:488` — `UPDATE cards SET archived = ? WHERE deck_id = ?`, no descent
@@ -113,9 +112,10 @@ correct undo has to record the prior per-card state, not the inverse operation.
 **3. FIXED 2026-08-26. Clicking a parent deck opened an EMPTY gallery.** `app/db.worker.ts:718` and `:730`
 filter `c.deck_id = ?` exactly, and `:761` filters search hits by
 `hit.deckId === request.deckId`. The sidebar badge is a SUBTREE total (that is the
-whole point of `app/deck-tree.ts`), so English shows "1258" and opens 0 cards, 日本語
-shows "5947" and opens 3. Every deck with children is affected. Fixing it means a
-recursive CTE over `decks.parent_id`, which `deck_paths` may already give cheaply.
+whole point of `app/deck-tree.ts`), so English showed "1258" and opened 0 cards, and
+日本語 showed "5947" and opened 3. Every deck with children was affected.
+`app/deck-scope.ts` now resolves the subtree with a recursive CTE over
+`decks.parent_id`, and a test requires it to agree with the page's own walk.
 
 **4. FIXED. Deck-scoped search filtered AFTER the limit.** Same site, `:761` — `searchCards`
 returns its top `limit` across the whole collection and the deck filter is applied to

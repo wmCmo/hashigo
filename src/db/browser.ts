@@ -333,7 +333,7 @@ export async function openDatabaseBrowser(options: BrowserOpenOptions = {}): Pro
  *
  * The reason it was duplicated is gone: `src/schema/index.ts` no longer imports
  * `node:fs` (the DDL text moved to `src/schema/sources.ts`), so this module can
- * import the real constant and cannot disagree with it. `test/browser-portable.ts`
+ * import the real constant and cannot disagree with it. `test/browser-portable.test.ts`
  * pins that the schema module stays importable here.
  */
 export { SCHEMA_VERSION } from "../schema/index.js";

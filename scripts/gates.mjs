@@ -111,10 +111,10 @@ for (const gate of selected) {
   let verdict = proc.status === 0 ? "PASS" : "FAIL";
   let detail = "";
 
-  // THE FIRST VERSION OF THIS SCRIPT REPORTED SIX FALSE FAILURES, EACH IN 0.0s,
-  // because spawn never launched (EINVAL) and nothing looked at `proc.error`. A gate
-  // runner that cannot tell "the gate failed" from "the gate never ran" is worse than
-  // no gate runner, so this case is loud and separate.
+  // A GATE THAT NEVER RAN IS NOT A GATE THAT FAILED, and `proc.status` cannot tell
+  // them apart — a spawn that dies with EINVAL leaves `status` null and `error` set.
+  // Reporting that as a failure is survivable; reporting it as a PASS would not be, so
+  // this case is loud and separate rather than folded into the exit-code check.
   if (proc.error) {
     verdict = "ERROR";
     detail = `the command never ran: ${proc.error.code ?? ""} ${proc.error.message}`;

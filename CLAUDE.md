@@ -124,20 +124,20 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 30 files, 845 passed, 1 skipped (the FSRS refit, gated). ~90 s.
+npm test                # 30 files, 848 passed, 1 skipped (the FSRS refit, gated). ~90 s.
                         # STILL EXITS 1 ON A FULLY PASSING RUN. Use `npm run gates`,
                         # which reads the RESULT instead of the exit code.
-                        # THE CAUSE WAS MISDIAGNOSED HERE FOR MONTHS, and the old text
-                        # ("Vitest's reporter RPC under load") is wrong. Measured
-                        # 2026-08-26: birpc's timeout is a hard-coded 60 s that vitest
+                        # THE CAUSE: birpc's timeout is a hard-coded 60 s that vitest
                         # never overrides, `onTaskUpdate` is an AWAITED call, and
-                        # exactly the two files that run over 60 s throw exactly two
-                        # errors — every run. Cutting workers changed nothing; quieting
-                        # the reporter changed nothing; `--no-isolate` made it worse.
+                        # exactly the files that run over 60 s throw one error each,
+                        # every run. It is not the reporter and not load — cutting
+                        # workers and quieting the reporter both change nothing, and
+                        # `--no-isolate` makes it worse.
                         # DO NOT SET `pool: "threads"`. It removes the errors and then
                         # SEGFAULTS (exit 139) — better-sqlite3 is a native addon and
-                        # six threads in one process crash it. Two green runs of it
-                        # proved nothing. vitest.config.ts has all of this.
+                        # six threads in one process crash it. It passes twice first,
+                        # so two green runs are not evidence. vitest.config.ts has the
+                        # ten measured runs.
                         # The only real fix is no file needing 60 s of its own wall
                         # clock; roundtrip.test.ts needs 82 s. Not attempted yet.
 npm run typecheck       # exit 0

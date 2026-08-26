@@ -11,27 +11,16 @@ import { SCHEMA_VERSION } from "../src/schema/index.js";
  * `test/docs-integrity.test.ts` watches the decision NUMBERING, because a markdown
  * formatter renumbered it once. This file watches the FIGURES, because nothing did.
  *
- * The distinction is worth stating, because it was measured rather than assumed
- * (2026-08-25, against `build/hashigo.db` and the real export):
+ * THE DISTINCTION IS THE POINT, and it was measured rather than assumed: the figures
+ * derived from data that does not move — the accent splits, the corpus totals, the
+ * decision-29 card counts — were checked against `build/hashigo.db` and were exact.
+ * This is not a suite that distrusts the documentation.
  *
- *   decision 27  2,092 平板 + 56 尾高 = 2,148 of 3,830    EXACT (1965+127, 48+8)
- *   decision 29  692 / 2,785 / 392 / 3,177 / 3,869        EXACT, every one
- *   accents      3,850 openjtalk · 3,015 unidic · 33 manual   EXACT
- *   corpus       7,716 cards · 102,020 reviews            EXACT
- *   85 path references across the four top-level docs      ALL EXIST
- *
- * So this is not a suite that distrusts the documentation. Those numbers are
- * derived from data that does not move, by people who measured them, and they have
- * held. What rots is the handful of figures that change every time someone adds a
- * test, an export subpath, or a decision — and those are exactly the figures a cold
- * session uses to decide whether it is looking at a current file or a stale one.
- *
- * Caught on the day this file was written, by these assertions:
- *   - CLAUDE.md and NEXT.md both said `757 passed`. The real count was 767.
- *   - NEXT.md said "There are 22 decisions". There were 31.
- *
- * Neither is dangerous on its own. Together they are the thing that makes a reader
- * stop trusting the file, and once that trust goes the accurate 95% goes with it.
+ * What rots is the handful of figures that change every time someone adds a test, an
+ * export subpath, or a decision. Those are exactly the figures a cold session uses to
+ * decide whether it is reading a current file or a stale one, and a wrong one is not
+ * dangerous by itself — it is dangerous because it stops the reader trusting the
+ * accurate 95% around it.
  *
  * WHAT THIS DOES NOT DO. It does not check prose, reasoning, or any figure derived
  * from the corpus — those need `exports/` and a built database, they are already
@@ -51,16 +40,14 @@ function read(name: string): string {
 /**
  * The half of a document that is held to the PRESENT.
  *
- * NEXT.md used to keep a record of what was true at the time below a HISTORY heading,
- * and its figures were allowed to be old. That record moved to
- * `notes/archive/next-history.md` on 2026-08-26 — 803 of the file's 1,057 lines — so
- * there is normally no boundary left and the whole file is live, which is STRICTER:
- * every figure in it is now held to the present rather than three quarters being
- * exempt.
+ * A document may keep a record of what was true at the time below a HISTORY heading,
+ * and those figures are allowed to be old. Nothing carries one today — NEXT.md's moved
+ * to `notes/archive/next-history.md` — so in practice every figure is held to the
+ * present, which is the stricter reading.
  *
- * The boundary is still honoured if it comes back. Requiring its ABSENCE would be a
- * gate on a formatting choice rather than on truth, and someone may reasonably start
- * a new record.
+ * The boundary is honoured rather than forbidden because someone may reasonably start
+ * a new record, and gating on its ABSENCE would be a gate on formatting rather than on
+ * truth.
  */
 function liveHalf(name: string): string {
   const text = read(name);
@@ -150,17 +137,115 @@ describe("the figures a routine change invalidates", () => {
 });
 
 /**
+ * THE SAME CHECKS, OVER CODE COMMENTS — WHERE MOST OF THE PROSE ACTUALLY LIVES.
+ *
+ * This file was written to stop documentation rotting, and then read four markdown
+ * files. Measured 2026-08-26, that is a small fraction of the surface:
+ *
+ *   48 markdown files          122,320 words     gated: 4 files
+ *   11,354 comment lines       35.9% of code     gated: nothing
+ *     ...342 of them carrying a measured figure  gated: nothing
+ *
+ * A comment is worse than a document for this, not better. Nobody greps comments when
+ * renaming a file, no reviewer reads all 11,354, and they carry the same volatile
+ * figures — "3,850 openjtalk", "102,020 reviews", "12.07 statements per graded card" —
+ * with none of the "every status figure lives in NEXT.md" discipline the docs have.
+ *
+ * It found one on the first run: `src/db/browser.ts` pointed at a
+ * browser-portable test file whose name was missing its ".test" segment, where four
+ * other files spelled the same path correctly. (Written without the literal path,
+ * because this file is scanned too and quoting a broken path would fail its own gate —
+ * which is itself the check working.)
+ *
+ * WHAT IT DELIBERATELY DOES NOT CHECK: prose, reasoning, or any measurement that needs
+ * the corpus to verify. Those are pinned by the suites that produce them. This is the
+ * cheap half — that a path exists, that a script exists, that a decision number is real
+ * — which is also the half that rots when someone renames something.
+ */
+const CODE_GLOBS = ["src", "app", "test", "scripts"] as const;
+
+function codeFiles(): string[] {
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) walk(rel);
+      else if (entry.name.endsWith(".ts") || entry.name.endsWith(".mjs")) out.push(rel);
+    }
+  };
+  for (const top of CODE_GLOBS) walk(top);
+  return out;
+}
+
+describe("claims inside code comments", () => {
+  it("every file path a comment points at exists", () => {
+    // Relative paths resolve against the file that mentions them, which is what a
+    // reader does. A first version resolved everything against the repo root and
+    // reported 24 false misses — a gate with false positives gets deleted.
+    const missing: string[] = [];
+    for (const file of codeFiles()) {
+      const text = readFileSync(join(ROOT, file), "utf8");
+      const dir = file.slice(0, file.lastIndexOf("/"));
+      for (const m of text.matchAll(/`([\w./-]+\.(?:ts|md|sql|py|mjs|json|jsonl|html|css))`/g)) {
+        const ref = m[1]!;
+        if (!ref.includes("/") && !ref.startsWith(".")) continue; // a bare name is prose
+        if (ref.startsWith("build/") || ref.startsWith("dist/") || ref.startsWith("exports/")) {
+          continue; // generated or gitignored
+        }
+        // A RELATIVE ref is only unambiguous inside src/ and app/, where `./x.ts`
+        // means the sibling module. In a test file it usually names the module UNDER
+        // TEST instead — `test/dashboard.test.ts` says `./labels.ts` and means
+        // `src/dashboard/labels.ts`. Guessing there would produce false misses, and a
+        // gate that cries wolf gets deleted by the next person to hit it.
+        if (ref.startsWith(".") && !(file.startsWith("src/") || file.startsWith("app/"))) continue;
+        const target = ref.startsWith(".") ? `${dir}/${ref.slice(2)}` : ref;
+        if (!existsSync(join(ROOT, target))) missing.push(`${file} -> ${ref}`);
+      }
+    }
+    expect(missing, `comments point at files that do not exist: ${missing.join(" · ")}`).toEqual([]);
+  });
+
+  it("every `npm run <script>` a comment names is a real script", () => {
+    const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    const missing: string[] = [];
+    for (const file of codeFiles()) {
+      const text = readFileSync(join(ROOT, file), "utf8");
+      for (const m of text.matchAll(/npm run ([a-z][a-z0-9:-]*)/g)) {
+        if (!(m[1]! in pkg.scripts)) missing.push(`${file} -> npm run ${m[1]}`);
+      }
+    }
+    expect(missing, `comments name scripts that do not exist: ${missing.join(" · ")}`).toEqual([]);
+  });
+
+  it("every decision number cited in code is one that exists", () => {
+    // CLAUDE.md: "Numbering is cited across `src/`, `test/` and the notes — never
+    // renumber, only append." `docs-integrity` protects the list's shape; nothing
+    // protected the CITATIONS, which are the reason the shape matters. 23 sites cite
+    // decision 29 alone.
+    const real = [...read("DECISIONS.md").matchAll(/^(\d+)\. /gm)].length;
+    const bad: string[] = [];
+    for (const file of codeFiles()) {
+      const text = readFileSync(join(ROOT, file), "utf8");
+      for (const m of text.matchAll(/[Dd]ecision (\d+)/g)) {
+        const n = Number(m[1]);
+        if (n < 1 || n > real) bad.push(`${file} -> decision ${n} (there are ${real})`);
+      }
+    }
+    expect(bad, `code cites decisions that do not exist: ${bad.join(" · ")}`).toEqual([]);
+  });
+});
+
+/**
  * A HEADING THAT COUNTS ITS OWN LIST IS A CLAIM, AND IT DESYNCS SILENTLY.
  *
- * Two of them had, in the auto-loaded file: "Two things that are built and do NOTHING"
- * sat above three bullets (two of which opened "DONE"), and "Three things he has
- * already answered" sat above five items — with a lead-in saying "the count is his",
- * which lent the wrong number Zach's authority. Both lists grew and neither heading
- * did, because appending to a list is the one edit that never makes you re-read its
- * title.
+ * Appending to a list is the one edit that never makes you re-read its title, so a
+ * heading that counts its own items drifts the moment the list grows — and two in the
+ * auto-loaded file had.
  *
- * The repair was to drop the numeral rather than to correct it, since the next append
- * would desync it again. This keeps it dropped.
+ * The repair is to drop the numeral rather than to correct it, since the next append
+ * would desync a corrected one just the same. This keeps it dropped.
  */
 const COUNT_WORDS: Record<string, number> = {
   two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,

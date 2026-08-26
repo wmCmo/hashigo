@@ -90,10 +90,10 @@ describe("ungradeTrack", () => {
   });
 
   it("restores `scheduler_state`, which is the value that cannot be recomputed", () => {
-    // THE FIRST VERSION OF THIS TEST WAS VACUOUS, and an injection caught it: on a
-    // FRESH track `scheduler_state` is null, so "restore null" passed even with the
-    // restore hard-wired to write null. The undo has to be exercised against a track
-    // that already carries FSRS memory, which means grading once first.
+    // GRADE ONCE FIRST, or this test proves nothing: on a FRESH track
+    // `scheduler_state` is null, so "restore null" passes even against an undo
+    // hard-wired to write null. The assertion only has teeth over a track that
+    // already carries FSRS memory. Do not simplify the setup away.
     const { db, trackId } = fixture();
     gradeTrack(db, { trackId, remembered: 1 });
 
