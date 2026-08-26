@@ -981,6 +981,17 @@ async function openPreview(cardId: string): Promise<void> {
     body.appendChild(gone);
     layerHost.appendChild(root);
     document.body.classList.add("layered");
+    // ON THE STACK, like every other layer. It used to be appended and not pushed,
+    // and `Layer.mounted` has always been documented as "null for a layer that
+    // renders no card — the editor, and 'card not found'", so the type expected it
+    // here and only the push was missing.
+    //
+    // The cost was not cosmetic: with a preview open underneath, Escape popped the
+    // layer BENEATH the one on screen and left the not-found box orphaned on top.
+    // `closeTop` already tolerates a null mount (`top.mounted?.dispose()`), so this
+    // needs no special case anywhere.
+    layers.push({ root, mounted: null, prepared: null, cardId });
+    close.focus();
     return;
   }
 
@@ -1010,11 +1021,6 @@ function closeIfTop(root: HTMLElement): void {
   if (layers.at(-1)?.root !== root) {
     // Not the top layer. Removing it would strand everything above it, so the
     // click does nothing — the same thing every stacked dialog does.
-    if (root.parentElement === layerHost && !layers.some((entry) => entry.root === root)) {
-      // A "card not found" layer, which carries no mount and is not on the stack.
-      root.remove();
-      if (layers.length === 0) document.body.classList.remove("layered");
-    }
     return;
   }
   closeTop();
@@ -1022,12 +1028,7 @@ function closeIfTop(root: HTMLElement): void {
 
 function closeTop(): void {
   const top = layers.pop();
-  if (top === undefined) {
-    // The missing-card layer, which never joined the stack.
-    layerHost.lastElementChild?.remove();
-    if (layerHost.childElementCount === 0) document.body.classList.remove("layered");
-    return;
-  }
+  if (top === undefined) return;
   // Dispose BEFORE detaching: the mount releases its audio leases and revokes
   // every object URL it minted, and a detached tree would still be holding them.
   // Null on an editor layer, which renders no card and holds no lease.
@@ -1174,9 +1175,25 @@ function openEditorFor(card: PreparedCard): void {
 
     const save = (next: string): void => {
       void ask<"setField">({ kind: "setField", cardId: card.cardId, fieldId: field.id, value: next })
-        .then(() => {
+        .then((reply) => {
           status.textContent = `saved ${field.name}`;
           status.classList.remove("bad");
+          // HIS #13. `previous` comes from the worker because the page's copy of a
+          // field value is whatever it last rendered, not what is on disk. A null
+          // previous means the row did not exist, and the undo REMOVES it rather
+          // than writing "" — `<<#field>>` gates on presence, not on emptiness.
+          pushUndo({
+            describe: `edit of ${field.name} on ${card.loaded.name || card.cardId}`,
+            run: async () => {
+              await ask<"setField">({
+                kind: "setField",
+                cardId: card.cardId,
+                fieldId: field.id,
+                value: reply.previous,
+              });
+              await refreshAfterOp();
+            },
+          });
           // The card in front of him is NOT re-rendered. Re-mounting mid-edit
           // would move the thing he is typing into; the change applies the next
           // time the card is shown, and the status line says so.
@@ -1630,6 +1647,16 @@ function buildNewCardForm(): HTMLElement {
           `made ${reply.cardId} · ${reply.tracks.join(" + ")} · ` +
           `it joins the NEW queue next session`;
         title.value = "";
+        // HIS #13's "create card". Undone by deleting it — which is safe here in a
+        // way `delete` generally is not: a card made seconds ago has no review
+        // history to lose, which is the whole reason delete is otherwise final.
+        pushUndo({
+          describe: `new card ${reply.cardId}`,
+          run: async () => {
+            await ask<"cardOp">({ kind: "cardOp", op: "delete", cardId: reply.cardId });
+            await refreshAfterOp();
+          },
+        });
         // Straight into the editor on the card just made: a title with no fields
         // is not yet a card, and this is always the next thing he wants.
         if (reply.card !== null) openEditorFor(reply.card);
@@ -1897,6 +1924,10 @@ async function runCardOp(op: CardOp, cardId: string): Promise<void> {
         },
       });
     }
+    // The worker advances the SESSION when the op took the current card; the page has
+    // to advance the SCREEN to match, or a deleted card stays visible over a session
+    // that has already moved on.
+    if (reply.advanced) await showNext();
     await refreshAfterOp();
   } catch (cause) {
     say((cause as Error).message, true);

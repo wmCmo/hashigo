@@ -149,6 +149,14 @@ export interface CardOpMessage {
   readonly undo: { readonly op: CardOp; readonly cardId: string } | null;
   /** Said plainly, for the status line and for the undo stack's label. */
   readonly describe: string;
+  /**
+   * True when this operation removed the card the session was showing, so the page
+   * must advance instead of leaving a deleted card on screen.
+   *
+   * Deleting the current card used to hard-lock the review: the row was gone, the
+   * track went with it (ON DELETE CASCADE), and every later grade threw invisibly.
+   */
+  readonly advanced: boolean;
 }
 
 /** Deck operations — his #14, and the answer to #8. */
@@ -334,7 +342,14 @@ export interface SetFieldRequest {
   readonly id: number;
   readonly cardId: string;
   readonly fieldId: string;
-  readonly value: string;
+  /**
+   * The new value, or NULL to remove the row entirely.
+   *
+   * Null exists for undo: restoring a field that had no row before means deleting
+   * it, and writing an empty string instead would leave a row that renders the
+   * same but is not the same — `<<#field>>` gates on presence.
+   */
+  readonly value: string | null;
 }
 
 export interface SetFieldMessage {
@@ -342,9 +357,17 @@ export interface SetFieldMessage {
   readonly id: number;
   readonly cardId: string;
   readonly fieldId: string;
-  readonly value: string;
+  readonly value: string | null;
   /** True when the row was created rather than updated. */
   readonly created: boolean;
+  /**
+   * What the field held BEFORE this write — null when there was no row.
+   *
+   * This is what makes an edit undoable, and it has to come from the worker: the
+   * page's copy of a field value is whatever it last rendered, which is not
+   * necessarily what is on disk.
+   */
+  readonly previous: string | null;
 }
 
 /**

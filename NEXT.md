@@ -51,7 +51,7 @@ npm run app:dev -- --host ::              # phone / tunnel
 
 Gates: run **`npm run gates`** — one command, all seven, cheapest first, and a verdict
 that means what it says. `app:build` is new and was covered by nothing: `app:check` is
-`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 28 files / 817
+`tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 28 files / 823
 passed / 1 skipped** (~97 s) · `npm run typecheck` → 0 · **`npm run app:check` → 0** ·
 `npm run build` → OK, 77 modules, 27 export subpaths · `npm run spike:check` → 0 ·
 `blobs … paths` → 0.
@@ -73,10 +73,11 @@ a complete summary line and zero failures, or it fails. That is stricter where i
 counts: a crash prints no summary and cannot pass, which is exactly what caught the
 segfault. `npm test` alone must still not be chained on.
 
-### CONFIRMED LIVE BUGS IN `app/db.worker.ts` — measured 2026-08-26, NOT fixed
+### THE SEVEN BUGS AN AUDIT FOUND IN `app/` — measured AND FIXED 2026-08-26
 
-**FOUR OF THESE ARE FIXED** (1, 2, 3, and the grading half of 5 — see `git log`,
-`app/deck-scope.ts` and `ungradeTrack` in `src/scheduler/tracks.ts`). The rest stand. Every line
+**ALL SEVEN ARE NOW FIXED** (2026-08-26). Kept in full rather than deleted, because
+each one's SHAPE is the lesson and the list is the evidence for the structural finding
+at the bottom. `git log` has the fix for each; the tests are named in the commits. Every line
 below was re-measured against `build/hashigo.db` before being written here. **Three
 were fixed** (the typing guard, the due-date timezone, and the gallery's misnamed sort
 value — see `git log`); these are the ones left, and they are left because each needs a
@@ -115,13 +116,13 @@ whole point of `app/deck-tree.ts`), so English shows "1258" and opens 0 cards, �
 shows "5947" and opens 3. Every deck with children is affected. Fixing it means a
 recursive CTE over `decks.parent_id`, which `deck_paths` may already give cheaply.
 
-**4. Deck-scoped search filters AFTER the limit.** Same site, `:761` — `searchCards`
+**4. FIXED. Deck-scoped search filtered AFTER the limit.** Same site, `:761` — `searchCards`
 returns its top `limit` across the whole collection and the deck filter is applied to
 that page, so searching inside a deck silently under-reports. It is not a wrong count
 in a corner: with `limit: 300` over 7,716 cards, a query matching widely outside the
 deck can return almost nothing inside it.
 
-**5. PARTLY FIXED 2026-08-26 — GRADING is undoable now; `setField` and `createCard` are not.** He asked
+**5. FIXED. Undo now covers grading, `setField` AND `createCard` — all four actions his #13 names.** He asked
 for *"ctrl+z ... whether create card, review card, remember card, forget card"*. There
 are exactly two `pushUndo` call sites in `app/main.ts`, both in the card/deck op path:
 grading, `setField` and `createCard` push nothing. Undoing a grade means deleting the
@@ -130,12 +131,12 @@ that leaves the schedule advanced is worse than none, which is presumably why it
 skipped. Worth saying plainly because the commit and the code comment both read as
 though #13 is done.
 
-**6. Deleting the current review card hard-locks the session.** Confirmed by the audit;
+**6. FIXED. Deleting the current review card hard-locked the session.** Confirmed by the audit;
 the card is gone, the session cursor still points at it, and the failure is invisible.
 `delete` is deliberately not undoable (the reviews go with it) and says so, which is
 right — the lock is the bug, not the irreversibility.
 
-**7. Smaller, all confirmed:** duplicating a card drops its per-card `reverse`
+**7. FIXED, all three.** Originally: duplicating a card drops its per-card `reverse`
 override, so the copy loses its reverse track; the "card not found" preview layer is
 appended but never pushed onto the layer stack, so one Escape destroys the whole stack;
 and `app/env.d.ts` still claims `src/schema` cannot be imported in a browser, which has

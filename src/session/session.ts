@@ -411,6 +411,31 @@ export class ReviewSession {
     this.cursor -= 1;
   }
 
+  /**
+   * Drop the current item without grading it — the card is gone or is no longer
+   * reviewable, so the session must move past it.
+   *
+   * DELETING THE CARD IN FRONT OF HIM USED TO HARD-LOCK THE SESSION. Every foreign key
+   * at `cards` is `ON DELETE CASCADE`, so a delete takes `card_tracks` with it — and
+   * the session went on pointing at a track that no longer existed. The screen kept
+   * showing the deleted card, every subsequent `answer()` threw `TrackNotFoundError`
+   * into a `finally` with no `catch`, and the failure was invisible: the buttons
+   * re-enabled and nothing happened, forever.
+   *
+   * Archiving has the milder version of the same problem — the track survives, so
+   * grading still "works", but it writes a review for a card he has just taken out of
+   * rotation.
+   *
+   * A skipped item counts as answered in `progress()`, deliberately. It is out of the
+   * queue and not coming back, so reporting `12/50` after skipping one is the honest
+   * reading of how much of the plan is left.
+   */
+  skipCurrent(): boolean {
+    if (this.current() === null) return false;
+    this.cursor += 1;
+    return true;
+  }
+
   progress(): SessionProgress {
     const answeredFresh = Math.min(this.cursor, this.plan.length);
     const reasksShown = Math.max(0, this.cursor - this.plan.length);

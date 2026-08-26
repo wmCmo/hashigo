@@ -458,8 +458,15 @@ function cardOp(request: CardOpRequest): void {
         const copyId = newCardId(db);
         db.transaction(() => {
           db.prepare(
-            `INSERT INTO cards (id, deck_id, template_id, name, content, archived)
-             SELECT ?, deck_id, template_id, name, content, 0 FROM cards WHERE id = ?`,
+            // `reverse` and `voice` come with the copy: they describe the CARD, and
+            // dropping `reverse` silently gave the duplicate the deck's default —
+            // losing the override on the 14 cards that carry one, which for a card
+            // overridden to `on` means the copy has no reverse track at all.
+            // `pinned` and `archived` deliberately do NOT come: those describe a
+            // relationship with the collection, and a fresh copy has none yet.
+            `INSERT INTO cards (id, deck_id, template_id, name, content, reverse, voice, archived)
+             SELECT ?, deck_id, template_id, name, content, reverse, voice, 0
+               FROM cards WHERE id = ?`,
           ).run(copyId, card.id);
           db.prepare(
             `INSERT INTO card_field_values (card_id, field_id, value)
@@ -484,7 +491,28 @@ function cardOp(request: CardOpRequest): void {
       }
       break;
   }
-  post({ kind: "cardOp", id: request.id, op: request.op, cardId: card.id, resultCardId, undo, describe });
+  // If the operation took the card the session is SHOWING, move past it here rather
+  // than leaving the page holding a card whose track may no longer exist. `delete`
+  // cascades to `card_tracks`, so without this every later grade throws invisibly.
+  let advanced = false;
+  if (
+    (request.op === "delete" || request.op === "archive") &&
+    session !== null &&
+    session.current()?.cardId === card.id
+  ) {
+    advanced = session.skipCurrent();
+  }
+
+  post({
+    kind: "cardOp",
+    id: request.id,
+    op: request.op,
+    cardId: card.id,
+    resultCardId,
+    undo,
+    describe,
+    advanced,
+  });
 }
 
 /**
@@ -783,7 +811,6 @@ function browse(request: BrowseRequest): void {
   // "1258" and listed 0 cards, 日本語 showed "5947" and listed 3. Every deck with
   // children was affected, which is every deck he actually navigates through.
   const { sql: scopeSql, args: scopeArgs } = scopeToSubtree(db, request.deckId);
-  const inScopeIds = request.deckId === null ? null : new Set(scopeArgs);
 
   if (request.query.trim() === "") {
     const rows = db
@@ -823,19 +850,21 @@ function browse(request: BrowseRequest): void {
     return;
   }
 
-  const result = searchCards(db, request.query, { limit: request.limit });
+  // Scoped IN THE QUERY, not after it. Filtering the page under-reported: the top
+  // 300 matches across 7,716 cards can hold almost none from the deck he is in.
+  const result = searchCards(db, request.query, {
+    limit: request.limit,
+    ...(request.deckId === null ? {} : { deckIds: scopeArgs }),
+  });
   const deckPaths = new Map(
     (db.prepare("SELECT deck_id, path FROM deck_paths").all() as {
       deck_id: string;
       path: string;
     }[]).map((row) => [row.deck_id, row.path]),
   );
-  // Same subtree scope for the search path. Note this still filters AFTER
-  // `searchCards` has taken its top `limit` across the whole collection, so a
-  // deck-scoped search can under-report — recorded in NEXT.md rather than fixed
-  // here, because the fix belongs in `src/search` where the limit is applied.
-  const filtered =
-    inScopeIds === null ? result.hits : result.hits.filter((hit) => inScopeIds.has(hit.deckId));
+  // No post-filter any more — `searchCards` did the scoping, so `result.total` is the
+  // real number of matches INSIDE the deck rather than across the collection.
+  const filtered = result.hits;
   post({
     kind: "browse",
     id: request.id,
@@ -906,15 +935,27 @@ function setField(request: SetFieldRequest): void {
         `the empty string. Refusing to write.`,
     );
   }
-  const existed =
-    db
-      .prepare("SELECT 1 FROM card_field_values WHERE card_id = ? AND field_id = ?")
-      .get(request.cardId, request.fieldId) !== undefined;
-  db.prepare(
-    `INSERT INTO card_field_values (card_id, field_id, value)
-     VALUES (?, ?, ?)
-     ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`,
-  ).run(request.cardId, request.fieldId, request.value);
+  // Read BEFORE the write — this is the whole of what makes an edit undoable, and
+  // the page cannot supply it: its copy is whatever it last rendered.
+  const before = db
+    .prepare("SELECT value FROM card_field_values WHERE card_id = ? AND field_id = ?")
+    .get(request.cardId, request.fieldId) as { value: string } | undefined;
+  const existed = before !== undefined;
+
+  if (request.value === null) {
+    // Undoing an edit that CREATED the row: remove it rather than writing "". A
+    // present-but-empty value is not the same thing — `<<#field>>` gates on presence.
+    db.prepare("DELETE FROM card_field_values WHERE card_id = ? AND field_id = ?").run(
+      request.cardId,
+      request.fieldId,
+    );
+  } else {
+    db.prepare(
+      `INSERT INTO card_field_values (card_id, field_id, value)
+       VALUES (?, ?, ?)
+       ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`,
+    ).run(request.cardId, request.fieldId, request.value);
+  }
   post({
     kind: "setField",
     id: request.id,
@@ -922,6 +963,7 @@ function setField(request: SetFieldRequest): void {
     fieldId: request.fieldId,
     value: request.value,
     created: !existed,
+    previous: before?.value ?? null,
   });
 }
 

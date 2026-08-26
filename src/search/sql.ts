@@ -182,6 +182,34 @@ function archivedClause(includeArchived: boolean): string {
   return includeArchived ? "" : " AND c.archived = 0";
 }
 
+/**
+ * `AND c.deck_id IN (...)`, or nothing — the SUBTREE the caller resolved.
+ *
+ * SCOPING BELONGS IN THE QUERY, NOT AFTER IT. The app used to take the top `limit`
+ * matches across the whole collection and filter them to a deck in the page, which
+ * silently under-reports: with `limit: 300` over 7,716 cards, a query matching widely
+ * outside the deck returns almost nothing inside it and reports that as "no matches".
+ * The count was wrong too, since `total` counted the unfiltered set.
+ *
+ * Resolving the subtree stays the CALLER's job (`app/deck-scope.ts` walks `parent_id`);
+ * this only applies the ids it is given.
+ */
+function deckClause(builder: SqlBuilder, deckIds: readonly string[] | null): void {
+  if (deckIds === null) return;
+  if (deckIds.length === 0) {
+    // An empty scope matches nothing. Saying so explicitly beats emitting `IN ()`,
+    // which is a syntax error in SQLite.
+    builder.push(" AND 0 = 1");
+    return;
+  }
+  builder.push(` AND c.deck_id IN (${deckIds.map(() => "?").join(", ")})`, ...deckIds);
+}
+
+/** True when a query needs `cards` joined that would otherwise be left out. */
+function needsCardsJoin(includeArchived: boolean, deckIds: readonly string[] | null): boolean {
+  return !includeArchived || deckIds !== null;
+}
+
 // ---------------------------------------------------------------------------
 // FTS path.
 // ---------------------------------------------------------------------------
@@ -208,8 +236,9 @@ export function buildFtsSearch(
   limit: number,
   offset: number,
   includeArchived: boolean,
+  deckIds: readonly string[] | null = null,
 ): BuiltStatement {
-  return new SqlBuilder()
+  const builder = new SqlBuilder()
     .push(
       `SELECT c.id AS card_id, c.seq AS seq, ${strippedNameSql("c.name")} AS name,` +
         ` c.deck_id AS deck_id, c.archived AS archived, ${bm25Expression()} AS score` +
@@ -217,9 +246,9 @@ export function buildFtsSearch(
         ` WHERE card_fts MATCH ?`,
       ftsMatchExpression(query.terms),
     )
-    .push(archivedClause(includeArchived))
-    .push(" ORDER BY score ASC, c.seq ASC LIMIT ? OFFSET ?", limit, offset)
-    .build();
+    .push(archivedClause(includeArchived));
+  deckClause(builder, deckIds);
+  return builder.push(" ORDER BY score ASC, c.seq ASC LIMIT ? OFFSET ?", limit, offset).build();
 }
 
 /**
@@ -230,17 +259,22 @@ export function buildFtsSearch(
  * measured at roughly the same cost as the ranked query itself on the scan path,
  * so its dead weight is half the price of knowing the denominator.
  */
-export function buildFtsCount(query: SearchQuery, includeArchived: boolean): BuiltStatement {
-  const from = includeArchived
-    ? "card_fts"
-    : "card_fts JOIN cards c ON c.seq = card_fts.rowid";
-  return new SqlBuilder()
+export function buildFtsCount(
+  query: SearchQuery,
+  includeArchived: boolean,
+  deckIds: readonly string[] | null = null,
+): BuiltStatement {
+  const from = needsCardsJoin(includeArchived, deckIds)
+    ? "card_fts JOIN cards c ON c.seq = card_fts.rowid"
+    : "card_fts";
+  const builder = new SqlBuilder()
     .push(
       `SELECT count(*) AS n FROM ${from} WHERE card_fts MATCH ?`,
       ftsMatchExpression(query.terms),
     )
-    .push(archivedClause(includeArchived))
-    .build();
+    .push(archivedClause(includeArchived));
+  deckClause(builder, deckIds);
+  return builder.build();
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +342,7 @@ export function buildScanSearch(
   limit: number,
   offset: number,
   includeArchived: boolean,
+  deckIds: readonly string[] | null = null,
 ): BuiltStatement {
   const builder = new SqlBuilder();
   builder.push(
@@ -328,6 +363,7 @@ export function buildScanSearch(
     pushTermFilter(builder, term);
   });
   builder.push(archivedClause(includeArchived));
+  deckClause(builder, deckIds);
   builder.push(
     ` ORDER BY score DESC, length(${NAME}) ASC, s.seq ASC LIMIT ? OFFSET ?`,
     limit,
@@ -337,17 +373,22 @@ export function buildScanSearch(
 }
 
 /** The scan's exact match count. Same WHERE, no scoring, no sort, no join. */
-export function buildScanCount(query: SearchQuery, includeArchived: boolean): BuiltStatement {
+export function buildScanCount(
+  query: SearchQuery,
+  includeArchived: boolean,
+  deckIds: readonly string[] | null = null,
+): BuiltStatement {
   const builder = new SqlBuilder();
-  const from = includeArchived
-    ? "card_search_index s"
-    : "card_search_index s JOIN cards c ON c.seq = s.seq";
+  const from = needsCardsJoin(includeArchived, deckIds)
+    ? "card_search_index s JOIN cards c ON c.seq = s.seq"
+    : "card_search_index s";
   builder.push(`SELECT count(*) AS n FROM ${from} WHERE `);
   query.terms.forEach((term, index) => {
     if (index > 0) builder.push(" AND ");
     pushTermFilter(builder, term);
   });
   builder.push(archivedClause(includeArchived));
+  deckClause(builder, deckIds);
   return builder.build();
 }
 

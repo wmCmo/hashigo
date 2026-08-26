@@ -907,3 +907,88 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus", () => {
     // timeout is about the measurement loop, not about one query.
   }, 120_000);
 });
+
+// ---------------------------------------------------------------------------
+// 8. Deck scoping. The limit is why this has to happen in the query.
+// ---------------------------------------------------------------------------
+
+/**
+ * SCOPING A SEARCH TO A DECK, AND WHY FILTERING THE PAGE IS NOT THE SAME THING.
+ *
+ * The app used to ask `src/search` for the top `limit` matches across the whole
+ * collection and then drop the ones outside the deck being browsed. With `limit: 300`
+ * over 7,716 cards that silently under-reports: a term matching widely elsewhere fills
+ * the page before a single in-deck card is reached, so the gallery shows nothing and
+ * says "0" — and `total` was the unfiltered count, so the two numbers disagreed as well.
+ *
+ * These use a deliberately hostile fixture rather than the corpus: many matches in one
+ * deck, few in another, and a limit small enough that the page cannot hold both. That
+ * is the exact shape the bug needed, and it runs in a millisecond.
+ */
+describe("deck-scoped search", () => {
+  let db: Db;
+
+  beforeAll(() => {
+    db = openDatabase(MEMORY);
+    db.prepare("INSERT INTO decks (id, name) VALUES ('big', '単語')").run();
+    db.prepare("INSERT INTO decks (id, name) VALUES ('small', '数字')").run();
+    const insert = db.prepare(
+      "INSERT INTO cards (id, deck_id, name, content, search_text, archived)" +
+        " VALUES (?, ?, ?, '', ?, 0)",
+    );
+    db.transaction(() => {
+      // 50 matches in the big deck...
+      for (let i = 0; i < 50; i += 1) insert.run(`big${i}`, "big", `word ${i}`, "しるし body");
+      // ...and 3 in the small one, which a page of 5 could never reach.
+      for (let i = 0; i < 3; i += 1) insert.run(`small${i}`, "small", `number ${i}`, "しるし body");
+    })();
+  });
+
+  afterAll(() => {
+    db?.close();
+  });
+
+  it("returns only cards inside the scope", () => {
+    const scoped = searchCards(db, "しるし", { deckIds: ["small"] });
+    expect(scoped.hits.length).toBe(3);
+    expect(scoped.hits.every((hit) => hit.deckId === "small")).toBe(true);
+  });
+
+  it("FINDS the in-deck matches even when the page could not reach them", () => {
+    // The bug, stated exactly. Unscoped, a page of 5 is all `big` cards, so filtering
+    // afterwards yields zero — and the deck really does hold three.
+    const unscoped = searchCards(db, "しるし", { limit: 5 });
+    expect(unscoped.hits.filter((hit) => hit.deckId === "small")).toHaveLength(0);
+
+    const scoped = searchCards(db, "しるし", { limit: 5, deckIds: ["small"] });
+    expect(scoped.hits).toHaveLength(3);
+  });
+
+  it("counts only what is in scope, so `total` matches what is shown", () => {
+    expect(searchCards(db, "しるし", { limit: 5 }).total).toBe(53);
+    expect(searchCards(db, "しるし", { limit: 5, deckIds: ["small"] }).total).toBe(3);
+    expect(searchCards(db, "しるし", { limit: 5, deckIds: ["big"] }).total).toBe(50);
+  });
+
+  it("accepts a multi-deck scope, which is what a subtree resolves to", () => {
+    const both = searchCards(db, "しるし", { deckIds: ["big", "small"] });
+    expect(both.total).toBe(53);
+  });
+
+  it("matches nothing for an EMPTY scope, which is different from omitting it", () => {
+    // `IN ()` is a syntax error in SQLite, so this is an explicit `0 = 1`.
+    expect(searchCards(db, "しるし", { deckIds: [] }).total).toBe(0);
+    expect(searchCards(db, "しるし", { deckIds: [] }).hits).toHaveLength(0);
+    expect(searchCards(db, "しるし").total).toBe(53);
+  });
+
+  it("scopes the same way on both query paths", () => {
+    // Two characters routes to the ranked scan, longer routes to FTS — the split that
+    // `src/search` exists to handle. Both must scope, and only one was ever exercised
+    // by hand.
+    for (const query of ["しる", "しるし body"]) {
+      const scoped = searchCards(db, query, { deckIds: ["small"] });
+      expect(scoped.hits.every((hit) => hit.deckId === "small"), `${query} leaked`).toBe(true);
+    }
+  });
+});

@@ -57,6 +57,19 @@ export interface SearchOptions {
    * is on every hit so a UI can grey them instead.
    */
   readonly includeArchived?: boolean;
+  /**
+   * Restrict to these deck ids, or omit for the whole collection.
+   *
+   * The caller resolves the subtree — `app/deck-scope.ts` walks `parent_id` — because
+   * "this deck" means different things to a sidebar and to a query, and only the
+   * caller knows which. An EMPTY array matches nothing, which is different from
+   * omitting the option.
+   *
+   * Scoping has to happen in the QUERY. Filtering the page afterwards under-reports:
+   * the top `limit` matches across 7,716 cards can contain almost none from the deck
+   * being browsed, and `total` would count the unfiltered set.
+   */
+  readonly deckIds?: readonly string[];
   /** Compute excerpts. On by default; one extra query bounded by the page. */
   readonly snippets?: boolean;
   readonly snippetRadius?: number;
@@ -146,6 +159,7 @@ export function searchCards(
   );
   const offset = positiveInteger(options.offset ?? 0, "offset");
   const includeArchived = options.includeArchived !== false;
+  const deckIds = options.deckIds ?? null;
   const wantSnippets = options.snippets !== false;
 
   const parsed = parseSearchQuery(query);
@@ -167,12 +181,12 @@ export function searchCards(
 
   const search =
     parsed.mode === "fts"
-      ? buildFtsSearch(parsed, limit, offset, includeArchived)
-      : buildScanSearch(parsed, limit, offset, includeArchived);
+      ? buildFtsSearch(parsed, limit, offset, includeArchived, deckIds)
+      : buildScanSearch(parsed, limit, offset, includeArchived, deckIds);
   const count =
     parsed.mode === "fts"
-      ? buildFtsCount(parsed, includeArchived)
-      : buildScanCount(parsed, includeArchived);
+      ? buildFtsCount(parsed, includeArchived, deckIds)
+      : buildScanCount(parsed, includeArchived, deckIds);
 
   const total = (db.prepare(count.sql).get(...count.params) as { n: number }).n;
   const rows = db.prepare(search.sql).all(...search.params) as RankedRow[];
