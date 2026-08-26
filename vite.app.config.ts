@@ -32,13 +32,49 @@ const root = dirname(fileURLToPath(import.meta.url));
 
 /** Tunnel hostnames Zach reviews from. NEVER `allowedHosts: true` — that is
  *  Vite's DNS-rebinding guard, and a wildcard hands any page he visits a route to
- *  this dev server. These names are ephemeral (a free ngrok/cloudflared name is
- *  reassignable), so an entry is a convenience for a live tunnel, not a durable
- *  grant. Prune dead ones. */
+ *  this server, which serves a 72 MB database. These names are ephemeral (a free
+ *  ngrok/cloudflared name is reassignable), so an entry is a convenience for a live
+ *  tunnel, not a durable grant. Prune dead ones. */
 const ALLOWED_HOSTS = [
   "acids-viewed-sound-royal.trycloudflare.com",
   "crayfish-shorty-thinning.ngrok-free.dev",
 ];
+
+/**
+ * `.tunnel-named` and `.tunnel-host` — gitignored, appended to the list above.
+ *
+ * `.tunnel-named` is the fixed hostname of a named tunnel, written once by hand.
+ * `.tunnel-host` is whatever random name the last quick tunnel was given. Two files
+ * because they are two different things; `scripts/phone.mjs` says what went wrong
+ * when they were one.
+ *
+ * `npm run phone` writes it. A QUICK tunnel gets a new random name every run, so
+ * without this every session means hand-editing this committed file and the diff
+ * is noise nobody reads — which is how `allowedHosts: true` starts looking
+ * reasonable. It stays an explicit list; only the source of one entry moved.
+ *
+ * Read with a try/catch rather than an `existsSync` guard: this file is parsed on
+ * every Vite start, and a config that throws because an optional local file is
+ * mid-write is a failure with no useful message.
+ */
+function localTunnelHosts(): string[] {
+  const hosts: string[] = [];
+  for (const name of [".tunnel-named", ".tunnel-host"]) {
+    try {
+      hosts.push(
+        ...readFileSync(resolve(root, name), "utf8")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line !== "" && !line.startsWith("#")),
+      );
+    } catch {
+      /* optional */
+    }
+  }
+  return hosts;
+}
+
+const HOSTS = [...ALLOWED_HOSTS, ...localTunnelHosts()];
 
 /** `--out` of `scripts/app-bootstrap.ts`. */
 const ASSET_DIR = resolve(root, "build/app");
@@ -137,7 +173,7 @@ export default defineConfig({
     format: "es",
   },
   server: {
-    allowedHosts: ALLOWED_HOSTS,
+    allowedHosts: HOSTS,
     // 5274, one above the spike's 5273, so both can run at once.
     port: 5274,
     strictPort: true,
@@ -158,7 +194,7 @@ export default defineConfig({
   preview: {
     // A separate server with a separate check — otherwise `app:preview` rejects
     // the same tunnel `app:dev` accepts.
-    allowedHosts: ALLOWED_HOSTS,
+    allowedHosts: HOSTS,
     port: 4274,
     strictPort: true,
   },

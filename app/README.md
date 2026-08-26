@@ -7,8 +7,78 @@ device.
 ```bash
 npx vite-node scripts/app-bootstrap.ts    # once: the two files the page fetches
 npm run app:dev -- --host 127.0.0.1       # local only
-npm run app:dev -- --host ::              # phone / tunnel — see the trap below
+npm run phone                             # ON THE PHONE — build + tunnel + URL
 npm run app:check                         # the gate: tsc -p app/tsconfig.json
+```
+
+## On the phone: `npm run phone`
+
+One command. It starts a Cloudflare tunnel, learns the hostname, authorises that
+hostname, starts the preview server, and prints the URL to open.
+
+**That order is not stylistic.** `allowedHosts` is read once at Vite startup, so a
+server started first cannot be told about a hostname that did not exist yet — which
+is why the hostname used to be a hand edit to a committed config before every
+session.
+
+### The origin decides everything, and it is why a NAMED tunnel matters
+
+**OPFS is keyed by ORIGIN.** The database, the 42 MiB of audio and every grade made
+on the phone live under whatever hostname the browser was on.
+
+`cloudflared tunnel --url` — a *quick* tunnel, which is what has been used here so
+far — hands out a **new random `*.trycloudflare.com` name every run**. So every
+session is a new origin: an empty database, a ~115 MB re-download, and yesterday's
+grades still sitting under yesterday's name where nothing will ever read them again.
+
+Fine for a test. Unusable as a routine. A **named** tunnel has a fixed hostname, and
+that is the only thing that makes the phone's database survive to tomorrow. It needs
+a domain on his Cloudflare account (a free account alone is not enough — the DNS
+record has to live in a zone he controls):
+
+```bash
+cloudflared tunnel login                        # browser, pick the domain
+cloudflared tunnel create hashigo
+cloudflared tunnel route dns hashigo hashigo.example.com
+```
+
+Then two local files, both gitignored:
+
+```plaintext
+.tunnel-named           hashigo.example.com
+~/.cloudflared/config.yml
+    tunnel: hashigo
+    credentials-file: C:\Users\Zach\.cloudflared\<TUNNEL-ID>.json
+    ingress:
+      - service: http://127.0.0.1:4274
+```
+
+`npm run phone` takes the named path whenever `.tunnel-named` exists, and the URL
+stops changing.
+
+### A LAN address cannot substitute, and that is measured
+
+`http://192.168.x.x:4274` is **not a secure context**, and `navigator.storage` is
+absent on one — no OPFS, no persistence, no app. His own handset, 2026-08-20,
+`notes/archive/PHONE-TEST.md`: *"Route B (LAN IP) cannot work at all"*. The tunnel is
+not a convenience here; it is the only route that runs the app.
+
+### Two traps this command already handles
+
+* **The cloudflared path has a space in it.** `C:\Program Files (x86)\cloudflared\`
+  — spawned through a shell, cmd.exe splits it and reports `'C:/Program' is not
+  recognized`. No shell.
+* **Killing a shell does not kill what the shell started.** The server used to
+  outlive Ctrl+C and hold port 4274, so the next run died on "already in use" while
+  the tunnel stayed up and served **530** to the phone. Both children are direct
+  children now, and both are killed as a tree.
+
+Measured end to end over a real quick tunnel, 2026-08-26:
+
+```plaintext
+GET /                     200   <title>梯子 · review</title>
+GET /hashigo-app.db       200   "SQLite format 3"
+GET /hashigo-app-blobs.db 200
 ```
 
 **It runs.** First measured end to end 2026-08-23, in Chromium over the real

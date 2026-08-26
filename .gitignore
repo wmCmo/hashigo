@@ -76,3 +76,8 @@ Thumbs.db
 # project config -- `npm run app:dev` is the documented way in. The rest of
 # .claude/ is deliberately NOT ignored, so shared agent config can live there.
 .claude/launch.json
+
+# `npm run phone` writes the live tunnel hostname here; vite.app.config.ts
+# appends it to `allowedHosts`. Local and ephemeral — never committed.
+.tunnel-host
+.tunnel-named

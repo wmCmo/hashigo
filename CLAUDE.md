@@ -166,7 +166,19 @@ npm run spike:check     # the browser contract; spike/ is excluded from tsconfig
 # that only came out of RUNNING it, and P1's per-grade write measurement.
 npm run app:bootstrap                     # once: build/app/*.db, the two files it fetches
 npm run app:dev -- --host 127.0.0.1       # local only
-npm run app:dev -- --host ::              # phone / tunnel (see the bind-address trap)
+npm run phone                             # THE PHONE: tunnel + server + the URL, one
+                        # command. Reads the hostname back out of cloudflared and
+                        # authorises it BEFORE starting Vite, because `allowedHosts`
+                        # is read once at startup.
+                        # A QUICK tunnel gets a new random name every run, and OPFS
+                        # is keyed by ORIGIN — so that is a new empty database and a
+                        # ~115 MB re-download every session. `.tunnel-named` (a
+                        # named tunnel, which needs a domain on his Cloudflare
+                        # account) is what makes the phone's database survive.
+                        # A LAN IP CANNOT SUBSTITUTE: plain HTTP is not a secure
+                        # context and `navigator.storage` is absent there. Measured
+                        # on his handset — notes/archive/PHONE-TEST.md.
+npm run app:dev -- --host ::              # phone / tunnel, by hand (bind-address trap)
 npm run app:check                         # tsc -p app/tsconfig.json
 # Raise the audio coverage when it matters more than the download (default 32 MiB,
 # which reaches 23.8% of the 5,708 speech-bearing cards):
