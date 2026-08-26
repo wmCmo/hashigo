@@ -89,11 +89,17 @@ export function testVerdict(output, exitStatus) {
   let detail = `${files?.[1] ?? "?"} files, ${passed[1]} passed`;
   if (skipped) detail += `, ${skipped[1]} skipped`;
   if (rpcTimeouts > 0) {
+    // The closing sentence used to read "the runner could not say so" unconditionally.
+    // Since `npm test` became this wrapper it CAN say so, and the gate runs the
+    // wrapper — so that sentence went stale the moment it was fixed. It is the shape
+    // of claim this repo has a drift gate for; it should not need one here too.
     detail +=
       `  [exit ${exitStatus}: ${rpcTimeouts} × onTaskUpdate timeout — birpc's ceiling is a` +
       ` hard-coded 60s and vitest does not expose it` +
       (slowFiles.length > 0 ? `; over 60s: ${slowFiles.join(", ")}` : "") +
-      `. The suite passed; the runner could not say so.]`;
+      (exitStatus === 0
+        ? `. Reported by the summary, which is what this reads.]`
+        : `. The suite passed; raw vitest could not say so.]`);
   }
   return {
     ok: true,

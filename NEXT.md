@@ -263,6 +263,35 @@ session looks to decide what to pick up.
 | **3** | **The full report is still 81 s** | The DAILY dashboard is 1.25 s and is what the sidebar opens (`src/dashboard/glance.ts`). The four-year report is a button inside it, behind a confirm that states the cost. Its "obvious" optimisation was tried and is **5x slower** — see below before reaching for it again |
 | — | Everything in [notes/zach-wants.md](notes/zach-wants.md) | **All fourteen carry working code.** That file is the WANT; this table is the state |
 
+**Cleared 2026-08-26, in the same pass**, and listed because each was on this table
+or in the "what I have to fix" list an hour before:
+
+* **The `<input>` widget was inert.** `attachInput` had existed since stage 4 and
+  nothing called it — the identical defect to the drawing field, on all 90 数字
+  cards. Enter now reveals and says whether it matched; it does NOT grade, because
+  decision 2's binary grade is his and a typo is not the app's call.
+* **A card he made in the app was in no backup.** Schema **v9** adds `cards.local`;
+  `src/backup/archive.ts` now carries those cards with their values AND their
+  tracks, and restores them before anything that has a foreign key to them.
+* **`npm test` exits 0 on a passing run.** `scripts/test-verdict.mjs` owns the rule
+  and `gates.mjs` imports it, so the two commands cannot disagree about one run any
+  more.
+* **`app/` has real tests over its riskiest rule.** `app/review-keys.ts` is the key
+  table as a pure function, `test/app-keys.test.ts` enumerates the STATES, and three
+  injected regressions each turn a test red.
+
+### THE PART OF `app/` STILL COVERED BY NOTHING
+
+Worth naming precisely, because "app/ is tested now" would be false. Four modules of
+pure logic are pinned — `keys.ts`, `review-keys.ts`, `review-boundary.ts`,
+`deck-tree.ts` — and they are the rules whose failure is SILENT. What remains
+untested is everything that needs a DOM: the painting, the worker RPC, the layer
+stack, the undo stack, and every SQL statement in `db.worker.ts` (the file six of the
+seven audited bugs lived in). Testing those needs a DOM environment — a new
+dependency and a bigger decision than one session should make alone. The SEAM is what
+this pass established: a pure rule in its own import-free module, tested from Node,
+called from `main.ts`. Every future rule can follow it.
+
 ### WHERE THE DASHBOARD'S 81 SECONDS GO — measured 2026-08-26, not yet fixed
 
 `collect` over the real corpus, timed per metric under better-sqlite3 in Node
