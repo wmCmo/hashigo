@@ -14,9 +14,30 @@
  * every session is a new origin, which means an empty database, a re-download of
  * ~115 MB, and any grades made on the phone gone with the old name.
  *
- * That is fine for a test and unusable as a routine. A NAMED tunnel has a fixed
- * hostname, which is the only thing that makes the phone's database survive to
- * tomorrow. `.tunnel-host` is where a named one is recorded.
+ * That is fine for a test and unusable as a routine. A FIXED hostname is the only
+ * thing that makes the phone's database survive to tomorrow, and `.tunnel-named` is
+ * where one is recorded. Three ways to get one, measured 2026-08-26:
+ *
+ * | route                | fixed? | costs                          | private? |
+ * |----------------------|--------|--------------------------------|----------|
+ * | cloudflared quick    | NO     | free                           | public   |
+ * | cloudflared named    | yes    | a domain on his CF account     | public   |
+ * | ngrok free static    | yes    | free, **1 GB/month**           | public   |
+ * | tailscale serve      | yes    | free                           | TAILNET  |
+ *
+ * **ngrok's cap is not theoretical and it is not generous here.** He has a reserved
+ * free static domain (`crayfish-shorty-thinning.ngrok-free.dev` — it bound on the
+ * first try), and it currently answers **403 ERR_NGROK_725: "This ngrok account has
+ * reached its network bandwidth limit for the month."** A first load of this app is
+ * ~115 MB (72 MB of cards + 42 MB of audio), so a single fresh origin is 11% of the
+ * monthly allowance. With a STABLE origin that is a one-time cost and daily use is
+ * a few hundred KB; with the quick tunnel's new name every session it would have
+ * been four sessions a month.
+ *
+ * **`tailscale serve` is the only one that is not public.** The other three put a
+ * server holding his entire study history on the open internet behind an
+ * unguessable name. Tailnet-only is a different security posture, not a smaller
+ * inconvenience.
  *
  * ─── AND A LAN ADDRESS CANNOT SUBSTITUTE ────────────────────────────────────
  *
@@ -69,6 +90,8 @@ const PORT = 4274;
  * it also means nothing on the LAN can reach the server at all.
  */
 const LOCAL = `http://127.0.0.1:${PORT}`;
+/** ngrok takes `host:port`, not a URL, as its forwarding target. */
+const LOCAL_HOSTPORT = `127.0.0.1:${PORT}`;
 
 const CLOUDFLARED =
   process.env["CLOUDFLARED"] ??
@@ -100,6 +123,20 @@ function firstLine(file) {
 }
 
 const named = process.env["TUNNEL_HOST"] ?? firstLine(NAMED_FILE);
+
+/**
+ * Which tool serves that hostname, from the hostname itself.
+ *
+ * A second knob would be one more thing to keep in sync with the first, and these
+ * suffixes are unambiguous — nothing else ends in `.ts.net`, and ngrok's endings
+ * are reserved. Wrong guesses are visible immediately: the tool it picks either
+ * starts or says why.
+ */
+function providerFor(host) {
+  if (host.endsWith(".ts.net")) return "tailscale";
+  if (/\.ngrok(-free)?\.(app|dev|io)$/.test(host)) return "ngrok";
+  return "cloudflared";
+}
 
 /**
  * Kill both children together — and on Windows that means the TREE.
@@ -173,8 +210,40 @@ function startServer() {
   });
 }
 
-// ─── named tunnel: stable hostname, so the phone's database survives ────────
-if (named !== undefined) {
+// ─── a fixed hostname: the phone's database survives to tomorrow ────────────
+if (named !== undefined && providerFor(named) === "tailscale") {
+  // NO CHILD PROCESS. `tailscale serve --bg` is persistent configuration, not a
+  // tunnel that has to be held open — it survives reboots and is already running
+  // as a service. So this starts the server and nothing else.
+  //
+  //   tailscale serve --bg 4274        (configured once, not by this script)
+  //
+  // That command is deliberately NOT run from here: it changes machine state that
+  // outlives this process, and a script that silently reconfigures his tailnet
+  // every time he wants to review is the wrong shape.
+  console.log(`\n  tailscale  ${named}  (fixed, and reachable only on your tailnet)`);
+  startServer();
+  console.log(`\n  OPEN ON YOUR PHONE:  https://${named}/\n`);
+} else if (named !== undefined && providerFor(named) === "ngrok") {
+  // Verified against his own reserved domain 2026-08-26: the tunnel binds on the
+  // first try. What stopped it was the free tier's 1 GB/month, not the syntax.
+  console.log(`\n  ngrok      ${named}  (fixed — watch the 1 GB/month cap)`);
+  const tunnel = spawn("ngrok", ["http", `--url=https://${named}`, LOCAL_HOSTPORT], {
+    cwd: ROOT,
+    shell: true,
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  children.push(tunnel);
+  tunnel.on("exit", (code) => {
+    if (code !== 0) die(`ngrok exited ${code}.`);
+  });
+  startServer();
+  console.log(
+    `\n  OPEN ON YOUR PHONE:  https://${named}/\n` +
+      `\n  If it answers 403 ERR_NGROK_725 the month's 1 GB is gone — a first load\n` +
+      `  of this app is ~115 MB. Delete .tunnel-named for a quick tunnel.\n`,
+  );
+} else if (named !== undefined) {
   console.log(`\n  tunnel   ${named}  (named — the database on your phone persists)`);
   const tunnel = spawn(CLOUDFLARED, ["tunnel", "run"], {
     cwd: ROOT,

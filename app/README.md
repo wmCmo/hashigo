@@ -31,30 +31,58 @@ far — hands out a **new random `*.trycloudflare.com` name every run**. So ever
 session is a new origin: an empty database, a ~115 MB re-download, and yesterday's
 grades still sitting under yesterday's name where nothing will ever read them again.
 
-Fine for a test. Unusable as a routine. A **named** tunnel has a fixed hostname, and
-that is the only thing that makes the phone's database survive to tomorrow. It needs
-a domain on his Cloudflare account (a free account alone is not enough — the DNS
-record has to live in a zone he controls):
+Fine for a test. Unusable as a routine. **A fixed hostname is the only thing that
+makes the phone's database survive to tomorrow.** Four ways to get one, all measured
+2026-08-26:
 
-```bash
-cloudflared tunnel login                        # browser, pick the domain
-cloudflared tunnel create hashigo
-cloudflared tunnel route dns hashigo hashigo.example.com
-```
+| route | fixed? | costs | reachable by |
+|---|---|---|---|
+| cloudflared quick | **no** — new name every run | free | anyone with the URL |
+| cloudflared named | yes | **a domain on his CF account** | anyone with the URL |
+| ngrok free static | yes | free, **1 GB/month** | anyone with the URL |
+| `tailscale serve` | yes | free | **his tailnet only** |
 
-Then two local files, both gitignored:
+**He has no domain, so the Cloudflare named route is out.** A free Cloudflare account
+is not enough on its own: `cloudflared tunnel route dns` writes into a zone, and a
+zone is a domain he controls.
+
+**ngrok's cap is real and this app is heavy.** He already has a reserved free static
+domain — `crayfish-shorty-thinning.ngrok-free.dev`, and it bound on the first try —
+but it currently answers:
 
 ```plaintext
-.tunnel-named           hashigo.example.com
-~/.cloudflared/config.yml
-    tunnel: hashigo
-    credentials-file: C:\Users\Zach\.cloudflared\<TUNNEL-ID>.json
-    ingress:
-      - service: http://127.0.0.1:4274
+HTTP/1.1 403 Forbidden          Ngrok-Error-Code: ERR_NGROK_725
+This ngrok account has reached its network bandwidth limit for the month.
 ```
 
-`npm run phone` takes the named path whenever `.tunnel-named` exists, and the URL
-stops changing.
+A first load here is **~115 MB** (72 MB of cards + 42 MB of audio), which is 11% of
+the monthly allowance for ONE fresh origin. With a stable origin that is a one-time
+cost and daily use is a few hundred KB; with the quick tunnel's new name every
+session it would be four sessions a month.
+
+**`tailscale serve` is the only one of the four that is not public**, and that is the
+part worth more than the convenience: the other three put a server holding his entire
+study history on the open internet behind an unguessable name. Free, no domain, no
+bandwidth cap, and the certificate is real so it is a secure context:
+
+```bash
+# once, on the laptop and the phone, signed into the same account
+tailscale up
+tailscale serve --bg 4274          # persists across reboots
+tailscale status                   # prints the machine's <name>.<tailnet>.ts.net
+```
+
+Then record it once — `npm run phone` reads the provider off the suffix:
+
+```bash
+echo zach-laptop.tail1234.ts.net > .tunnel-named
+```
+
+`.ts.net` starts **no tunnel process at all**: `tailscale serve --bg` is persistent
+configuration already running as a service, so the command only has to start the
+server. That command is deliberately not run by the script — it changes machine state
+that outlives the process, and silently reconfiguring his tailnet every time he wants
+to review is the wrong shape.
 
 ### A LAN address cannot substitute, and that is measured
 

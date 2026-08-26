@@ -172,9 +172,16 @@ npm run phone                             # THE PHONE: tunnel + server + the URL
                         # is read once at startup.
                         # A QUICK tunnel gets a new random name every run, and OPFS
                         # is keyed by ORIGIN — so that is a new empty database and a
-                        # ~115 MB re-download every session. `.tunnel-named` (a
-                        # named tunnel, which needs a domain on his Cloudflare
-                        # account) is what makes the phone's database survive.
+                        # ~115 MB re-download every session. `.tunnel-named` holds a
+                        # FIXED hostname and is what makes it survive; the provider
+                        # is read off the suffix (.ts.net / .ngrok* / else cloudflared).
+                        # HE HAS NO DOMAIN, so cloudflared named is out — that route
+                        # needs a zone. ngrok free has a reserved static domain that
+                        # BINDS but is at its 1 GB/month cap (403 ERR_NGROK_725), and
+                        # one first load here is ~115 MB = 11% of the month.
+                        # `tailscale serve` is free, fixed, uncapped and TAILNET-ONLY
+                        # — the only one that does not put his study history on the
+                        # open internet. See app/README.md.
                         # A LAN IP CANNOT SUBSTITUTE: plain HTTP is not a secure
                         # context and `navigator.storage` is absent there. Measured
                         # on his handset — notes/archive/PHONE-TEST.md.
