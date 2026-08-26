@@ -1299,3 +1299,50 @@ body[data-view="review"] .review main { padding-bottom: 210px; }
   border-color: var(--no);
   color: var(--no);
 }
+
+/* ── his #12: settings ──────────────────────────────────────────────────────
+   It rides the editor's layer chrome (`.layer-edit`), because a settings screen
+   IS a form over a layer and a second set of rules for the same shape is how the
+   two drift apart. What it adds is the per-row explanation: every setting here
+   changes something measured, and a control with no stated consequence is a
+   control he has to test on his own review history to understand. */
+.settings-note {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  margin: 6px 0 0;
+  max-width: 62ch;
+}
+
+.settings-bad {
+  border: 1px solid var(--no-edge);
+  border-radius: 3px;
+  color: var(--no);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin: 0 0 14px;
+  padding: 8px 10px;
+}
+
+.settings-state {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 14px;
+}
+
+.settings-line {
+  color: var(--ink);
+  font-size: 0.82rem;
+  margin: 0 0 6px;
+}
+
+.settings-line b {
+  color: var(--muted);
+  display: inline-block;
+  font-weight: 400;
+  min-width: 14ch;
+}
+
+.layer-settings select.edit-input {
+  appearance: auto;
+}

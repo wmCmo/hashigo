@@ -107,6 +107,8 @@ import {
 // compile time, so nothing here pulls `src/db/browser.ts` (and its sqlite-wasm
 // dynamic import) into the runtime graph. That is what keeps this module
 // browser-portable, and `test/browser-portable.test.ts` walks it to prove so.
+import { readSessionSettings } from "./settings.js";
+
 import type { SqliteHandle } from "../db/browser.js";
 
 /** Decision 12: Mochi's default, and what he wants kept. */
@@ -135,7 +137,13 @@ export const EXPECTED_SESSION_CARDS = 80;
 export interface SessionOptions {
   /** RFC 3339 with an offset. Only its LOCAL DATE selects the queue. */
   readonly now?: string;
-  /** Decision 12/15. Defaults to `DEFAULT_NEW_LIMIT`; 0 means due cards only. */
+  /**
+   * Decision 12/15. `0` means due cards only.
+   *
+   * ABSENT no longer means `DEFAULT_NEW_LIMIT` — it means "whatever `new.limit`
+   * says, and 10 if it says nothing" (`./settings.ts`). Passing a number still
+   * wins outright: the backtest sweeps several and must not read his database.
+   */
   readonly newLimit?: number;
   /** Cap the due half. Absent means every due track, which is the real session. */
   readonly dueLimit?: number;
@@ -466,7 +474,12 @@ export class ReviewSession {
  */
 export function buildSession(db: SqliteHandle, options: SessionOptions = {}): ReviewSession {
   const now = options.now ?? nowInHostOffset();
-  const newLimit = options.newLimit ?? DEFAULT_NEW_LIMIT;
+  // Decision 12 calls the new-card limit "a SETTING", and until `./settings.ts`
+  // existed it was a constant with a CLI flag in front of it — so the app opened
+  // every session on 10 whatever he had last chosen. An explicit option still wins:
+  // a caller that passed a number meant it, and the backtest passes several.
+  const stored = readSessionSettings(db);
+  const newLimit = options.newLimit ?? stored.newLimit;
   const shared = {
     now,
     ...(options.deckId === undefined ? {} : { deckId: options.deckId }),
@@ -487,7 +500,7 @@ export function buildSession(db: SqliteHandle, options: SessionOptions = {}): Re
   const plan = interleaveTracks(
     due,
     fresh,
-    options.interleave ?? DEFAULT_INTERLEAVE,
+    options.interleave ?? stored.interleave,
     options.spreadOver ?? EXPECTED_SESSION_CARDS,
   );
   return new ReviewSession(db, plan);

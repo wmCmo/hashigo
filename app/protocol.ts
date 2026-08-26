@@ -416,6 +416,85 @@ export interface BackupRequest {
   readonly id: number;
 }
 
+/**
+ * His #12: *"i want to have a setting screen where i can adjust all the setting
+ * that we have"* — and "all the settings we have" is a question with an answer,
+ * not a wish. It is the `settings` table plus the two keys `src/session/settings.ts`
+ * resolves, and this reply is the whole of it.
+ *
+ * It also carries the things he would go to a settings screen to FIND and which
+ * are not rows — storage, audio coverage, versions. Those were reachable only from
+ * the boot log, which scrolls away.
+ */
+export interface SettingsRequest {
+  readonly kind: "settings";
+  readonly id: number;
+}
+
+export interface SettingsMessage {
+  readonly kind: "settings";
+  readonly id: number;
+  /** Every row in `settings`, verbatim. The screen decides what to show. */
+  readonly values: Readonly<Record<string, string>>;
+  /**
+   * What the NEXT session will actually use, after defaults and validation.
+   *
+   * Sent beside the raw values on purpose: they can disagree, and when they do the
+   * screen has to say so. A settings row that is quietly ignored is worse than one
+   * that is refused — `readSessionSettings` reports what it rejected for exactly
+   * this reason.
+   */
+  readonly resolved: {
+    readonly newLimit: number;
+    readonly interleave: string;
+    readonly rejected: readonly { readonly key: string; readonly value: string }[];
+  };
+  /** Decision 17's other half: is this database allowed to survive? */
+  readonly storage: {
+    readonly persisted: boolean;
+    readonly usageBytes: number | null;
+    readonly quotaBytes: number | null;
+  };
+  /**
+   * Audio coverage on THIS device. `app-bootstrap` ships a bounded subset (32 MiB
+   * by default), and the number it prints at build time is not the number after a
+   * re-import — so it is measured here rather than remembered.
+   */
+  readonly audio: {
+    readonly cardsWithSpeech: number;
+    readonly cardsThatCanPlay: number;
+    readonly payloads: number;
+  };
+  readonly schemaVersion: number;
+  readonly sqliteVersion: string;
+  readonly localReviews: number;
+}
+
+/**
+ * Write one setting.
+ *
+ * `previous` comes back so the page can push an undo — his #13 says *"whether
+ * create card, review card, remember card, forget card, etc."*, and a settings
+ * change is squarely in the "etc." A change with no way back is the one kind he
+ * would have to fix by reasoning about what it used to be.
+ */
+export interface SetSettingRequest {
+  readonly kind: "setSetting";
+  readonly id: number;
+  readonly key: string;
+  readonly value: string;
+}
+
+export interface SetSettingMessage {
+  readonly kind: "setSetting";
+  readonly id: number;
+  readonly key: string;
+  readonly value: string;
+  /** Null when the key did not exist — see `writeSetting`. */
+  readonly previous: string | null;
+  readonly describe: string;
+}
+
 export type AppRequest =
   | OpenRequest
   | NextRequest
@@ -431,6 +510,8 @@ export type AppRequest =
   | DeckOpRequest
   | UngradeRequest
   | SetFieldRequest
+  | SettingsRequest
+  | SetSettingRequest
   | ResetRequest;
 
 // ─── worker → page ───────────────────────────────────────────────────────────
@@ -564,6 +645,8 @@ export type AppMessage =
   | AnsweredMessage
   | ReadingMessage
   | BackupMessage
+  | SettingsMessage
+  | SetSettingMessage
   | ErrorMessage;
 
 /** The reply kind each request expects. Keeps the page's typing honest. */
@@ -577,6 +660,8 @@ export interface ReplyFor {
   readonly reset: ResetMessage;
   readonly preview: PreviewMessage;
   readonly setField: SetFieldMessage;
+  readonly settings: SettingsMessage;
+  readonly setSetting: SetSettingMessage;
   readonly decks: DecksMessage;
   readonly browse: BrowseMessage;
   readonly createCard: CreateCardMessage;

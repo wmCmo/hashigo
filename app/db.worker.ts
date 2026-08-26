@@ -46,7 +46,13 @@ import {
 import { cardAudioResolver } from "../src/cards/index.js";
 import { directionForTrackKind } from "../src/cards/index.js";
 import { prepareCard } from "../src/review/index.js";
-import { buildSession, type AnswerResult, type ReviewSession } from "../src/session/index.js";
+import {
+  buildSession,
+  readSessionSettings,
+  writeSetting,
+  type AnswerResult,
+  type ReviewSession,
+} from "../src/session/index.js";
 import { searchCards } from "../src/search/index.js";
 // The SQL fragments for "live" and "due", from the module that owns them. This
 // query is why that module exists: it used to spell the due comparison with
@@ -68,6 +74,8 @@ import type {
   UngradeRequest,
   PreviewRequest,
   SetFieldRequest,
+  SettingsRequest,
+  SetSettingRequest,
   ResetRequest,
   AppMessage,
   AppRequest,
@@ -1063,6 +1071,125 @@ function backup(request: BackupRequest): void {
   });
 }
 
+/**
+ * His #12, read side. Every `settings` row, what the session will resolve them to,
+ * and the three things he would open a settings screen to check that are not rows.
+ *
+ * ─── THE AUDIO NUMBER IS MEASURED, NOT REMEMBERED ───────────────────────────
+ *
+ * `scripts/app-bootstrap.ts` prints a coverage figure when it builds the subset
+ * ("1,358 of 5,708 cards with speech can play something"), and quoting that here
+ * would be quoting a build-time constant as a device fact. The subset is bounded by
+ * `--speech-bytes`, the store is a SEPARATE database in the same pool, and a
+ * re-import replaces it — so the honest answer is a join across the two, now.
+ *
+ * It is two queries and a set rather than one join because the card database and
+ * the payload store cannot see each other: they are two files in one pool, opened
+ * as two handles. That is the same boundary `app-bootstrap` crosses in Node.
+ */
+async function settings(request: SettingsRequest): Promise<void> {
+  const db = requireCards();
+  if (payloads === null) throw new Error("no payload store — send `open` first");
+
+  const values: Record<string, string> = {};
+  for (const row of db.prepare("SELECT key, value FROM settings ORDER BY key").all() as {
+    key: string;
+    value: string;
+  }[]) {
+    values[row.key] = row.value;
+  }
+  const resolved = readSessionSettings(db);
+
+  const held = new Set(
+    (payloads.prepare("SELECT hash FROM blob_payloads").all() as { hash: string }[]).map(
+      (row) => row.hash,
+    ),
+  );
+  const speech = db
+    .prepare(
+      `SELECT r.card_id AS card, b.hash AS hash
+         FROM blob_refs r JOIN blobs b ON b.hash = r.blob_hash
+        WHERE b.kind = 'speech'`,
+    )
+    .all() as { card: string; hash: string }[];
+  const wanting = new Set<string>();
+  const playable = new Set<string>();
+  for (const row of speech) {
+    wanting.add(row.card);
+    if (held.has(row.hash)) playable.add(row.card);
+  }
+
+  // `persisted()` is READABLE in a worker even though `persist()` is not — the
+  // grant has to be asked for by the page (see this file's header), but the answer
+  // can be read here. `estimate()` is likewise fine.
+  let persisted = false;
+  let usageBytes: number | null = null;
+  let quotaBytes: number | null = null;
+  try {
+    persisted = await navigator.storage.persisted();
+    const estimate = await navigator.storage.estimate();
+    usageBytes = estimate.usage ?? null;
+    quotaBytes = estimate.quota ?? null;
+  } catch {
+    /* a browser that refuses to say leaves the screen saying "unknown" */
+  }
+
+  post({
+    kind: "settings",
+    id: request.id,
+    values,
+    resolved: {
+      newLimit: resolved.newLimit,
+      interleave: resolved.interleave,
+      rejected: resolved.rejected,
+    },
+    storage: { persisted, usageBytes, quotaBytes },
+    audio: {
+      cardsWithSpeech: wanting.size,
+      cardsThatCanPlay: playable.size,
+      payloads: held.size,
+    },
+    schemaVersion: schemaVersion(db),
+    sqliteVersion: await sqliteVersion(),
+    localReviews: Number(
+      (
+        db.prepare("SELECT count(*) AS n FROM reviews WHERE source = 'local'").get() as {
+          n: number;
+        }
+      ).n,
+    ),
+  });
+}
+
+/**
+ * Write one setting.
+ *
+ * **It does NOT rebuild the session, and that is the decision.** `new.limit` and
+ * `session.interleave` are read by `buildSession`, which runs once per `open`;
+ * rebuilding here would reshuffle the plan underneath a card he is halfway through
+ * — the same reason `createCard` says a new card does not appear until the next
+ * session. The page says "takes effect next session" rather than pretending.
+ *
+ * `target_retention.default` is different and needs no rebuild at all: it is read
+ * per card at grade time through `deck_target_retention_resolved`, so it applies to
+ * the very next grade.
+ */
+function setSetting(request: SetSettingRequest): void {
+  const db = requireCards();
+  const previous = writeSetting(db, request.key, request.value);
+  post({
+    kind: "setSetting",
+    id: request.id,
+    key: request.key,
+    value: request.value,
+    previous,
+    describe:
+      previous === null
+        ? `set ${request.key} to ${request.value}`
+        : `${request.key}: ${previous} → ${request.value}`,
+  });
+}
+
 self.onmessage = (event: MessageEvent<AppRequest>): void => {
   const request = event.data;
   void (async () => {
@@ -1091,6 +1218,12 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "setField":
           setField(request);
+          break;
+        case "settings":
+          await settings(request);
+          break;
+        case "setSetting":
+          setSetting(request);
           break;
         case "decks":
           decks(request);

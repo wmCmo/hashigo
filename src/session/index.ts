@@ -46,3 +46,13 @@ export {
   type SessionOptions,
   type SessionProgress,
 } from "./session.js";
+
+export {
+  INTERLEAVE_VALUES,
+  MAX_NEW_LIMIT,
+  SESSION_SETTING_KEYS,
+  readSessionSettings,
+  readSetting,
+  writeSetting,
+  type SessionSettings,
+} from "./settings.js";
