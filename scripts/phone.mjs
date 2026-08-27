@@ -99,6 +99,13 @@ const CLOUDFLARED =
     ? "C:/Program Files (x86)/cloudflared/cloudflared.exe"
     : "cloudflared");
 
+/** The Windows installer does not put it on PATH; a fresh install is not visible. */
+const TAILSCALE =
+  process.env["TAILSCALE"] ??
+  (existsSync("C:/Program Files/Tailscale/tailscale.exe")
+    ? "C:/Program Files/Tailscale/tailscale.exe"
+    : "tailscale");
+
 function die(message) {
   console.error(`\n${message}\n`);
   process.exit(1);
@@ -221,6 +228,35 @@ if (named !== undefined && providerFor(named) === "tailscale") {
   // That command is deliberately NOT run from here: it changes machine state that
   // outlives this process, and a script that silently reconfigures his tailnet
   // every time he wants to review is the wrong shape.
+  // ─── CHECK THE SETUP, BECAUSE THE FAILURE IS A HANG ────────────────────────
+  //
+  // `tailscale serve --bg 4274` produces NO OUTPUT and never returns when the
+  // tailnet has HTTPS certificates disabled — measured here, killed after 60 s with
+  // an empty log and `tailscale serve status` still reporting "No serve config".
+  // The real message is only reachable by asking for a cert directly:
+  //
+  //   > tailscale cert node.tailed819e.ts.net
+  //   500 Internal Server Error: your Tailscale account does not support getting TLS certs
+  //
+  // A silent hang is the worst way for a daily command to fail, so this looks at
+  // `serve status` first and prints the one-time setup instead of starting a server
+  // nothing can reach.
+  const serve = spawnSync(TAILSCALE, ["serve", "status"], { encoding: "utf8" });
+  const configured = (serve.stdout ?? "").includes(String(PORT));
+  if (!configured) {
+    die(
+      `${named} has no \`tailscale serve\` config for port ${PORT}.\n\n` +
+        `  ONE TIME, in this order:\n\n` +
+        `  1. Enable HTTPS certificates for your tailnet — this is the one that\n` +
+        `     cannot be done from here, and without it the next command HANGS\n` +
+        `     with no output rather than failing:\n` +
+        `       https://login.tailscale.com/admin/dns  →  HTTPS Certificates  →  Enable\n\n` +
+        `  2. Then:\n` +
+        `       & "${TAILSCALE}" serve --bg ${PORT}\n\n` +
+        `  It persists across reboots, so this is not part of the daily routine.\n` +
+        `  To undo it later:  & "${TAILSCALE}" serve reset`,
+    );
+  }
   console.log(`\n  tailscale  ${named}  (fixed, and reachable only on your tailnet)`);
   startServer();
   console.log(`\n  OPEN ON YOUR PHONE:  https://${named}/\n`);

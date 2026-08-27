@@ -65,18 +65,42 @@ part worth more than the convenience: the other three put a server holding his e
 study history on the open internet behind an unguessable name. Free, no domain, no
 bandwidth cap, and the certificate is real so it is a secure context:
 
-```bash
-# once, on the laptop and the phone, signed into the same account
-tailscale up
-tailscale serve --bg 4274          # persists across reboots
-tailscale status                   # prints the machine's <name>.<tailnet>.ts.net
-```
+### Setting it up — ONCE, and one step hangs instead of failing
 
-Then record it once — `npm run phone` reads the provider off the suffix:
+Install on the laptop and the phone, sign both into the same account, then:
 
 ```bash
-echo zach-laptop.tail1234.ts.net > .tunnel-named
+# 1. ENABLE HTTPS CERTIFICATES FOR THE TAILNET. Admin console only.
+#    https://login.tailscale.com/admin/dns  ->  HTTPS Certificates  ->  Enable
+# 2. then, on the laptop:
+& "C:/Program Files/Tailscale/tailscale.exe" serve --bg 4274
 ```
+
+**Step 1 is not optional and skipping it does not produce an error.**
+`tailscale serve --bg 4274` on a tailnet without HTTPS certificates prints NOTHING
+and never returns — measured here, killed after 60 s with an empty log and
+`tailscale serve status` still saying "No serve config". The real message is only
+reachable by asking for a certificate directly:
+
+```plaintext
+> tailscale cert node.tailed819e.ts.net
+500 Internal Server Error: your Tailscale account does not support getting TLS certs
+```
+
+So `npm run phone` checks `tailscale serve status` before starting anything and
+prints those two steps rather than launching a server nothing can reach. The Windows
+installer also does not put `tailscale` on PATH, so the script looks in
+`C:/Program Files/Tailscale/` as well.
+
+Record the hostname once — `npm run phone` reads the provider off the suffix:
+
+```bash
+echo node.tailed819e.ts.net > .tunnel-named
+```
+
+`tailscale serve --bg` persists across reboots, so **none of this is the daily
+routine**: after it, every session is `npm run phone` and the same URL every time.
+`tailscale serve reset` undoes it.
 
 `.ts.net` starts **no tunnel process at all**: `tailscale serve --bg` is persistent
 configuration already running as a service, so the command only has to start the
