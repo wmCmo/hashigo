@@ -157,8 +157,25 @@ describe("interleaveTracks", () => {
 
 describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
   // Fixed instant so the queue is a constant: the same date the scheduler tests
-  // and CLAUDE.md quote, which is what makes 443 a checkable number here.
+  // and CLAUDE.md quote, which is what makes this a checkable number here.
   const NOW = "2026-08-22T12:00:00+09:00";
+
+  /**
+   * WAS 443, AND THE SIX THAT LEFT ARE THE POINT.
+   *
+   * `scripts/reverse-dormant-apply.ts` marked six reverse tracks dormant on
+   * 2026-09-07 — cards the importer's do-not-orphan rule had forced `reverse = 'on'`
+   * on the strength of one or two stray reviews from years ago, which Zach never
+   * asked for and which sorted to the FRONT of his queue because that single review
+   * is old. Dormant retains the history and stops the scheduling, so `liveTrack`
+   * drops them and the due count falls by exactly six.
+   *
+   * The figure therefore depends on a documented post-import step, not on the export
+   * alone. That is why `scripts/rebuild.mjs` runs it and asserts it: a rebuild that
+   * skips it puts this number back to 443 and puts those six cards back in front of
+   * him.
+   */
+  const DUE_AT_NOW = 437;
 
   it("is the due queue plus ten new tracks, and states its basis", () => {
     const db = openDatabase(DB, { readOnly: true, applySchema: false });
@@ -166,12 +183,12 @@ describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
       const session = buildSession(db, { now: NOW });
       const p = session.progress();
       // Basis, because three counts are available (decision 6): TRACKS, not
-      // cards, not reviews. 443 due is the figure CLAUDE.md carries.
-      expect(p.dueCount).toBe(443);
+      // cards, not reviews. See `DUE_AT_NOW` for why it is 437 and not 443.
+      expect(p.dueCount).toBe(DUE_AT_NOW);
       expect(p.newCount).toBe(DEFAULT_NEW_LIMIT);
-      expect(p.planned).toBe(453);
+      expect(p.planned).toBe(DUE_AT_NOW + DEFAULT_NEW_LIMIT);
       expect(p.answered).toBe(0);
-      expect(p.remaining).toBe(453);
+      expect(p.remaining).toBe(DUE_AT_NOW + DEFAULT_NEW_LIMIT);
       expect(p.done).toBe(false);
     } finally {
       db.close();
@@ -218,7 +235,7 @@ describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
       const a = buildSession(db, { now: NOW }).planned().map((i) => i.trackId);
       const b = buildSession(db, { now: NOW }).planned().map((i) => i.trackId);
       expect(a).toEqual(b);
-      expect(a.length).toBe(453);
+      expect(a.length).toBe(DUE_AT_NOW + DEFAULT_NEW_LIMIT);
     } finally {
       db.close();
     }
@@ -229,8 +246,8 @@ describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
     try {
       expect(buildSession(db, { now: NOW, newLimit: 0 }).progress()).toMatchObject({
         newCount: 0,
-        dueCount: 443,
-        planned: 443,
+        dueCount: DUE_AT_NOW,
+        planned: DUE_AT_NOW,
       });
       expect(buildSession(db, { now: NOW, dueLimit: 5 }).progress()).toMatchObject({
         newCount: 10,

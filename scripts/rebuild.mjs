@@ -194,6 +194,52 @@ if (DASHBOARD) {
   });
 }
 
+/**
+ * LAST, AND STRICTLY AFTER THE DASHBOARD — the ordering is the whole point.
+ *
+ * The committed `dashboard.html` is the IMPORTER'S ORACLE: `test/dashboard.test.ts`
+ * imports `exports/` into an in-memory database and compares byte-for-byte, so the
+ * page is a pure function of the export. Every other local step above is safe to run
+ * before it because none of them moves a dashboard figure — head words and template
+ * bodies do not appear in it.
+ *
+ * **This one does.** `dormant` feeds deck progress, the backlog and the interval-cap
+ * ratio. Regenerating the dashboard after it turned two oracle tests red on
+ * 2026-09-07 (backlog 108 -> 102, overdue 76 -> 70, the dormant column, and the cap
+ * denominator 8,956 -> 8,955). So the working database and the committed page differ
+ * by exactly these six tracks, deliberately.
+ */
+STEPS.push({
+  name: "local: the 6 forced reverse tracks go dormant (AFTER the dashboard)",
+  cmd: `npm exec vite-node scripts/reverse-dormant-apply.ts -- --db "${DB}" --apply`,
+  /**
+   * Checks the EFFECT, not the message — and as a property rather than a count.
+   *
+   * "Exactly 3 remain" would be wrong the first time he turns reverse on for a
+   * fourth card in Mochi. The real property is that no card is scheduled in reverse
+   * against its deck on the strength of one or two stray reviews: his three carry
+   * 14 each, the six turned off carried 1 or 2.
+   */
+  invariant: (db) => {
+    const stray = db
+      .prepare(
+        `SELECT count(*) AS n FROM cards c
+           JOIN card_tracks t             ON t.card_id  = c.id AND t.kind = 'reverse'
+           JOIN card_reverse_resolved cr  ON cr.card_id = c.id
+           JOIN deck_reverse_resolved dr  ON dr.deck_id = c.deck_id
+          WHERE t.dormant = 0 AND cr.reverse = 'on' AND dr.reverse <> 'on'
+            AND (SELECT count(*) FROM reviews v WHERE v.track_id = t.id) <= 2`,
+      )
+      .get().n;
+    return stray === 0
+      ? null
+      : `${stray} reverse track(s) are still scheduled against their deck on 1-2 stray ` +
+        `reviews. The import rule forces \`cards.reverse = 'on'\` for any card carrying ` +
+        `reverse history, and Zach turned those off on 2026-09-07 — a rebuild that ` +
+        `leaves them on puts deeply overdue reverse cards back at the FRONT of his queue.`;
+  },
+});
+
 // ── prerequisites, BEFORE anything is destroyed ────────────────────────────────
 
 const missing = [];

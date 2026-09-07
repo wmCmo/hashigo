@@ -270,7 +270,27 @@ npx vite-node src/accent/cli.ts -- ojad  --db build/hashigo.db
 npx vite-node scripts/reading-apply.ts -- --db build/hashigo.db --apply   # the 13 読み rows
 npx vite-node scripts/accent-field-apply.ts -- --db build/hashigo.db --apply  # the 型 field + bodies
 npx vite-node src/accent/cli.ts -- write --db build/hashigo.db            # 3,830 型 labels
+# LAST, AND AFTER THE DASHBOARD REGENERATE — see the warning below.
+npx vite-node scripts/reverse-dormant-apply.ts -- --db build/hashigo.db --apply  # the 6 forced reverse tracks
 ```
+
+> [!warning] **`reverse-dormant-apply` GOES LAST, AND `dashboard.html` MUST BE
+> REGENERATED BEFORE IT — not after.** Learned by getting it wrong on 2026-09-07.
+>
+> The committed `dashboard.html` is the **importer's oracle**: `test/dashboard.test.ts`
+> imports `exports/` into an in-memory database and compares byte-for-byte, because
+> "Mochi's own dashboard is a known-correct answer, so agreement means the import is
+> right". It is therefore a pure function of `exports/`.
+>
+> `reading-apply` and `accent-field-apply` may run in any order around it — head words
+> and template bodies move no dashboard figure. **`reverse-dormant-apply` does**:
+> `dormant` feeds deck progress, the backlog and the interval-cap ratio. Regenerating
+> the dashboard after it turned two oracle tests red (backlog 108 → 102, overdue
+> 76 → 70, the dormant column, cap denominator 8,956 → 8,955).
+>
+> So his working database and the committed dashboard differ by exactly six tracks,
+> deliberately. The app's own dashboard reads his real database and shows the lower
+> number. An oracle and a report, answering two different questions.
 
 **The last line is the LOCAL FIELDS, and it belongs to the rebuild, not to the accents.**
 A rebuild starts from `rm build/hashigo.db`, so it takes every locally-authored field and
@@ -506,8 +526,11 @@ He has repeated each of these to a different agent, and the count is his:
    change at the final import** (decision 16). Quote them as "as of <date>", never as
    current. **TWO mechanisms move them and this file used to name only the first:** the
    frozen history, and the fact that DUE GROWS EVERY DAY as scheduled dates pass. The
-   second is faster. Measured 2026-08-26: the old "443 due" figure is now **646**, with
-   no import and no grading in between.
+   second is faster, and it is fast. Same database, no import and no grading in
+   between: **443 → 646 (2026-08-26) → 1,440 (2026-09-07)**. Twelve days roughly
+   doubled it. A due figure more than a few days old is not stale, it is wrong.
+   (The fixed-instant figure in `test/session.test.ts` also moved 443 → 437, for an
+   unrelated and deliberate reason — `scripts/reverse-dormant-apply.ts`.)
 3. **Open-sourcing gets discussed AFTER development** — told to three agents. Not now.
    `notes/open-sourcing.md` holds what was already checked; leave it there.
 4. **HE USES IT ON BOTH — laptop AND phone** — told to two agents. *"on my laptop
