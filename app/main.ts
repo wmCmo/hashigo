@@ -78,6 +78,10 @@ import {
 // is the same lexer the parser uses (`FIELD_TOKEN`), so the 'not a field' check on
 // screen cannot disagree with what the renderer will actually resolve.
 import { referencedNames } from "../src/template/index.js";
+// The link rules, in an import-free module `test/` can reach — the same seam as
+// `./keys.ts` and `./review-keys.ts`. `test/app-links.test.ts` round-trips all
+// 8,744 authored links through it.
+import { completeLink, linkAt, triggerAt, type Trigger } from "./links.js";
 import { moveWithin } from "../src/schema/index.js";
 import type { RenderResult } from "../src/render/index.js";
 import type { ShadowingSide } from "../src/render/reveal.js";
@@ -97,6 +101,7 @@ import type {
   BrowseHit,
   CardOp,
   DeckOp,
+  TemplateChoice,
   TemplateDetail,
   TemplateFieldRow,
   TemplateOpRequest,
@@ -1401,15 +1406,23 @@ function editableCard(): { card: PreparedCard; onSaved: () => void } | null {
   return { card: previewOfCurrent, onSaved: () => { /* applies on next appearance */ } };
 }
 
+/**
+ * `e`, from review or from a preview.
+ *
+ * Goes through `openEditorById` rather than using the `PreparedCard` already in
+ * hand, because the editor now needs the per-card template costs and neither `next`
+ * nor `preview`'s cached copy carries them. One extra message, and it buys the
+ * property that matters: `e` and the gallery's edit button open the SAME editor.
+ * Passing the prepared card here and the choices there is how the two drift.
+ */
 function openEditor(): void {
   const target = editableCard();
   if (target === null) return;
-  openEditorFor(target.card);
+  void openEditorById(target.card.cardId);
 }
 
-function openEditorFor(card: PreparedCard): void {
+function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = []): void {
   const fields = card.loaded.template?.fields ?? [];
-  if (fields.length === 0) return;
 
   const root = document.createElement("div");
   root.className = "layer layer-edit";
@@ -1445,6 +1458,21 @@ function openEditorFor(card: PreparedCard): void {
   const status = document.createElement("div");
   status.className = "edit-status";
   status.setAttribute("aria-live", "polite");
+
+  body.appendChild(templateRow(card, choices));
+
+  if (fields.length === 0) {
+    // A card with NO template. `openEditorFor` used to `return` here, so the editor
+    // simply refused to open — and the one thing he needs on such a card is the
+    // template row above, which is the only way to give it one.
+    const none = document.createElement("p");
+    none.className = "settings-note";
+    none.textContent =
+      "This card has no template, so it has no fields to edit. Pick one above; its " +
+      "values are still stored and will reappear for whichever fields the new " +
+      "template declares.";
+    body.appendChild(none);
+  }
 
   for (const field of fields) {
     const value = card.loaded.values.get(field.id) ?? "";
@@ -1526,6 +1554,14 @@ function openEditorFor(card: PreparedCard): void {
         if (area.value !== value) save(area.value);
       });
       row.appendChild(area);
+      // Obsidian-style `[[` / `@` completion, and ctrl+click to follow a link into
+      // its own editor. Only on the text kinds: a `number` field holds digits and a
+      // `boolean` is a checkbox, so neither can contain a link.
+      if (field.type === "plain" || field.type === "text") {
+        attachLinkEditing(area, () => {
+          if (area.value !== value) save(area.value);
+        });
+      }
     }
     body.appendChild(row);
   }
@@ -2308,16 +2344,31 @@ function say(text: string, bad = false): void {
 }
 let sayTimer = 0;
 
-async function runCardOp(op: CardOp, cardId: string): Promise<void> {
+async function runCardOp(
+  op: CardOp,
+  cardId: string,
+  /**
+   * `setTemplate`'s target. Spread rather than defaulted, because `null` is a legal
+   * value there — "no template" — and `?? null` would turn "not asked for" into it.
+   */
+  extra: { readonly templateId?: string | null } = {},
+): Promise<void> {
   try {
-    const reply = await ask<"cardOp">({ kind: "cardOp", op, cardId });
+    const reply = await ask<"cardOp">({ kind: "cardOp", op, cardId, ...extra });
     say(reply.describe, op === "delete");
     if (reply.undo !== null) {
       const undo = reply.undo;
       pushUndo({
         describe: reply.describe,
         run: async () => {
-          await ask<"cardOp">({ kind: "cardOp", op: undo.op, cardId: undo.cardId });
+          await ask<"cardOp">({
+            kind: "cardOp",
+            op: undo.op,
+            cardId: undo.cardId,
+            // Same reason: `templateId: null` must survive as null and be absent
+            // when the op does not use it.
+            ...("templateId" in undo ? { templateId: undo.templateId } : {}),
+          });
           await refreshAfterOp();
         },
       });
@@ -2386,6 +2437,306 @@ function confirmDelete(cardId: string, name: string): void {
  * Default stays `danger`, so a caller that does not think about it gets the cautious
  * one.
  */
+/**
+ * The template row at the top of the editor — his feedback of 2026-09-07:
+ * *"i should have drop down for changing card template on the spot … and there
+ * should be a place that i can edit the template that belongs to that card right
+ * away, and it should open another modal on top just like いつも"*.
+ *
+ * ─── IT IS NOT A BARE DROPDOWN, AND THE MEASUREMENT IS WHY ──────────────────
+ *
+ * He said *"im not saying it should be drop down, i trust your design skill"*, so:
+ * each option states what the move costs THIS card. Field ids are almost entirely
+ * template-private — measured across all ten templates, only four ids exist in more
+ * than one (`name` everywhere, and decision 9's three local fields on 単語 + 言葉).
+ * So 単語 <-> 言葉 carries four values and every other pair carries one.
+ *
+ * A plain `<select>` would present "move to 漢字" as equivalent to "move to 言葉"
+ * when one keeps four values and the other hides six. Nothing is deleted either way
+ * — `card_field_values` is deliberately not foreign-keyed to `template_fields` — but
+ * "hidden" is a thing he should choose knowingly, so the count is on the option and
+ * the expensive ones confirm.
+ */
+function templateRow(card: PreparedCard, choices: readonly TemplateChoice[]): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "edit-row edit-template";
+
+  const label = document.createElement("span");
+  label.className = "edit-label";
+  label.textContent = "template";
+  const current = choices.find((c) => c.current);
+  const type = document.createElement("i");
+  type.className = "edit-type";
+  type.textContent = current === undefined ? "none" : `${current.fields} fields`;
+  label.appendChild(type);
+  row.appendChild(label);
+
+  const bar = document.createElement("div");
+  bar.className = "tpl-pick";
+
+  const pick = document.createElement("button");
+  pick.type = "button";
+  pick.className = "gcard-op";
+  pick.textContent = current === undefined ? "choose a template" : current.name;
+  pick.addEventListener("click", () => openTemplatePicker(card, choices));
+  bar.appendChild(pick);
+
+  // "Edit the template that belongs to this card", opening on top — the stack
+  // already nests, so this is one call and no new machinery.
+  if (current !== undefined) {
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "gcard-op";
+    edit.textContent = `edit ${current.name}`;
+    edit.title = "opens the template editor on top of this one";
+    edit.addEventListener("click", () => void openTemplateEditorById(current.templateId));
+    bar.appendChild(edit);
+  }
+
+  row.appendChild(bar);
+  const note = document.createElement("p");
+  note.className = "settings-note";
+  note.textContent =
+    "Changing the template never deletes a value. Values whose field the new " +
+    "template does not declare stop rendering and stay stored — field ids are " +
+    "per-template, so 単語 and 言葉 share four and every other pair shares one.";
+  row.appendChild(note);
+  return row;
+}
+
+/** The picker, as a menu of decisions with their cost — see `templateRow`. */
+function openTemplatePicker(card: PreparedCard, choices: readonly TemplateChoice[]): void {
+  const root = document.createElement("div");
+  root.className = "layer layer-confirm layer-menu";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+
+  const panel = document.createElement("div");
+  panel.className = "confirm-panel";
+  const heading = document.createElement("h2");
+  heading.textContent = `Template for ${card.loaded.name || card.cardId}`;
+  const text = document.createElement("p");
+  text.textContent =
+    "Nothing is deleted. The number is how many of this card's non-empty values " +
+    "the new template also declares; the rest stop rendering and stay stored.";
+  panel.append(heading, text);
+
+  const list = document.createElement("div");
+  list.className = "menu-list";
+  for (const choice of choices) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "menu-item";
+    if (choice.current) button.classList.add("on");
+    if (!choice.current && choice.hides > 0) button.classList.add("danger");
+    const name = document.createElement("b");
+    name.textContent = choice.current ? `${choice.name} — current` : choice.name;
+    const why = document.createElement("i");
+    why.textContent = choice.current
+      ? `${choice.fields} fields`
+      : `${choice.fields} fields · keeps ${choice.keeps}` +
+        (choice.hides === 0 ? "" : `, hides ${choice.hides}`);
+    button.append(name, why);
+    button.addEventListener("click", () => {
+      closeIfTop(root);
+      if (choice.current) return;
+      const move = (): void =>
+        void runCardOp("setTemplate", card.cardId, { templateId: choice.templateId });
+      // Only the lossy ones confirm. A move that hides nothing is not a decision
+      // worth a dialog, and a dialog on every option teaches him to click through.
+      if (choice.hides === 0) move();
+      else {
+        openConfirm(
+          `Move to ${choice.name}?`,
+          `${choice.hides} of this card's values are not declared by ${choice.name} ` +
+            `and will stop rendering. They are NOT deleted — the values table is ` +
+            `deliberately not foreign-keyed to the template, so moving back brings ` +
+            `them straight back. Ctrl+Z undoes this.`,
+          `move to ${choice.name}`,
+          move,
+        );
+      }
+    });
+    list.appendChild(button);
+  }
+
+  panel.appendChild(list);
+  root.append(backdrop, panel);
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  layers.push({
+    root,
+    mounted: null,
+    prepared: null,
+    cardId: "",
+    ops: false,
+    pinned: false,
+    archived: false,
+  });
+  (list.firstElementChild as HTMLElement | null)?.focus();
+}
+
+/**
+ * OBSIDIAN-STYLE LINK COMPLETION in a field, and ctrl+click to follow one.
+ *
+ * *"i want the auto complete when you type just like when you're in obsidian, and
+ * ctrl+clicking it should open a new card on top, (the newly opened card on top
+ * should be in edit mode ofc), also `@` and `[[` should both start the trigger"*.
+ *
+ * ─── THREE THINGS THE CORPUS DECIDED ────────────────────────────────────────
+ *
+ * 1. **The inserted display text is a DEFAULT, not a fixed value.** 8,210 of his
+ *    8,744 links display the target's name, but 534 display an inflection pointing
+ *    at a dictionary form — `[[越|4nKAg2kH]]` targets 越す. So completion seeds the
+ *    name and leaves the caret ON the display text, which makes his commonest
+ *    deliberate edit one keystroke instead of four.
+ * 2. **`@` triggers only after whitespace.** Four field values in the whole corpus
+ *    contain `@`; three are `](@media/…)` image paths. `app/links.ts` has the rule.
+ * 3. **The search is the same one Ctrl+K uses.** `browse` routes through
+ *    `src/search`, which is the only path that answers a two-character Japanese
+ *    query — `card_fts`'s trigram tokeniser cannot serve one at all.
+ *
+ * ─── WHY CTRL+CLICK READS `selectionStart` ──────────────────────────────────
+ *
+ * A `<textarea>` has no elements in it, so there is no anchor to click and
+ * `closest("a")` — how the review screen follows a link — cannot work here. What is
+ * available is the caret: the browser sets it on mousedown even with a modifier
+ * held, so after the click `selectionStart` is the character offset under the
+ * pointer, and `linkAt(text, offset)` turns that into a card id. Pure, and tested.
+ */
+function attachLinkEditing(area: HTMLTextAreaElement, onSaveNeeded: () => void): void {
+  let menu: HTMLElement | null = null;
+  let hits: readonly BrowseHit[] = [];
+  let index = 0;
+  let token = 0;
+  let live: Trigger | null = null;
+
+  const close = (): void => {
+    menu?.remove();
+    menu = null;
+    live = null;
+    hits = [];
+  };
+
+  const paint = (): void => {
+    if (menu === null || live === null) return;
+    menu.replaceChildren();
+    if (hits.length === 0) {
+      const empty = document.createElement("i");
+      empty.className = "link-empty";
+      empty.textContent = live.query === "" ? "type to search cards" : `no card matching ${live.query}`;
+      menu.appendChild(empty);
+      return;
+    }
+    hits.forEach((hit, at) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "link-item";
+      if (at === index) item.classList.add("on");
+      const name = document.createElement("b");
+      name.textContent = hit.name === "" ? hit.cardId : hit.name;
+      const deck = document.createElement("i");
+      deck.textContent = hit.deckPath;
+      item.append(name, deck);
+      // `mousedown`, not `click`: a click would first blur the textarea, and blur is
+      // what SAVES the field — so the value would be written without the link.
+      item.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        choose(at);
+      });
+      menu!.appendChild(item);
+      if (at === index) item.scrollIntoView({ block: "nearest" });
+    });
+  };
+
+  const choose = (at: number): void => {
+    const hit = hits[at];
+    if (hit === undefined || live === null) return;
+    const out = completeLink(area.value, live, hit.name === "" ? hit.cardId : hit.name, hit.cardId);
+    area.value = out.text;
+    area.setSelectionRange(out.caret, out.caret);
+    close();
+    area.focus();
+    onSaveNeeded();
+  };
+
+  const refresh = (): void => {
+    const trigger = triggerAt(area.value, area.selectionStart);
+    if (trigger === null) {
+      close();
+      return;
+    }
+    live = trigger;
+    if (menu === null) {
+      menu = document.createElement("div");
+      menu.className = "link-menu";
+      area.parentElement?.appendChild(menu);
+    }
+    const mine = ++token;
+    void ask<"browse">({ kind: "browse", query: trigger.query, deckId: null, limit: 8 }).then(
+      (reply) => {
+        if (mine !== token || live === null) return;
+        hits = reply.hits;
+        index = 0;
+        paint();
+      },
+    );
+    paint();
+  };
+
+  area.addEventListener("input", refresh);
+  area.addEventListener("click", () => refresh());
+  area.addEventListener("blur", () => {
+    // Deferred: a mousedown on the menu fires blur first, and closing here
+    // synchronously would destroy the item before its handler ran.
+    setTimeout(close, 120);
+  });
+
+  area.addEventListener("keydown", (event) => {
+    // CTRL+CLICK'S KEYBOARD TWIN, and the only way to follow a link without a
+    // pointer. Same rule, same offset.
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      const span = linkAt(area.value, area.selectionStart);
+      if (span !== null) {
+        event.preventDefault();
+        void openEditorById(span.target);
+        return;
+      }
+    }
+    if (menu === null || live === null) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      index = Math.max(0, Math.min(hits.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
+      paint();
+    } else if (event.key === "Enter" || event.key === "Tab") {
+      if (hits.length === 0) return;
+      event.preventDefault();
+      choose(index);
+    } else if (event.key === "Escape") {
+      // Swallowed, so Escape dismisses the MENU rather than the whole editor —
+      // otherwise abandoning a search costs him everything he was typing.
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    }
+  });
+
+  area.addEventListener("mousedown", (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    // The caret is set by this very mousedown, so the offset is only readable
+    // afterwards. One tick is enough and needs no measurement of the pointer.
+    setTimeout(() => {
+      const span = linkAt(area.value, area.selectionStart);
+      // IN EDIT MODE — he asked for that explicitly. `openEditorById` fetches the
+      // card and stacks its editor on top of this one.
+      if (span !== null) void openEditorById(span.target);
+    }, 0);
+  });
+}
+
 function openConfirm(
   title: string,
   body: string,
@@ -2432,7 +2783,7 @@ function openConfirm(
 /** Open the editor for a card the page does not already hold prepared. */
 async function openEditorById(cardId: string): Promise<void> {
   const reply = await ask<"preview">({ kind: "preview", cardId });
-  if (reply.card !== null) openEditorFor(reply.card);
+  if (reply.card !== null) openEditorFor(reply.card, reply.templates);
 }
 
 // ─── his #11 and #1 ─────────────────────────────────────────────────────────

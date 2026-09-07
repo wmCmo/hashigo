@@ -143,10 +143,48 @@ export interface ResetMessage {
  * with Mochi's 0 — exactly as it overwrites a local archive. That is why the backup
  * now carries per-card collection state (`src/backup/archive.ts`).
  */
-export type CardOp = "archive" | "unarchive" | "pin" | "unpin" | "delete" | "duplicate";
+export type CardOp =
+  | "archive"
+  | "unarchive"
+  | "pin"
+  | "unpin"
+  | "delete"
+  | "duplicate"
+  /**
+   * Move a card to another template — his feedback of 2026-09-07.
+   *
+   * Rides `cardOp` rather than getting its own message, because it needs exactly
+   * what `cardOp` already provides: an undo entry and a refresh of every surface
+   * showing the card. Its undo is itself, with the previous template id.
+   *
+   * ─── IT IS NOT A SMALL OPERATION, AND THE NUMBERS SAY SO ──────────────────
+   *
+   * `card_field_values` is keyed `(card_id, field_id)` and is deliberately NOT
+   * foreign-keyed to `template_fields` — `schema.sql`: losing four years of
+   * authored text is worse than an orphan row. So a template change never deletes
+   * a value; it changes which ones are RENDERABLE.
+   *
+   * And field ids are almost entirely template-private. Measured over all ten
+   * templates, only four ids exist in more than one:
+   *
+   * ```
+   * name                   all 10 templates   (the head word)
+   * local-yomi             単語 + 言葉          decision 9
+   * local-kana-primary     単語 + 言葉          decision 9
+   * local-accent           単語 + 言葉          decision 9
+   * ```
+   *
+   * So 単語 <-> 言葉 carries FOUR values across and every other pair carries ONE.
+   * That is not a reason to refuse it — 単語/言葉 is exactly the move decisions 26
+   * and 28 are about — it is the reason the picker states the count per option
+   * instead of just changing it.
+   */
+  | "setTemplate";
 
 export interface CardOpRequest {
   readonly kind: "cardOp";
+  /** `setTemplate` only. Null detaches the card from every template. */
+  readonly templateId?: string | null;
   readonly id: number;
   readonly op: CardOp;
   readonly cardId: string;
@@ -160,7 +198,12 @@ export interface CardOpMessage {
   /** `duplicate` returns the new card; everything else returns the same id. */
   readonly resultCardId: string;
   /** How to reverse it, or null when it cannot be reversed. */
-  readonly undo: { readonly op: CardOp; readonly cardId: string } | null;
+  readonly undo: {
+    readonly op: CardOp;
+    readonly cardId: string;
+    /** `setTemplate` only: the template it came FROM. `null` is a real value. */
+    readonly templateId?: string | null;
+  } | null;
   /** Said plainly, for the status line and for the undo stack's label. */
   readonly describe: string;
   /**
@@ -426,6 +469,12 @@ export interface PreviewMessage {
   /** Same reason as `CardMessage` — a preview carries the same operations. */
   readonly pinned: boolean;
   readonly archived: boolean;
+  /**
+   * Every template, with what a move would cost THIS card. Sent with the preview
+   * because that is what the editor is opened from, and the editor is where the
+   * picker lives.
+   */
+  readonly templates: readonly TemplateChoice[];
 }
 
 /**
@@ -479,6 +528,24 @@ export interface TemplateMessage {
   readonly kind: "template";
   readonly id: number;
   readonly template: TemplateDetail | null;
+}
+
+/**
+ * What moving ONE card to each template would cost, computed per card.
+ *
+ * The picker in the editor shows this instead of a bare list, because field ids
+ * are template-private (see `CardOp`'s `setTemplate`) and "keeps 1 of 7" is the
+ * fact that decides whether he wants the move.
+ */
+export interface TemplateChoice {
+  readonly templateId: string;
+  readonly name: string;
+  readonly fields: number;
+  /** Values on THIS card whose field id also exists on that template. */
+  readonly keeps: number;
+  /** Values on this card that would stop rendering. Retained, never deleted. */
+  readonly hides: number;
+  readonly current: boolean;
 }
 
 export type TemplateOp =

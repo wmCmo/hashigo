@@ -68,7 +68,7 @@ import { archiveSubtree, restoreArchive, scopeToSubtree } from "./deck-scope.js"
 import type {
   AnswerRequest,
   BrowseRequest,
-  CardOp,
+  CardOpMessage,
   CardOpRequest,
   CreateCardRequest,
   DeckOpMessage,
@@ -77,6 +77,7 @@ import type {
   UngradeRequest,
   PreviewRequest,
   SetFieldRequest,
+  TemplateChoice,
   TemplateDetail,
   TemplateFieldRow,
   TemplateOpMessage,
@@ -470,7 +471,9 @@ function cardOp(request: CardOpRequest): void {
 
   const name = card.name === "" ? card.id : card.name;
   let resultCardId = card.id;
-  let undo: { op: CardOp; cardId: string } | null = null;
+  // Taken from the MESSAGE type rather than restated, so a new field there cannot
+  // be added and forgotten here — the mistake `deckOp`'s `restoreArchive` made once.
+  let undo: CardOpMessage["undo"] = null;
   let describe = "";
 
   switch (request.op) {
@@ -501,6 +504,58 @@ function cardOp(request: CardOpRequest): void {
       undo = { op: "pin", cardId: card.id };
       describe = `unpinned ${name}`;
       break;
+    case "setTemplate": {
+      // `templateId` is REQUIRED to be present, and `null` is a legal value meaning
+      // "no template" — so `undefined` is the error and `?? null` would hide it.
+      if (!("templateId" in request)) throw new Error("setTemplate needs a templateId");
+      const to = request.templateId ?? null;
+      if (to !== null && db.prepare("SELECT 1 FROM templates WHERE id = ?").get(to) === undefined) {
+        throw new Error(`no template ${to}`);
+      }
+      if (to === card.template_id) {
+        // Not an error, and not a write either: a picker that re-selects the current
+        // option must not put a no-op on the undo stack.
+        describe = `${name} is already on that template`;
+        undo = null;
+        break;
+      }
+      // NO VALUE IS DELETED. `card_field_values` is keyed `(card_id, field_id)` and
+      // is deliberately not foreign-keyed to `template_fields`, so this changes which
+      // values RENDER and nothing else — see `CardOp`'s `setTemplate` for the field-id
+      // overlap that makes the number worth saying out loud.
+      const before = new Set(
+        (
+          db
+            .prepare("SELECT field_id FROM card_field_values WHERE card_id = ? AND value <> ''")
+            .all(card.id) as { field_id: string }[]
+        ).map((row) => row.field_id),
+      );
+      const after = new Set(
+        to === null
+          ? []
+          : (
+              db.prepare("SELECT id FROM template_fields WHERE template_id = ?").all(to) as {
+                id: string;
+              }[]
+            ).map((row) => row.id),
+      );
+      let kept = 0;
+      for (const fieldId of before) if (after.has(fieldId)) kept += 1;
+      const hidden = before.size - kept;
+
+      db.prepare("UPDATE cards SET template_id = ? WHERE id = ?").run(to, card.id);
+      const toName =
+        to === null
+          ? "no template"
+          : (
+              db.prepare("SELECT name FROM templates WHERE id = ?").get(to) as { name: string }
+            ).name;
+      describe =
+        `moved ${name} to ${toName} — ${kept} value(s) carried over` +
+        (hidden === 0 ? "" : `, ${hidden} now hidden (kept, not deleted)`);
+      undo = { op: "setTemplate", cardId: card.id, templateId: card.template_id };
+      break;
+    }
     case "delete":
       // The cascades do the rest. Counted first so the message can say what went.
       {
@@ -1107,6 +1162,59 @@ function setField(request: SetFieldRequest): void {
  * direction only permutes an order the reader can see all of anyway — and the
  * AUTHORED order is the one that reads correctly.
  */
+/**
+ * What moving THIS card to each template would cost.
+ *
+ * Computed per card rather than per template pair, because the answer depends on
+ * which fields the card actually has a value for — a 単語 card with only its head
+ * word filled in loses nothing by moving, and one with seven values loses six.
+ *
+ * Only NON-EMPTY values count. An empty row is not authored text and reporting it
+ * as something at risk would inflate every number here.
+ */
+function templateChoices(db: BrowserDb, cardId: string): TemplateChoice[] {
+  const card = db.prepare("SELECT template_id FROM cards WHERE id = ?").get(cardId) as
+    | { template_id: string | null }
+    | undefined;
+  if (card === undefined) return [];
+
+  const held = new Set(
+    (
+      db
+        .prepare("SELECT field_id FROM card_field_values WHERE card_id = ? AND value <> ''")
+        .all(cardId) as { field_id: string }[]
+    ).map((row) => row.field_id),
+  );
+
+  return (
+    db
+      .prepare(
+        `SELECT t.id AS id, t.name AS name,
+                (SELECT count(*) FROM template_fields f WHERE f.template_id = t.id) AS fields
+           FROM templates t ORDER BY t.name`,
+      )
+      .all() as { id: string; name: string; fields: number }[]
+  ).map((template): TemplateChoice => {
+    const theirs = new Set(
+      (
+        db
+          .prepare("SELECT id FROM template_fields WHERE template_id = ?")
+          .all(template.id) as { id: string }[]
+      ).map((row) => row.id),
+    );
+    let keeps = 0;
+    for (const fieldId of held) if (theirs.has(fieldId)) keeps += 1;
+    return {
+      templateId: template.id,
+      name: template.name,
+      fields: Number(template.fields),
+      keeps,
+      hides: held.size - keeps,
+      current: template.id === card.template_id,
+    };
+  });
+}
+
 function preview(request: PreviewRequest): void {
   const db = requireCards();
   const card = prepareCard({ db, cardId: request.cardId, direction: "forward" });
@@ -1117,6 +1225,7 @@ function preview(request: PreviewRequest): void {
     deckPath: card?.loaded.deckPath ?? "",
     name: card?.loaded.name ?? request.cardId,
     ...collectionState(db, request.cardId),
+    templates: templateChoices(db, request.cardId),
   });
 }
 

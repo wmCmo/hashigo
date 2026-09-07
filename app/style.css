@@ -1702,3 +1702,79 @@ input[data-answer="incorrect"] {
     display: none;
   }
 }
+
+/* ── the editor's template row, and link completion ─────────────────────────
+   His feedback, 2026-09-07. The row is not a bare `<select>` on purpose: field
+   ids are template-private, so moving a card hides values, and each option
+   carries its own cost. `templateRow` in main.ts has the measurement. */
+.edit-template {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+}
+
+.tpl-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The completion menu is positioned against the field's row, so `.edit-row` has
+   to be a containing block. It already lays its children out in a column. */
+.edit-row {
+  position: relative;
+}
+
+.link-menu {
+  background: #17181b;
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 55%);
+  left: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  position: absolute;
+  right: 0;
+  /* Below the field it belongs to, not over it — he needs to see what he typed. */
+  top: 100%;
+  z-index: 30;
+}
+
+.link-item {
+  background: none;
+  border: 0;
+  color: var(--ink);
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  padding: 7px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.link-item.on,
+.link-item:hover {
+  background: var(--line);
+}
+
+.link-item b {
+  display: block;
+  font-weight: 400;
+}
+
+/* The deck path is how he tells two cards with the same head word apart — 蟻 as a
+   単語 card and as a 言葉 card are different cards. */
+.link-item i {
+  color: var(--muted);
+  display: block;
+  font-size: 0.72rem;
+  font-style: normal;
+}
+
+.link-empty {
+  color: var(--muted);
+  display: block;
+  font-size: 0.76rem;
+  font-style: normal;
+  padding: 8px 10px;
+}
