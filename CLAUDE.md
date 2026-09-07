@@ -187,9 +187,13 @@ npm run phone                             # THE PHONE: tunnel + server + the URL
                         # on his handset — notes/archive/PHONE-TEST.md.
 npm run app:dev -- --host ::              # phone / tunnel, by hand (bind-address trap)
 npm run app:check                         # tsc -p app/tsconfig.json
-# Raise the audio coverage when it matters more than the download (default 32 MiB,
-# which reaches 23.8% of the 5,708 speech-bearing cards):
-npx vite-node scripts/app-bootstrap.ts -- --speech-bytes 209715200
+# The audio subset. DEFAULT IS NOW 200 MiB = 90.0% of the 5,708 speech-bearing
+# cards, raised from 32 MiB (23.8%) on 2026-09-07 because the reason for the small
+# budget was a METERED tunnel and `tailscale serve` is not metered. 200 is where the
+# curve turns: the next 200 MiB buys 1.7 points. The full store is 618 MiB = 100%.
+# Coverage matters more here than it sounds — decision 29's mode 2 is 3,177 cards
+# where the AUDIO IS THE QUESTION. scripts/app-bootstrap.ts has the curve.
+npx vite-node scripts/app-bootstrap.ts -- --speech-bytes 650000000   # all of it
 
 # The scheduler. Read-only except `seed`, which writes state and moves no due date.
 npx vite-node src/scheduler/cli.ts -- counts   --db build/hashigo.db

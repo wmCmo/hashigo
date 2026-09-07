@@ -309,7 +309,7 @@ spike config: `build/hashigo.db` came back 200 at 74,465,280 bytes.
 ```plaintext
 hashigo-app.db          72,630,272 bytes   7,716 cards · 102,020 reviews
 hashigo-app-blobs.db    42,287,104 bytes   1,529 payloads (speech 1,504 · file 15 · image 10)
-coverage                1,358 of 5,708 cards with speech can play something (23.8%)
+coverage                5,136 of 5,708 cards with speech can play something (90.0%)
 ```
 
 `VACUUM INTO`, not a file copy: `build/hashigo.db` is in WAL mode and
@@ -319,7 +319,9 @@ refuses to ship a file whose header still says WAL.
 
 The audio is a **bounded** subset and the rule is stated, because a subset with an
 unstated rule is a lie: every `image`/`file` payload, then `speech` in ASCENDING
-SIZE ORDER until `--speech-bytes` (default 32 MiB) is spent. Smallest-first buys
+SIZE ORDER until `--speech-bytes` (default **200 MiB**, raised from 32 on
+2026-09-07 — `scripts/app-bootstrap.ts` carries the coverage curve and why 200 is
+where it turns) is spent. Smallest-first buys
 single WORDS — the 高低アクセント clip the drill needs — at ~30 KB rather than
 sentences at ~120 KB, and it maximises playable cards per byte. Raise it with
 `--speech-bytes` when the coverage matters more than the download.
@@ -409,7 +411,7 @@ Three details that came out of running it:
   none; in a preview there is no reveal to hang playback on, and decision 30 says
   a clip stays one deliberate tap away. Measured: a preview opens with `0` plays
   and the clip's state `idle`; a deliberate tap moves it to `missing` — the
-  resolver ran, the worker answered, and the clip is simply outside the 32 MiB
+  resolver ran, the worker answered, and the clip is simply outside the 200 MiB
   subset. The wiring is proven even where the bytes are not there.
 * **A layer swallows every key except Escape.** Without that, space would grade
   the card underneath the preview he is reading.

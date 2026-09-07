@@ -3,7 +3,7 @@
  *
  *   npx vite-node scripts/app-bootstrap.ts
  *     [--db build/hashigo.db] [--store build/hashigo.db.blobs.db]
- *     [--out build/app] [--speech-bytes 33554432]
+ *     [--out build/app] [--speech-bytes 209715200]
  *
  * Writes `build/app/hashigo-app.db` (the cards) and
  * `build/app/hashigo-app-blobs.db` (a BOUNDED subset of the audio), which
@@ -68,8 +68,34 @@ const flag = (name: string, fallback: string): string => {
 const cardSource = resolve(flag("db", "build/hashigo.db"));
 const storeSource = resolve(flag("store", `${flag("db", "build/hashigo.db")}.blobs.db`));
 const outDir = resolve(flag("out", "build/app"));
-/** 32 MiB. Enough for ~1,000 single-word clips; a first run over a tunnel. */
-const speechBudget = Number(flag("speech-bytes", String(32 * 1024 * 1024)));
+/**
+ * 200 MiB — and the number is a measurement, not a round figure.
+ *
+ * It was 32 MiB, chosen for "a first run over a tunnel" when the tunnel was ngrok
+ * or a Cloudflare quick tunnel: metered, or a new origin every session that pays
+ * the download again. **`tailscale serve` is neither** — tailnet transfer is
+ * direct and uncapped, and the origin is fixed, so the download happens once.
+ *
+ * Coverage against `--speech-bytes`, measured over the real store (10,791 distinct
+ * speech blobs, 618 MiB), smallest-first as rule (b) takes them:
+ *
+ * ```
+ *    32 MiB ->  1,358 of 5,708 cards (23.8%)   <- the old default
+ *    64 MiB ->  2,510                 (44.0%)
+ *   128 MiB ->  4,537                 (79.5%)
+ *   200 MiB ->  5,136                 (90.0%)  <- here
+ *   400 MiB ->  5,232                 (91.7%)
+ *   618 MiB ->  5,708                (100.0%)
+ * ```
+ *
+ * **200 is where the curve turns.** The next 200 MiB buys 1.7 points, because what
+ * is left is the long example-sentence clips; the last 10% costs 418 MiB.
+ *
+ * The reason coverage matters more on the phone than the figure suggests: decision
+ * 29's mode 2 covers **3,177 cards where the audio IS the question**. A missing clip
+ * there is not a missing extra, it is the prompt going missing.
+ */
+const speechBudget = Number(flag("speech-bytes", String(200 * 1024 * 1024)));
 
 const cardOut = resolve(outDir, "hashigo-app.db");
 const storeOut = resolve(outDir, "hashigo-app-blobs.db");

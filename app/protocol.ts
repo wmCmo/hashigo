@@ -634,7 +634,7 @@ export interface SettingsMessage {
     readonly quotaBytes: number | null;
   };
   /**
-   * Audio coverage on THIS device. `app-bootstrap` ships a bounded subset (32 MiB
+   * Audio coverage on THIS device. `app-bootstrap` ships a bounded subset (200 MiB
    * by default), and the number it prints at build time is not the number after a
    * re-import — so it is measured here rather than remembered.
    */
