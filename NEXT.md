@@ -258,7 +258,7 @@ session looks to decide what to pick up.
 
 | | what | state |
 |---|---|---|
-| **1** | **Run the app on his phone** | The one thing that needs HIM, and it is now the ONLY thing on this table that his fourteen did not touch. `npm run app:dev -- --host ::` plus a tunnel; the bind-address trap is in `app/README.md` |
+| **1** | **Run the app on his phone** | **The route is BUILT and MEASURED as of 2026-09-07** — `npm run phone`, one command, `https://node.tailed819e.ts.net/`, fixed hostname, tailnet-only, 200 + verified TLS + SQLite magic on both databases. What is left is him opening it: his handset has been off the tailnet for 10 days, and nothing about touch, the IME into 数字's answer box, or Android audio is verified on the real device |
 | **2** | **Stage 11, sync** | The only STRUCTURAL blocker. He uses both devices — laptop to create, phone to review — and without sync they hold separate OPFS databases, so his stated workflow is impossible. Unspecified in shape. Decision 18: the TTS key never goes in the client |
 | **3** | **The full report is still 81 s** | The DAILY dashboard is 1.25 s and is what the sidebar opens (`src/dashboard/glance.ts`). The four-year report is a button inside it, behind a confirm that states the cost. Its "obvious" optimisation was tried and is **5x slower** — see below before reaching for it again |
 | — | Everything in [notes/zach-wants.md](notes/zach-wants.md) | **All fourteen carry working code.** That file is the WANT; this table is the state |

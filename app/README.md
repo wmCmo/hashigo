@@ -65,6 +65,27 @@ part worth more than the convenience: the other three put a server holding his e
 study history on the open internet behind an unguessable name. Free, no domain, no
 bandwidth cap, and the certificate is real so it is a secure context:
 
+### DONE, 2026-09-07 — measured over the tailnet
+
+```plaintext
+tailscale serve status     https://node.tailed819e.ts.net (tailnet only)
+                           |-- / proxy http://127.0.0.1:4274
+GET /                      200   tls verified   <title>梯子 · review</title>
+GET /hashigo-app.db        200   "SQLite format 3"
+GET /hashigo-app-blobs.db  200
+tailscale funnel status    tailnet only — NOT publicly exposed
+```
+
+`tailscale serve --bg` is persistent configuration, so the daily routine is
+`npm run phone` and nothing else. `tailscale serve --https=443 off` undoes it.
+
+**`tailscale cert <host>` writes the pair into the CURRENT directory.** Probing
+whether certificates were enabled dropped `node.tailed819e.ts.net.key` — a private
+key — into the repo root, untracked and not ignored. Deleted, and `.gitignore` now
+carries `*.ts.net.crt` / `*.ts.net.key` so a probe cannot be committed. `serve`
+manages its own certificates and needs none of that; the only way those files appear
+is someone checking.
+
 ### Setting it up — ONCE, and one step hangs instead of failing
 
 Install on the laptop and the phone, sign both into the same account, then:

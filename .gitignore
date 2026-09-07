@@ -81,3 +81,10 @@ Thumbs.db
 # appends it to `allowedHosts`. Local and ephemeral — never committed.
 .tunnel-host
 .tunnel-named
+
+# `tailscale cert <host>` writes the pair into the CURRENT directory — a private
+# key in the repo root, untracked and previously not ignored. `tailscale serve`
+# manages its own certs and needs none of this; the only way these appear is
+# someone probing whether certs work. Ignored so a probe can never be committed.
+*.ts.net.crt
+*.ts.net.key
