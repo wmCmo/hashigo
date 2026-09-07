@@ -81,7 +81,7 @@ import { referencedNames } from "../src/template/index.js";
 // The link rules, in an import-free module `test/` can reach — the same seam as
 // `./keys.ts` and `./review-keys.ts`. `test/app-links.test.ts` round-trips all
 // 8,744 authored links through it.
-import { completeLink, linkAt, triggerAt, type Trigger } from "./links.js";
+import { completeLink, linkAt, linksIn, triggerAt, type Trigger } from "./links.js";
 import { moveWithin } from "../src/schema/index.js";
 import type { RenderResult } from "../src/render/index.js";
 import type { ShadowingSide } from "../src/render/reveal.js";
@@ -1595,8 +1595,15 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
       const area = document.createElement("textarea");
       area.className = "edit-input";
       area.value = value;
-      area.rows = value.includes("\n") ? 4 : 1;
+      area.rows = 1;
       area.spellcheck = false;
+      // GROW TO THE CONTENT. `rows` used to be guessed from whether the value
+      // held a newline, which is right for a head word and wrong for a link:
+      // `[[換え|C1p9g1mL]]` is fifteen characters and no newline, and on a 375px
+      // phone it wraps to a second line that was simply CLIPPED. Seen while
+      // verifying the link mirror, which is also why it matters here — a field
+      // that never scrolls is a field whose mirror cannot wrap differently.
+      area.addEventListener("input", () => fitTextarea(area));
       if (field.type === "number") area.inputMode = "numeric";
       // On BLUR, not on every keystroke: a write per character would be ~1,777
       // upserts for the longest field in the corpus, and each one is an OPFS
@@ -1630,7 +1637,24 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
     pinned: false,
     archived: false,
   });
+  // AFTER the layer is in the document: `scrollHeight` is 0 on a detached node,
+  // so sizing at creation time would collapse every field to one line.
+  for (const area of body.querySelectorAll("textarea.edit-input")) {
+    fitTextarea(area as HTMLTextAreaElement);
+  }
   (body.querySelector(".edit-input, .edit-check") as HTMLElement | null)?.focus();
+}
+
+/**
+ * Size a textarea to its content.
+ *
+ * `height: auto` first, or `scrollHeight` reports the height it ALREADY has and
+ * the box can only ever grow. The `offsetHeight - clientHeight` term is the
+ * border: `box-sizing` is `border-box` here and `scrollHeight` is not.
+ */
+function fitTextarea(area: HTMLTextAreaElement): void {
+  area.style.height = "auto";
+  area.style.height = `${area.scrollHeight + area.offsetHeight - area.clientHeight}px`;
 }
 
 /** Mirrors the worker's `EDITABLE_TYPES`. Kept in sync by the worker REFUSING. */
@@ -2658,7 +2682,98 @@ function openTemplatePicker(card: PreparedCard, choices: readonly TemplateChoice
  * held, so after the click `selectionStart` is the character offset under the
  * pointer, and `linkAt(text, offset)` turns that into a card id. Pure, and tested.
  */
+/**
+ * MAKE A LINK LOOK LIKE ONE INSIDE THE TEXTAREA.
+ *
+ * Zach, 2026-09-08: *"now the hyperlinks work, but the appearance doesn't look like
+ * hyperlink, the cursor hover too, i think for editing mode and preview mode they
+ * should look different?"*
+ *
+ * **Yes, and they cannot help being different — the two modes hold different TEXT.**
+ * Preview holds `換え` inside an `<a>`; the editor holds the literal 15 characters
+ * `[[換え|C1p9g1mL]]`, because the markup is the thing he is editing. So preview gets
+ * the link look (`.hashigo-card-link`: dotted underline, pointer, hover) and the
+ * editor gets a look that says *this run of characters is one object* — a tinted box
+ * around the whole span, brackets and id included.
+ *
+ * ─── WHY A MIRROR, AND WHY IT PAINTS NO TEXT ────────────────────────────────
+ *
+ * A `<textarea>` has no elements inside it, so a range within it cannot be styled —
+ * the same fact that made ctrl+click read `selectionStart` instead of `closest("a")`.
+ * The standard answer is a mirror: a div behind the field, laid out with the SAME
+ * font, padding and wrapping, carrying the highlight.
+ *
+ * **Its text is `transparent` and the textarea's is not**, which is the opposite of
+ * what a syntax highlighter does and is deliberate. Painting the mirror and hiding
+ * the textarea's own text would allow colouring the brackets separately — and would
+ * also mean the textarea's selection background covers the only visible copy of the
+ * text, so selecting a word would make it disappear. Backgrounds and underlines
+ * render fine under `color: transparent` (`text-decoration-color` is explicit), and
+ * that is all this needs.
+ *
+ * ─── AND THE CURSOR, WHICH IS THE HALF HE ASKED ABOUT SECOND ────────────────
+ *
+ * Following a link here needs Ctrl held, so the affordance is armed rather than
+ * constant: while Ctrl (or Cmd) is down over a field that HAS links, the boxes
+ * brighten and the caret becomes a pointer. Never `cursor: pointer` unconditionally
+ * — most of a field is not a link, and a pointer over plain prose is a lie.
+ */
+function attachLinkMirror(area: HTMLTextAreaElement): () => void {
+  const shell = document.createElement("div");
+  shell.className = "edit-field";
+  area.replaceWith(shell);
+  const mirror = document.createElement("div");
+  mirror.className = "edit-mirror";
+  // It is a copy of text that is already on screen and already reachable. A
+  // screen reader meeting it twice would read every field twice.
+  mirror.setAttribute("aria-hidden", "true");
+  shell.append(mirror, area);
+
+  const paint = (): void => {
+    const text = area.value;
+    const spans = linksIn(text);
+    shell.classList.toggle("has-links", spans.length > 0);
+    const parts: Node[] = [];
+    let at = 0;
+    for (const span of spans) {
+      if (span.start > at) parts.push(document.createTextNode(text.slice(at, span.start)));
+      const box = document.createElement("mark");
+      box.className = "edit-link";
+      box.textContent = span.raw;
+      parts.push(box);
+      at = span.end;
+    }
+    // The trailing "\n" is not decoration: a final newline in a `pre-wrap` block
+    // is not laid out, so without it the mirror is one line short of the
+    // textarea the moment he presses Enter at the end.
+    parts.push(document.createTextNode(text.slice(at) + "\n"));
+    mirror.replaceChildren(...parts);
+    mirror.scrollTop = area.scrollTop;
+  };
+
+  const arm = (on: boolean): void => {
+    shell.classList.toggle("mod", on);
+  };
+
+  area.addEventListener("input", paint);
+  area.addEventListener("scroll", () => {
+    mirror.scrollTop = area.scrollTop;
+  });
+  area.addEventListener("keydown", (event) => arm(event.ctrlKey || event.metaKey));
+  area.addEventListener("keyup", (event) => arm(event.ctrlKey || event.metaKey));
+  // He can hold Ctrl before touching the field, so the key events never reach it.
+  shell.addEventListener("mousemove", (event) => arm(event.ctrlKey || event.metaKey));
+  shell.addEventListener("mouseleave", () => arm(false));
+  // A modifier held across a window switch is stuck down as far as this page is
+  // concerned; blur is the only honest place to let it go.
+  area.addEventListener("blur", () => arm(false));
+
+  paint();
+  return paint;
+}
+
 function attachLinkEditing(area: HTMLTextAreaElement, onSaveNeeded: () => void): void {
+  const repaint = attachLinkMirror(area);
   let menu: HTMLElement | null = null;
   let hits: readonly BrowseHit[] = [];
   let index = 0;
@@ -2709,6 +2824,9 @@ function attachLinkEditing(area: HTMLTextAreaElement, onSaveNeeded: () => void):
     const out = completeLink(area.value, live, hit.name === "" ? hit.cardId : hit.name, hit.cardId);
     area.value = out.text;
     area.setSelectionRange(out.caret, out.caret);
+    // Setting `.value` fires no `input` event, so the mirror does not hear about
+    // the link it just gained. Without this the box appears on his next keystroke.
+    repaint();
     close();
     area.focus();
     onSaveNeeded();

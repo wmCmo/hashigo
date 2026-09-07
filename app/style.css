@@ -323,9 +323,56 @@ body {
   margin: 14px 0;
 }
 
-.hashigo-link,
+/* ── links: two kinds, two destinations, two looks ──────────────────────────
+   Zach, 2026-09-07: *"the appearance doesn't look like hyperlink, the cursor
+   hover too"*. Both kinds had a colour and nothing else — no underline, no
+   pointer — so the only thing marking 8,744 card links was a blue tint.
+
+   They are also NOT the same action and used to look identical. A card link
+   opens a layer on top and keeps him in the session; an external link carries
+   `target="_blank" rel="noopener noreferrer"` and leaves for a new tab. That
+   difference is worth seeing BEFORE the tap, not after.
+
+   Decision 19 is untouched: it forbids deferring or defanging a link by
+   direction, not styling one. And the affordance is never hover-only
+   (decision 23) — colour and underline are there at rest; hover only brightens. */
 .hashigo-card-link {
   color: #8cc3e8;
+  cursor: pointer;
+  /* Dotted: "this stays inside the app". Obsidian's internal-link convention,
+     and it reads as a link at 12px in a mono face without shouting. */
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.hashigo-card-link:hover,
+.hashigo-card-link:focus-visible {
+  color: #b6ddf5;
+  text-decoration: underline solid;
+}
+
+.hashigo-link {
+  /* A different hue as well as a different underline, because colour alone is
+     the distinction a colour-blind reader loses — and the two do different
+     things. */
+  color: #c9a6e0;
+  cursor: pointer;
+  text-decoration: underline solid;
+  text-underline-offset: 3px;
+}
+
+.hashigo-link:hover,
+.hashigo-link:focus-visible {
+  color: #ddc6ef;
+}
+
+/* It leaves the app. Said with a mark rather than only a colour, and it is
+   `::after` on the anchor so it travels with the text when the line wraps. */
+.hashigo-link::after {
+  content: "↗";
+  font-size: 0.8em;
+  margin-left: 2px;
+  vertical-align: super;
 }
 
 .hashigo-code {
@@ -723,6 +770,13 @@ body.layered {
 
 /* 16px above is not a style choice — iOS Safari ZOOMS the viewport on focus for
    anything smaller, which on a phone throws away his place in the card. */
+
+/* Card fields size themselves to their content (`fitTextarea`), so a drag handle
+   would only be overwritten by the next keystroke. `.tpl-body` keeps its own:
+   it is 14 rows of template and nothing grows it. */
+textarea.edit-input:not(.tpl-body) {
+  resize: none;
+}
 
 .edit-input:focus {
   border-color: var(--accent);
@@ -1739,6 +1793,87 @@ input[data-answer="incorrect"] {
    to be a containing block. It already lays its children out in a column. */
 .edit-row {
   position: relative;
+}
+
+/* ── edit mode's link look: a mirror behind the textarea ────────────────────
+   `attachLinkMirror` in main.ts has the why. What matters HERE is that every
+   metric below is shared with `.edit-input` rather than restated — a mirror that
+   wraps one character differently from the field puts the highlight in the wrong
+   place, and the failure is silent. If you change the font, padding or border on
+   `.edit-input`, change it in the shared block. */
+
+.edit-field {
+  /* The chrome moves OFF the textarea and onto the shell, so the mirror sits
+     inside the border instead of under it. */
+  background: #17181b;
+  border: 1px solid var(--line-soft);
+  /* The completion menu is appended here now (`area.parentElement`), so it hangs
+     directly off the bottom edge of the field rather than the whole row. */
+  position: relative;
+}
+
+.edit-field:focus-within {
+  border-color: var(--accent);
+}
+
+.edit-field .edit-input,
+.edit-mirror {
+  background: transparent;
+  border: 0;
+  /* The JAPANESE stack and 16px, matching `.edit-input`. Both are load-bearing:
+     see the note there about iOS zooming the viewport below 16px. */
+  font: 16px/1.6 var(--jp), sans-serif;
+  letter-spacing: normal;
+  padding: 10px;
+  /* A scrollbar appearing on the textarea alone would narrow ITS content box and
+     nothing else, so the two would wrap at different characters. Reserving the
+     gutter on both keeps them identical whether it is there or not — and the
+     mirror is `overflow: hidden`, which still counts as a scroll container for
+     this property. */
+  scrollbar-gutter: stable;
+  width: 100%;
+}
+
+.edit-field .edit-input {
+  display: block;
+  /* Above the mirror, and it keeps its own visible text — the mirror paints only
+     backgrounds and underlines. */
+  position: relative;
+  z-index: 1;
+}
+
+.edit-mirror {
+  color: transparent;
+  inset: 0;
+  overflow: hidden;
+  /* It must break lines exactly where the textarea does. */
+  overflow-wrap: break-word;
+  pointer-events: none;
+  position: absolute;
+  white-space: pre-wrap;
+}
+
+/* The whole `[[display|card-id]]` run, brackets and id included, because in the
+   editor that IS the object — clicking the `]]` follows the link too (`linkAt`
+   is inclusive of both ends). A filled box rather than preview's underline: the
+   two modes now read as different at a glance, which is what he asked for. */
+.edit-mirror .edit-link {
+  background: rgb(140 195 232 / 13%);
+  border-radius: 2px;
+  color: transparent;
+  text-decoration: underline dotted #8cc3e8;
+  text-underline-offset: 3px;
+}
+
+/* Ctrl held over a field that has links: the targets light up and the caret
+   becomes a pointer. Armed, not constant — most of a field is not a link. */
+.edit-field.has-links.mod .edit-input {
+  cursor: pointer;
+}
+
+.edit-field.has-links.mod .edit-mirror .edit-link {
+  background: rgb(140 195 232 / 26%);
+  text-decoration-style: solid;
 }
 
 .link-menu {
