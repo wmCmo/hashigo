@@ -33,6 +33,7 @@
  */
 
 import { FIELD_TYPE_BLOB_KIND, GENERATOR_FIELD_TYPES, type BlobKind } from "../schema/index.js";
+import { groupDigits } from "../template/resolve.js";
 import { renderPlainText } from "../text/index.js";
 import {
   ELEMENTS,
@@ -234,6 +235,21 @@ function promptText(
 }
 
 /** A non-`ai` generator reads the field its `source_field_id` names. */
+/**
+ * A stored value as the template RENDERS it — the one place storage and display
+ * diverge today.
+ *
+ * `groupDigits` is imported rather than reimplemented: the resolver applies exactly
+ * this to `<<Number>>`, and a second copy here would be a generation key that drifts
+ * from the text on screen. `src/template/resolve.ts` carries the reasoning.
+ */
+function renderedValue(field: GeneratorField, stored: string): string {
+  if (field.type !== "number") return stored;
+  const group = field.options?.["group"];
+  if (typeof group !== "string" || group === "" || group === "none") return stored;
+  return groupDigits(stored, group === "comma" ? "," : group === "space" ? " " : group);
+}
+
 function sourceText(
   field: GeneratorField,
   context: FieldContext,
@@ -255,7 +271,18 @@ function sourceText(
  */
 function fieldText(field: GeneratorField, context: FieldContext, depth: number): string | null {
   const stored = context.values.get(field.id);
-  if (stored !== undefined && stored !== "") return generationInput(stored);
+  // DECISION 7 SAYS "THE RENDERED TEXT", AND THIS LINE USED TO SAY "THE STORED
+  // VALUE". For every field in the corpus those were the same string, so the
+  // difference was invisible until a field gained a display rule.
+  //
+  // 数字's merge (2026-09-07) made them differ: the number is stored bare and
+  // rendered grouped. The 89 existing clips were generated from `143,710,122` and
+  // the stored value became `143710122`, so the generation identity moved and every
+  // clip stopped resolving — measured, 78 cards asked on entry and played NOTHING.
+  //
+  // Formatting here is what makes the decision true rather than nearly true. The
+  // blast radius is exactly the fields that have a display rule: one, today.
+  if (stored !== undefined && stored !== "") return generationInput(renderedValue(field, stored));
   if (depth >= MAX_DEPTH || !isGeneratorType(field.type)) return null;
   if (context.resolveGenerated === undefined) return null;
   const request = fieldGenerationRequest(field, context, depth + 1);

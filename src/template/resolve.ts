@@ -66,8 +66,63 @@ import {
 export interface TemplateFieldInput {
   readonly id: string;
   readonly name: string;
-  /** `template_fields.type`. Only `boolean` changes behaviour here. */
+  /** `template_fields.type`. `boolean` and `number` change behaviour here. */
   readonly type?: string;
+  /**
+   * `template_fields.options`, decoded. `LoadedField` already carries it, so this
+   * flows through for free — only `number` reads it, and only for `group`.
+   */
+  readonly options?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Thousands separators for a `number` field — Zach, 2026-09-07.
+ *
+ * *"i don't need two field of comma and number, we can just have no comma field,
+ * and the template let me choose a display type of rendering comma"*. He is right
+ * about where the line is: **a comma is presentation and the number is the data**,
+ * and 数字 stored both because Mochi could not render one from the other.
+ *
+ * ─── WHY IT FORMATS AT SUBSTITUTION AND NOT IN THE RENDERER ─────────────────
+ *
+ * This is the lesson decision 20 taught, applied before it costs anything. A
+ * resolved plain field is substituted to TEXT before the render, so nothing
+ * downstream knows `平板` came from `型` — which is why `型`'s gating had to move
+ * into the template. The same is true here: by the time the renderer sees
+ * `124652706` it is a string like any other. The type is only known HERE.
+ *
+ * ─── AND IT KEEPS THE 89 EXISTING CLIPS RESOLVING ───────────────────────────
+ *
+ * Decision 7: a generator's input is the RENDERED text. 数字's `Voice` is a speech
+ * field whose source is the primary field, and its 89 clips carry
+ * `source_text = "124,652,706"` — the comma'd form. Formatting at substitution
+ * means the generator still sees commas, so the generation key is unchanged and
+ * nothing is re-billed. Stripping the commas from storage WITHOUT this would have
+ * changed every key.
+ *
+ * `group` is opt-in per field rather than automatic for every `number`, because
+ * "render 1999 as 1,999" is wrong for a year and this is a display choice he asked
+ * to make in the template.
+ */
+export function groupDigits(value: string, separator: string): string {
+  const trimmed = value.trim();
+  // Digits only, optionally signed, optionally with a decimal part. Anything else
+  // is returned untouched: a `number` field holding `n/a` must not be mangled, and
+  // only the INTEGER part is grouped — `1234.5678` is `1,234.5678`, never
+  // `1,234.567,8`.
+  const match = /^([+-]?)(\d+)(\.\d+)?$/.exec(trimmed);
+  if (match === null) return value;
+  const [, sign = "", digits = "", fraction = ""] = match;
+  return sign + digits.replace(/\B(?=(\d{3})+(?!\d))/g, separator) + fraction;
+}
+
+/** `options.group`: `"comma"`, `"space"`, or any literal separator. */
+function separatorFor(options: Readonly<Record<string, unknown>> | undefined): string | null {
+  const group = options?.["group"];
+  if (typeof group !== "string" || group === "" || group === "none") return null;
+  if (group === "comma") return ",";
+  if (group === "space") return " "; // a thin space, which is what typography wants
+  return group;
 }
 
 /** A `templates` row. */
@@ -194,7 +249,13 @@ function lookupFor(template: TemplateInput, card: CardInput): Lookup {
   return {
     value: (name) => {
       const field = resolve(name);
-      return field === undefined ? undefined : values.get(field.id);
+      if (field === undefined) return undefined;
+      const raw = values.get(field.id);
+      if (raw === undefined || field.type !== "number") return raw;
+      // ONE PLACE, so every interpolation path agrees: the body, a cloze, and a
+      // generator's prompt input (decision 7). See `groupDigits`.
+      const separator = separatorFor(field.options);
+      return separator === null ? raw : groupDigits(raw, separator);
     },
     type: (name) => resolve(name)?.type,
     known: (name) => resolve(name) !== undefined,

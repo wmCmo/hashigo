@@ -574,7 +574,13 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
         // WAS 6 — the six `local = 1` rows. It is every field now: a rename
         // rewrites the body's `<<Field>>` markers, so restoring a body without the
         // field NAMES gives back a body whose every marker resolves to nothing.
-        localFields: 47,
+        // WAS 47. `scripts/number-field-apply.ts` deleted 数字's second number
+        // field on 2026-09-07 — the comma'd duplicate Mochi forced — so the
+        // template declares one fewer. Its 90 VALUES are still archived under
+        // `fieldValues` below, which is the point: `card_field_values` is not
+        // foreign-keyed to `template_fields`, so deleting a field hides its text
+        // and never destroys it.
+        localFields: 46,
         localCards: 0,
         templates: 10,
         fieldValues: 3_848,

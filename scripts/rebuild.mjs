@@ -157,6 +157,39 @@ const STEPS = [
     },
   },
   {
+    /**
+     * 数字 keeps ONE number field and the comma becomes presentation — Zach's call,
+     * 2026-09-07. The importer rewrites the values, `cards.name`, the field row and
+     * the template body from the export, so every rebuild undoes all of it.
+     *
+     * Position is not delicate, unlike `reverse-dormant-apply`: this touches no
+     * track, no due date and no review, so it moves NO dashboard figure.
+     */
+    name: "local: 数字 merges its two number fields",
+    cmd: `npm exec vite-node scripts/number-field-apply.ts -- --db "${DB}" --apply`,
+    invariant: (db) => {
+      const row = db
+        .prepare(
+          "SELECT count(*) AS n FROM template_fields f " +
+            "JOIN templates t ON t.id = f.template_id " +
+            "WHERE t.name = '数字' AND f.type = 'number'",
+        )
+        .get();
+      // Exactly one number field, and it must carry the display rule — otherwise
+      // either the merge did not run or it ran and the comma never comes back.
+      if (row.n !== 1) return `数字 has ${row.n} number field(s); expected exactly 1`;
+      const primary = db
+        .prepare(
+          "SELECT f.options FROM template_fields f JOIN templates t ON t.id = f.template_id " +
+            "WHERE t.name = '数字' AND f.id = 'name'",
+        )
+        .get();
+      return String(primary?.options ?? "").includes('"group"')
+        ? null
+        : "数字's primary field has no `group` option, so every number renders unformatted";
+    },
+  },
+  {
     name: "accent: write 型 labels",
     cmd: `npm exec vite-node src/accent/cli.ts -- write --db "${DB}"`,
     invariant: (db) => {
