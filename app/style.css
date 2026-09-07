@@ -498,8 +498,24 @@ ruby rt:empty::after {
   background: #24272c;
 }
 
-[data-state="revealed"] .replay {
+/* SHOWN WHEN THE CLIP IS THE QUESTION, not only after the reveal.
+   Zach, 2026-09-07, on a 数字 card: "why can't i see the play button, now i can't
+   replay it even if i want to, i would have to click review first". Revealing to
+   hear the question again hands over the answer — on the 3,177 mode-2 cards that
+   IS the exercise.
+   `data-asked` is set by main.ts when the card prompted on entry. On a `produce`
+   card neither attribute is present before the reveal, and that is decision 29
+   rather than an oversight: there the clip is the ANSWER, and a play button on
+   screen before he has produced the contour is the defect the hard rule exists to
+   stop. `[hidden]` still wins — a card with no audio side shows nothing. */
+[data-state="revealed"] .replay,
+[data-asked] .replay {
   display: block;
+}
+
+.replay[disabled] {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 /* ── keycap hints ──

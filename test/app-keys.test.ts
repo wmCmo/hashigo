@@ -38,6 +38,36 @@ describe("reviewing a card", () => {
     expect(reviewAction(press("r"), state({ revealed: true }))).toBe("replay");
   });
 
+  /**
+   * REPLAY BEFORE THE REVEAL, and only when the clip is the QUESTION.
+   *
+   * Zach hit the first arm on a 数字 card: *"why can't i see the play button, now i
+   * can't replay it even if i want to, i would have to click review first"*. On a
+   * mode-2 card revealing to hear the question again shows him the answer, which is
+   * the exercise on 3,177 cards.
+   *
+   * The second arm is decision 29 and must NOT be relaxed with it: on the 692
+   * `Reading = true` cards the clip is the answer, so replay stays behind the
+   * reveal. Both arms are asserted here for the same reason the mode-1 autoplay
+   * tests are — so that fixing one does not quietly delete the other.
+   */
+  it("REPLAYS BEFORE THE REVEAL when the card asked — and not when it did not", () => {
+    expect(reviewAction(press("r"), state({ asked: true }))).toBe("replay");
+    expect(reviewAction(press("r"), state({ asked: false }))).toBeNull();
+    // Once revealed, both arms replay: the answer is already on screen.
+    expect(reviewAction(press("r"), state({ asked: false, revealed: true }))).toBe("replay");
+    expect(reviewAction(press("r"), state({ asked: true, revealed: true }))).toBe("replay");
+  });
+
+  it("does not let `asked` leak into grading — that is still the reveal's job", () => {
+    // The narrow fix must stay narrow. `asked` is about the QUESTION being audible,
+    // and nothing about it means he has answered.
+    const asked = state({ asked: true });
+    expect(reviewAction(press("f"), asked)).toBeNull();
+    expect(reviewAction(press("j"), asked)).toBeNull();
+    expect(reviewAction(press(" "), asked)).toBe("reveal");
+  });
+
   it("acts on the card WITHOUT grading, revealed or not", () => {
     for (const revealed of [false, true]) {
       const s = state({ revealed });

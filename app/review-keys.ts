@@ -55,6 +55,22 @@ export interface KeyState {
   /** The review view is not on screen at all — boot, or the done screen. */
   readonly reviewHidden: boolean;
   readonly revealed: boolean;
+  /**
+   * The card ASKED something on entry — decision 29's mode 2, or a widget card.
+   *
+   * It decides whether `r` works before the reveal, and the distinction is the
+   * decision rather than a convenience:
+   *
+   *   * asked  — the clip is the QUESTION. Replaying it is repeating the question,
+   *              so it must work immediately. Zach hit this on a 数字 card:
+   *              *"now i can't replay it even if i want to, i would have to click
+   *              review first"* — and revealing to hear the question again hands
+   *              him the answer, which deletes the exercise.
+   *   * not    — the clip is the ANSWER (the 692 `Reading = true` cards). Replay
+   *              stays behind the reveal. That is decision 29 working, not a bug:
+   *              on those cards the silence IS the exercise.
+   */
+  readonly asked: boolean;
   /** His #9: the screen is showing a neighbour, and the session cursor has not moved. */
   readonly peeking: boolean;
   /** There is a card to act on. */
@@ -148,6 +164,11 @@ export function reviewAction(event: KeyEventShape, state: KeyState): ReviewActio
   if (event.key === "ArrowLeft") return "previous";
   if (event.key === "Escape") return state.peeking ? "backToCard" : null;
 
+  // REPLAY IS ABOVE THE REVEAL GATE WHEN THE CLIP IS THE QUESTION. See
+  // `KeyState.asked`: on a mode-2 card, needing to reveal in order to hear the
+  // question again hands over the answer.
+  if (key === "r" && state.asked) return "replay";
+
   if (!state.revealed) return null;
 
   // ── grading ──
@@ -170,6 +191,7 @@ export const REVIEWING: KeyState = {
   sidebarOpen: false,
   reviewHidden: false,
   revealed: false,
+  asked: false,
   peeking: false,
   hasCard: true,
 };

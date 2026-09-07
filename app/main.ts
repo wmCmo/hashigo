@@ -191,6 +191,15 @@ let drill: ShadowingSide<HTMLElement> | null = null;
 let tail: ShadowingSide<HTMLElement>[] = [];
 let shownAt = 0;
 let revealed = false;
+/**
+ * Whether the current card ASKED something on entry — decision 29's mode 2, or a
+ * card whose side carries a widget (数字's `<input>`).
+ *
+ * It gates the replay button and the `r` key. `app/review-keys.ts`'s `KeyState.asked`
+ * carries the reasoning: when the clip is the question, revealing in order to hear it
+ * again hands over the answer.
+ */
+let askedOnEntry = false;
 let currentCardId: string | null = null;
 /** The review card's prepared form, so `e` can edit it without re-fetching. */
 let previewOfCurrent: PreparedCard | null = null;
@@ -489,6 +498,9 @@ async function showCardAt(): Promise<void> {
       if (asked || card.mode.mode === "identify") {
         hintLine.textContent = `no clip for this card (${outcome.kind}) — reveal to read it`;
       }
+      // The button cannot know this at mount time — the resolve is async — so the
+      // failure is what tells it. See `paintReplay`.
+      paintReplay("missing");
     },
   });
   mounted = card;
@@ -580,8 +592,46 @@ async function showCardAt(): Promise<void> {
         : typing
           ? "answer on the card, then reveal"
           : "answer, then reveal";
+
+  // THE REPLAY BUTTON APPEARS NOW, NOT AT THE REVEAL, when the clip was the
+  // question. Zach, on a 数字 card: *"why can't i see the play button, now i can't
+  // replay it even if i want to, i would have to click review first"*. He is right,
+  // and the cost is not cosmetic — revealing to hear the question again shows him
+  // the answer, which is the whole exercise on the 3,177 mode-2 cards.
+  //
+  // On a `produce` card it STAYS behind the reveal. That is decision 29 rather than
+  // an oversight: there the clip is the answer, and a play button sitting on screen
+  // before he has produced the contour is the defect the hard rule exists to stop.
+  askedOnEntry = asked;
+  reviewView.toggleAttribute("data-asked", asked);
+  // A card that declares NO audio side at all: nothing to replay, ever.
+  //
+  // "declared but the payload is absent" is a DIFFERENT state and cannot be read
+  // here: `RevealEvent.kind` is `enter | reveal | conceal | replay | prompt` and
+  // carries no failure, because a missing payload is an audio OUTCOME and arrives
+  // asynchronously through `onOutcome` — after this function has returned. So that
+  // case is handled there, and this only covers the sides-have-no-audio case.
+  paintReplay(drill === null ? "none" : "ready");
+
   shownAt = performance.now();
   paintPeek();
+}
+
+/**
+ * The replay button's three states.
+ *
+ * `none` — the card declares no audio side. Hidden; there is nothing to replay.
+ * `ready` — a clip is addressable. Enabled.
+ * `missing` — addressable but not on this device (101 of 5,708 cards after the
+ *   subset change). Shown and DISABLED with the reason, because a button that
+ *   fails identically on every press reads as the app being broken, and hiding it
+ *   would make a missing clip indistinguishable from a card that has none.
+ */
+function paintReplay(state: "none" | "ready" | "missing"): void {
+  replayButton.hidden = state === "none";
+  replayButton.disabled = state === "missing";
+  replayButton.title =
+    state === "missing" ? "no clip on this device for this card" : "play the clip again";
 }
 
 /**
@@ -937,6 +987,7 @@ document.addEventListener("keydown", (event) => {
     sidebarOpen: document.body.classList.contains("sidebar-open"),
     reviewHidden: reviewView.hidden,
     revealed,
+    asked: askedOnEntry,
     peeking: peekOffset !== 0,
     hasCard: currentCardId !== null,
   });
