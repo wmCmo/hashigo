@@ -193,9 +193,9 @@ answer word. The screen printed the answer above the question.
 > [!warning] **Corrected by Zach, 2026-08-23.** This first said "a reverse *New
 > Vocab* track", which implied his English deck reverses. **It does not** —
 > `English/Vocabulary` resolves `reverse: off` on 1,226 of its 1,234 cards. That
-> card is one of **8 per-card overrides** there, with a live reverse track at 2
-> reps due **2023-03-03**. The bug was real and the fix stands; citing a
-> deck-level setting he never turned on was not. The honest support is
+> card has a live reverse track at 2 reps due **2023-03-03**. The bug was real and
+> the fix stands; citing a deck-level setting he never turned on was not. The honest
+> support is
 > `日本語/単語` and `日本語/漢字`, where reverse is on for all 5,357 cards — which is
 > also why his request for a **"reversed" label at the top of the card** matters:
 > most of his real reverse volume is there.
@@ -204,8 +204,44 @@ answer word. The screen printed the answer above the question.
 > asked whether 数字 exports in reverse (it does not: 90 cards, 90 forward tracks,
 > zero reverse). The corpus total is **5,676**. Only four decks store
 > `reverse: on` — 単語 3,702 · 漢字 1,655 · 言葉 146 · 文法 83 — four child decks
-> inherit it for 81 more, and 9 cards carry a per-card override. Every other deck,
+> inherit it for 81 more, and 9 cards carry `cards.reverse = 'on'`. Every other deck,
 > 数字 and 部首 and all of 基本情報 included, resolves to OFF.
+>
+> **AND THOSE 9 ARE NOT 9 CHOICES HE MADE — corrected 2026-09-07 when he said "im
+> pretty sure this deck isn't reversed" and asked for the export to be read.** In
+> `build/hashigo.db` all 9 look identical: `cards.reverse = 'on'`. In the EXPORT they
+> split, because `cards.reverse` is where the importer's do-not-orphan rule lands:
+>
+> ```plaintext
+> English/Vocabulary, own `review-reverse?` in the export     reverse reviews   last
+>   txkdHvOL  ray          True   <- his                          14        2025-09-16
+>   3ym3Ai0O  ambivalent   True   <- his                          14        2026-01-03
+>   oJ1QTcwf  plumb        True   <- his                          14        2026-02-14
+>   oYjmEPwB  constraint   (none) <- FORCED by the importer         2        2023-03-01
+>   J3R240Q0  irksome      (none) <- FORCED                         1        2024-04-08
+>   rhX2sKTs  extol        (none) <- FORCED                         1        2023-08-08
+>   6bOaHfsA  expulsion    (none) <- FORCED                         1        2026-05-07
+>   9IsiWF95  impend       (none) <- FORCED                         1        2023-10-15
+> ```
+>
+> **Three are his and five are the importer's.** The five carry one or two reverse
+> reviews from years ago and no setting of their own — the signature of a stray tap in
+> Mochi, not a decision. `src/import/entities.ts` forces them `on` so 43,083 reverse
+> reviews corpus-wide are never orphaned, which is right at that scale and is what
+> writes `cards.reverse` and erases the distinction.
+>
+> **The consequence is visible in the app**: their single reverse review is years old,
+> so all five are deeply overdue and sort to the FRONT of the queue. The first four
+> cards served on 2026-08-26 were `constraint`, `extol`, something, `irksome` — three
+> of the five, all labelled REVERSED. That is what he was reacting to.
+>
+> **Do not "fix" this by relaxing the do-not-orphan rule.** Verified against the
+> database: **zero** cards corpus-wide carry a reverse track while resolving off, so
+> the rule has no outstanding debt — and a threshold on review count would silently drop
+> history. If those five reverse tracks are unwanted, the narrow change is to mark
+> those five tracks dormant (`dormant = 1` retains the history and stops scheduling —
+> SPEC: "no scheduling toggle should ever destroy four years of history"). **That
+> changes what he is DRILLED on, so it is his call** (decision 31).
 
 So: **the question is the FIRST non-empty side**, plus a following side whose only
 content is a WIDGET (that is 漢字 and only 漢字: `<<Kanji>>` / `<draw>` /

@@ -250,13 +250,30 @@ His own words explaining WHY are not derivable from the code or from git.
 
   **(1) IS A CORRECTION AND HE IS RIGHT ABOUT THE DECK.** Measured: `English/Vocabulary`
   resolves `reverse: off` on **1,226 of its 1,234 cards**. What I reported to him as "a
-  reverse New Vocab track" was real, but it was one of **8 per-card overrides** in that
-  deck — card `oYjmEPwB` (`constraint`), whose reverse track is live with 2 reps and a due
-  date of **2023-03-03**. So the bug it exposed is real and the fix stands; the FRAMING
-  was wrong, because it implied his English deck reverses and it does not. The honest
-  support is `日本語/単語` and `日本語/漢字`, where reverse is on for all 5,357 cards.
-  **Worth showing him separately:** those 8 English overrides are cards he has probably
-  forgotten exist.
+  reverse New Vocab track" was real, but it was card `oYjmEPwB` (`constraint`), whose
+  reverse track is live with 2 reps and a due date of **2023-03-03**. So the bug it
+  exposed is real and the fix stands; the FRAMING was wrong, because it implied his
+  English deck reverses and it does not. The honest support is `日本語/単語` and
+  `日本語/漢字`, where reverse is on for all 5,357 cards.
+
+  **HE PUSHED ON THIS AGAIN, 2026-09-07 — *"im pretty sure this deck isn't reversed"*,
+  with an instruction to read `exports/English/data.json`. He was right a second time,
+  about something this note itself had wrong.** It said "8 per-card overrides". The
+  export says **3**: `txkdHvOL` (ray), `3ym3Ai0O` (ambivalent), `oJ1QTcwf` (plumb), each
+  carrying `review-reverse? = True` and 14 reverse reviews. The other five — `constraint`,
+  `irksome`, `extol`, `expulsion`, `impend` — carry **no setting at all** and 1-2 reverse
+  reviews from 2023-2024. The importer's do-not-orphan rule wrote `cards.reverse = 'on'`
+  onto them, so in the database all eight are indistinguishable and "override" was the
+  wrong word for five of them.
+
+  **The lesson is about where the evidence lives, not about the count.** The database
+  cannot answer "did he choose this?" — the import flattens his choice and the rule's
+  correction into one column. Only `exports/` keeps them apart, which is why he asked for
+  the export specifically. Read the export when the question is about his INTENT.
+
+  **Worth showing him:** the three he chose are cards he has drilled 14 times each and
+  probably remembers. The five he did not choose are deeply overdue and sort to the front
+  of his queue — which is what he was actually seeing when he asked.
 
   **(3) is the first thing he has ever asked for that is stage 10.** Note the scope in his
   own words — *"edit each field of the card right away"*, in review mode AND in the

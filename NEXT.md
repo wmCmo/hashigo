@@ -380,20 +380,41 @@ Recorded here as well as in `app/README.md`, because the shape of each is reusab
    **CORRECTED 2026-08-23, by Zach, and the correction is worth more than the finding.**
    I first wrote this as "a reverse *New Vocab* track", which implied his English deck
    reverses. It does not: `English/Vocabulary` resolves `reverse: off` on **1,226 of its
-   1,234 cards**. That card (`oYjmEPwB`, `constraint`) is one of **8 per-card overrides**
-   in the deck, with a live reverse track at 2 reps due **2023-03-03**. The bug and the
-   fix are unaffected; what was wrong was citing a deck-level setting he had never turned
-   on. The real support is `日本語/単語` and `日本語/漢字` — reverse on, all 5,357 cards.
+   1,234 cards**. That card (`oYjmEPwB`, `constraint`) has a live reverse track at 2 reps
+   due **2023-03-03**. The bug and the fix are unaffected; what was wrong was citing a
+   deck-level setting he had never turned on. The real support is `日本語/単語` and
+   `日本語/漢字` — reverse on, all 5,357 cards.
 
    **AND 5,357 IS A SUBTOTAL, corrected by him again on 2026-08-23.** He asked whether his
    数字 deck exports in reverse; it does not (90 cards, 90 forward tracks, zero reverse
    tracks, zero reverse reviews), and checking it showed the figure had been quoted as if
    it were the whole corpus. **The total with reverse resolved ON is 5,676.** Only FOUR
    decks store it — 単語 3,702 · 漢字 1,655 · 言葉 146 · 文法 83 — four child decks inherit
-   it (オノマトペ 41, 尊敬語 21, 謙譲語 17, ビジネス 2), and 9 cards carry a per-card
-   override (8 in English/Vocabulary, 1 in 基本情報/第15章). Everything else resolves OFF,
-   including 数字, 部首 and all of 基本情報. **`日本語` itself is `inherit` with no parent**,
-   so the corpus default is off and reverse is opt-in per deck.
+   it (オノマトペ 41, 尊敬語 21, 謙譲語 17, ビジネス 2), and 9 cards carry
+   `cards.reverse = 'on'` (8 in English/Vocabulary, 1 in 基本情報/第15章). Everything else
+   resolves OFF, including 数字, 部首 and all of 基本情報. **`日本語` itself is `inherit`
+   with no parent**, so the corpus default is off and reverse is opt-in per deck.
+
+   **AND THOSE 9 ARE NOT 9 CHOICES OF HIS — corrected 2026-09-07**, when he said "im
+   pretty sure this deck isn't reversed" and asked for `exports/English/data.json` to be
+   read. He was right about the deck and this file was wrong about the cards: in the
+   database all 9 read `cards.reverse = 'on'` and look alike, because **that column is
+   where the importer's do-not-orphan rule lands**. Only the EXPORT keeps them apart —
+   **3 carry `review-reverse? = True` (his, 14 reverse reviews each, most recent
+   2026-02-14) and 5 carry no setting at all** (1-2 reverse reviews, newest 2026-05-07,
+   the rest 2023-2024). A stray tap in Mochi, not a decision.
+
+   The rule is right at corpus scale — it exists so 43,083 reverse reviews are never
+   orphaned, and the database confirms it left no debt: **zero** cards anywhere carry a
+   reverse track while resolving off. What it costs is five reverse tracks he never asked
+   for, whose one old review makes them deeply overdue, so they sort to the FRONT of the
+   queue: the first four cards the app served on 2026-08-26 were `constraint`, `extol`,
+   one other, `irksome` — three of the five, each labelled REVERSED.
+
+   **If they are unwanted the narrow fix is `dormant = 1` on those five tracks**, which
+   retains the history and stops the scheduling (SPEC: no scheduling toggle may destroy
+   four years of history). Do NOT put a review-count threshold on the import rule.
+   It changes what he is DRILLED on, so it is his call (decision 31).
 2. **Exactly one clip per reveal, or 単語 plays two at once.**
    `audioController.play()` defers extras only WITHIN one call. `ShadowingSide.reveal()`
    gained `{silent}` — unmask without sound, the safe direction.
