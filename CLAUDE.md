@@ -187,12 +187,19 @@ npm run phone                             # THE PHONE: tunnel + server + the URL
                         # on his handset — notes/archive/PHONE-TEST.md.
 npm run app:dev -- --host ::              # phone / tunnel, by hand (bind-address trap)
 npm run app:check                         # tsc -p app/tsconfig.json
-# The audio subset. DEFAULT IS NOW 200 MiB = 90.0% of the 5,708 speech-bearing
-# cards, raised from 32 MiB (23.8%) on 2026-09-07 because the reason for the small
-# budget was a METERED tunnel and `tailscale serve` is not metered. 200 is where the
-# curve turns: the next 200 MiB buys 1.7 points. The full store is 618 MiB = 100%.
-# Coverage matters more here than it sounds — decision 29's mode 2 is 3,177 cards
-# where the AUDIO IS THE QUESTION. scripts/app-bootstrap.ts has the curve.
+# The audio subset. DEFAULT 200 MiB = **98.2%** of the 5,708 speech-bearing cards,
+# raised from 32 MiB (23.8%) on 2026-09-07 because the small budget existed for a
+# METERED tunnel and `tailscale serve` is not metered.
+# THE SELECTION RULE CHANGED THE SAME DAY, and that is the bigger half. It was "all
+# speech, smallest first", which printed a true 90.0% that was the average of 100%
+# and almost nothing: size is a proxy for "short utterance", so it covered the
+# vocabulary decks completely and starved every deck whose clips are inherently
+# long. Zach found it by opening a 数字 card that played SILENCE — 数字 was at 26%,
+# 基本情報 at 0-12%. It now takes each card's CHEAPEST clip first, so no card gets a
+# second before every card has a first: 90.0% -> 98.2% at the same budget, and
+# 数字 26% -> 100%. scripts/app-bootstrap.ts carries both measurements.
+# Coverage matters more than the number suggests — decision 29's mode 2 is 3,177
+# cards where the AUDIO IS THE QUESTION, and 数字's `<input>` prompts on entry too.
 npx vite-node scripts/app-bootstrap.ts -- --speech-bytes 650000000   # all of it
 
 # The scheduler. Read-only except `seed`, which writes state and moves no due date.

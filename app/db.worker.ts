@@ -1144,7 +1144,7 @@ function backup(request: BackupRequest): void {
  * ─── THE AUDIO NUMBER IS MEASURED, NOT REMEMBERED ───────────────────────────
  *
  * `scripts/app-bootstrap.ts` prints a coverage figure when it builds the subset
- * ("5,136 of 5,708 cards with speech can play something"), and quoting that here
+ * ("5,607 of 5,708 cards with speech can play something"), and quoting that here
  * would be quoting a build-time constant as a device fact. The subset is bounded by
  * `--speech-bytes`, the store is a SEPARATE database in the same pool, and a
  * re-import replaces it — so the honest answer is a join across the two, now.

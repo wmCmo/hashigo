@@ -366,7 +366,7 @@ spike config: `build/hashigo.db` came back 200 at 74,465,280 bytes.
 ```plaintext
 hashigo-app.db          72,630,272 bytes   7,716 cards · 102,020 reviews
 hashigo-app-blobs.db    42,287,104 bytes   1,529 payloads (speech 1,504 · file 15 · image 10)
-coverage                5,136 of 5,708 cards with speech can play something (90.0%)
+coverage                5,607 of 5,708 cards with speech can play something (98.2%)
 ```
 
 `VACUUM INTO`, not a file copy: `build/hashigo.db` is in WAL mode and

@@ -32,13 +32,52 @@
  *
  *   a. every `image` and `file` payload — few, and the only non-audio blobs that
  *      are not already inline in the card database;
- *   b. `speech` payloads in ASCENDING SIZE ORDER until `--speech-bytes` is spent.
+ *   b. **each card's CHEAPEST speech clip first**, in ascending size order, so no
+ *      card gets a second clip before every card has a first; then the remaining
+ *      clips by size, until `--speech-bytes` is spent.
  *
- * Rule (b) is not arbitrary. A speech blob's size tracks the length of the text
- * it says, so smallest-first buys single WORDS — exactly the 高低アクセント clip the
- * drill needs — at ~30 KB each instead of sentences at ~120 KB, and it maximises
- * how many distinct cards have playable audio per byte downloaded. The run prints
- * the coverage it achieved rather than implying it.
+ * ─── RULE (b) WAS "ALL SPEECH, SMALLEST FIRST", AND THAT WAS SUBTLY WRONG ───
+ *
+ * The old rule ordered every distinct blob by size globally. The reasoning was
+ * sound as far as it went — a clip's size tracks the length of what it says, so
+ * smallest-first buys single WORDS at ~35 KB instead of sentences at ~120 KB — and
+ * the figure it printed, 90.0% of speech-bearing cards at 200 MiB, was true.
+ *
+ * **It was also the average of 100% and almost nothing.** Zach found it by opening a
+ * 数字 card that played silence. Measured per deck, at the same 200 MiB:
+ *
+ * ```
+ * deck                 playable   median clip     under the new rule
+ * 日本語/単語               100%        36 KB          100%
+ * English/Vocabulary      100%        38 KB          100%
+ * 日本語/言葉                100%        41 KB          100%
+ * 日本語/数字                 26%        96 KB          100%
+ * 日本語/文法                 73%        68 KB          100%
+ * 基本情報/第11章               7%       124 KB           78%
+ * 基本情報/第9章                0%       110 KB           86%
+ * ```
+ *
+ * Size is a proxy for "short utterance" and short utterance is a proxy for "single
+ * word" — so global smallest-first covered the vocabulary decks completely and spent
+ * nothing on the decks whose clips are inherently long. A 数字 card SAYS a nine-digit
+ * number; there is no cheap version of it.
+ *
+ * Taking each card's cheapest clip first optimises the metric this script actually
+ * reports — cards that can play something — instead of a proxy for it. Same budget,
+ * measured over the real store:
+ *
+ * ```
+ *  budget   smallest-first   cheapest-per-card
+ *  128 MiB   4,537 (79.5%)      4,654 (81.5%)
+ *  200 MiB   5,136 (90.0%)      5,607 (98.2%)
+ *  300 MiB   5,158 (90.4%)      5,708 (100.0%)
+ * ```
+ *
+ * **Why it matters more than the eight points suggest:** the cards it was starving
+ * are the ones where the clip is the QUESTION. `src/review/mode.ts` prompts on entry
+ * whenever a side carries a widget — a 数字 card's `<input>` means "produce your
+ * answer here" — so a missing clip there is not a missing extra, it is the card
+ * asking nothing at all. 89 of 90 数字 cards were in that state.
  *
  * **Every TEXT generation rides along for free** and is not counted here: ai,
  * translate, furigana and dictionary outputs are stored INLINE in the card
@@ -193,6 +232,45 @@ try {
     }[]).map((row) => [row.hash, row.kind]),
   );
 
+  /**
+   * `hash` -> how cheap it is to give SOME card its first clip.
+   *
+   * Rule (b): a speech blob that is the cheapest clip of at least one card goes in
+   * the first wave, ordered by size; everything else follows. This is what turns
+   * "90% overall, 26% on 数字" into "98.2% overall, 100% on 数字" at the same budget
+   * — see the header for the measurement and for why 数字 was the deck it starved.
+   *
+   * Read from the CARD database's `blob_refs`, because the store deliberately knows
+   * nothing but `(hash, byte_size, bytes)` — decision 4, no third thing.
+   */
+  const speechByCard = new Map<string, string[]>();
+  for (const row of cardDb
+    .prepare(
+      `SELECT r.card_id AS card, b.hash AS hash
+         FROM blob_refs r JOIN blobs b ON b.hash = r.blob_hash
+        WHERE b.kind = 'speech'`,
+    )
+    .all() as { card: string; hash: string }[]) {
+    speechByCard.set(row.card, [...(speechByCard.get(row.card) ?? []), row.hash]);
+  }
+  const storeSize = new Map(
+    (from.prepare("SELECT hash, byte_size FROM blob_payloads").all() as {
+      hash: string;
+      byte_size: number;
+    }[]).map((row) => [row.hash, row.byte_size]),
+  );
+  const firstWave = new Set<string>();
+  for (const hashes of speechByCard.values()) {
+    // A card whose clips are all absent from the store contributes nothing.
+    const present = hashes.filter((hash) => storeSize.has(hash));
+    if (present.length === 0) continue;
+    let cheapest = present[0] as string;
+    for (const hash of present) {
+      if ((storeSize.get(hash) as number) < (storeSize.get(cheapest) as number)) cheapest = hash;
+    }
+    firstWave.add(cheapest);
+  }
+
   const candidates = (
     from
       .prepare("SELECT hash, byte_size AS bytes FROM blob_payloads ORDER BY byte_size ASC")
@@ -210,7 +288,24 @@ try {
   const kinds = new Map<string, number>();
   const readBytes = from.prepare("SELECT bytes FROM blob_payloads WHERE hash = ?").pluck();
 
-  for (const candidate of candidates) {
+  /**
+   * TWO WAVES, and the order between them is rule (b).
+   *
+   * Wave 1 is every clip that is some card's cheapest, ascending. Wave 2 is the
+   * rest, ascending. `candidates` is already size-ordered, so partitioning it
+   * preserves that within each wave — and a non-speech candidate belongs to rule
+   * (a), which has no budget, so it can sit in wave 1 and be taken unconditionally.
+   *
+   * `continue` rather than `break` on the budget was already right and stays right:
+   * a clip too big for the remaining budget must not stop a later, smaller one from
+   * being taken. With one global pass that only mattered at the boundary; with two
+   * waves it is what lets wave 2 keep filling the tail.
+   */
+  const waves = [
+    candidates.filter((c) => c.kind !== "speech" || firstWave.has(c.hash)),
+    candidates.filter((c) => c.kind === "speech" && !firstWave.has(c.hash)),
+  ];
+  for (const candidate of waves.flat()) {
     // Rule (a) takes everything; rule (b) stops at the budget.
     const isSpeech = candidate.kind === "speech";
     if (isSpeech && speechBytes + candidate.bytes > speechBudget) {

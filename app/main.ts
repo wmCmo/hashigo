@@ -465,10 +465,23 @@ async function showCardAt(): Promise<void> {
     })).payload,
     onOutcome: (outcome) => {
       if (outcome.kind === "playing" || outcome.kind === "replayed") return;
-      // A clip that cannot be produced is worth saying out loud on an identify
-      // card: silence there is not a missing extra, it is the QUESTION going
-      // missing. 14 of the 391 言葉 cards are in this state today.
-      if (card.mode.mode === "identify") {
+      // A clip that cannot be produced is worth saying out loud whenever it was the
+      // QUESTION: silence there is not a missing extra, it is the card asking
+      // nothing at all.
+      //
+      // GATED ON `mode === "identify"` UNTIL 2026-09-07, AND THAT WAS THE WRONG
+      // CONDITION. Zach opened a 数字 card, got silence, and got no explanation —
+      // because 数字 declares no `accent` field, so its mode is `produce` (the
+      // fail-safe default), and the gate excluded it. But it HAD been asked:
+      // `promptsOnEntry` has a second arm for widgets — an `<input>` means "produce
+      // your answer here", so the clip is the prompt — and 89 of 90 数字 cards had no
+      // clip in the shipped subset.
+      //
+      // So the condition is now "was a prompt actually issued", read off the loop's
+      // own log rather than inferred from the mode. `asked` below computes the same
+      // thing for the hint text; this is the same fact, one frame earlier.
+      const asked = card.loop.log.some((event) => event.kind === "prompt");
+      if (asked || card.mode.mode === "identify") {
         hintLine.textContent = `no clip for this card (${outcome.kind}) — reveal to read it`;
       }
     },
