@@ -161,8 +161,9 @@ describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
   const NOW = "2026-08-22T12:00:00+09:00";
 
   /**
-   * WAS 443, AND THE SIX THAT LEFT ARE THE POINT.
+   * WAS 443, THEN 437, AND IS NOW 70. TWO DIFFERENT MECHANISMS MOVED IT.
    *
+   * **443 -> 437, and the six that left are the point.**
    * `scripts/reverse-dormant-apply.ts` marked six reverse tracks dormant on
    * 2026-09-07 — cards the importer's do-not-orphan rule had forced `reverse = 'on'`
    * on the strength of one or two stray reviews from years ago, which Zach never
@@ -172,10 +173,22 @@ describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
    *
    * The figure therefore depends on a documented post-import step, not on the export
    * alone. That is why `scripts/rebuild.mjs` runs it and asserts it: a rebuild that
-   * skips it puts this number back to 443 and puts those six cards back in front of
-   * him.
+   * skips it puts those six cards back in front of him.
+   *
+   * **437 -> 70, and it is NOT that the queue drained on its own.**
+   * `NOW` is a FIXED instant, 2026-08-22. The export of 2026-08-17 ended five days
+   * BEFORE it, so every track scheduled into that gap was still outstanding and the
+   * queue read 437. The export of 2026-09-05 contains the reviews he actually did in
+   * those five days, so the same instant now sees them already answered. The number
+   * fell because the HISTORY got longer, not because the plan changed — the identical
+   * mechanism `CLAUDE.md` warns about in the other direction, where a frozen history
+   * makes due counts grow every day they are not re-measured.
+   *
+   * So this constant is a function of the export's END DATE and the fixed `NOW`
+   * together, and it moves on every re-import. It is still worth pinning: it is
+   * exact, and a change in it that a re-import does NOT explain is a real defect.
    */
-  const DUE_AT_NOW = 437;
+  const DUE_AT_NOW = 70;
 
   it("is the due queue plus ten new tracks, and states its basis", () => {
     const db = openDatabase(DB, { readOnly: true, applySchema: false });
@@ -183,7 +196,7 @@ describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
       const session = buildSession(db, { now: NOW });
       const p = session.progress();
       // Basis, because three counts are available (decision 6): TRACKS, not
-      // cards, not reviews. See `DUE_AT_NOW` for why it is 437 and not 443.
+      // cards, not reviews. See `DUE_AT_NOW` for why it is 70 and not 76.
       expect(p.dueCount).toBe(DUE_AT_NOW);
       expect(p.newCount).toBe(DEFAULT_NEW_LIMIT);
       expect(p.planned).toBe(DUE_AT_NOW + DEFAULT_NEW_LIMIT);

@@ -585,14 +585,14 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
         templates: 10,
         fieldValues: 3_848,
         settings: 4,
-        // The 234 individually archived cards. They LOOK like something the export
+        // The 244 individually archived cards. They LOOK like something the export
         // rebuilds and they are not: `UPSERT_CARD` writes `archived` from Mochi, and
         // Mochi has no deck-level archive at all, so decision 16's final import
         // returns every one of them to 0. Zero pinned — his export carries none, so
         // every pin from here on is one he made in Hashigo.
-        cardState: 234,
+        cardState: 244,
       });
-      // 102,020 imported reviews are NOT in here — that is the point.
+      // 103,110 imported reviews are NOT in here — that is the point.
       const bytes = JSON.stringify(a).length;
       // eslint-disable-next-line no-console
       console.log(`local archive over the real corpus: ${bytes} bytes JSON`);

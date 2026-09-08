@@ -18,9 +18,9 @@ import { renderPlainTextParts } from "../src/text/index.js";
  * Stage 1 acceptance. Two jobs, and the second is the one that matters.
  *
  * 1. THE ORACLE. Import all three real exports through the real orchestrator and
- *    assert every known-correct figure: 7,716 cards, 102,020 reviews split
- *    58,937 / 43,083 at 96.24% retention, 11 template rows, 19 tags carrying
- *    cards, 8,690 wiki-links, 10,887 live attachments and 8,958 tombstones that
+ *    assert every known-correct figure: 7,716 cards, 103,110 reviews split
+ *    59,514 / 43,596 at 96.24% retention, 11 template rows, 19 tags carrying
+ *    cards, 8,690 wiki-links, 10,890 live attachments and 8,983 tombstones that
  *    must NOT be in the database. Then import again and assert nothing changed.
  *
  * 2. THE DIFF. Counting rows proves nothing about whether the right bytes landed
@@ -40,8 +40,8 @@ import { renderPlainTextParts } from "../src/text/index.js";
  *     ten distinct templates in one database.
  *   * 19 tags, 20 rows. `Dialect` carries no cards of its own; it exists so
  *     `Dialect/Kansai` satisfies `tags.parent_path`. 19 paths carry cards.
- *   * 10,887 blobs, 10,816 addresses. 10,887 live attachment records is the
- *     oracle and is exactly the number of `blob_refs`; 71 of those files are
+ *   * 10,890 blobs, 10,826 addresses. 10,890 live attachment records is the
+ *     oracle and is exactly the number of `blob_refs`; 64 of those files are
  *     byte-identical to another, and content-addressing collapses them.
  */
 
@@ -304,7 +304,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
     // 39, not 45: the six empty leaf decks are dropped by default. No card or
     // review moves — they hold none, which is why they qualify.
     expect(count("SELECT count(*) FROM decks")).toBe(39);
-    expect(count("SELECT count(*) FROM card_field_values")).toBe(22_319);
+    expect(count("SELECT count(*) FROM card_field_values")).toBe(22_325);
     expect(count("SELECT count(*) FROM template_fields")).toBe(41);
 
     // 11 template ROWS across the three exports; oiaISYb2 is in two of them, so
@@ -323,10 +323,10 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
     }
 
     // ── reviews
-    expect(count("SELECT count(*) FROM reviews")).toBe(102_020);
-    expect(count("SELECT count(*) FROM review_log WHERE track_kind = 'forward'")).toBe(58_937);
-    expect(count("SELECT count(*) FROM review_log WHERE track_kind = 'reverse'")).toBe(43_083);
-    expect(count("SELECT count(*) FROM card_tracks")).toBe(13_392);
+    expect(count("SELECT count(*) FROM reviews")).toBe(103_110);
+    expect(count("SELECT count(*) FROM review_log WHERE track_kind = 'forward'")).toBe(59_514);
+    expect(count("SELECT count(*) FROM review_log WHERE track_kind = 'reverse'")).toBe(43_596);
+    expect(count("SELECT count(*) FROM card_tracks")).toBe(13_393);
     const totals = db
       .prepare(
         `SELECT reviews, passed, lapses, round(retention * 100, 2) AS retention_pct,
@@ -336,16 +336,22 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
       )
       .get() as Record<string, unknown>;
     expect(totals).toEqual({
-      reviews: 102_020,
-      passed: 98_188,
-      lapses: 3_832,
+      reviews: 103_110,
+      passed: 99_228,
+      lapses: 3_882,
+      // UNCHANGED ACROSS THE RE-IMPORT, and that is the interesting one. The
+      // 2026-09-05 export added 1,090 reviews to the 2026-08-17 one and the
+      // rate lands on the same two decimals — 99,228/103,110 against the old
+      // 98,188/102,020. Not a copied constant: the arithmetic is independent.
       retention_pct: 96.24,
-      hours: 636.1,
-      study_days: 1_317,
+      hours: 641.2,
+      study_days: 1_333,
       first_review_date: "2022-06-28",
-      last_review_date: "2026-08-18",
+      // LOCAL date, so it is one day past the newest UTC timestamp: every
+      // imported review is stamped 15:00:00Z, which is midnight at +09:00.
+      last_review_date: "2026-09-06",
       // SPEC: imported history is flagged time-unknown, never assigned midnight.
-      reviews_time_unknown: 102_020,
+      reviews_time_unknown: 103_110,
     });
     expect(count("SELECT count(*) FROM retention_by_hour")).toBe(0);
 
@@ -438,18 +444,18 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
     expect(pipedOnly).toBe(4_323);
     expect(sourceLinking.size - pipedOnly).toBe(12);
 
-    // ── blobs: 10,887 live attachments, 8,958 tombstones, and the tombstones
+    // ── blobs: 10,890 live attachments, 8,983 tombstones, and the tombstones
     //    are provably absent rather than merely uncounted.
-    expect(report.blobs?.liveAttachments).toBe(10_887);
-    expect(report.blobs?.mediaRefs).toBe(10_887);
-    expect(report.blobs?.tombstonesSkipped).toBe(8_958);
+    expect(report.blobs?.liveAttachments).toBe(10_890);
+    expect(report.blobs?.mediaRefs).toBe(10_890);
+    expect(report.blobs?.tombstonesSkipped).toBe(8_983);
     expect(report.blobs?.filesMissing).toBe(0);
-    expect(count("SELECT count(*) FROM blob_refs")).toBe(42_569);
-    // 71 of the 10,887 files are byte-identical to another; addressing collapses
-    // them, which is why the blob count is 10,816 and not 10,887.
-    expect(report.blobs?.distinctFiles).toBe(10_887);
-    expect(report.blobs?.dedupedFiles).toBe(71);
-    expect(report.blobs?.mediaBlobs).toBe(10_816);
+    expect(count("SELECT count(*) FROM blob_refs")).toBe(42_596);
+    // 64 of the 10,890 files are byte-identical to another; addressing collapses
+    // them, which is why the blob count is 10,826 and not 10,890.
+    expect(report.blobs?.distinctFiles).toBe(10_890);
+    expect(report.blobs?.dedupedFiles).toBe(64);
+    expect(report.blobs?.mediaBlobs).toBe(10_826);
 
     // Which filenames the export calls live, and which it tombstones, read
     // straight off the decoded records rather than from the blob importer.
@@ -461,11 +467,11 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
         else liveNames.add(fileName);
       }
     }
-    expect(tombstoned.size).toBe(8_958);
+    expect(tombstoned.size).toBe(8_983);
     const refKeys = db.prepare("SELECT ref_key FROM blob_refs").pluck().all() as string[];
     // Exactly the live attachments are referenced by filename; every other ref
     // is a generation key for cached text, which cannot collide with a filename.
-    expect(refKeys.filter((key) => liveNames.has(key))).toHaveLength(10_887);
+    expect(refKeys.filter((key) => liveNames.has(key))).toHaveLength(10_890);
     // THE TOMBSTONE CHECK: not one of the 8,958 is reachable in the database.
     const leaked = [...tombstoned].filter(
       (name) => !liveNames.has(name) && refKeys.includes(name),
@@ -640,7 +646,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
     expect(again.structure.searchTextWritten).toBe(0);
     // reviews is append-only and keyed on import_key: zero new rows.
     expect(again.reviews.reviews).toBe(0);
-    expect(again.reviews.tracks).toBe(13_392);
+    expect(again.reviews.tracks).toBe(13_393);
     expect(again.blobs?.mediaBlobs).toBe(0);
     expect(again.blobs?.mediaRefs).toBe(0);
     expect(again.blobs?.textBlobs).toBe(0);
@@ -873,8 +879,8 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
         }
       }
       expect({ strings, booleans, nulls }).toEqual({
-        strings: 20_708,
-        booleans: 1_599,
+        strings: 20_713,
+        booleans: 1_600,
         nulls: 12,
       });
       // eslint-disable-next-line no-console
@@ -1088,8 +1094,8 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
   it("discards stale pre-template content, and says exactly what it discarded", () => {
     // 3,159 templated cards carried text the template overrides. It is gone
     // from the database and reported in full.
-    expect(report.notes.staleContentCardIds.length).toBe(3_159);
-    expect(report.notes.staleContentChars).toBe(79_175);
+    expect(report.notes.staleContentCardIds.length).toBe(3_160);
+    expect(report.notes.staleContentChars).toBe(79_306);
     expect(report.notes.staleContentSample.length).toBe(20);
 
     // Not one templated card kept content, and no template-less card lost any.
@@ -1098,13 +1104,13 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
     ).toBe(0);
     expect(
       count("SELECT count(*) FROM cards WHERE template_id IS NULL AND content <> ''"),
-    ).toBe(364);
+    ).toBe(363);
 
     // Every reported id is a real card that really did carry content in the
     // export, and really has none now — checked against the source, not the
     // report's own bookkeeping.
     const ids = new Set(report.notes.staleContentCardIds);
-    expect(ids.size).toBe(3_159);
+    expect(ids.size).toBe(3_160);
     const stored = db.prepare("SELECT content, template_id FROM cards WHERE id = ?");
     let verified = 0;
     for (const id of ids) {
@@ -1116,7 +1122,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
       expect(row.template_id).not.toBeNull();
       verified += 1;
     }
-    expect(verified).toBe(3_159);
+    expect(verified).toBe(3_160);
 
     // The sample carries the real text, so a spot check needs no data.json.
     for (const entry of report.notes.staleContentSample) {
@@ -1172,7 +1178,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
     expect(names).toEqual(["一段動詞", "五段動詞", "副詞", "名詞", "形容動詞", "形容詞"].sort());
     // Every card still has a deck: the six hold none, which is why they go.
     expect(count("SELECT count(*) FROM cards")).toBe(7_716);
-    expect(count("SELECT count(*) FROM reviews")).toBe(102_020);
+    expect(count("SELECT count(*) FROM reviews")).toBe(103_110);
 
     // …and the opt-back-in really does restore them, with nothing else moving.
     const kept = openDatabase(MEMORY);
@@ -1185,7 +1191,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 1 round-trip over the real corpus", () => 
       expect(rows("SELECT count(*) FROM decks")).toBe(45);
       expect(unfiltered.structure.emptyLeafDecksDropped).toEqual([]);
       expect(rows("SELECT count(*) FROM cards")).toBe(7_716);
-      expect(rows("SELECT count(*) FROM reviews")).toBe(102_020);
+      expect(rows("SELECT count(*) FROM reviews")).toBe(103_110);
       expect(checkIntegrity(kept)).toEqual([]);
     } finally {
       kept.close();

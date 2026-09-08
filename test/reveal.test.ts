@@ -1238,7 +1238,7 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
         ].join("\n"),
       );
       expect(violations).toEqual([]);
-      expect(entered).toBe(27352);
+      expect(entered).toBe(27355);
       expect(armed).toBe(95);
       expect(revealed).toBe(91);
       // One clip per audio side: 4 second clips on 4 sides were deferred, not

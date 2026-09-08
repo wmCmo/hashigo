@@ -45,8 +45,9 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 
 **There is an app.** `app/` is a page, an OPFS database, audio on the device and grades
 landing on disk. Measured end to end in Chromium over the real corpus: **7,716 cards,
-102,020 imported reviews, a 656-card plan (as of 2026-08-26; it was 531 on
-2026-08-23 and GROWS DAILY as scheduled dates pass), reveal, grade, next.** Read
+103,110 imported reviews (the 2026-09-05 export, imported 2026-09-08), a 656-card plan
+(as of 2026-08-26; it was 531 on 2026-08-23 and GROWS DAILY as scheduled dates pass),
+reveal, grade, next.** Read
 [app/README.md](app/README.md) before touching it — it carries three findings that only
 came out of running it, and none of them was reachable by reasoning.
 

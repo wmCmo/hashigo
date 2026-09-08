@@ -7,7 +7,7 @@ user's Japanese study. Built because Mochi's developer stopped fixing reported b
 
 **THE APP RUNS.** As of 2026-08-23 there is a page (`app/`), a writable SQLite
 database in OPFS, audio on the device and grades landing on disk — measured end to end
-in Chromium over the real corpus: 7,716 cards, 102,020 imported reviews, a 531-card
+in Chromium over the real corpus: 7,716 cards, 103,110 imported reviews, a 531-card
 plan, reveal, grade, next. `app/README.md` is the entry point; `npm run app:bootstrap`
 then `npm run app:dev` is the whole way in.
 
@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 36 files, 934 passed, 1 skipped (the FSRS refit, gated). ~90 s.
+npm test                # 36 files, 936 passed, 1 skipped (the FSRS refit, gated). ~90 s.
                         # EXITS 0 ON A PASSING RUN as of 2026-08-26. It is a wrapper
                         # (`scripts/test.mjs`) that reads the SUMMARY, which is
                         # STRICTER than the exit code, not looser: the run must have
@@ -528,16 +528,26 @@ He has repeated each of these to a different agent, and the count is his:
    anyway because everyday when i make this app i still review mochi."* So do not propose
    regenerating clips, do not price it, do not treat `other-voice` clips or the missing
    ones as a task. **AND THE CONSEQUENCE AGENTS KEEP MISSING:** he is still reviewing in
-   Mochi daily, so the review history in `build/hashigo.db` is FROZEN — the newest review
-   is **2026-08-18**. Every due-queue figure in this repo is a snapshot and **will
-   change at the final import** (decision 16). Quote them as "as of <date>", never as
-   current. **TWO mechanisms move them and this file used to name only the first:** the
-   frozen history, and the fact that DUE GROWS EVERY DAY as scheduled dates pass. The
-   second is faster, and it is fast. Same database, no import and no grading in
-   between: **443 → 646 (2026-08-26) → 1,440 (2026-09-07)**. Twelve days roughly
-   doubled it. A due figure more than a few days old is not stale, it is wrong.
-   (The fixed-instant figure in `test/session.test.ts` also moved 443 → 437, for an
-   unrelated and deliberate reason — `scripts/reverse-dormant-apply.ts`.)
+   Mochi daily, so the review history in `build/hashigo.db` is FROZEN between imports —
+   the newest review is **2026-09-05**, from the export he handed over on 2026-09-08.
+   Every due-queue figure in this repo is a snapshot and **will change at the next
+   import**. Quote them as "as of <date>", never as current. **TWO mechanisms move them
+   and this file used to name only the first:** the frozen history, and the fact that
+   DUE GROWS EVERY DAY as scheduled dates pass. The second is faster, and it is fast.
+   Same database, no import and no grading in between: **443 → 646 (2026-08-26) →
+   1,440 (2026-09-07)**. Twelve days roughly doubled it. A due figure more than a few
+   days old is not stale, it is wrong.
+   (The fixed-instant figure in `test/session.test.ts` moved 443 → 437 for an unrelated
+   and deliberate reason — `scripts/reverse-dormant-apply.ts` — and then 437 → **70** on
+   the 2026-09-08 re-import, because `NOW` there is a fixed 2026-08-22 that the new
+   history now runs three weeks past. Both are documented at the constant.)
+
+   **THE 2026-09-08 RE-IMPORT, MEASURED CARD BY CARD, because "the numbers moved" is
+   not the same claim as "the importer still works":** 7,716 cards before and after;
+   **one card deleted** (`Y9ai64M3`, 基本情報, 4 reviews), **one created** (`uCc5sSvs`,
+   日本語, 群衆, 3 reviews), **zero cards changed deck, and zero surviving cards lost a
+   single review**. Reviews 102,020 → 103,110. That last property is the one decision
+   16's guard exists to protect, and it was observed rather than assumed.
 3. **Open-sourcing gets discussed AFTER development** — told to three agents. Not now.
    `notes/open-sourcing.md` holds what was already checked; leave it there.
 4. **HE USES IT ON BOTH — laptop AND phone** — told to two agents. *"on my laptop
@@ -693,9 +703,9 @@ python tools/mochi.py exports/日本語 exports/English exports/基本情報
 Expected output (a regression check — these numbers are known-correct):
 
 ```plaintext
-cards 7,716 | reviews 102,020 | retention 96.24%
-wiki-links 8,690 | tombstones 8,958
-inline generators: {'speech': 287, 'translate': 106, 'image': 8, 'furigana': 19, 'ai': 125}
+cards 7,716 | reviews 103,110 | retention 96.24%
+wiki-links 8,690 | tombstones 8,983
+inline generators: {'speech': 287, 'translate': 106, 'image': 8, 'furigana': 19, 'ai': 124}
 tags after normalisation: 19
 ```
 
@@ -732,7 +742,7 @@ before writing anything that parses the export.
 * Deck, template, and field names are Japanese where the user wrote them Japanese.
   Do not translate or romanise them — `単語`, `漢字`, `例文`, `意味` are identifiers.
 * Language codes normalise to BCP-47 (`ja-JP`), never Mochi's inline `jp`.
-* Prefer measuring over assuming: this project has 102,020 graded reviews and 56,767
+* Prefer measuring over assuming: this project has 103,110 graded reviews and 56,810
   `component-cache` entries (ai 19,710 · speech 24,558 · translate 9,216 · furigana
   3,255 · image-search 18 · dictionary 10), which double as labelled test sets. See the
   memory note on not inheriting Mochi's defaults.

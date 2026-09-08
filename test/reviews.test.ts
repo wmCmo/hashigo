@@ -614,12 +614,12 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
       const result = importReviews(db, cards);
 
       // ── THE PASS CONDITION ──────────────────────────────────────────────
-      expect(result.reviews).toBe(102_020);
-      expect(result.reviewsByKind["forward"]).toBe(58_937);
-      expect(result.reviewsByKind["reverse"]).toBe(43_083);
+      expect(result.reviews).toBe(103_110);
+      expect(result.reviewsByKind["forward"]).toBe(59_514);
+      expect(result.reviewsByKind["reverse"]).toBe(43_596);
       expect(result.reviewsByKind["cloze:0"]).toBeUndefined();
-      expect(result.passed).toBe(98_188);
-      expect(result.lapses).toBe(3_832);
+      expect(result.passed).toBe(99_228);
+      expect(result.lapses).toBe(3_882);
       expect(((result.retention ?? 0) * 100).toFixed(2)).toBe("96.24");
 
       // The same figures read back out of SQL, through views.sql.
@@ -632,15 +632,16 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
         )
         .get() as Record<string, unknown>;
       expect(totals).toEqual({
-        reviews: 102_020,
-        passed: 98_188,
-        lapses: 3_832,
+        reviews: 103_110,
+        passed: 99_228,
+        lapses: 3_882,
         retention_pct: 96.24,
-        hours: 636.1,
-        study_days: 1_317,
+        hours: 641.2,
+        study_days: 1_333,
         first_review_date: "2022-06-28",
-        last_review_date: "2026-08-18",
-        reviews_time_unknown: 102_020,
+        // LOCAL date: every review is stamped 15:00:00Z, midnight at +09:00.
+        last_review_date: "2026-09-06",
+        reviews_time_unknown: 103_110,
       });
       // Every single review is date-only, so the by-hour analysis must be empty.
       expect(db.prepare("SELECT count(*) FROM retention_by_hour").pluck().get()).toBe(0);
@@ -652,8 +653,8 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
         )
         .all();
       expect(byKind).toEqual([
-        { track_kind: "forward", reviews: 58_937 },
-        { track_kind: "reverse", reviews: 43_083 },
+        { track_kind: "forward", reviews: 59_514 },
+        { track_kind: "reverse", reviews: 43_596 },
       ]);
 
       // ── the invariant, over the real data ───────────────────────────────
@@ -664,7 +665,7 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
       const cardsWithReverseHistory = cards.filter(
         (c) => (c["reverse-reviews"] ?? []).length > 0,
       ).length;
-      expect(cardsWithReverseHistory).toBe(3_778);
+      expect(cardsWithReverseHistory).toBe(3_796);
       expect(
         db
           .prepare(
@@ -677,28 +678,28 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
       ).toBe(0);
 
       // Tracks: one forward per card, plus one reverse per reverse-enabled card.
-      expect(result.tracksByKind).toEqual({ forward: 7_716, reverse: 5_676 });
-      expect(result.tracks).toBe(13_392);
+      expect(result.tracksByKind).toEqual({ forward: 7_716, reverse: 5_677 });
+      expect(result.tracks).toBe(13_393);
 
       // THE TWO INTERVALS, over the real corpus.
       //
       // PLANNED is missing on a track's first review and wherever the
       // predecessor carried no Mochi `interval`. Never guessed.
-      expect(result.reviewsWithoutScheduled).toBe(17_960);
+      expect(result.reviewsWithoutScheduled).toBe(18_073);
       // MEASURED is missing on exactly the first review of each track that has
-      // any reviews at all — there is no other way to lack a predecessor. 13,392
+      // any reviews at all — there is no other way to lack a predecessor. 13,393
       // tracks exist; the ones with no reviews contribute no rows.
       const tracksWithReviews = db
         .prepare("SELECT count(*) FROM card_tracks WHERE reps > 0")
         .pluck()
         .get() as number;
       expect(result.reviewsWithoutElapsed).toBe(tracksWithReviews);
-      // And the difference is the point of the split: 8,934 rows that have no
+      // And the difference is the point of the split: 8,988 rows that have no
       // planned interval but DO have a measured one, so they are scorable and
       // bucketable where before they were NULL and silently dropped.
-      expect(result.reviewsElapsedOnly).toBe(17_960 - tracksWithReviews);
-      expect(result.reviewsElapsedOnly).toBe(8_934);
-      expect(result.reviewsWithoutDuration).toBe(102_020 - 92_089);
+      expect(result.reviewsElapsedOnly).toBe(18_073 - tracksWithReviews);
+      expect(result.reviewsElapsedOnly).toBe(8_988);
+      expect(result.reviewsWithoutDuration).toBe(103_110 - 93_124);
 
       // The stored columns agree with the same chains re-derived from the raw
       // rows by SQL. This is what makes the stored copies checkable.
@@ -712,7 +713,7 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
           .pluck()
           .get() as number;
       expect(past365("retention_by_scheduled_interval")).toBe(0);
-      expect(past365("retention_by_elapsed_interval")).toBe(3_009);
+      expect(past365("retention_by_elapsed_interval")).toBe(3_217);
 
       expect(checkIntegrity(db)).toEqual([]);
 

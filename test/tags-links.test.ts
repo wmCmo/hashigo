@@ -628,7 +628,7 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     // Both surfaces. Reading only `content` would find 12% of the links.
     expect(mapped.notes.linksInContent).toBe(1019);
     expect(mapped.notes.linksInFields).toBe(7725);
-    expect(mapped.notes.distinctTargets).toBe(2895);
+    expect(mapped.notes.distinctTargets).toBe(2893);
     // Unchanged by the fix: every one of the 54 recovered links resolves.
     expect(mapped.notes.unresolvedRows).toBe(18);
     expect(mapped.notes.unresolvedTargets.length).toBe(15);
@@ -679,7 +679,7 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     console.log("raw                  ", visible(raw));
     console.log("rendered             ", visible(rendered));
 
-    expect(withMark.length).toBe(2478);
+    expect(withMark.length).toBe(2479);
     expect(raw).toContain(LRM);
     expect(rendered).not.toContain(LRM);
     expect(rendered).not.toContain("[[");

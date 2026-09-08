@@ -190,7 +190,7 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     console.log("template rows         ", templatesPerExport, "total", templateRows);
     console.log("distinct templates    ", mapped.templates.length, mapped.notes.templateIdCollisions);
 
-    expect(cardsPerExport).toEqual([5947, 1258, 511]);
+    expect(cardsPerExport).toEqual([5948, 1258, 510]);
     expect(mapped.cards.length).toBe(7716);
     expect(templateRows).toBe(11);
     // 11 rows, 10 distinct: oiaISYb2 (単語) is in both 日本語 and 基本情報.
@@ -199,7 +199,7 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     expect(mapped.notes.templateIdConflicts).toEqual([]);
   });
 
-  it("finds all 102,020 reviews, split 58,937 forward / 43,083 reverse", () => {
+  it("finds all 103,110 reviews, split 59,514 forward / 43,596 reverse", () => {
     const perTrack = new Map<string, number>();
     for (const root of roots) {
       for (const { card } of walkCards(root)) {
@@ -210,9 +210,9 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     }
     const total = [...perTrack.values()].reduce((a, b) => a + b, 0);
     console.log("reviews by track      ", Object.fromEntries(perTrack), "total", total);
-    expect(perTrack.get("forward")).toBe(58937);
-    expect(perTrack.get("reverse")).toBe(43083);
-    expect(total).toBe(102020);
+    expect(perTrack.get("forward")).toBe(59514);
+    expect(perTrack.get("reverse")).toBe(43596);
+    expect(total).toBe(103110);
   });
 
   it("decodes every review date, and every one is 15:00:00Z", () => {
@@ -231,7 +231,7 @@ describe.runIf(haveCorpus)("the real corpus", () => {
       }
     }
     console.log("review clock times    ", [...clockTimes], "over", dates, "reviews");
-    expect(dates).toBe(102020);
+    expect(dates).toBe(103110);
     expect([...clockTimes]).toEqual(["15:00:00.000Z"]);
   });
 
@@ -334,18 +334,18 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     // TEMPLATED, and on a templated card the template decides every side — so
     // that text has never been rendered by Mochi and is discarded on import
     // (Zach's decision; see MappingNotes.staleContentCardIds). What is left is
-    // the 364 template-less cards, which really do author their sides here.
-    expect(withContent).toBe(364);
-    expect(mapped.notes.staleContentCardIds.length).toBe(3_159);
+    // the 363 template-less cards, which really do author their sides here.
+    expect(withContent).toBe(363);
+    expect(mapped.notes.staleContentCardIds.length).toBe(3_160);
     expect(withContent + mapped.notes.staleContentCardIds.length).toBe(3_523);
     // Discarding is not silent: every id is reported, the size is counted, and
     // a sample carries the text itself.
     // 79,175 CODE POINTS, matching tools/mochi.py. The naive `.length` says
-    // 79,176: one card (lWDwKxNL) writes U+1F347 GRAPES, which is a surrogate
+    // 79,307: one card (lWDwKxNL) writes U+1F347 GRAPES, which is a surrogate
     // pair in UTF-16 and one character everywhere else.
-    expect(mapped.notes.staleContentChars).toBe(79_175);
+    expect(mapped.notes.staleContentChars).toBe(79_306);
     expect(mapped.notes.staleContentSample.length).toBe(20);
-    expect(new Set(mapped.notes.staleContentCardIds).size).toBe(3_159);
+    expect(new Set(mapped.notes.staleContentCardIds).size).toBe(3_160);
     // Every discarded card is templated, and none of them lost anything else:
     // the text is still in the export, and the card keeps its field values.
     const staleIds = new Set(mapped.notes.staleContentCardIds);
@@ -358,8 +358,8 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     // Keeping it is one option away, which is what makes the discard recoverable
     // without going back to data.json.
     const kept = mapExports(roots, { dropEmptyLeafDecks: false });
-    expect(kept.cards.filter((card) => card.content.trim() !== "").length).toBe(364);
-    expect(mapped.cardFieldValues.length).toBe(22319);
+    expect(kept.cards.filter((card) => card.content.trim() !== "").length).toBe(363);
+    expect(mapped.cardFieldValues.length).toBe(22325);
     expect(authored.size).toBeGreaterThan(7000);
     // cardText sees both surfaces; content alone sees almost nothing. 16 cards
     // carry no authored text at all -- blank "Untitled card" stubs with no
@@ -451,18 +451,18 @@ describe.runIf(haveCorpus)("the real corpus", () => {
       "| on by card flag", explicit,
       "| forced", forced.size,
     );
-    expect(withHistory).toBe(3778);
-    // 3,764 inherit from 文法/言葉/漢字/単語, 8 carry review-reverse? true
+    expect(withHistory).toBe(3796);
+    // 3,782 inherit from 文法/言葉/漢字/単語, 8 carry review-reverse? true
     // themselves, and 6 would have been lost without SPEC's enforcement rule.
-    expect(inheriting).toBe(3764);
+    expect(inheriting).toBe(3782);
     expect(explicit).toBe(8);
     expect(inheriting + explicit + forced.size).toBe(withHistory);
   });
 
-  it("keeps the 234 archived cards and finds no pinned ones", () => {
-    expect(mapped.cards.filter((row) => row.archived === 1).length).toBe(234);
+  it("keeps the 244 archived cards and finds no pinned ones", () => {
+    expect(mapped.cards.filter((row) => row.archived === 1).length).toBe(244);
     expect(mapped.cards.filter((row) => row.pinned === 1).length).toBe(0);
-    expect(mapped.cards.filter((row) => row.needs_rereview === 1).length).toBe(1);
+    expect(mapped.cards.filter((row) => row.needs_rereview === 1).length).toBe(5);
   });
 
   it("gives every card an RFC 3339 created_at and updated_at", () => {

@@ -8,6 +8,7 @@ import {
   ALL_TIME,
   BEYOND_YEAR_LABEL,
   INTERVAL_BUCKETS,
+  MOCHI_2026,
   MOCHI_INTERVAL_CAP_DAYS,
   activityByDay,
   activityByMonth,
@@ -23,6 +24,7 @@ import {
   retentionByInterval,
   totals,
   type DashboardData,
+  type DateWindow,
   type DayActivity,
 } from "../src/dashboard/index.js";
 import { importExports, readSource, type ImportSource } from "../src/import/index.js";
@@ -34,7 +36,7 @@ import { queueCounts } from "../src/scheduler/queue.js";
  * Stage 2 acceptance. The dashboard is the IMPORTER's acceptance test, so this
  * file has two jobs and the second one is the one that matters.
  *
- * 1. THE ORACLE, all time: 102,020 reviews split 58,937 / 43,083, 96.24%
+ * 1. THE ORACLE, all time: 103,110 reviews split 58,937 / 43,083, 96.24%
  *    retention, 1,317 active days, 636.1 hours over 92,089 timed reviews,
  *    median 10 s, mean 24.9 s.
  *
@@ -54,7 +56,7 @@ import { queueCounts } from "../src/scheduler/queue.js";
  *    Mochi's review count (13,240) is NOT asserted. It is 8.2% below ours and
  *    notes/dashboard-reconciliation.md rules out eight candidate definitions for
  *    the gap; the leading one (one review per card per day) lands on 13,258,
- *    still 18 out. The import is byte-exact at 102,020 reviews, so this is a
+ *    still 18 out. The import is byte-exact at 103,110 reviews, so this is a
  *    definitional difference inside Mochi, not an importer bug. We assert OUR
  *    definitions — 14,420 grading events, 5,182 distinct cards — and we assert
  *    that the card-day count is NOT 13,240, so nobody can quietly "fix" the
@@ -80,9 +82,42 @@ const MOCHI = {
   cardsStudied: 5_250,
 } as const;
 
-/** The last review in the corpus; 2026-08-19 is the day Mochi was screenshotted. */
-const LAST_REVIEW_DATE = "2026-08-18";
+/** The last review in the corpus. */
+const LAST_REVIEW_DATE = "2026-09-06";
+/** The day Mochi was screenshotted; its data therefore runs through the 18th. */
 const MOCHI_SCREENSHOT_DATE = "2026-08-19";
+const MOCHI_DATA_THROUGH = "2026-08-18";
+
+/**
+ * CALENDAR 2026 UP TO THE SCREENSHOT — and the re-import is what forced this to
+ * be written down.
+ *
+ * `MOCHI` above is a photograph of Mochi's dashboard taken on 2026-08-19. Until
+ * the 2026-09-05 export arrived, the corpus happened to END the day before that,
+ * so `calendarYear(2026)` and "everything Mochi could have counted" were the same
+ * set of rows and the reconciliation compared like with like BY ACCIDENT.
+ *
+ * The new export runs 19 days further. `calendarYear(2026)` now includes reviews
+ * the screenshot never saw, so comparing the two would be comparing 2026-so-far
+ * against a photograph of August — and the honest repair is to bound the window,
+ * not to move `MOCHI` toward our own output. `MOCHI` is reference data; a
+ * reference you edit to agree with you has stopped being one.
+ *
+ * `asOf` cannot do this job: it clamps `daysElapsed` (that is how Mochi's 231 is
+ * reproduced below) and does not filter which reviews fall in the window.
+ *
+ * It ends on the 18th, not on the screenshot date: a dashboard photographed on the
+ * 19th shows the history behind it, and 211 active days is reproduced by data
+ * through the 18th and not by data through the 19th — measured, one day either way
+ * changes it. The screenshot date keeps its own separate job below, where Mochi's
+ * 231 elapsed days come from counting up to the day the photograph was taken.
+ */
+const MOCHI_WINDOW: DateWindow = {
+  id: "2026",
+  label: "2026年",
+  from: "2026-01-01",
+  to: MOCHI_DATA_THROUGH,
+};
 
 /** A synthetic day carrying only the field heatThresholds reads. */
 function day(reviews: number): DayActivity {
@@ -127,36 +162,42 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
   it("lands every all-time oracle figure", () => {
     const all = data.primary.totals;
 
-    expect(all.reviews).toBe(102_020);
-    expect(all.forwardReviews).toBe(58_937);
-    expect(all.reverseReviews).toBe(43_083);
+    expect(all.reviews).toBe(103_110);
+    expect(all.forwardReviews).toBe(59_514);
+    expect(all.reverseReviews).toBe(43_596);
     expect(all.otherReviews).toBe(0);
 
     expect(((all.retention ?? 0) * 100).toFixed(2)).toBe("96.24");
-    expect(all.passed).toBe(98_188);
-    expect(all.lapses).toBe(3_832);
+    expect(all.passed).toBe(99_228);
+    expect(all.lapses).toBe(3_882);
     expect(all.passed + all.lapses).toBe(all.reviews);
 
-    expect(all.activeDays).toBe(1_317);
+    expect(all.activeDays).toBe(1_333);
     expect(all.firstDate).toBe("2022-06-28");
     expect(all.lastDate).toBe(LAST_REVIEW_DATE);
 
-    expect(Number(all.hours.toFixed(1))).toBe(636.1);
-    expect(all.timedReviews).toBe(92_089);
+    expect(Number(all.hours.toFixed(1))).toBe(641.2);
+    expect(all.timedReviews).toBe(93_124);
     expect(all.medianSeconds).toBe(10);
-    expect(Number((all.meanSeconds ?? 0).toFixed(1))).toBe(24.9);
+    expect(Number((all.meanSeconds ?? 0).toFixed(1))).toBe(24.8);
 
     // Every imported review is date-only. If this ever drops below the review
     // count, someone has invented a time of day that was never recorded.
-    expect(all.reviewsTimeUnknown).toBe(102_020);
+    expect(all.reviewsTimeUnknown).toBe(103_110);
 
-    expect(all.cardsStudied).toBe(5_674);
+    expect(all.cardsStudied).toBe(5_701);
   });
 
   // ── 2. Mochi's 2026, the acceptance signal ─────────────────────────────────
 
-  it("matches Mochi EXACTLY on active days and retention for calendar 2026", () => {
-    const year = data.comparison.totals;
+  it("matches Mochi EXACTLY on active days and retention, up to the screenshot", () => {
+    // MOCHI_WINDOW, not `data.comparison` — see its comment. The screenshot is a
+    // photograph of 2026 up to 2026-08-19, so that is the window it can be
+    // reconciled against. Every figure below is the one this test asserted before
+    // the 2026-09-05 re-import, unchanged: 19 more days of history arrived and
+    // moved none of them, which is the strongest evidence available that the
+    // importer still reads the same rows the same way.
+    const year = totals(db, MOCHI_WINDOW);
     expect(year.window.id).toBe("2026");
 
     // The two that must be exact — they are what prove the bucketing.
@@ -167,26 +208,71 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     expect(((year.retention ?? 0) * 100).toFixed(2)).toBe("95.10");
   });
 
-  it("reads 14,420 reviews and 5,182 cards studied, by our own definitions", () => {
-    const year = data.comparison.totals;
-    expect(year.reviews).toBe(14_420);
-    expect(year.cardsStudied).toBe(5_182);
+  it("reads 14,416 reviews and 5,181 cards studied, by our own definitions", () => {
+    const year = totals(db, MOCHI_WINDOW);
+    // WAS 14,420 AND 5,182, AND THE FOUR THAT LEFT ARE ACCOUNTED FOR EXACTLY.
+    // Diffing the 2026-08-17 export against the 2026-09-05 one, card by card:
+    // one card deleted (Y9ai64M3, 基本情報, a デザインレビュー card, 4 reviews),
+    // one created (uCc5sSvs, 日本語, 群衆, 3 reviews), zero cards moved deck, and
+    // ZERO surviving cards lost a single review. So this window lost exactly the
+    // deleted card's four. History does not otherwise change under re-import —
+    // which is the property decision 16's guard exists to protect, observed here
+    // rather than assumed.
+    expect(year.reviews).toBe(14_416);
+    expect(year.cardsStudied).toBe(5_181);
 
-    // Stated, not hidden: ours is above Mochi's on both counts.
+    // Stated, not hidden: ours is above Mochi's on reviews and below on cards.
     expect(year.reviews).toBeGreaterThan(MOCHI.reviews);
     expect(year.cardsStudied).toBeLessThan(MOCHI.cardsStudied);
-    expect(MOCHI.cardsStudied - year.cardsStudied).toBe(68);
+    expect(MOCHI.cardsStudied - year.cardsStudied).toBe(69);
   });
 
   it("does not tune the review count toward Mochi's 13,240", () => {
-    const year = data.comparison.totals;
+    const year = totals(db, MOCHI_WINDOW);
     // The leading hypothesis for Mochi's definition, carried as a labelled
-    // figure rather than adopted. It misses by 18, so it is not the answer.
-    expect(year.cardDays).toBe(13_258);
+    // figure rather than adopted. It misses by 15, so it is not the answer.
+    // (It missed by 18 against the August export; the deleted card above took
+    // three card-days with it. Still not zero, which is the whole point.)
+    expect(year.cardDays).toBe(13_255);
     expect(year.cardDays).not.toBe(MOCHI.reviews);
-    expect(year.cardDays - MOCHI.reviews).toBe(18);
+    expect(year.cardDays - MOCHI.reviews).toBe(15);
     // And no metric we publish equals Mochi's count.
     expect(year.reviews).not.toBe(MOCHI.reviews);
+  });
+
+  it("CUTS the published comparison at the screenshot, so its verdicts stay true", () => {
+    // THE REGRESSION THIS PINS, found by re-importing on 2026-09-07: the page's
+    // 判定 column is authored prose, and it went on printing `完全一致` beside
+    // `211 | 227 | +16` because nothing checked a verdict against the numbers
+    // under it. `mochiComparisonWindow` bounds the section to the data behind the
+    // photograph, which is what the section's own title claims it compares.
+    expect(data.comparison.totals.window.to).toBe(MOCHI_DATA_THROUGH);
+    expect(data.comparison.totals).toMatchObject({
+      activeDays: MOCHI.activeDays,
+      reviews: 14_416,
+      cardsStudied: 5_181,
+      cardDays: 13_255,
+    });
+
+    // A year the reference does not cover is NOT cut short.
+    expect(collect(db, { comparisonYear: 2025 }).comparison.totals.window.to).toBe("2025-12-31");
+  });
+
+  it("never prints a verdict of 完全一致 next to a non-zero gap", () => {
+    // The general form of the same defect. Two rows claim an exact match; if the
+    // window ever drifts again, this fails before anyone reads the page.
+    const year = data.comparison.totals;
+    const ours: Record<string, number> = {
+      reviews: year.reviews,
+      daysElapsed: year.daysElapsed,
+      activeDays: year.activeDays,
+      retention: Math.round((year.retention ?? 0) * 100),
+      cardsStudied: year.cardsStudied,
+    };
+    for (const row of MOCHI_2026) {
+      if (!row.note.startsWith("完全一致")) continue;
+      expect({ key: row.key, ours: ours[row.key] }).toEqual({ key: row.key, ours: row.mochi });
+    }
   });
 
   it("counts elapsed days inclusively, which is where Mochi's 231 comes from", () => {
@@ -200,12 +286,12 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     // All time, clamped to the first review rather than to year zero.
     expect(data.primary.totals.windowStart).toBe("2022-06-28");
     expect(data.primary.totals.windowEnd).toBe(LAST_REVIEW_DATE);
-    expect(data.primary.totals.daysElapsed).toBe(1_513);
+    expect(data.primary.totals.daysElapsed).toBe(1_532);
   });
 
   it("is bucketed by JST, not UTC — and the 2026 match is not what proves it", () => {
     // Every review is stored at 15:00:00Z, so its local date is exactly one day
-    // ahead of its UTC date. All 102,020 of them, or tz_offset is being ignored.
+    // ahead of its UTC date. All 103,110 of them, or tz_offset is being ignored.
     const shift = db
       .prepare(
         `SELECT count(*)                        AS n,
@@ -215,8 +301,8 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
            FROM review_log`,
       )
       .get() as { n: number; ahead: number; distinct_times: number };
-    expect(shift.n).toBe(102_020);
-    expect(shift.ahead).toBe(102_020);
+    expect(shift.n).toBe(103_110);
+    expect(shift.ahead).toBe(103_110);
     expect(shift.distinct_times).toBe(1);
 
     // This is what the shift buys, and the only published figure it changes:
@@ -227,7 +313,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
       .prepare(`SELECT min(date(reviewed_at)) AS lo, max(date(reviewed_at)) AS hi FROM review_log`)
       .get() as { lo: string; hi: string };
     expect(utcSpan.lo).toBe("2022-06-27");
-    expect(utcSpan.hi).toBe("2026-08-17");
+    expect(utcSpan.hi).toBe("2026-09-05");
 
     // And this is what it does NOT buy. Nothing was studied on either side of
     // the new year, so calendar 2026 is bucketing-invariant: re-cut it by UTC
@@ -239,13 +325,19 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
       )
       .get() as { n: number };
     expect(boundary.n).toBe(0);
+    // THE UPPER BOUND IS 08-17, NOT 12-31, AND THAT IS THE POINT OF THE TEST.
+    // Every review is stored at 15:00:00Z, so its UTC date is exactly one day
+    // behind its local date; the UTC spelling of "local dates up to 2026-08-18"
+    // is therefore "UTC dates up to 2026-08-17". Comparing the same rows under
+    // the two bucketings is the whole claim — run it over a wider UTC window and
+    // it compares different rows and proves nothing.
     const utc2026 = db
       .prepare(
         `SELECT count(*)                            AS reviews,
                 count(DISTINCT date(reviewed_at))   AS active_days,
                 1.0 * sum(remembered) / count(*)    AS retention
            FROM review_log
-          WHERE date(reviewed_at) BETWEEN '2026-01-01' AND '2026-12-31'`,
+          WHERE date(reviewed_at) BETWEEN '2025-12-31' AND '2026-08-17'`,
       )
       .get() as { reviews: number; active_days: number; retention: number };
     expect(utc2026.reviews).toBe(data.comparison.totals.reviews);
@@ -260,7 +352,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     const [t1, t2, t3] = data.heat;
     const share = (t: number): number => counts.filter((c) => c <= t).length / counts.length;
 
-    expect(counts.length).toBe(1_317);
+    expect(counts.length).toBe(1_333);
     expect(t1).toBeLessThan(t2);
     expect(t2).toBeLessThan(t3);
     // The requirement, not the arithmetic: each cut lands on its quartile. A
@@ -293,7 +385,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
   it("has a heatmap that adds up to the totals", () => {
     const days = data.primary.days;
     expect(days.length).toBe(data.primary.totals.activeDays);
-    expect(days.reduce((sum, d) => sum + d.reviews, 0)).toBe(102_020);
+    expect(days.reduce((sum, d) => sum + d.reviews, 0)).toBe(103_110);
     expect(days.every((d) => d.reviews > 0)).toBe(true);
     // Sorted and unique, so the calendar grid cannot double-paint a cell.
     const dates = days.map((d) => d.date);
@@ -309,20 +401,20 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
       previous = day.cumulativeCards;
     }
     expect(days[days.length - 1]?.cumulativeCards).toBe(data.primary.totals.cardsStudied);
-    expect(days.reduce((sum, d) => sum + d.newCards, 0)).toBe(5_674);
+    expect(days.reduce((sum, d) => sum + d.newCards, 0)).toBe(5_701);
   });
 
   it("agrees with itself across day, month and year groupings", () => {
     const byMonth = activityByMonth(db, ALL_TIME);
     const byYear = activityByYear(db);
-    expect(byMonth.reduce((sum, m) => sum + m.reviews, 0)).toBe(102_020);
-    expect(byYear.reduce((sum, y) => sum + y.reviews, 0)).toBe(102_020);
-    expect(byYear.reduce((sum, y) => sum + y.activeDays, 0)).toBe(1_317);
-    expect(byMonth.reduce((sum, m) => sum + m.newCards, 0)).toBe(5_674);
+    expect(byMonth.reduce((sum, m) => sum + m.reviews, 0)).toBe(103_110);
+    expect(byYear.reduce((sum, y) => sum + y.reviews, 0)).toBe(103_110);
+    expect(byYear.reduce((sum, y) => sum + y.activeDays, 0)).toBe(1_333);
+    expect(byMonth.reduce((sum, m) => sum + m.newCards, 0)).toBe(5_701);
     expect(byYear.map((y) => y.year)).toEqual(["2022", "2023", "2024", "2025", "2026"]);
     const y2026 = byYear.find((y) => y.year === "2026");
-    expect(y2026?.reviews).toBe(14_420);
-    expect(y2026?.activeDays).toBe(211);
+    expect(y2026?.reviews).toBe(15_510);
+    expect(y2026?.activeDays).toBe(227);
   });
 
   // ── 4. retention vs interval — the tile Mochi lacks ────────────────────────
@@ -354,12 +446,12 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     ).toThrow(/unknown interval basis/);
   });
 
-  it("partitions all 102,020 reviews under EITHER basis, and only the split differs", () => {
+  it("partitions all 103,110 reviews under EITHER basis, and only the split differs", () => {
     const { elapsed, scheduled } = data.primary.intervals;
     for (const buckets of [elapsed, scheduled]) {
       expect(buckets).toHaveLength(9);
-      expect(buckets.reduce((sum, b) => sum + b.reviews, 0)).toBe(102_020);
-      expect(buckets.reduce((sum, b) => sum + b.lapses, 0)).toBe(3_832);
+      expect(buckets.reduce((sum, b) => sum + b.reviews, 0)).toBe(103_110);
+      expect(buckets.reduce((sum, b) => sum + b.lapses, 0)).toBe(3_882);
     }
     // Every row carries its own basis, so a number can never be quoted without
     // one.
@@ -370,8 +462,8 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     // first review has no elapsed gap (9,026 of them), while a review whose
     // predecessor carried no plan has no scheduled interval (17,960).
     expect(elapsed[0]?.label).toBe("unknown");
-    expect(elapsed[0]?.reviews).toBe(9_026);
-    expect(scheduled[0]?.reviews).toBe(17_960);
+    expect(elapsed[0]?.reviews).toBe(9_085);
+    expect(scheduled[0]?.reviews).toBe(18_073);
   });
 
   it("shows over-studying, and names the bands that miss the target", () => {
@@ -405,7 +497,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     // Longer intervals do cost retention, which is what makes the tile useful:
     // the worst band sits below the corpus average, not above it.
     const long = elapsed.find((b) => b.label === "60-180d");
-    expect(long?.reviews).toBe(14_424);
+    expect(long?.reviews).toBe(14_505);
     expect((long?.retention ?? 1) < (data.primary.totals.retention ?? 0)).toBe(true);
     expect(((long?.retention ?? 0) * 100).toFixed(2)).toBe("93.34");
   });
@@ -414,13 +506,13 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
   // reading: it used to assert `> 365d` was empty, which was true only because
   // the tile bucketed by the planned interval. Fixing the basis was supposed to
   // break it. It did. This is the corrected form.
-  it("finds 3,009 observations past a year, where the planned basis finds none", () => {
+  it("finds 3,217 observations past a year, where the planned basis finds none", () => {
     const { elapsed, scheduled } = data.primary.intervals;
 
     const measured = beyondYear(elapsed);
-    expect(measured.reviews).toBe(3_009);
-    expect(measured.lapses).toBe(94);
-    expect(((measured.retention ?? 0) * 100).toFixed(2)).toBe("96.88");
+    expect(measured.reviews).toBe(3_217);
+    expect(measured.lapses).toBe(100);
+    expect(((measured.retention ?? 0) * 100).toFixed(2)).toBe("96.89");
 
     const planned = beyondYear(scheduled);
     expect(planned.reviews).toBe(0);
@@ -429,20 +521,20 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
   });
 
   it("explains the zero rather than reporting it: the plans exist, none is due", () => {
-    expect(outlook.observedBeyondYear).toBe(3_009);
-    expect(((outlook.observedRetention ?? 0) * 100).toFixed(2)).toBe("96.88");
+    expect(outlook.observedBeyondYear).toBe(3_217);
+    expect(((outlook.observedRetention ?? 0) * 100).toFixed(2)).toBe("96.89");
     // The ceiling on extrapolation, and it comes from the OBSERVED side: no gap
     // longer than this has ever actually happened, cap or no cap.
     expect(outlook.maxObservedElapsedDays).toBe(454);
 
     // Mochi planned past a year 1,356 times; not one of those reviews has been
     // taken, which is exactly why the planned basis shows zero.
-    expect(outlook.plannedBeyondYear).toBe(1_356);
+    expect(outlook.plannedBeyondYear).toBe(1_386);
     expect(outlook.maxPlannedDays).toBe(2_707);
     // 1,348 of those 1,356 are on a LIVE track; the other 8 sit on archived
     // cards, which the track-level figures exclude and the review-level ones do
     // not. Both populations are named rather than blended.
-    expect(outlook.tracksBeyondYear).toBe(1_348);
+    expect(outlook.tracksBeyondYear).toBe(1_378);
     expect(outlook.firstDueAt?.slice(0, 10)).toBe("2027-03-17");
     expect(outlook.lastDueAt?.slice(0, 10)).toBe("2033-10-17");
   });
@@ -469,15 +561,15 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
 
   it("counts the tracks the lifted cap actually left behind", () => {
     // The headline share, which is real but is NOT a live constraint any more.
-    expect(outlook.tracksAtCap).toBe(3_874);
-    expect(outlook.tracksWithPlan).toBe(8_956);
-    expect(((outlook.tracksAtCap / outlook.tracksWithPlan) * 100).toFixed(2)).toBe("43.26");
+    expect(outlook.tracksAtCap).toBe(3_417);
+    expect(outlook.tracksWithPlan).toBe(9_011);
+    expect(((outlook.tracksAtCap / outlook.tracksWithPlan) * 100).toFixed(2)).toBe("37.92");
 
     // The narrower thing that IS still true: parked on a stale 365-day plan
     // because their last review predates the lift.
-    expect(outlook.tracksOnStaleCap).toBe(3_796);
+    expect(outlook.tracksOnStaleCap).toBe(3_306);
     expect(outlook.tracksOnStaleCap).toBeLessThan(outlook.tracksAtCap);
-    expect(outlook.tracksAtCap - outlook.tracksOnStaleCap).toBe(78);
+    expect(outlook.tracksAtCap - outlook.tracksOnStaleCap).toBe(111);
   });
 
   // ── 5. per-deck retention — the other tile Mochi lacks ─────────────────────
@@ -486,10 +578,10 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     const decks = data.primary.decks;
     const byPath = new Map(decks.map((d) => [d.path, d]));
 
-    expect(((byPath.get("日本語/単語")?.directRetention ?? 0) * 100).toFixed(2)).toBe("97.21");
-    expect(((byPath.get("日本語/漢字")?.directRetention ?? 0) * 100).toFixed(2)).toBe("95.11");
+    expect(((byPath.get("日本語/単語")?.directRetention ?? 0) * 100).toFixed(2)).toBe("97.20");
+    expect(((byPath.get("日本語/漢字")?.directRetention ?? 0) * 100).toFixed(2)).toBe("95.10");
     expect(((byPath.get("English/Vocabulary")?.directRetention ?? 0) * 100).toFixed(2)).toBe(
-      "93.42",
+      "93.41",
     );
     expect(((byPath.get("日本語/数字")?.directRetention ?? 0) * 100).toFixed(2)).toBe("100.00");
 
@@ -501,7 +593,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     // forward/reverse split exists to surface.
     const kanji = byPath.get("日本語/漢字");
     expect((kanji?.directForwardRetention ?? 0) > (kanji?.directReverseRetention ?? 1)).toBe(true);
-    expect(((kanji?.directReverseRetention ?? 0) * 100).toFixed(2)).toBe("92.92");
+    expect(((kanji?.directReverseRetention ?? 0) * 100).toFixed(2)).toBe("92.90");
   });
 
   it("never mixes a deck's own reviews with its subtree's", () => {
@@ -515,12 +607,12 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     // 日本語/言葉 is the case that catches a mixed basis: 1,948 of its own,
     // 2,379 including オノマトペ.
     const kotoba = data.primary.decks.find((d) => d.path === "日本語/言葉");
-    expect(kotoba?.directReviews).toBe(1_948);
-    expect(kotoba?.reviews).toBe(2_379);
+    expect(kotoba?.directReviews).toBe(1_968);
+    expect(kotoba?.reviews).toBe(2_405);
 
     // Roots partition the log exactly once.
     const roots = data.primary.decks.filter((d) => d.depth === 0);
-    expect(roots.reduce((sum, d) => sum + d.reviews, 0)).toBe(102_020);
+    expect(roots.reduce((sum, d) => sum + d.reviews, 0)).toBe(103_110);
     expect(roots.map((d) => d.path).sort()).toEqual(["English", "基本情報", "日本語"]);
   });
 
@@ -529,7 +621,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
   it("counts tracks, and every track is exactly one of new / young / mature", () => {
     const progress = data.progress;
     const roots = progress.filter((d) => d.depth === 0);
-    expect(roots.reduce((sum, d) => sum + d.tracks, 0)).toBe(13_392);
+    expect(roots.reduce((sum, d) => sum + d.tracks, 0)).toBe(13_393);
     expect(roots.reduce((sum, d) => sum + d.cards, 0)).toBe(7_716);
     for (const deck of progress) {
       expect(deck.newTracks + deck.youngTracks + deck.matureTracks).toBe(deck.tracks);
@@ -581,8 +673,8 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     // 39 + 86 + 95 + 115 through 2026-08-22, which is the 443 the scheduler CLI
     // reports for that day.
     const report = data.forecast;
-    expect(report.asOf).toBe("2026-08-18");
-    expect(report.backlog).toBe(108);
+    expect(report.asOf).toBe("2026-09-06");
+    expect(report.backlog).toBe(526);
 
     let running = report.backlog;
     for (const day of report.days.slice(0, 8)) {
@@ -624,18 +716,18 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     const html = renderDashboard(data);
 
     for (const figure of [
-      "102,020", // reviews
+      "103,110", // reviews
       "96.24%", // retention
-      "1,317", // active days
-      "636.1", // hours
-      "92,089", // timed reviews
-      "5,674", // cards studied, all time
-      "14,420", // reviews, 2026
+      "1,333", // active days
+      "641.2", // hours
+      "93,124", // timed reviews
+      "5,701", // cards studied, all time
+      "14,416", // reviews, 2026
       "211", // active days, 2026
-      "5,182", // cards studied, 2026
-      "13,258", // the labelled card-day hypothesis
-      "3,832", // lapses
-      "13,392", // tracks
+      "5,181", // cards studied, 2026
+      "13,255", // the labelled card-day hypothesis
+      "3,882", // lapses
+      "13,393", // tracks
     ]) {
       expect(html).toContain(figure);
     }
@@ -717,7 +809,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
       const summary = data.years.find((y) => y.year === year);
       expect(rows, `${year} row count`).toBe(summary?.activeDays);
     }
-    // And they account for every active day in the corpus — 1,317 of 1,798
+    // And they account for every active day in the corpus — 1,333 of 1,532
     // elapsed. The gap is the zero days, which is the only thing left with no
     // row anywhere on the page.
     const total = counts.reduce((sum, [, rows]) => sum + rows, 0);
@@ -756,7 +848,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     );
     expect(fresh.length).toBe(html.length);
     expect(fresh).toBe(html);
-    // collect() re-runs every query over 102,020 rows: ~6 s on this corpus.
+    // collect() re-runs every query over 103,110 rows: ~6 s on this corpus.
   }, 120_000);
 
   /**
@@ -867,7 +959,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
 
 const BACKTEST_DOC = resolve(import.meta.dirname, "..", "BACKTEST.md");
 
-/** Pull "| > 365d | 3,009 | ..." out of a markdown table. */
+/** Pull "| > 365d | 3,217 | ..." out of a markdown table. */
 function markdownBeyondYearCounts(markdown: string): number[] {
   const counts: number[] = [];
   for (const line of markdown.split(/\r?\n/)) {
@@ -889,11 +981,11 @@ describe.skipIf(!existsSync(PAGE) || !existsSync(BACKTEST_DOC))(
 
       // The database's own answer, which both artefacts are supposed to carry.
       const measured = beyondYear(retentionByInterval(db, ALL_TIME, "elapsed"));
-      expect(measured.reviews).toBe(3_009);
+      expect(measured.reviews).toBe(3_217);
 
       // BACKTEST.md: the whole-corpus forgetting-curve table. There is also a
       // held-out-window table whose > 365d row is a SUBSET (2,926 of these
-      // 3,009), so this asserts the whole-corpus figure is present and that
+      // 3,217), so this asserts the whole-corpus figure is present and that
       // every > 365d count in the document is either it or a subset of it --
       // never something larger, which would mean a different population.
       const fromDoc = markdownBeyondYearCounts(markdown);
@@ -903,7 +995,7 @@ describe.skipIf(!existsSync(PAGE) || !existsSync(BACKTEST_DOC))(
 
       // dashboard.html: the number is rendered in the > 365d row of the
       // per-bucket table and in the prose beneath the chart.
-      expect(html).toContain("3,009");
+      expect(html).toContain("3,217");
       expect(html).not.toContain("観測なし</text>");
 
       // And the page says which basis produced it, so the next reader does not
@@ -918,7 +1010,7 @@ describe.skipIf(!existsSync(PAGE) || !existsSync(BACKTEST_DOC))(
       const measured = beyondYear(retentionByInterval(db, ALL_TIME, "elapsed"));
       const percent = `${((measured.retention ?? 0) * 100).toFixed(2)}%`;
 
-      expect(percent).toBe("96.88%");
+      expect(percent).toBe("96.89%");
       expect(markdown).toContain(percent);
       expect(html).toContain(percent);
     });
@@ -929,8 +1021,8 @@ describe.skipIf(!existsSync(PAGE) || !existsSync(BACKTEST_DOC))(
         for (const doc of [markdown, html]) {
         expect(doc).toContain(outlook.capLiftedOn as string);
         expect(doc).toContain("2,707");
-        expect(doc).toContain("1,356");
-        expect(doc).toContain("3,796");
+        expect(doc).toContain("1,386");
+        expect(doc).toContain("3,417");
       }
       // The stale claim this replaced. If it comes back, so does the bug.
       expect(markdown).not.toMatch(/binding constraint[^.]*365-day interval\s*\n?\s*cap/i);
@@ -946,7 +1038,7 @@ describe.skipIf(!existsSync(PAGE))("dashboard.html as committed", () => {
     const html = readFileSync(PAGE, "utf8");
     expect(html.startsWith("<!doctype html>")).toBe(true);
     expect(html).toContain('<meta charset="utf-8">');
-    for (const figure of ["102,020", "96.24%", "1,317", "636.1", "14,420", "5,182", "5,674"]) {
+    for (const figure of ["103,110", "96.24%", "1,333", "641.2", "14,416", "5,181", "5,701"]) {
       expect(html).toContain(figure);
     }
     expect(html).toContain("@media (prefers-color-scheme: dark)");

@@ -1345,11 +1345,11 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     // 4,933 plus the 10 empty `<furigana></furigana>` the core renderer handles.
     // Quoting either number as the other is the mistake this pins.
     expect(totalRts).toBe(totalRuns);
-    expect(totalRuns).toBe(4933 * 2);
-    expect(totalRtsInDom).toBe(4943 * 2);
+    expect(totalRuns).toBe(4934 * 2);
+    expect(totalRtsInDom).toBe(4944 * 2);
     // The census, per direction, against what stages 3 and 4 measured.
     expect(Object.fromEntries(counts.forward)).toEqual({
-      "element:furigana": 3502,
+      "element:furigana": 3503,
       "element:draw": 1663,
       "element:input": 90,
       math: 28,
@@ -1368,7 +1368,7 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     // module exists, because a single <rt> over them would put the reading of the
     // kanji over the kana as well.
     expect([...rubyRuns].sort((a, b) => a[0] - b[0])).toEqual([
-      [1, 2383],
+      [1, 2384],
       [2, 913],
       [3, 70],
       [4, 120],
@@ -1376,8 +1376,8 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
       [6, 2],
       [7, 1],
     ]);
-    expect([...rubyRuns.values()].reduce((sum, n) => sum + n, 0)).toBe(3492);
-    expect(rubyBases.size).toBe(3482);
+    expect([...rubyRuns.values()].reduce((sum, n) => sum + n, 0)).toBe(3493);
+    expect(rubyBases.size).toBe(3483);
 
     // Both authored <draw> attribute sets, and nothing else.
     expect([...drawAttributes]).toEqual([

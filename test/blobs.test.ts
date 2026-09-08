@@ -4,7 +4,7 @@
  *
  * Three halves, really. The unit half proves each rule against hand-built
  * bytes. The corpus half runs the real 657 MB export through it and asserts the
- * oracle: 10,887 live attachments in, 8,958 tombstones out, 10,816 addresses.
+ * oracle: 10,890 live attachments in, 8,983 tombstones out, 10,826 addresses.
  * The third proves THE POINT — that the database holds no location, so the
  * store can be renamed out from under it and every read still resolves. Corpus
  * tests are skipped when exports/ is absent, since exports/ is gitignored.
@@ -1270,7 +1270,7 @@ describe("importBlobs and where the payloads go", () => {
     );
     db.close();
 
-    // A SQLITE DATABASE beside the card database, not a directory of 10,816
+    // A SQLITE DATABASE beside the card database, not a directory of 10,826
     // files: `notes/archive/browser-feasibility.md` §4. The importer opened it, so the
     // importer closed it — hence this test can reopen it and read the payload.
     expect(report.payloadStore).toBe("content-addressed");
@@ -1528,7 +1528,7 @@ describe.skipIf(!haveCorpus)("the real export", () => {
   );
 
   // A REAL store, at real scale: 654,917,364 bytes of mp3 into a real SQLite
-  // database, as 10,816 BLOB rows. A throwaway file, so the run is honest about
+  // database, as 10,826 BLOB rows. A throwaway file, so the run is honest about
   // first-write cost, and it is renamed later to prove the database never
   // depended on where it was.
   const opened = scratchStore("store");
@@ -1541,7 +1541,7 @@ describe.skipIf(!haveCorpus)("the real export", () => {
   const elapsed = Date.now() - started;
 
   it(
-    "imports 10,887 live blobs and 0 tombstones",
+    "imports 10,890 live blobs and 0 tombstones",
     () => {
       console.log(
         `cards ${cardIds.length}  imported in ${(elapsed / 1000).toFixed(1)}s  ` +
@@ -1550,9 +1550,9 @@ describe.skipIf(!haveCorpus)("the real export", () => {
       console.log(report);
 
       // THE PASS CONDITION.
-      expect(report.liveAttachments).toBe(10_887);
-      expect(report.mediaRefs).toBe(10_887);
-      expect(report.tombstonesSkipped).toBe(8_958);
+      expect(report.liveAttachments).toBe(10_890);
+      expect(report.mediaRefs).toBe(10_890);
+      expect(report.tombstonesSkipped).toBe(8_983);
       expect(report.filesMissing).toBe(0);
 
       // Not one tombstoned filename reached the store. Collected independently
@@ -1570,7 +1570,7 @@ describe.skipIf(!haveCorpus)("the real export", () => {
           }
         }
       }
-      expect(tombstoned.size).toBe(8_958);
+      expect(tombstoned.size).toBe(8_983);
       const imported = new Set(
         db
           .prepare(
@@ -1580,14 +1580,14 @@ describe.skipIf(!haveCorpus)("the real export", () => {
           .pluck()
           .all() as string[],
       );
-      expect(imported.size).toBe(10_887);
+      expect(imported.size).toBe(10_890);
       expect([...imported].filter((name) => !liveNames.has(name))).toEqual([]);
       expect([...tombstoned].filter((name) => imported.has(name))).toEqual([]);
     },
     600_000,
   );
 
-  it("collapses 10,887 files onto 10,816 addresses, and the sum of refs is exact", () => {
+  it("collapses 10,890 files onto 10,826 addresses, and the sum of refs is exact", () => {
     const media = db
       .prepare(
         `SELECT count(*) AS blobs, sum(refcount) AS refs, sum(byte_size) AS bytes
@@ -1595,14 +1595,14 @@ describe.skipIf(!haveCorpus)("the real export", () => {
       )
       .get() as { blobs: number; refs: number; bytes: number };
     console.log("media blobs", media, "deduped", report.dedupedFiles);
-    expect(media.blobs).toBe(10_816);
-    expect(media.refs).toBe(10_887);
-    expect(report.dedupedFiles).toBe(71);
-    expect(report.emptyFiles).toBe(10);
-    // The 10 failed generations share sha256("") — one blob, ten references.
+    expect(media.blobs).toBe(10_826);
+    expect(media.refs).toBe(10_890);
+    expect(report.dedupedFiles).toBe(64);
+    expect(report.emptyFiles).toBe(3);
+    // The 3 failed generations share sha256("") — one blob, three references.
     expect(
       db.prepare("SELECT refcount FROM blobs WHERE byte_size = 0").pluck().get(),
-    ).toBe(10);
+    ).toBe(3);
     expect(checkIntegrity(db)).toEqual([]);
   });
 
@@ -1623,16 +1623,16 @@ describe.skipIf(!haveCorpus)("the real export", () => {
     );
     expect(report.payloadStore).toBe("content-addressed");
     expect(report.storeWarnings).toEqual([]);
-    // 10,887 live files collapse to 10,816 addresses; the 71 duplicates are
+    // 10,890 live files collapse to 10,826 addresses; the 64 duplicates are
     // recognised as already-present rather than written twice.
-    expect(report.storeFilesWritten).toBe(10_816);
-    expect(report.storeFilesPresent).toBe(71);
-    expect(report.storeFilesWritten + report.storeFilesPresent).toBe(10_887);
+    expect(report.storeFilesWritten).toBe(10_826);
+    expect(report.storeFilesPresent).toBe(64);
+    expect(report.storeFilesWritten + report.storeFilesPresent).toBe(10_890);
     expect(report.storeBytesWritten).toBeGreaterThan(600 * 1024 * 1024);
 
     // The store agrees with the database about what it is holding, and the file
     // is a modest constant over the payloads rather than a multiple of them.
-    expect(stats.payloads).toBe(10_816);
+    expect(stats.payloads).toBe(10_826);
     expect(stats.bytes).toBe(report.storeBytesWritten);
     expect(stats.pageSize).toBe(STORE_PAGE_SIZE);
     // 2.85% measured, of which the pointer-map pages auto_vacuum needs are the
@@ -1647,11 +1647,11 @@ describe.skipIf(!haveCorpus)("the real export", () => {
     () => {
       // THE COMPARABLE NUMBER. notes/archive/browser-feasibility.md §4 measured 4.9 s to
       // insert 624.6 MiB as BLOB rows in a browser, against 322.1 s for the same
-      // bytes as 10,816 OPFS files. That figure is INSERT ONLY, so this one has
+      // bytes as 10,826 OPFS files. That figure is INSERT ONLY, so this one has
       // to be too: the reads out of the populated store are timed separately and
       // subtracted, leaving write() plus the batch's commits.
       const hashes = [...store.list()];
-      expect(hashes).toHaveLength(10_816);
+      expect(hashes).toHaveLength(10_826);
 
       const target = openBlobStoreDatabase(join(scratchDir("store-insert"), "fresh.blobs.db"));
       try {
@@ -1678,7 +1678,7 @@ describe.skipIf(!haveCorpus)("the real export", () => {
             `(${target.store.batchFlushes} intermediate commits; ` +
             `sequential reads out of the source store cost ${readSeconds.toFixed(1)}s, excluded)`,
         );
-        expect(target.store.stats().payloads).toBe(10_816);
+        expect(target.store.stats().payloads).toBe(10_826);
         expect(target.store.stats().bytes).toBe(report.storeBytesWritten);
       } finally {
         target.close();
@@ -1721,7 +1721,7 @@ describe.skipIf(!haveCorpus)("the real export", () => {
 
   it("stores NO location: every media row is address, size, type and nothing else", () => {
     // THE DEFECT THIS TASK EXISTS TO REMOVE. The old default wrote
-    // `C:\DEV\WEB\hashigo\exports\日本語\c7EiABp0.mp3` into 10,816 rows.
+    // `C:\DEV\WEB\hashigo\exports\日本語\c7EiABp0.mp3` into 10,826 rows.
     expect(db.prepare("SELECT count(*) FROM blobs WHERE path IS NOT NULL").pluck().get()).toBe(0);
     // Media rows keep the payload out of the database; text rows keep it in.
     expect(
@@ -1755,7 +1755,7 @@ describe.skipIf(!haveCorpus)("the real export", () => {
   });
 
   it(
-    "rehashes ALL 10,816 payloads: zero missing, zero orphaned, zero mismatched",
+    "rehashes ALL 10,826 payloads: zero missing, zero orphaned, zero mismatched",
     () => {
       const audit = auditBlobStore(db, store, { verify: true });
       console.log("audit", {
@@ -1767,12 +1767,12 @@ describe.skipIf(!haveCorpus)("the real export", () => {
         unreferenced: audit.unreferenced,
         sizeMismatched: audit.sizeMismatched,
       });
-      expect(audit.present).toBe(10_816);
+      expect(audit.present).toBe(10_826);
       expect(audit.missing).toBe(0);
       expect(audit.missingHashes).toEqual([]);
       expect(audit.orphaned).toBe(0);
       expect(audit.sizeMismatched).toBe(0);
-      expect(audit.inline).toBe(audit.blobs - 10_816);
+      expect(audit.inline).toBe(audit.blobs - 10_826);
 
       // NOT ONE MEDIA BLOB is unreferenced: every payload in the store is
       // reachable from a card. The 48 that are unreferenced are inline text
@@ -1866,24 +1866,24 @@ describe.skipIf(!haveCorpus)("the real export", () => {
     probe.close();
   });
 
-  it("takes the mime from the bytes: only 41 of 10,887 declared types were right", () => {
+  it("takes the mime from the bytes: only 41 of 10,890 declared types were right", () => {
     console.log("declared", report.declaredTypes);
     console.log("sniffed ", report.sniffedMimes);
-    expect(report.mimeCorrected).toBe(10_846);
-    expect(report.declaredTypes["text/xml"]).toBe(3_443);
-    expect(report.declaredTypes[""]).toBe(2_424);
-    expect(report.sniffedMimes["audio/mpeg"]).toBe(10_867);
+    expect(report.mimeCorrected).toBe(10_849);
+    expect(report.declaredTypes["text/xml"]).toBe(3_431);
+    expect(report.declaredTypes[""]).toBe(2_414);
+    expect(report.sniffedMimes["audio/mpeg"]).toBe(10_877);
     expect(report.sniffedMimes["image/jpeg"]).toBe(9);
     expect(report.sniffedMimes["image/png"]).toBe(1);
     expect(db.prepare("SELECT count(*) FROM blobs WHERE mime = 'text/xml'").pluck().get()).toBe(0);
   });
 
   it("drops every cache pointer that does not name a live file", () => {
-    expect(report.cachePointers).toBe(24_498);
-    expect(report.cachePointersLive).toBe(10_857);
-    expect(report.cachePointersTombstoned).toBe(5_667);
-    expect(report.cachePointersDangling).toBe(7_974);
-    expect(report.cacheTextOnly).toBe(31_813);
+    expect(report.cachePointers).toBe(24_517);
+    expect(report.cachePointersLive).toBe(10_860);
+    expect(report.cachePointersTombstoned).toBe(5_684);
+    expect(report.cachePointersDangling).toBe(7_973);
+    expect(report.cacheTextOnly).toBe(31_837);
     expect(report.cacheFailures).toBe(323);
     // 78 cached generations produced the empty string. A subset of
     // cacheTextOnly, and not imported: sha256("") is already the address of the
@@ -1893,11 +1893,11 @@ describe.skipIf(!haveCorpus)("the real export", () => {
     // Every one of the 56,767 cache leaves is accounted for.
     expect(
       report.cachePointers + report.cacheTextOnly + report.cacheFailures + report.cacheUnusable,
-    ).toBe(56_767);
-    expect(report.generationKeys).toBe(10_834);
-    expect(report.generationEdges).toBe(10_848);
+    ).toBe(56_810);
+    expect(report.generationKeys).toBe(10_837);
+    expect(report.generationEdges).toBe(10_851);
     // The cost of having no generation_cache table: see the module header.
-    expect(report.generationEdgesDropped).toBe(49);
+    expect(report.generationEdgesDropped).toBe(42);
     // 30 live files carry no cache entry; 13 of them dedupe onto an address that
     // another, provenanced file also reaches, so 17 blobs hold no identity tuple
     // and are addressable only by their bytes. Counted independently above.
@@ -1961,9 +1961,9 @@ describe.skipIf(!haveCorpus)("the real export", () => {
   });
 
   // LAST, because it invalidates `store`: the root is renamed out from under a
-  // database that has 10,816 references into it.
+  // database that has 10,826 references into it.
   it(
-    "survives the store being renamed: 10,816 references still resolve",
+    "survives the store being renamed: 10,826 references still resolve",
     () => {
       const hashes = db
         .prepare(
@@ -1971,7 +1971,7 @@ describe.skipIf(!haveCorpus)("the real export", () => {
              WHERE kind IN ('speech', 'image', 'file') ORDER BY hash`,
         )
         .all() as { hash: string; byte_size: number }[];
-      expect(hashes).toHaveLength(10_816);
+      expect(hashes).toHaveLength(10_826);
 
       // The handle has to be released before the file can be renamed on Windows;
       // that is the only thing the SQLite backing changes about this test. The
@@ -2001,7 +2001,7 @@ describe.skipIf(!haveCorpus)("the real export", () => {
         expect(contentAddress(readBlob(db, blob.hash, relocated))).toBe(blob.hash);
       }
       console.log(
-        `renamed the store file to ${moved}; all 10,816 addresses still resolve ` +
+        `renamed the store file to ${moved}; all 10,826 addresses still resolve ` +
           `(${(bytesRead / 1024 / 1024).toFixed(0)} MB), and not one row changed`,
       );
       expect(auditBlobStore(db, relocated).missing).toBe(0);
@@ -2027,13 +2027,13 @@ describe.skipIf(!haveCorpus)("the real export", () => {
 
         // THE MEASURED REASON THE PAYLOAD COLUMN IS EXCLUDED, asserted so the
         // exclusion cannot quietly become unnecessary or quietly hide something.
-        // 560 of 10,816 mp3s have a byte sequence in their first 4 KB that
+        // 559 of 10,826 mp3s have a byte sequence in their first 4 KB that
         // decodes to something LOCATION_PATTERN matches. Compressed audio
         // contains every byte pair eventually; `C:/` is two bytes and a slash.
         // A check that fires on 5% of a corpus of correct data is not a check.
         const unfiltered = findLocations(storeDb);
-        expect(unfiltered.offenders).toEqual([`blob_payloads.bytes: 560 row(s)`]);
-        expect(sweep.excluded).toEqual([`blob_payloads.bytes: 560 row(s)`]);
+        expect(unfiltered.offenders).toEqual([`blob_payloads.bytes: 559 row(s)`]);
+        expect(sweep.excluded).toEqual([`blob_payloads.bytes: 559 row(s)`]);
       } finally {
         storeDb.close();
       }

@@ -728,11 +728,11 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     expect(counts["hrule:___"]).toBe(255);
     expect(counts["code"]).toBe(294);
     expect(counts["element:speech"]).toBe(287);
-    expect(counts["element:ai"]).toBe(125);
+    expect(counts["element:ai"]).toBe(124);
     expect(counts["element:translate"]).toBe(106);
     expect(counts["element:furigana"]).toBe(19);
     expect(counts["element:image"]).toBe(8);
-    expect(counts["element"]).toBe(287 + 125 + 106 + 19 + 8 + 2 + 1);
+    expect(counts["element"]).toBe(287 + 124 + 106 + 19 + 8 + 2 + 1);
     expect((counts["math:inline"] ?? 0) + (counts["math:display"] ?? 0)).toBe(29);
     // "Blockquote, headings, bullets 76"
     expect((counts["quoteLine"] ?? 0) + (counts["heading"] ?? 0) + (counts["listItem:unordered"] ?? 0)).toBe(76);
@@ -759,8 +759,8 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     }
     expect(afterBareCR).toBe(4); // Python's re.M does not end a line at a bare \r
     expect(counts["listItem:ordered"]! - afterBareCR).toBe(4314);
-    expect(counts["cloze"]).toBe(1086);
-    expect(counts["strong:**"]).toBe(314);
+    expect(counts["cloze"]).toBe(1079);
+    expect(counts["strong:**"]).toBe(312);
     expect(counts["wikiLink:bare"]).toBe(46);
     expect(counts["wikiLink:emptyDisplay"]).toBe(8);
 
@@ -782,8 +782,8 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     }
     expect(clozeInCode).toBe(1);
     expect(boldInDisplay).toBe(1);
-    expect(counts["cloze"]! + clozeInCode).toBe(1087);
-    expect(counts["strong:**"]! + boldInDisplay).toBe(315);
+    expect(counts["cloze"]! + clozeInCode).toBe(1080);
+    expect(counts["strong:**"]! + boldInDisplay).toBe(313);
   });
 
   it("resolves all 7,716 cards through their templates with zero unknowns", () => {
@@ -839,8 +839,8 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     expect(bySource.template + bySource.content).toBe(7716);
     // Every card with a template resolves through it; the rest use their content.
     expect(bySource.content).toBe(cards.filter((card) => card.templateId === "").length);
-    // SPEC: 3,159 templated cards still carry stale authored content.
-    expect(warnings.get("content-ignored")).toBe(3159);
+    // SPEC: 3,160 templated cards still carry stale authored content.
+    expect(warnings.get("content-ignored")).toBe(3160);
     expect(warnings.get("side-break-in-value")).toBe(1);
     expect(warnings.get("stray-section-marker")).toBeUndefined();
     expect(warnings.get("boolean-interpolated")).toBeUndefined();

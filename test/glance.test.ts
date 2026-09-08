@@ -107,7 +107,7 @@ describe("the glance", () => {
       expect(g.allTime.retention).toBeCloseTo(all.ok / all.n, 10);
       // The published corpus figure, which is what makes this a check and not a
       // restatement: 102,020 reviews at 96.24%.
-      expect(g.allTime.reviews).toBe(102_020);
+      expect(g.allTime.reviews).toBe(103_110);
       expect(g.allTime.retention).toBeCloseTo(0.9624, 4);
 
       const cards = (db.prepare("SELECT count(*) AS n FROM cards").get() as { n: number }).n;

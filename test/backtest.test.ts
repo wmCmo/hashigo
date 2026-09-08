@@ -57,7 +57,7 @@ import {
  *
  * 2. THE RANKING. All three real exports, imported, replayed and scored. This
  *    block prints the tables that BACKTEST.md quotes; the assertions lock in the
- *    counts (102,020 reviews -> 85,998 scored) and the ORDER of the candidates,
+ *    counts (103,110 reviews -> 86,975 scored) and the ORDER of the candidates,
  *    so a change to any algorithm that reshuffles the ranking fails here rather
  *    than silently rewriting the recommendation.
  *
@@ -476,7 +476,7 @@ describe("fitFsrs6", () => {
 
 const describeCorpus = HAVE_EXPORTS ? describe : describe.skip;
 
-describeCorpus("the 102,020-review backtest", () => {
+describeCorpus("the 103,110-review backtest", () => {
   let db: Db;
   let tracks: readonly TrackHistory[];
   let result: BacktestResult;
@@ -495,17 +495,17 @@ describeCorpus("the 102,020-review backtest", () => {
 
   it("replays the whole imported log, and loses none of it", () => {
     const total = tracks.reduce((sum, track) => sum + track.reviews.length, 0);
-    expect(total).toBe(102_020);
-    expect(tracks.length).toBe(9_026);
+    expect(total).toBe(103_110);
+    expect(tracks.length).toBe(9_085);
     const d = result.dataset;
-    expect(d.reviews).toBe(102_020);
-    expect(d.firstReviews).toBe(9_026);
-    expect(d.withPredecessor).toBe(92_994);
+    expect(d.reviews).toBe(103_110);
+    expect(d.firstReviews).toBe(9_085);
+    expect(d.withPredecessor).toBe(94_025);
     // Every review is either a first, a same-day, or scored. Nothing vanishes.
-    expect(d.firstReviews + d.sameDay + d.scorable).toBe(102_020);
-    expect(d.sameDay).toBe(6_996);
+    expect(d.firstReviews + d.sameDay + d.scorable).toBe(103_110);
+    expect(d.sameDay).toBe(7_050);
     expect(d.sameDayLapses).toBe(256);
-    expect(d.scorable).toBe(85_998);
+    expect(d.scorable).toBe(86_975);
     expect(d.trainReviews + d.evalReviews).toBe(d.scorable);
     expect(d.firstDate).toBe("2022-06-28");
     expect(d.decks).toBe(34);
@@ -541,17 +541,17 @@ describeCorpus("the 102,020-review backtest", () => {
         else early += 1;
       }
     }
-    expect(plannedMissing).toBe(8_934);
-    expect(bothKnown).toBe(84_060);
-    expect(agree).toBe(61_594);
-    expect(late).toBe(22_226);
+    expect(plannedMissing).toBe(8_988);
+    expect(bothKnown).toBe(85_037);
+    expect(agree).toBe(62_284);
+    expect(late).toBe(22_513);
     expect(early).toBe(240);
     // 26.4% of reviews were taken more than a day and a half late, so the
     // planned interval is not a stand-in for the time that actually passed.
     expect(late / bothKnown).toBeGreaterThan(0.26);
     // And under the elapsed definition the corpus DOES observe recall past a
     // year, which the planned-interval definition says never happens.
-    expect(beyondAYear).toBe(3_009);
+    expect(beyondAYear).toBe(3_217);
     // The hard ceiling on what this backtest can ever conclude: not one review in
     // four years follows an interval longer than 454 days, so every projected
     // interval past that is extrapolation with zero observations behind it. This is
@@ -575,11 +575,11 @@ describeCorpus("the 102,020-review backtest", () => {
         expect(score.overall.rmse).toBeLessThan(1);
       }
     }
-    expect(result.full[0]?.overall.reviews).toBe(85_998);
-    expect(result.sameDay[0]?.overall.reviews).toBe(6_996);
+    expect(result.full[0]?.overall.reviews).toBe(86_975);
+    expect(result.sameDay[0]?.overall.reviews).toBe(7_050);
     // Mochi's planned interval is missing on 8,934 rows, so that table is
     // necessarily smaller — which is one of the reasons it is not the primary.
-    expect(result.planned[0]?.overall.reviews).toBeLessThan(85_998);
+    expect(result.planned[0]?.overall.reviews).toBeLessThan(86_975);
   });
 
   it("optimises exactly the loss it reports: fitter hot loop == generic replay", () => {
@@ -609,8 +609,8 @@ describeCorpus("the 102,020-review backtest", () => {
     // And the two numbers BACKTEST.md quotes for the fit are these, not a
     // separately maintained copy of them.
     const trainSet = toTrainingSet(tracks, { until: result.dataset.cutoff });
-    expect(fsrs6Loss(FSRS6_DEFAULT_PARAMETERS, trainSet).loss).toBeCloseTo(0.150633, 6);
-    expect(fsrs6Loss(FSRS6_FITTED_PARAMETERS, trainSet).loss).toBeCloseTo(0.143209, 6);
+    expect(fsrs6Loss(FSRS6_DEFAULT_PARAMETERS, trainSet).loss).toBeCloseTo(0.15159, 6);
+    expect(fsrs6Loss(FSRS6_FITTED_PARAMETERS, trainSet).loss).toBeCloseTo(0.144269, 6);
   });
 
   it("carries Japanese deck paths through grouping and formatting unchanged", () => {
@@ -621,13 +621,13 @@ describeCorpus("the 102,020-review backtest", () => {
     // subdecks whose names end in an astral-plane emoji (surrogate pair) and the
     // one that mixes kanji with a Latin letter.
     const expected: readonly (readonly [string, number])[] = [
-      ["日本語/単語", 45_007],
-      ["日本語/漢字", 23_312],
-      ["日本語/部首", 2_221],
-      ["日本語/言葉/オノマトペ", 357],
-      ["日本語/単語/尊敬語🤵", 315],
-      ["日本語/単語/謙譲語🙇", 282],
-      ["基本情報/科目B", 15],
+      ["日本語/単語", 45_491],
+      ["日本語/漢字", 23_610],
+      ["日本語/部首", 2_228],
+      ["日本語/言葉/オノマトペ", 363],
+      ["日本語/単語/尊敬語🤵", 318],
+      ["日本語/単語/謙譲語🙇", 284],
+      ["基本情報/科目B", 17],
     ];
     const byDeck = new Map(
       (result.full[0]?.byDeck ?? []).map((row) => [row.group, row.metrics.reviews]),
@@ -781,7 +781,7 @@ describeCorpus("the 102,020-review backtest", () => {
   // They are computed two completely different ways: the dashboard aggregates
   // in SQL through review_log_bucketed, this file replays every track in
   // TypeScript. They used to disagree spectacularly at `> 365d` -- 0 against
-  // 3,009 -- because the dashboard bucketed the PLANNED interval and this file
+  // 3,217 -- because the dashboard bucketed the PLANNED interval and this file
   // scores ELAPSED time. Same basis and same boundaries now, so they must agree
   // everywhere, and this asserts everywhere rather than only the one bucket.
 
@@ -789,8 +789,8 @@ describeCorpus("the 102,020-review backtest", () => {
     const fromSql = beyondYear(retentionByInterval(db, ALL_TIME, "elapsed"));
     const fromReplay = result.forgetting.find((row) => row.bucket === BEYOND_YEAR_LABEL);
 
-    expect(fromReplay?.reviews).toBe(3_009);
-    expect(fromSql.reviews).toBe(3_009);
+    expect(fromReplay?.reviews).toBe(3_217);
+    expect(fromSql.reviews).toBe(3_217);
     expect(fromSql.reviews).toBe(fromReplay?.reviews);
     expect(fromSql.lapses).toBe(fromReplay?.lapses);
     expect((fromSql.retention ?? 0).toFixed(6)).toBe(
@@ -820,7 +820,7 @@ describeCorpus("the 102,020-review backtest", () => {
       if (bucket.label === "unknown") {
         // The view's `unknown` is exactly the rows this file never scores: a
         // track's first review, which has no predecessor and so no elapsed gap.
-        expect(bucket.reviews).toBe(9_026);
+        expect(bucket.reviews).toBe(9_085);
         expect(folded.has("unknown")).toBe(false);
         continue;
       }
@@ -828,27 +828,27 @@ describeCorpus("the 102,020-review backtest", () => {
       expect(folded.get(bucket.label)?.lapses, `lapses in ${bucket.label}`).toBe(bucket.lapses);
     }
 
-    // Nothing lost either way: 92,994 scored + 9,026 first reviews = 102,020.
+    // Nothing lost either way: 94,025 scored + 9,026 first reviews = 103,110.
     const replayTotal = result.forgetting.reduce((sum, row) => sum + row.reviews, 0);
     const sqlTotal = sql.reduce((sum, b) => sum + b.reviews, 0);
-    expect(replayTotal).toBe(92_994);
-    expect(sqlTotal).toBe(102_020);
-    expect(replayTotal + 9_026).toBe(sqlTotal);
+    expect(replayTotal).toBe(94_025);
+    expect(sqlTotal).toBe(103_110);
+    expect(replayTotal + 9_085).toBe(sqlTotal);
   });
 
   it("measures the forgetting curve, and it is not monotone", () => {
     const rows = new Map(result.forgetting.map((row) => [row.bucket, row]));
-    expect(rows.get("same day")?.reviews).toBe(6_996);
+    expect(rows.get("same day")?.reviews).toBe(7_050);
     const mid = rows.get("61-180d");
     const long = rows.get("> 365d");
     expect(mid && long).toBeTruthy();
-    expect(long?.reviews).toBe(3_009);
+    expect(long?.reviews).toBe(3_217);
     // Selection bias, visible rather than asserted: retention RISES again past a
     // year, because only cards that keep being remembered are ever given a
     // year-long interval.
     expect((long?.observedRetention ?? 0)).toBeGreaterThan(mid?.observedRetention ?? 1);
     const total = result.forgetting.reduce((sum, row) => sum + row.reviews, 0);
-    expect(total).toBe(92_994);
+    expect(total).toBe(94_025);
   });
 
   it("turns target retention into a daily load, monotonically", () => {
@@ -891,24 +891,24 @@ describeCorpus("the 102,020-review backtest", () => {
     // workload rows above are labelled modelled and the recommendation is hedged.
     const cap = result.cap;
     expect(cap.intervalDays).toBe(365);
-    expect(cap.tracksAtCap).toBe(3_874);
-    expect(cap.liveTracks).toBe(8_956);
-    expect(cap.shareAtCap).toBeGreaterThan(0.43);
-    expect(cap.reviewsScheduledAtCap).toBe(7_407);
-    // 1,356 reviews were scheduled beyond the cap — all after the user raised the
+    expect(cap.tracksAtCap).toBe(3_417);
+    expect(cap.liveTracks).toBe(9_011);
+    expect(cap.shareAtCap).toBeGreaterThan(0.37);
+    expect(cap.reviewsScheduledAtCap).toBe(7_440);
+    // 1,386 reviews were scheduled beyond the cap — all after the user raised the
     // setting in 2026-02, per the note in schema.sql — so it is a real ceiling for
     // almost all of the history and a recently lifted one at the very end.
-    expect(cap.reviewsScheduledAbove).toBe(1_356);
+    expect(cap.reviewsScheduledAbove).toBe(1_386);
 
     // The correction. An earlier draft of BACKTEST.md called the cap "the
     // binding constraint", which stopped being true in February.
     expect(cap.liftedOn).toBe("2026-02-22");
     expect(cap.maxPlannedDays).toBe(2_707);
     // What actually survives the lift: tracks parked on a stale 365-day plan
-    // because they have not been reviewed since. 3,796 of the 3,874, so 78 were
+    // because they have not been reviewed since. 3,306 of the 3,417, so 111 were
     // deliberately re-scheduled to 365 by an uncapped scheduler.
-    expect(cap.tracksOnStaleCap).toBe(3_796);
-    expect(cap.tracksAtCap - cap.tracksOnStaleCap).toBe(78);
+    expect(cap.tracksOnStaleCap).toBe(3_306);
+    expect(cap.tracksAtCap - cap.tracksOnStaleCap).toBe(111);
     // The measured anchor: the steady-state arithmetic applied to Mochi's own
     // intervals gives 54.4 reviews a day where the user actually does 69.2, so the
     // model is a LOWER bound by about a quarter. Stated, not corrected.
@@ -920,7 +920,7 @@ describeCorpus("the 102,020-review backtest", () => {
     const tables = formatBacktestTables(result);
     console.log(`\n${tables}\n`);
     expect(tables).toContain("| Candidate | Reviews | Log loss | RMSE |");
-    expect(tables).toContain("85,998");
+    expect(tables).toContain("86,975");
   });
 
   it.runIf(REFIT)(

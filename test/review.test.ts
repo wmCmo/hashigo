@@ -583,12 +583,13 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
           `accent drill ${tally.drill} · Reading flippable ${tally.flippable}`,
       );
       expect(tally.identify).toBe(3177);
-      // 3,477 単語 + 392 言葉 = 3,869 cards run the drill; 692 of them produce.
-      expect(tally.drill).toBe(3869);
-      expect(tally.drill - tally.identify).toBe(692);
+      // 3,478 単語 + 392 言葉 = 3,870 cards run the drill; 693 of them produce.
+      // 単語 gained one card in the 2026-09-05 export (群衆) and it is Reading=true.
+      expect(tally.drill).toBe(3870);
+      expect(tally.drill - tally.identify).toBe(693);
       // 単語 declares the boolean; 言葉 does not, so its 392 are permanently
       // identify and a toggle has nothing to write. 3,869 - 392 = 3,477.
-      expect(tally.flippable).toBe(3477);
+      expect(tally.flippable).toBe(3478);
       // Everything else — 漢字, New Vocab, 基本情報, 敬語 … — is produce.
       expect(tally.produce).toBe(ids.length - 3177);
     } finally {

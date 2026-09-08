@@ -529,9 +529,9 @@ describe.runIf(haveCorpus)("the real export", () => {
       );
 
       expect(on).toEqual({
-        mounts: 6_855,
-        cards: 5_664,
-        expanded: 10_722,
+        mounts: 6_857,
+        cards: 5_665,
+        expanded: 10_725,
         divergent: 0,
         noValues: 10,
       });

@@ -1115,14 +1115,20 @@ describeCorpus("the real collection", () => {
     // Every figure here is measured from the real export, not chosen. They are
     // pinned because each one is a claim CLAUDE.md or a README makes.
     const tracks = db.prepare("SELECT count(*) AS n FROM card_tracks").get() as { n: number };
-    expect(tracks.n).toBe(13_392);
+    expect(tracks.n).toBe(13_393);
 
     const counts = queueCounts(db, { now: "2026-08-22T09:00:00+09:00" });
+    // `now` is a FIXED instant that the 2026-09-05 export now sits three weeks
+    // PAST, so almost everything scheduled into that day has since been answered:
+    // due fell 443 -> 76 and every one of the 76 is overdue. `test/session.test.ts`
+    // reads 70 at the same instant, and the six-track gap is exactly the reverse
+    // tracks `scripts/reverse-dormant-apply.ts` retires — this import does not run
+    // it, which is why `dormant` is 0 here and 6 there.
     expect(counts).toEqual({
-      due: 443,
-      overdue: 328,
-      fresh: 3_980,
-      scheduled: 8_518,
+      due: 76,
+      overdue: 76,
+      fresh: 3_907,
+      scheduled: 8_940,
       dormant: 0,
       asOf: "2026-08-22",
     });
@@ -1135,7 +1141,7 @@ describeCorpus("the real collection", () => {
           WHERE t.dormant = 0 AND t.due_at IS NOT NULL AND substr(t.due_at, 1, 10) <= '2026-08-22'`,
       )
       .get() as { n: number };
-    expect(withArchived.n - counts.due).toBe(33);
+    expect(withArchived.n - counts.due).toBe(36);
 
     // Every deck resolves to the settled default; no deck overrides it yet.
     const retentions = db
@@ -1161,7 +1167,7 @@ describeCorpus("the real collection", () => {
     expect(graded.intervalDays).toBeLessThanOrEqual(
       Math.round(MAX_INTERVAL_DAYS * (1 + INTERVAL_FUZZ)),
     );
-    expect(db.prepare("SELECT count(*) AS n FROM reviews").get()).toEqual({ n: 102_021 });
+    expect(db.prepare("SELECT count(*) AS n FROM reviews").get()).toEqual({ n: 103_111 });
     expect(auditRows(db)).toEqual([]);
     db.close();
   }, 120_000);

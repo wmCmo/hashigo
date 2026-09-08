@@ -326,9 +326,9 @@ describe.skipIf(!haveCorpus)("the card loader over the real collection", () => {
         `loader pipeline: ${mounts} speech mounts over ${withMounts.size} cards (expanded ${expanded})`,
       );
       expect({ mounts, cards: withMounts.size, expanded, divergent }).toEqual({
-        mounts: 6_855,
-        cards: 5_664,
-        expanded: 10_722,
+        mounts: 6_857,
+        cards: 5_665,
+        expanded: 10_725,
         divergent: 0,
       });
     } finally {

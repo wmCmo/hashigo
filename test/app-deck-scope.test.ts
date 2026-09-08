@@ -81,7 +81,7 @@ describe.skipIf(!haveCorpus)("a deck means its subtree, over the real corpus", (
       db.prepare("SELECT count(*) AS n FROM cards WHERE deck_id = ?").get(ja) as { n: number }
     ).n;
     expect(own).toBe(3);
-    expect(cardsUnder(ja)).toBe(5947);
+    expect(cardsUnder(ja)).toBe(5948);
     expect(subtreeDeckIds(scoped(), ja).length).toBeGreaterThan(1);
   });
 

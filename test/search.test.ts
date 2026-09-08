@@ -687,7 +687,7 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus", () => {
   });
 
   it("THE PASS CONDITION: two-character queries return the LIKE counts", () => {
-    const expected = { 意味: 3, する: 228, ない: 74, 勉強: 1 } as const;
+    const expected = { 意味: 3, する: 227, ない: 74, 勉強: 1 } as const;
     for (const [term, count] of Object.entries(expected)) {
       // The ground truth, from raw SQL over card_search_index.
       expect(likeGroundTruth(term)).toBe(count);
@@ -744,7 +744,7 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus", () => {
     const targets = db.prepare("SELECT DISTINCT to_card_id AS id FROM card_links").all() as {
       id: string;
     }[];
-    expect(targets.length).toBe(2_895);
+    expect(targets.length).toBe(2_893);
     let hits = 0;
     for (const { id } of targets) hits += searchCards(db, id, { limit: 1 }).total;
     expect(hits).toBe(0);
@@ -778,7 +778,7 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus", () => {
 
   it("RANKS `する`, and the ranking is not card_id order", () => {
     const ranked = searchCards(db, "する", { limit: 10 });
-    expect(ranked.total).toBe(228);
+    expect(ranked.total).toBe(227);
     expect(ranked.truncated).toBe(true);
 
     // The cards actually titled する come first.
@@ -810,7 +810,7 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus", () => {
   it("ranks the FTS path by bm25, best first", () => {
     const result = searchCards(db, "ている", { limit: 10 });
     expect(result.mode).toBe("fts");
-    expect(result.total).toBe(29);
+    expect(result.total).toBe(28);
     // Higher is better on both paths, so bm25's negative is flipped.
     for (const hit of result.hits) expect(hit.score).toBeGreaterThan(0);
     for (let i = 1; i < result.hits.length; i += 1) {

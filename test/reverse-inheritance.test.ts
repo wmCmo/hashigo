@@ -170,7 +170,7 @@ describe.skipIf(!HAVE_EXPORTS)("the TypeScript rule and the SQL view agree", () 
 
     // And the total is the documented one: 5,676 tracks resolve reverse ON.
     const on = [...fromSql.values()].filter((r) => r === "on").length;
-    expect(on).toBe(5676);
+    expect(on).toBe(5677);
     db.close();
   });
 });

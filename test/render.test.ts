@@ -1023,7 +1023,7 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     // ZERO thrown errors, ZERO unrendered node types, ZERO unknown constructs.
     expect(failures).toEqual([]);
     expect(unknowns).toEqual([]);
-    expect(sides).toBe(27352);
+    expect(sides).toBe(27355);
     // Every AST node the resolver produced is accounted for, exactly once.
     expect(accounted).toEqual(Object.fromEntries([...ast].sort()));
     // And every AST node KIND reached a renderer: no kind is missing outright.
