@@ -143,10 +143,82 @@ function log(text: string, level: LogLevel = "info"): void {
  * `VACUUM INTO`, which is what makes them importable; this only has to notice
  * when the fetch went wrong.
  */
+/**
+ * Which file of how many, so the page can say "2 of 2" without knowing the plan.
+ */
+interface FetchPlan {
+  readonly index: number;
+  readonly of: number;
+}
+
+/**
+ * Read a response body to completion, reporting bytes as they arrive.
+ *
+ * `response.arrayBuffer()` is one await that resolves when the LAST byte lands,
+ * so a 224 MB file over 5G is several silent minutes — measured on Zach's phone
+ * 2026-09-08, and indistinguishable from a hang. Streaming the body costs one
+ * loop and turns that into a progress bar.
+ *
+ * Chunks are collected and joined at the end rather than written incrementally
+ * because `importDatabaseBrowser` takes one contiguous `Uint8Array`; this changes
+ * what the user SEES, not how the import works.
+ *
+ * `Content-Length` is what the middleware sets (`vite.app.config.ts`), but a
+ * proxy may drop it or re-encode — `tailscale serve` sits in front of this on the
+ * phone. So `total` is `null` when it is absent or unparseable, and the page
+ * renders an indeterminate bar instead of dividing by zero. A body with no
+ * `getReader` (very old browsers, some test doubles) falls back to
+ * `arrayBuffer()`, which is the old behaviour and still correct.
+ */
+async function readWithProgress(
+  response: Response,
+  url: string,
+  plan: FetchPlan,
+): Promise<Uint8Array> {
+  const header = response.headers.get("Content-Length");
+  const parsed = header === null ? Number.NaN : Number(header);
+  const total = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  const reader = response.body?.getReader?.();
+  if (reader === undefined) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    post({ kind: "fetching", url, ...plan, received: bytes.length, total, done: true });
+    return bytes;
+  }
+
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  // Throttled to ~10/s: one postMessage per 64 KB chunk is thousands of messages
+  // and repaints for a 224 MB file, which would make the bar itself the slow part.
+  let lastPost = 0;
+  post({ kind: "fetching", url, ...plan, received: 0, total, done: false });
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value === undefined) continue;
+    chunks.push(value);
+    received += value.length;
+    const now = Date.now();
+    if (now - lastPost >= 100) {
+      lastPost = now;
+      post({ kind: "fetching", url, ...plan, received, total, done: false });
+    }
+  }
+  post({ kind: "fetching", url, ...plan, received, total, done: true });
+
+  const bytes = new Uint8Array(received);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.length;
+  }
+  return bytes;
+}
+
 async function ensureFile(
   name: string,
   url: string,
   reimport: boolean,
+  plan: FetchPlan,
 ): Promise<number> {
   if (!reimport && (await databaseFilesInOpfs()).includes(name)) {
     log(`  ${name} is already in OPFS — not re-fetching`, "good");
@@ -160,7 +232,7 @@ async function ensureFile(
         `  npx vite-node scripts/app-bootstrap.ts`,
     );
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
+  const bytes = await readWithProgress(response, url, plan);
   // The SQLite header is 16 bytes of magic; anything else here is an HTML error
   // page with a 200, which `importDb` reports as an unhelpful malformed-database.
   const magic = new TextDecoder("ascii").decode(bytes.subarray(0, 15));
@@ -267,8 +339,8 @@ async function open(request: OpenRequest): Promise<void> {
   }
 
   const imported =
-    (await ensureFile(CARD_DB, CARD_URL, reimport)) +
-    (await ensureFile(STORE_DB, STORE_URL, reimport));
+    (await ensureFile(CARD_DB, CARD_URL, reimport, { index: 1, of: 2 })) +
+    (await ensureFile(STORE_DB, STORE_URL, reimport, { index: 2, of: 2 }));
 
   // `applySchema: false` on both: these arrive fully formed. An empty pool plus a
   // failed fetch must NOT quietly create a blank database and call it success.

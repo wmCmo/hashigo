@@ -126,6 +126,10 @@ worker.onmessage = (event: MessageEvent<AppMessage>): void => {
     line(message.text, message.level);
     return;
   }
+  if (message.kind === "fetching") {
+    showFetchProgress(message);
+    return;
+  }
   const waiting = pending.get(message.id);
   if (waiting === undefined) return;
   pending.delete(message.id);
@@ -182,6 +186,58 @@ function line(text: string, level = "info"): void {
   row.textContent = text;
   bootLog.appendChild(row);
   bootLog.scrollTop = bootLog.scrollHeight;
+}
+
+/** MiB to one decimal — the only unit worth showing for a ~300 MB download. */
+function mib(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * The first-run download, drawn rather than narrated.
+ *
+ * Zach, on 5G, 2026-09-08: *"frozen on this page for like 5 mins"*. It was not
+ * frozen — it was pulling 73 MB of cards and 224 MB of audio behind a single
+ * static line of text. A long operation with no visible progress is a long
+ * operation the user kills, and on a phone there is no console to check.
+ *
+ * ONE ROW PER FILE, reused, so the log does not grow by a thousand lines. The bar
+ * goes indeterminate when the server sends no `Content-Length` (a proxy may strip
+ * it — `tailscale serve` is in front of this on his phone), because a made-up
+ * percentage is worse than an honest "still going".
+ */
+const fetchRows = new Map<string, { row: HTMLElement; fill: HTMLElement; label: HTMLElement }>();
+
+function showFetchProgress(message: Extract<AppMessage, { kind: "fetching" }>): void {
+  let entry = fetchRows.get(message.url);
+  if (entry === undefined) {
+    const row = document.createElement("div");
+    row.className = "logline step fetchrow";
+    const label = document.createElement("span");
+    label.className = "fetchlabel";
+    const track = document.createElement("span");
+    track.className = "fetchtrack";
+    const fill = document.createElement("span");
+    fill.className = "fetchfill";
+    track.appendChild(fill);
+    row.append(label, track);
+    bootLog.appendChild(row);
+    bootLog.scrollTop = bootLog.scrollHeight;
+    entry = { row, fill, label };
+    fetchRows.set(message.url, entry);
+  }
+
+  const name = message.url.replace(/^\//, "");
+  const pct = message.total === null ? null : Math.min(100, (message.received / message.total) * 100);
+  entry.label.textContent =
+    `${name} · ${message.index}/${message.of} · ` +
+    (message.total === null
+      ? mib(message.received)
+      : `${mib(message.received)} of ${mib(message.total)}` +
+        (pct === null ? "" : ` · ${pct.toFixed(0)}%`));
+  entry.fill.style.width = pct === null ? "100%" : `${pct}%`;
+  entry.row.classList.toggle("indeterminate", message.total === null && !message.done);
+  entry.row.classList.toggle("good", message.done);
 }
 
 /** One scope per card presentation: the scope that mints a URL revokes it. */

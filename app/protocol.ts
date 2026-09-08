@@ -774,6 +774,31 @@ export interface LogMessage {
   readonly text: string;
 }
 
+/**
+ * Bytes arriving during the first-run download. Not a reply, so no `id`.
+ *
+ * WHY THIS EXISTS. The seed is ~300 MB (73 MB of cards, 224 MB of audio) and the
+ * page showed one line — `fetching /hashigo-app.db` — for as long as it took.
+ * Zach, on 5G on 2026-09-08: *"frozen on this page for like 5 mins"*. It was not
+ * frozen; it was working, silently, which is indistinguishable from hung. A
+ * download with no progress is a download the user kills.
+ *
+ * `total` is null when the server sends no `Content-Length` — then the page shows
+ * bytes-so-far and an indeterminate bar rather than inventing a percentage.
+ */
+export interface FetchingMessage {
+  readonly kind: "fetching";
+  /** The URL being read, for the label. */
+  readonly url: string;
+  /** 1-based, so the page can say "file 2 of 2" without knowing the plan. */
+  readonly index: number;
+  readonly of: number;
+  readonly received: number;
+  readonly total: number | null;
+  /** True on the last message for this file, so the page can tick it off. */
+  readonly done: boolean;
+}
+
 export interface OpenedMessage {
   readonly kind: "opened";
   readonly id: number;
@@ -888,6 +913,7 @@ export type AppMessage =
   | PreviewMessage
   | ResetMessage
   | LogMessage
+  | FetchingMessage
   | OpenedMessage
   | CardMessage
   | PayloadMessage
