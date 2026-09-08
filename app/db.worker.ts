@@ -108,6 +108,8 @@ const STORE_DB = "/hashigo-blobs.db";
 /** Served by `vite.app.config.ts` middleware from `build/app/`. */
 const CARD_URL = "/hashigo-app.db";
 const STORE_URL = "/hashigo-app-blobs.db";
+/** A few hundred bytes describing the two above. See `seedManifest`. */
+const SEED_URL = "/hashigo-app.json";
 
 let cards: BrowserDb | null = null;
 let payloads: BrowserDb | null = null;
@@ -174,6 +176,48 @@ async function ensureFile(
   return written;
 }
 
+/** What `scripts/app-bootstrap.ts` wrote beside the two databases. */
+interface SeedManifest {
+  readonly generatedAt: string;
+  readonly schemaVersion: number;
+  readonly cards: number;
+  readonly seedReviews: number;
+  readonly payloads: number;
+}
+
+/**
+ * Is the database already in OPFS the one this server is serving?
+ *
+ * THE BUG THIS EXISTS FOR, seen 2026-09-08 on a real phone-shaped run.
+ * `ensureFile` skips the fetch whenever OPFS already holds the file, which is
+ * right — the whole point is that the app is local and offline after the first
+ * load. But it made a re-import INVISIBLE: after the 2026-09-05 export landed,
+ * the page went on reporting "102,020 reviews" from the August seed, and the only
+ * way to notice was to read the boot log. On a phone that is a whole session
+ * reviewed against stale due dates, and decision 16's final import would have
+ * done it again, louder.
+ *
+ * **The comparison is on `seedReviews`, which counts rows that are NOT locally
+ * graded.** That is the one number local reviewing cannot move, so this stays
+ * correct once he is actually grading here — comparing `count(*)` would start
+ * reporting a mismatch the moment he answered his first card, and "re-fetch"
+ * would then mean "delete his grades".
+ *
+ * A manifest that is missing or unreadable returns null and changes nothing: an
+ * older bootstrap, or a static host that only has the two databases, must keep
+ * working rather than refusing to open.
+ */
+async function seedManifest(): Promise<SeedManifest | null> {
+  try {
+    const response = await fetch(SEED_URL, { cache: "no-store" });
+    if (!response.ok) return null;
+    const parsed = (await response.json()) as Partial<SeedManifest>;
+    return typeof parsed.seedReviews === "number" ? (parsed as SeedManifest) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function open(request: OpenRequest): Promise<void> {
   log(`sqlite ${await sqliteVersion()}`);
   await installPool();
@@ -181,9 +225,50 @@ async function open(request: OpenRequest): Promise<void> {
 
   // Asked BEFORE either fetch, because `ensureFile` is what changes the answer.
   const cardsWerePresent = (await databaseFilesInOpfs()).includes(CARD_DB);
+
+  // ── is what we already have still what the server is serving? ──
+  let reimport = request.reimport;
+  // `cards === null` as well: a second `open` in one session must not put a
+  // SECOND handle on the same pool file just to read two counts off it.
+  if (cardsWerePresent && !reimport && cards === null) {
+    const manifest = await seedManifest();
+    if (manifest !== null) {
+      const held = await openDatabaseBrowser({ filename: CARD_DB, applySchema: false });
+      const count = (sql: string): number =>
+        Number((held.prepare(sql).get() as { n: number }).n);
+      const heldSeed = count("SELECT count(*) AS n FROM reviews WHERE source <> 'local'");
+      const localReviews = count("SELECT count(*) AS n FROM reviews WHERE source = 'local'");
+      if (heldSeed !== manifest.seedReviews) {
+        if (localReviews === 0) {
+          // Nothing of his to lose: the local copy is purely a cached seed.
+          held.close();
+          reimport = true;
+          log(
+            `  the database here holds ${heldSeed.toLocaleString()} seeded reviews and the ` +
+              `server is serving ${manifest.seedReviews.toLocaleString()} — re-fetching`,
+            "step",
+          );
+        } else {
+          // REFUSE, LOUDLY. Re-importing would delete grades that exist nowhere
+          // else; reconciling them is stage 11's job, not this function's.
+          log(
+            `  the server has a NEWER seed (${manifest.seedReviews.toLocaleString()} reviews ` +
+              `vs ${heldSeed.toLocaleString()} here) but this device holds ` +
+              `${localReviews.toLocaleString()} local grades. Keeping what is here — ` +
+              `replacing it would destroy them. Export a backup, then re-seed.`,
+            "bad",
+          );
+          cards ??= held;
+        }
+      } else {
+        cards ??= held;
+      }
+    }
+  }
+
   const imported =
-    (await ensureFile(CARD_DB, CARD_URL, request.reimport)) +
-    (await ensureFile(STORE_DB, STORE_URL, request.reimport));
+    (await ensureFile(CARD_DB, CARD_URL, reimport)) +
+    (await ensureFile(STORE_DB, STORE_URL, reimport));
 
   // `applySchema: false` on both: these arrive fully formed. An empty pool plus a
   // failed fetch must NOT quietly create a blank database and call it success.

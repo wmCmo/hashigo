@@ -87,8 +87,8 @@
  * still match the address the card database refers to.
  */
 
-import { closeSync, existsSync, mkdirSync, openSync, readSync, rmSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { closeSync, existsSync, mkdirSync, openSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 import Database from "better-sqlite3";
 
@@ -358,6 +358,48 @@ try {
   let reachable = 0;
   for (const [, list] of byCard) if (list.some((hash) => shipped.has(hash))) reachable += 1;
   const total = byCard.size;
+
+  // ── THE SEED MANIFEST ───────────────────────────────────────────────────
+  //
+  // A tiny sidecar naming what this bootstrap produced, so a browser that
+  // ALREADY holds a database can tell whether it is the current one without
+  // downloading 73 MB to find out.
+  //
+  // WHY IT EXISTS, measured 2026-09-08: `app/db.worker.ts` opens with
+  // `reimport: false` and skips the fetch whenever OPFS already has the file, so
+  // after the 2026-09-05 re-import the page went on reporting "102,020 reviews"
+  // from the August seed with no way to notice. On a phone that is a full review
+  // session against stale due dates. Decision 16's final import would do it again.
+  //
+  // `seedReviews` counts rows that are NOT locally graded, which is the one
+  // number local grading can never move — so comparing it is safe once he has
+  // started reviewing here, where comparing `count(*)` would not be.
+  const seedReviews = Number(
+    (
+      cardDb
+        .prepare("SELECT count(*) AS n FROM reviews WHERE source <> 'local'")
+        .get() as { n: number }
+    ).n,
+  );
+  const manifestPath = resolve(dirname(cardOut), "hashigo-app.json");
+  writeFileSync(
+    manifestPath,
+    `${JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        schemaVersion: Number(cardDb.pragma("user_version", { simple: true })),
+        cards: Number(
+          (cardDb.prepare("SELECT count(*) AS n FROM cards").get() as { n: number }).n,
+        ),
+        seedReviews,
+        payloads: written,
+      },
+      null,
+      2,
+    )}
+`,
+    "utf8",
+  );
 
   const mode = journalMode(storeOut);
   process.stdout.write(

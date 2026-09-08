@@ -83,6 +83,10 @@ const ASSET_DIR = resolve(root, "build/app");
 const ASSETS: ReadonlyMap<string, string> = new Map([
   ["/hashigo-app.db", resolve(ASSET_DIR, "hashigo-app.db")],
   ["/hashigo-app-blobs.db", resolve(ASSET_DIR, "hashigo-app-blobs.db")],
+  // The seed manifest: a few hundred bytes naming what the two files above hold,
+  // so a browser that already has a database can tell whether it is the CURRENT
+  // one without downloading 73 MB to find out. See `app/db.worker.ts`.
+  ["/hashigo-app.json", resolve(ASSET_DIR, "hashigo-app.json")],
 ]);
 
 /** `SCHEMA_VERSION` as `src/schema/index.ts` declares it. Parsed, not imported —
@@ -136,7 +140,10 @@ function serveAppDatabases(): Plugin {
       return;
     }
     response.statusCode = 200;
-    response.setHeader("Content-Type", "application/vnd.sqlite3");
+    response.setHeader(
+      "Content-Type",
+      url.endsWith(".json") ? "application/json; charset=utf-8" : "application/vnd.sqlite3",
+    );
     response.setHeader("Content-Length", statSync(file).size);
     response.setHeader("Cache-Control", "no-store");
     createReadStream(file).pipe(response as unknown as NodeJS.WritableStream);
