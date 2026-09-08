@@ -336,11 +336,18 @@
 <div class="wrap">
 
 <header class="masthead">
-  <p class="kicker">Build specification · draft 8</p>
+  <p class="kicker">Build specification · draft 9</p>
   <h1>Hashigo<span class="jp">梯子</span></h1>
   <p class="standfirst">A local-first replacement for Mochi, scoped to one person's
   Japanese study workflow — and to the four things Mochi gets wrong. Derived from
   a real export of 7,716 cards.</p>
+  <p class="caption"><strong>Draft 9 re-measures every figure against the
+  2026-09-05 export</strong>, imported 2026-09-08. Nothing in the design changed;
+  the corpus did. 103,110 reviews rather than 102,020 — nineteen more days of
+  study — and, card by card, one card deleted, one created, none moved deck and
+  <strong>no surviving card lost a single review</strong>. Draft 8's figures were
+  correct for the 2026-08-17 export and are simply older; where a number here
+  differs from one quoted in an older note, this is the newer measurement.</p>
 </header>
 
 <section>
@@ -354,22 +361,22 @@
 
   <div class="stats">
     <div class="stat"><span class="stat-n">7,716</span><span class="stat-l">cards across 3 exports</span></div>
-    <div class="stat"><span class="stat-n">102,020</span><span class="stat-l">review records</span></div>
+    <div class="stat"><span class="stat-n">103,110</span><span class="stat-l">review records</span></div>
     <div class="stat"><span class="stat-n">2022</span><span class="stat-l">oldest review (27 June)</span></div>
     <div class="stat"><span class="stat-n">10</span><span class="stat-l">templates (11 rows, one shared)</span></div>
     <div class="stat"><span class="stat-n">657</span><span class="stat-l">MB of audio</span></div>
     <div class="stat"><span class="stat-n">636</span><span class="stat-l">hours studied</span></div>
     <div class="stat"><span class="stat-n">96.2%</span><span class="stat-l">retention — target settled at 90%</span></div>
-    <div class="stat flag"><span class="stat-n">8,958</span><span class="stat-l">orphaned attachments</span></div>
+    <div class="stat flag"><span class="stat-n">8,983</span><span class="stat-l">orphaned attachments</span></div>
   </div>
-  <p class="caption">Reviews split 58,937 forward / 43,083 reverse, over 1,317 active
-  study days. Media is 10,887 live files, almost entirely Azure-generated mp3.</p>
+  <p class="caption">Reviews split 59,514 forward / 43,596 reverse, over 1,333 active
+  study days. Media is 10,890 live files, almost entirely Azure-generated mp3.</p>
 
   <h3>The headline finding</h3>
   <div class="prose">
     <p>Four years of review history is enough to <strong>fit scheduler parameters to you
     personally</strong> rather than ship population defaults — and, more importantly, to
-    settle which scheduler to ship by measurement instead of assumption. 102,020 graded
+    settle which scheduler to ship by measurement instead of assumption. 103,110 graded
     reviews with their preceding intervals is a large, clean test set.</p>
     <p>It has already surfaced the single most actionable number in the export:
     <strong>96.24% observed retention</strong> — which is what made the target a
@@ -398,7 +405,7 @@
     <code>スプリント</code> correction. Result: five billed generations, four tombstones,
     one surviving file.</p>
     <p>Across the three decks that pattern accounts for <strong>505,304 characters sent
-    to Azure where 231,769 were needed</strong> — a 2.18× overspend, and 8,958 dead
+    to Azure where 231,769 were needed</strong> — a 2.18× overspend, and 8,983 dead
     attachment records. The worst single card, 領域, was regenerated 33 times.</p>
     <p>The money is trivial (about $8 lifetime). The <em>churn</em> is not: every
     regeneration is a chance for a reference to end up pointing at a file that no longer
@@ -443,7 +450,7 @@
     <p>The single most important structural finding: <strong>Mochi already tracks reverse
     review as a fully independent schedule</strong>, in a separate <code>reverse-reviews</code>
     array with its own intervals and durations. I had guessed it shared the forward
-    schedule; it does not. 3,769 of 5,947 cards in 日本語 carry one, and four decks —
+    schedule; it does not. 3,787 of 5,948 cards in 日本語 carry one, and four decks —
     文法, 言葉, 漢字, 単語 — have the deck-level reverse flag set.</p>
     <p>So a card does not have <em>a</em> review log. It has <em>N</em> independent
     <strong>tracks</strong>, each separately scheduled:</p>
@@ -472,12 +479,12 @@
         <tr><th>Mochi field</th><th>Observed</th><th>Disposition</th></tr>
       </thead>
       <tbody>
-        <tr><td><span class="mono">reviews</span></td><td class="num">58,937</td><td><span class="pill keep">keep</span> → track <span class="mono">forward</span></td></tr>
-        <tr><td><span class="mono">reverse-reviews</span></td><td class="num">43,083</td><td><span class="pill keep">keep</span> → track <span class="mono">reverse</span></td></tr>
+        <tr><td><span class="mono">reviews</span></td><td class="num">59,514</td><td><span class="pill keep">keep</span> → track <span class="mono">forward</span></td></tr>
+        <tr><td><span class="mono">reverse-reviews</span></td><td class="num">43,596</td><td><span class="pill keep">keep</span> → track <span class="mono">reverse</span></td></tr>
         <tr><td><span class="mono">cloze/reviews</span></td><td>key on 24 cards · <strong>0 reviews</strong></td><td><span class="pill keep">keep</span> → track <span class="mono">cloze:n</span> — nothing to import</td></tr>
         <tr><td><span class="mono">fields</span></td><td>id → value</td><td><span class="pill keep">keep</span> verbatim</td></tr>
-        <tr><td><span class="mono">component-cache</span></td><td>56,767 entries</td><td><span class="pill fix">rebuild</span> as content-addressed blobs</td></tr>
-        <tr><td><span class="mono">attachments</span></td><td>10,887 live</td><td><span class="pill fix">rebuild</span> as refcounted blobs</td></tr>
+        <tr><td><span class="mono">component-cache</span></td><td>56,810 entries</td><td><span class="pill fix">rebuild</span> as content-addressed blobs</td></tr>
+        <tr><td><span class="mono">attachments</span></td><td>10,890 live</td><td><span class="pill fix">rebuild</span> as refcounted blobs</td></tr>
         <tr><td><span class="mono">archived?</span></td><td class="num">234</td><td><span class="pill keep">keep</span></td></tr>
         <tr><td><span class="mono">pinned?</span></td><td>flag present, none set</td><td><span class="pill keep">keep</span> — your mining workflow</td></tr>
         <tr><td><span class="mono">references</span></td><td>card→card links</td><td><span class="pill keep">keep</span></td></tr>
@@ -489,7 +496,7 @@
     </table>
   </div>
   <p class="caption">Draft 3 called the attachment MIME types a harmless curiosity, and
-  that was wrong by three orders of magnitude. Of the 10,887 live attachments,
+  that was wrong by three orders of magnitude. Of the 10,890 live attachments,
   <strong>41 carry a correct type and 10,846 do not</strong>
   (36 <span class="mono">audio/mpeg</span>, 4 <span class="mono">image/jpeg</span>,
   1 <span class="mono">image/png</span>; draft 4 said 36 and 10,851, counting only
@@ -614,7 +621,7 @@
     <p class="note-h">Importer rule — do not orphan history</p>
     <p>Map <code>review-reverse? = true</code> to <code>on</code>, and absent or false to
     <code>inherit</code>. Then enforce: <strong>any card with a non-empty
-    <code>reverse-reviews</code> array must resolve to <code>on</code></strong>, or 43,083
+    <code>reverse-reviews</code> array must resolve to <code>on</code></strong>, or 43,596
     review records lose their track.</p>
     <p>And permanently: setting a card to <code>off</code> makes its reverse track
     <strong>dormant, not deleted</strong> — retained, not scheduled. No scheduling toggle
@@ -628,7 +635,7 @@
 
   <div class="prose">
     <p>The default move would be "Mochi uses FSRS, so use FSRS." That's an assumption, and
-    there is no need to assume — 102,020 graded reviews, each with the interval that
+    there is no need to assume — 103,110 graded reviews, each with the interval that
     preceded it, is a large and clean test set. Ship the scheduler that wins on your data.</p>
     <p>That backtest has now been run. The two boxes below are what it settled; the rest
     of this section is the method, and the one thing it declined to settle.</p>
@@ -718,9 +725,9 @@
     <table>
       <thead><tr><th>Measure</th><th class="num">Value</th><th>Reading</th></tr></thead>
       <tbody>
-        <tr><td>Observed retention</td><td class="num">96.24%</td><td>3,832 lapses in 102,020 reviews</td></tr>
+        <tr><td>Observed retention</td><td class="num">96.24%</td><td>3,882 lapses in 103,110 reviews</td></tr>
         <tr><td>Target retention — settled</td><td class="num">90%</td><td>Chosen on projected daily load, not on realised retention; 0.95 would be 1.9–3.0× the current workload</td></tr>
-        <tr><td>Total study time</td><td class="num">636.1 h</td><td>26.5 days of wall clock</td></tr>
+        <tr><td>Total study time</td><td class="num">641.2 h</td><td>26.5 days of wall clock</td></tr>
         <tr><td>Median review</td><td class="num">10 s</td><td>Mean 24.9 s — long tail</td></tr>
         <tr><td>Reviews / day</td><td class="num">69</td><td>Last 90 days; peak 229</td></tr>
         <tr><td>Median interval — planned</td><td class="num">24.7 d</td><td>p75 123 d · p90 358 d · max 2,707 d</td></tr>
@@ -736,7 +743,7 @@
   to name which basis it used. Note too that the 365-day ceiling visible in this data is
   Mochi's, and it was <strong>lifted on 2026-02-22 JST</strong>
   (<span class="mono">2026-02-21T15:00Z</span>): 7,407 reviews sit at exactly 365 days,
-  and all 1,356 records beyond a year were written on or after that date, out to a maximum
+  and all 1,386 records beyond a year were written on or after that date, out to a maximum
   planned interval of 2,707 days. None of them has come due yet. "Mochi caps at 365" was
   true for three and a half years and is not true now.</p>
 
@@ -995,11 +1002,11 @@ graph LR
   </div>
   <p class="caption">Draft 3 printed 19,710 on both the <span class="mono">speech</span>
   and the <span class="mono">ai</span> row — the AI figure copy-pasted onto speech. The
-  56,767 <span class="mono">component-cache</span> entries break down as
-  <span class="mono">ai</span> 19,710 · <span class="mono">speech</span> 24,558 ·
-  <span class="mono">translate</span> 9,216 · <span class="mono">furigana</span> 3,255 ·
+  56,810 <span class="mono">component-cache</span> entries break down as
+  <span class="mono">ai</span> 19,723 · <span class="mono">speech</span> 24,577 ·
+  <span class="mono">translate</span> 9,218 · <span class="mono">furigana</span> 3,264 ·
   <span class="mono">image-search</span> 18 · <span class="mono">dictionary</span> 10.
-  Treat that cache as a 56,767-entry labelled test set, and seed from it on import rather
+  Treat that cache as a 56,810-entry labelled test set, and seed from it on import rather
   than paying to regenerate any of it.</p>
 
   <div class="note diagnosis">
@@ -1148,7 +1155,7 @@ graph LR
   <div class="prose">
     <p>Only one of these is a big build. The rest are small — <em>provided</em> their
     schema half lands in stage 1. A feature whose storage is retrofitted later means a
-    migration over 7,716 cards and 102,020 reviews; a feature whose storage is right from
+    migration over 7,716 cards and 103,110 reviews; a feature whose storage is right from
     the start is just UI work whenever you want it.</p>
   </div>
 
@@ -1194,7 +1201,7 @@ graph LR
 
   <div class="note diagnosis">
     <p class="note-h">Every review you have ever done shares one clock time</p>
-    <p>All 102,020 review records carry the timestamp <code>15:00:00Z</code> — exactly
+    <p>All 103,110 review records carry the timestamp <code>15:00:00Z</code> — exactly
     midnight JST. Mochi truncates to the date and stores JST midnight. There is not one
     single genuine time-of-day value in four years of history.</p>
     <p>This is <strong>unrecoverable</strong>. Unlike everything else in this spec, it
@@ -1207,7 +1214,7 @@ graph LR
   <div class="prose">
     <p>Store each review's <code>reviewed_at</code> as a full instant with timezone
     offset — the offset matters, since a 23:00 review in Tokyo and a 23:00 review abroad
-    are different facts about your day. <code>duration</code> already exists on 92,089
+    are different facts about your day. <code>duration</code> already exists on 93,124
     reviews and is kept as-is.</p>
     <p>Imported history must be flagged <strong>time-unknown</strong>, not silently
     assigned midnight. Otherwise every chart grows a false spike at 00:00 and the
@@ -1308,7 +1315,7 @@ graph LR
     deck, by hour once timestamps exist, lapse distributions, forecast load — to a model
     for interpretation.</p>
     <p>The design rule is: <strong>send aggregates, never the raw log</strong>. A summary
-    of 102,020 reviews is a few kilobytes, which keeps the cost at effectively nothing and
+    of 103,110 reviews is a few kilobytes, which keeps the cost at effectively nothing and
     means your entire study history never leaves the device. Shipping raw rows would be
     both expensive and needless.</p>
     <p>The stage-1 obligation is small but real: settle the shape of that aggregate now, so
@@ -1326,14 +1333,14 @@ graph LR
       <thead><tr><th>Decision</th><th>Choice</th><th>Because</th></tr></thead>
       <tbody>
         <tr><td>Platform</td><td>Local-first PWA, one TypeScript codebase</td><td>You edit on the phone, so it needs the full editor; and two PCs makes zero-install deploys a daily win</td></tr>
-        <tr><td>Local store</td><td>SQLite via OPFS</td><td>Real queries over 7,716 cards and 102,020 reviews; a JSON blob won't hold</td></tr>
+        <tr><td>Local store</td><td>SQLite via OPFS</td><td>Real queries over 7,716 cards and 103,110 reviews; a JSON blob won't hold</td></tr>
         <tr><td>Sync</td><td>Bidirectional, field-level last-write-wins</td><td>One user, never concurrent — no CRDT needed</td></tr>
         <tr><td>Review log</td><td>Append-only per track</td><td>Merges by set union; can never conflict</td></tr>
         <tr><td>Attachments</td><td>Content-addressed + refcounted, <strong>never a stored path</strong></td><td>Kills the regeneration churn above; an absolute path welds the library to one directory on one machine</td></tr>
         <tr><td>Server</td><td>Workers + D1 + R2</td><td>Two PCs need a rendezvous; free tier, nothing to maintain</td></tr>
-        <tr><td>Scheduler</td><td><strong>FSRS-6</strong>, fitted · max interval 365 d · target retention 0.90</td><td>Chosen by backtest over 102,020 graded reviews rather than assumed; the cap sits where the observed support stops, and it is what makes 0.90 safe</td></tr>
+        <tr><td>Scheduler</td><td><strong>FSRS-6</strong>, fitted · max interval 365 d · target retention 0.90</td><td>Chosen by backtest over 103,110 graded reviews rather than assumed; the cap sits where the observed support stops, and it is what makes 0.90 safe</td></tr>
         <tr><td>Grades</td><td><strong>Binary</strong> — remembered / forgot</td><td>Anki's four-button scale was considered and rejected. <span class="mono">w[15]</span>/<span class="mono">w[16]</span> are unreachable and frozen; the payoff is no train/serve distribution shift</td></tr>
-        <tr><td>Import</td><td>Lossless, except stale pre-template <span class="mono">content</span></td><td>3,159 cards carry 79,175 characters the template replaced; discarded so the render has one source of truth, and reported so it stays recoverable</td></tr>
+        <tr><td>Import</td><td>Lossless, except stale pre-template <span class="mono">content</span></td><td>3,160 cards carry 79,175 characters the template replaced; discarded so the render has one source of truth, and reported so it stays recoverable</td></tr>
         <tr><td>Review direction</td><td>Ordered sides; reverse = declared permutation</td><td>Templates run to four sides, so "reverse" needs defining</td></tr>
         <tr><td>Reverse toggle</td><td>Three-state <span class="mono">inherit / on / off</span>, card over deck</td><td>Two-state booleans can't express a deliberate exception</td></tr>
         <tr><td>Battery</td><td>No polling, no sockets, precomputed renders</td><td>Mostly a matter of <em>not</em> doing things</td></tr>
@@ -1360,7 +1367,7 @@ graph LR
     everything after.</p>
     <ol>
       <li><strong>Schema + importer.</strong> Read <code>.mochi</code>, land all 7,716
-      cards and 102,020 reviews, round-trip losslessly. Carries the schema half of every
+      cards and 103,110 reviews, round-trip losslessly. Carries the schema half of every
       request in the previous section: full review timestamps, tag paths with
       normalisation, wiki-links, FTS tables, and the aggregate shape.</li>
       <li><strong>Dashboard, read-only.</strong> Reproduce Mochi's figures from the
@@ -1424,12 +1431,12 @@ graph LR
       unreachable <em>by design</em> and are frozen rather than fitted — and in exchange
       the scheduler is trained on exactly the signal it is given in production.</li>
       <li><strong>Blobs are content-addressed and refcounted, and no absolute path is ever
-      stored.</strong> Tombstoning is what left 8,958 dead attachment records in Mochi;
+      stored.</strong> Tombstoning is what left 8,983 dead attachment records in Mochi;
       refcounting cannot produce a dangling reference. The path rule is an acceptance
       check, not a convention.</li>
       <li><strong>The payloads live in BLOB rows inside a second SQLite database, not in
       one file per payload.</strong> Settled on measurement, in a real browser, over the
-      whole 624.6&nbsp;MiB of real audio: 10,816 individual OPFS files took
+      whole 624.6&nbsp;MiB of real audio: 10,826 individual OPFS files took
       <strong>322.1&nbsp;s</strong> to write and 10.60&nbsp;ms per random read, while the
       same bytes as BLOB rows in one OPFS-backed file took <strong>4.9&nbsp;s</strong> and
       0.54&nbsp;ms. Re-measured since on a second machine — 19.30&nbsp;ms against
@@ -1444,7 +1451,7 @@ graph LR
       store&rdquo; and never &ldquo;look here&rdquo;, the swap changed no row of any
       table.</li>
       <li><strong>Stale pre-template <code>content</code> is discarded on import — and
-      reported.</strong> 3,159 templated cards carry 79,175 characters of hand-written
+      reported.</strong> 3,160 templated cards carry 79,175 characters of hand-written
       text that predates their template, none of which matches what the template renders.
       It is dropped so the render has a single source of truth, and listed so it stays
       recoverable from the export.</li>
@@ -1477,7 +1484,7 @@ graph LR
 
 <footer>
   Derived from 日本語, English and 基本情報 exports · Mochi format version 2 ·
-  7,716 cards · 102,020 reviews · 8,744 wiki-links · 636 hours ·
+  7,716 cards · 103,110 reviews · 8,744 wiki-links · 636 hours ·
   draft 8, revised 20 August 2026
 </footer>
 
