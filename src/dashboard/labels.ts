@@ -490,7 +490,7 @@ export const JA: Labels = {
       daysElapsed: "両端を含む数え方。2026-08-19 時点で一致",
       activeDays: "完全一致",
       retention: "完全一致（表示桁で）",
-      cardsStudied: "−68。窓内で学習した実カード数",
+      cardsStudied: "窓内で学習した実カード数",
     })[key] ?? "",
   mochiRead: (gap, fewer, imported, cardDays, mochiReviews, drift, unexplained) =>
     `復習数の差 ${gap} 件（Mochi 側がこちらより ${fewer} 少ない）は、インポートの誤りではない — インポートは ${imported} 件でエクスポートとバイト一致している。` +
@@ -802,7 +802,7 @@ export const EN: Labels = {
       daysElapsed: "both ends counted; agrees as of 2026-08-19",
       activeDays: "exact match",
       retention: "exact match, to the digits shown",
-      cardsStudied: "−68 — distinct cards studied inside the window",
+      cardsStudied: "distinct cards studied inside the window",
     })[key] ?? "",
   mochiRead: (gap, fewer, imported, cardDays, mochiReviews, drift, unexplained) =>
     `The ${gap} review difference — Mochi reporting ${fewer} fewer than this page — is not an ` +

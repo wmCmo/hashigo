@@ -1085,8 +1085,39 @@ export const MOCHI_2026: readonly MochiReference[] = [
   { key: "daysElapsed", label: "日数", mochi: 231, note: "両端を含む数え方。2026-08-19 時点で一致" },
   { key: "activeDays", label: "活動日数", mochi: 211, note: "完全一致" },
   { key: "retention", label: "定着率", mochi: 95, note: "完全一致（表示桁で）" },
-  { key: "cardsStudied", label: "累計学習カード数", mochi: 5_250, note: "−68。窓内で学習した実カード数" },
+  // The GAP is the 差 column's job. This used to open with "−68" and the
+  // 2026-09-05 re-import made it read "−68" beside a printed +141.
+  { key: "cardsStudied", label: "累計学習カード数", mochi: 5_250, note: "窓内で学習した実カード数" },
 ];
+
+/**
+ * The year the reference screenshot covers, and the last day of data behind it.
+ *
+ * MOCHI_2026 IS A PHOTOGRAPH, SO ITS WINDOW HAS AN END, AND SAYING SO IS A BUG FIX.
+ *
+ * The screenshot was taken 2026-08-19 and the export of the day before ended on the
+ * 18th, so "calendar 2026" and "everything Mochi could have counted" were the same
+ * rows — and the comparison table compared like with like by accident. The
+ * 2026-09-05 export runs 19 days further and broke that silently: the table went on
+ * printing the verdict `完全一致` beside `211 | 227 | +16`, because the verdicts are
+ * authored strings and nothing checked them against the numbers underneath.
+ *
+ * Bounding the window is the honest repair. Moving the reference to match our own
+ * output would not be — a reference you edit to agree with you has stopped being
+ * one, which is what "こちらの数字を Mochi に合わせて調整はしていない" promises the
+ * reader two lines above the table.
+ *
+ * `asOf` cannot do this: it clamps `daysElapsed` — that is where Mochi's 231 comes
+ * from — and does not decide which reviews fall inside the window.
+ */
+export const MOCHI_REFERENCE_YEAR = 2026;
+export const MOCHI_DATA_THROUGH = "2026-08-18";
+
+/** Calendar `year`, cut at the screenshot for the year the reference covers. */
+export function mochiComparisonWindow(year: number): DateWindow {
+  const window = calendarYear(year);
+  return year === MOCHI_REFERENCE_YEAR ? { ...window, to: MOCHI_DATA_THROUGH } : window;
+}
 
 // ─── the whole page's data in one call ──────────────────────────────────────
 
@@ -1142,7 +1173,11 @@ function windowReport(db: SqliteHandle, window: DateWindow, options: TotalsOptio
 export function collect(db: SqliteHandle, options: CollectOptions = {}): DashboardData {
   const asOf = options.asOf ?? null;
   const primary = windowReport(db, ALL_TIME, { asOf });
-  const comparison = windowReport(db, calendarYear(options.comparisonYear ?? 2026), { asOf });
+  const comparison = windowReport(
+    db,
+    mochiComparisonWindow(options.comparisonYear ?? MOCHI_REFERENCE_YEAR),
+    { asOf },
+  );
   return {
     generatedAt: options.generatedAt ?? new Date().toISOString(),
     source: options.source ?? "(in memory)",

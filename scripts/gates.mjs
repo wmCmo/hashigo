@@ -102,6 +102,13 @@ for (const gate of selected) {
     cwd: ROOT,
     encoding: "utf8",
     shell: true,
+    // 256 MiB, NOT the 1 MiB default — and this is a bug fix, not a precaution.
+    // A FAILING corpus run prints every assertion's diff, and `dashboard.test.ts`
+    // alone can emit a multi-megabyte one (its oracle compares a 433 KB page).
+    // spawnSync then dies with ENOBUFS, `status` is null, and this runner reported
+    // "the command never ran" — the one verdict that is neither PASS nor FAIL, on
+    // the run where the output mattered most. Seen 2026-09-08 on the re-import.
+    maxBuffer: 256 * 1024 * 1024,
     // Captured rather than inherited so the test gate's summary can be parsed. Echoed
     // below either way, so nothing is hidden.
     stdio: ["ignore", "pipe", "pipe"],

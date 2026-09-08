@@ -28,6 +28,13 @@ const proc = spawnSync("npx", ["vitest", "run", ...args], {
   cwd: ROOT,
   encoding: "utf8",
   shell: true,
+  // 256 MiB, NOT the 1 MiB default. A failing corpus run prints every assertion's
+  // diff and overruns it; spawnSync then dies with ENOBUFS and this wrapper —
+  // whose whole job is to read the SUMMARY — reported "vitest never ran" instead
+  // of the failures. The verdict rule is stricter than the exit code precisely so
+  // a run that produced no summary cannot pass, and a truncated capture is exactly
+  // that case. Seen 2026-09-08, on the re-import that made 77 tests fail at once.
+  maxBuffer: 256 * 1024 * 1024,
   stdio: ["ignore", "pipe", "pipe"],
 });
 
