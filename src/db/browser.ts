@@ -261,10 +261,47 @@ export async function installPool(options: BrowserOpenOptions = {}): Promise<SAH
   } catch (cause) {
     poolPromise = undefined;
     poolKey = "";
-    throw new Error(`could not install the opfs-sahpool VFS: ${(cause as Error).message}`, {
+    throw new Error(`could not install the opfs-sahpool VFS: ${explainPoolFailure(cause)}`, {
       cause,
     });
   }
+}
+
+/**
+ * Turn the one sahpool failure a USER can actually cause into an instruction.
+ *
+ * ONE TAB PER ORIGIN, AND THE BROWSER SAYS SO IN THE WRONG VOCABULARY. The pool
+ * holds a `SyncAccessHandle` on every slot file for as long as the page lives,
+ * and those handles are exclusive per file across the whole origin — so a second
+ * tab on the same site cannot open the database while the first still has it.
+ * What the browser throws is:
+ *
+ *   Failed to execute 'createSyncAccessHandle' on 'FileSystemFileHandle':
+ *   Access Handles cannot be created if there is another open Access Handle or
+ *   Writable stream associated with the same file.
+ *
+ * Which is accurate and tells the reader nothing about what to do. Zach hit it on
+ * his phone on 2026-09-08 with seven tabs open, one of them an older Hashigo, and
+ * the screen was a raw DOMException — on a device where there is no console to
+ * check and no obvious link between "Access Handle" and "you have this page open
+ * twice".
+ *
+ * The pool is not corrupt when this happens and nothing was written, so the honest
+ * message is a two-step instruction rather than an error. Detection is on the
+ * `createSyncAccessHandle` name plus the "another open" phrasing rather than on the
+ * exact sentence, because that wording is Chromium's and not a specification.
+ */
+function explainPoolFailure(cause: unknown): string {
+  const message = (cause as Error | undefined)?.message ?? String(cause);
+  const contended =
+    message.includes("createSyncAccessHandle") &&
+    /another open|already open|NoModificationAllowed/i.test(message);
+  if (!contended) return message;
+  return (
+    "this page is already open in another tab. The database can only be held by " +
+    "one tab at a time, so close the other Hashigo tabs and reload. " +
+    `Nothing was written and nothing is damaged. (${message})`
+  );
 }
 
 /**
