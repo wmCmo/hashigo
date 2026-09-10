@@ -287,11 +287,27 @@ Worth naming precisely, because "app/ is tested now" would be false. Four module
 pure logic are pinned — `keys.ts`, `review-keys.ts`, `review-boundary.ts`,
 `deck-tree.ts` — and they are the rules whose failure is SILENT. What remains
 untested is everything that needs a DOM: the painting, the worker RPC, the layer
-stack, the undo stack, and every SQL statement in `db.worker.ts` (the file six of the
-seven audited bugs lived in). Testing those needs a DOM environment — a new
-dependency and a bigger decision than one session should make alone. The SEAM is what
-this pass established: a pure rule in its own import-free module, tested from Node,
-called from `main.ts`. Every future rule can follow it.
+stack and the undo stack. The SEAM is what this pass established: a pure rule in its
+own import-free module, tested from Node, called from `main.ts`. Every future rule can
+follow it.
+
+**CORRECTED 2026-09-10. This paragraph used to end "and every SQL statement in
+`db.worker.ts` … testing those needs a DOM environment — a new dependency and a bigger
+decision than one session should make alone." The SQL half of that is FALSE, and it was
+already false when it was written.** `app/deck-scope.ts` tests the most destructive
+write in the app — the deck archive and its undo — from Node, against a copy of the
+real 74 MB corpus, with **no DOM and no new dependency**: neither `jsdom` nor
+`happy-dom` is installed, and `test/app-deck-scope.test.ts` passes `better-sqlite3`
+into a structural `ScopedDb` that `BrowserDb` also satisfies. SQL is not DOM, and
+bundling the two priced the worker's writes as unreachable when only the painting and
+the RPC actually are.
+
+**The gap that remains is therefore CHEAP, not blocked.** `db.worker.ts` still holds
+**36 write statements** across **854 lines** of mutation logic in nine handlers
+(`cardOp` 203, `templateOp` 233, `deckOp` 138, `setField` 75, `createCard` 73, `reset`
+41, `setReading` 33, `ungrade` 31, `renumber` 27), and `deck-scope.ts` is the only one
+extracted. Every other one is reachable by the same move, one handler at a time, with
+no decision left to make.
 
 ### WHERE THE DASHBOARD'S 81 SECONDS GO — measured 2026-08-26, not yet fixed
 
