@@ -10,6 +10,18 @@ import {
 } from "../app/review-boundary.js";
 import { revealSteps, type StepSide } from "../app/review-steps.js";
 import { audioIsStale } from "../app/seed-freshness.js";
+import {
+  CAPTURE,
+  DEFAULT_PLAYBACK,
+  mayPlayClip,
+  nextSpeed,
+  pickRecordingType,
+  readPlayback,
+  speedLabel,
+  takeLabels,
+  writePlayback,
+  SPEEDS,
+} from "../app/shadow-controls.js";
 
 /**
  * THE FIRST TESTS `app/` HAS EVER HAD.
@@ -474,5 +486,137 @@ describe("the audio file's own freshness", () => {
     // Re-bootstrapping at a smaller budget is a legitimate thing to want — his
     // phone's storage is finite. "Older" is not "wrong".
     expect(audioIsStale("2026-09-08T01:58:28.378Z", "2026-09-12T12:11:02.236Z")).toBe(true);
+  });
+});
+
+// ─── the shadowing controls: loop, speed, and his own voice ─────────────────
+
+/**
+ * Zach, 2026-09-12, handing over a card-controls mockup: the one thing in it the
+ * app did not have was controls for the drill the audio exists for.
+ *
+ * These rules are here rather than in `main.ts` because each has a failure that
+ * is SILENT on the exact thing the corpus trains. A rate that escapes the ladder
+ * plays a clip at a speed no control on screen can explain. A permission denial
+ * that reads as `idle` gives him a button that does nothing forever. And a clip
+ * allowed to sound while the mic is open puts the reference recording inside his
+ * own take, which is confidently wrong feedback about his accent.
+ */
+describe("shadowing controls", () => {
+  describe("the speed ladder", () => {
+    it("starts at normal, so one press is the slow one", () => {
+      // The direction he wants nine times out of ten. A ladder that gives 1.25
+      // first costs two presses to reach the only rate a learner reaches for.
+      expect(SPEEDS[0]).toBe(1);
+      expect(nextSpeed(1)).toBe(0.75);
+    });
+
+    it("wraps, and never leaves the ladder", () => {
+      let rate: number = SPEEDS[0];
+      const walk = [rate];
+      for (let step = 0; step < SPEEDS.length; step += 1) {
+        rate = nextSpeed(rate);
+        walk.push(rate);
+      }
+      expect(walk).toEqual([1, 0.75, 1.25, 1]);
+    });
+
+    it("HAS NO 0.5×, and that is the accent talking", () => {
+      // Rate change on an <audio> is a phase vocoder: time stretched, pitch held
+      // — which is what is wanted, since the accent IS the F0 contour. But the
+      // stretch smears rapid transitions and the DOWNSTEP is a rapid transition.
+      // 0.75 is mild; 0.5 lands artifacts on the one feature being trained.
+      expect(SPEEDS).not.toContain(0.5);
+      expect(Math.min(...SPEEDS)).toBe(0.75);
+    });
+
+    it("resets an unknown rate rather than honouring it", () => {
+      expect(nextSpeed(4)).toBe(1);
+      expect(nextSpeed(Number.NaN)).toBe(1);
+    });
+
+    it("writes normal speed as `1×`, not `1.00×`", () => {
+      // The resting state has to read as the ABSENCE of a setting.
+      expect(speedLabel(1)).toBe("1×");
+      expect(speedLabel(0.75)).toBe("0.75×");
+      expect(speedLabel(1.25)).toBe("1.25×");
+    });
+  });
+
+  describe("persistence tolerates whatever localStorage holds", () => {
+    it("round-trips", () => {
+      const held = { rate: 0.75, loop: true };
+      expect(readPlayback(writePlayback(held))).toEqual(held);
+    });
+
+    it("falls back on absent, empty and unparseable", () => {
+      for (const raw of [null, undefined, "", "{", "not json", "[]", "null"]) {
+        expect(readPlayback(raw), `readPlayback(${String(raw)})`).toEqual(DEFAULT_PLAYBACK);
+      }
+    });
+
+    it("DROPS a rate that is not on the ladder", () => {
+      // The dangerous shape: something writes `{"rate":4}` and the clip plays at
+      // 4× with every control on screen still reading `1×`. Honouring a stored
+      // number because it is a number is how that happens.
+      expect(readPlayback('{"rate":4,"loop":false}').rate).toBe(1);
+      expect(readPlayback('{"rate":"0.75"}').rate).toBe(1);
+      expect(readPlayback('{"rate":0.5}').rate).toBe(1);
+      // A legal one survives alongside a broken sibling.
+      expect(readPlayback('{"rate":0.75,"loop":"yes"}')).toEqual({ rate: 0.75, loop: false });
+    });
+  });
+
+  describe("the take", () => {
+    it("says `allow…` while the browser is asking", () => {
+      // `getUserMedia` sits on a permission prompt for as long as he takes to
+      // answer it. A button that still reads `record` gets pressed again.
+      expect(takeLabels("arming").record).toBe("allow…");
+      expect(takeLabels("arming").recordDisabled).toBe(true);
+    });
+
+    it("offers playback ONLY once something was captured", () => {
+      expect(takeLabels("idle").take).toBeNull();
+      expect(takeLabels("arming").take).toBeNull();
+      expect(takeLabels("recording").take).toBeNull();
+      expect(takeLabels("denied").take).toBeNull();
+      expect(takeLabels("take").take).toBe("your take");
+    });
+
+    it("DISABLES on denial rather than hiding — the `missing clip` rule", () => {
+      // A control that vanishes leaves him wondering whether the feature exists.
+      // One that is visibly unavailable, with the reason in its title, does not.
+      expect(takeLabels("denied").recordDisabled).toBe(true);
+      expect(takeLabels("denied").record).toBe("record");
+    });
+
+    it("refuses to sound a clip while the mic is open", () => {
+      // He reviews on a phone, on its own speaker. A take captured over the
+      // reference contains the reference — and comparing his contour against a
+      // mix of itself and his voice is worse than no feedback.
+      expect(mayPlayClip("recording")).toBe(false);
+      expect(mayPlayClip("arming")).toBe(false);
+      expect(mayPlayClip("idle")).toBe(true);
+      expect(mayPlayClip("take")).toBe(true);
+      expect(mayPlayClip("denied")).toBe(true);
+    });
+
+    it("opens the mic with the processing that would flatten a contour OFF", () => {
+      // AGC flattens dynamics, suppression reshapes the spectrum. Both are tuned
+      // for a phone call; this recording exists to be compared against a pitch
+      // contour. Echo cancellation stays on — speaker and mic are centimetres
+      // apart on the device he reviews with.
+      expect(CAPTURE.autoGainControl).toBe(false);
+      expect(CAPTURE.noiseSuppression).toBe(false);
+      expect(CAPTURE.echoCancellation).toBe(true);
+    });
+
+    it("picks opus where it exists and still records where it does not", () => {
+      expect(pickRecordingType((type) => type.includes("webm"))).toBe("audio/webm;codecs=opus");
+      // Safari.
+      expect(pickRecordingType((type) => type === "audio/mp4")).toBe("audio/mp4");
+      // Nothing recognised: the empty string is legal and means "you pick".
+      expect(pickRecordingType(() => false)).toBe("");
+    });
   });
 });

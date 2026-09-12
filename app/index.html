@@ -178,6 +178,31 @@
         <button id="nextcard" class="op" type="button" aria-label="next card">→</button>
       </div>
 
+      <!-- The shadowing controls, 2026-09-12. Below the operation row because he
+           touches these every card and those almost never; nearer the bottom is
+           nearer the thumb.
+
+           ALWAYS PRESENT, never conditional on the card having a clip. The row
+           would otherwise appear and disappear between cards, moving the
+           operation row above it — and `loop` and `speed` are session settings
+           that apply to the NEXT clip whatever this card holds, so there is
+           nothing to disable either. `your take` is the one thing that hides,
+           and only because he just made it exist. -->
+      <!-- The label is the FIRST CHILD and carries no leading whitespace: these
+           are repainted with `button.firstChild.textContent`, the same way the
+           pin and archive buttons were, so that the keycap hint beside it is
+           left alone. -->
+      <div id="shadowbar" class="shadowbar">
+        <button id="oploop" class="op" type="button" aria-pressed="false"
+                aria-label="loop the clip">loop<span class="kbd-inline"> l</span></button>
+        <button id="opspeed" class="op" type="button"
+                aria-label="playback speed">1×<span class="kbd-inline"> s</span></button>
+        <button id="oprecord" class="op" type="button"
+                aria-label="record your voice">record<span class="kbd-inline"> m</span></button>
+        <button id="optake" class="op" type="button" hidden
+                aria-label="play your recording">your take<span class="kbd-inline"> ⇧m</span></button>
+      </div>
+
       <div id="bar" class="bar">
         <!-- The word is its own span because the reveal is a WALK now, not a
              switch: it reads `reveal`, then `next · 3`, `next · 2`, `next · 1`,

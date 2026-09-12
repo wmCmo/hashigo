@@ -903,6 +903,20 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
  * SQUARE, hairline, no fill — the brief's button, at the size of a line of text
  * rather than a control bar. It is deliberately quieter than `.replay`: that one
  * is the primary gesture and earns its circle; this is a precision tap. */
+/* The hairline — `--played` is written by `mountClipButtons` from `timeupdate`.
+   Absolutely positioned, so it costs no layout and cannot move the line of text
+   the button sits in. `main.ts` carries the reasoning for why this is a rule and
+   not a scrub bar: the median word clip is 1.63 seconds long. */
+.clip::after {
+  background: var(--accent);
+  bottom: -3px;
+  content: "";
+  height: 2px;
+  left: 0;
+  position: absolute;
+  width: var(--played, 0);
+}
+
 .clip {
   background: none;
   border: 1px solid var(--line);
@@ -918,6 +932,8 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   min-height: 34px;
   min-width: 34px;
   padding: 0 8px;
+  /* The hairline's containing block. */
+  position: relative;
   vertical-align: middle;
 }
 
@@ -1952,6 +1968,18 @@ body[data-view="gallery"] .review { display: none; }
   padding: 8px 12px;
 }
 
+/* ── the shadowing row ──
+   Same shape as `.ops` on purpose: it is the second row of the same thing, and a
+   control cluster that invented its own look would read as belonging to another
+   application. `record` is the only one that fills — see `.op.arm` below. */
+.shadowbar {
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
 .op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; flex: 1; font: inherit; font-size: 12px; padding: 10px 4px; }
 .op:active { background: var(--sunk); }
 .op[disabled] { opacity: .35; }
@@ -2028,6 +2056,28 @@ body[data-view="review"] .review main {
 .gcard-op.on {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* RECORDING IS A LIVE STATE, not a toggle, so `.on`'s outline is not enough — a
+   microphone that is open and looks like a button that is merely selected is the
+   one state in this app where being unsure costs him a take.
+
+   `--danger` rather than `--vermilion`: the brief's dye darkened until it clears
+   AA for SMALL text (see the token header). `--card` on it measures 5.13:1 light
+   and 4.74:1 dark, the same pairing the filled grade button uses. */
+.op.arm {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--card);
+}
+
+/* THE ONE PLACE DECISION 38's 0.85 FLOOR DOES NOT REACH, and it is measured
+   rather than assumed. That floor was derived against `--indigo`; `--danger` is
+   lighter in dark, so `--card` at 0.85 composites to 3.93:1 over it — under AA.
+   The hint runs at full strength here instead. There are two words on this
+   button and the hint is 11px, so nothing is competing for attention anyway. */
+.op.arm .kbd-inline {
+  opacity: 1;
 }
 
 /* The preview's operation bar. It sits between the title and the close button,
@@ -2842,6 +2892,7 @@ input[data-answer="incorrect"] {
      text above it. The grounds and the hairlines still span the whole footer: a
      rule that stops in mid-air reads as a mistake rather than as alignment. */
   .ops,
+  .shadowbar,
   .bar {
     padding-inline: max(12px, calc((100% - 688px) / 2));
   }

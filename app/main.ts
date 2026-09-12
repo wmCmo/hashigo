@@ -106,6 +106,19 @@ import {
   type BoundarySide,
 } from "./review-boundary.js";
 import { revealSteps, type RevealStep } from "./review-steps.js";
+import {
+  CAPTURE,
+  DEFAULT_PLAYBACK,
+  mayPlayClip,
+  nextSpeed,
+  pickRecordingType,
+  readPlayback,
+  speedLabel,
+  takeLabels,
+  writePlayback,
+  type Playback,
+  type TakeState,
+} from "./shadow-controls.js";
 import type {
   AnswerRefusal,
   AppMessage,
@@ -504,6 +517,8 @@ function boundarySides(result: RenderResult<HTMLElement>): BoundarySide[] {
 }
 
 function releaseCard(): void {
+  // His recording belongs to the card he made it on — see `dropTake`.
+  dropTake();
   for (const handle of drawHandles) handle.detach();
   drawHandles = [];
   for (const handle of inputHandles) handle.detach();
@@ -588,6 +603,9 @@ async function showCardAt(): Promise<void> {
 
   const card = mountPrepared<HTMLElement>(reply.card, {
     document: browserDocument(document),
+    // His shadowing controls. A FUNCTION, so a rate he changes mid-card reaches
+    // the very next press rather than the next card — see `currentPlayback`.
+    playback: currentPlayback,
     // THE ONLY PATH TO BYTES, and it posts a message. `audioController` calls it
     // from `play()` alone, so a card merely on screen produces no payload
     // message at all — see `./protocol.ts`.
@@ -990,9 +1008,36 @@ function mountClipButtons(card: MountedCard<HTMLElement>): void {
       // card whose whole job is to be read.
       button.setAttribute("aria-label", `play ${clip.alt}`);
       button.title = clip.alt;
+
+      // THE HAIRLINE. A 2px rule under the button, filling as the clip runs.
+      //
+      // NOT A SCRUB BAR, and the corpus is why: the isolated-word clips have a
+      // median length of 1.63s and a maximum of 2.59s, so a seek target on one
+      // is smaller than the gesture that would use it. What a scrub bar is
+      // genuinely for here is the 1.0% of clips over ten seconds — and for those
+      // the question is "is this still running", not "take me to 0:14". A line
+      // answers the first and offers nothing for the second.
+      //
+      // With `loop` armed it also shows the loop turning over, which is the only
+      // feedback that control has.
+      //
+      // A CSS variable rather than a child element: `.clip::after` reads it, so
+      // nothing new is inserted into the card's own markup. Listeners live as
+      // long as the element does and the card's dispose takes both together.
+      const media = clip.element as unknown as HTMLMediaElement;
+      const paint = (): void => {
+        const at = media.duration > 0 ? Math.min(1, media.currentTime / media.duration) : 0;
+        button.style.setProperty("--played", `${(at * 100).toFixed(1)}%`);
+      };
+      media.addEventListener("timeupdate", paint);
+      media.addEventListener("ended", () => button.style.setProperty("--played", "0%"));
+
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        // NOTHING SOUNDS WHILE THE MICROPHONE IS OPEN. `mayPlayClip` carries
+        // the reasoning: a take recorded over a playing clip contains that clip.
+        if (!mayPlayClip(takeState)) return;
         side.play(clip, { unmask: false });
       });
       clip.element.insertAdjacentElement("afterend", button);
@@ -1312,6 +1357,7 @@ revealButton.addEventListener("click", reveal);
 forgotButton.addEventListener("click", () => void grade(false));
 rememberedButton.addEventListener("click", () => void grade(true));
 replayButton.addEventListener("click", () => {
+  if (!mayPlayClip(takeState)) return;
   drill?.replay();
 });
 readingButton.addEventListener("click", () => void flipReading());
@@ -1351,6 +1397,215 @@ moreButton.addEventListener("click", () => {
   }
 });
 
+// ─── the shadowing controls: loop, speed, and his own voice ─────────────────
+
+/**
+ * THE DRILL FINALLY HAS CONTROLS. Zach, 2026-09-12, over a card-controls mockup
+ * another session had built — the one thing in it this app did not have was
+ * anything for the exercise every clip in the corpus exists for.
+ *
+ * `app/shadow-controls.ts` holds every rule that can be decided without a DOM,
+ * and its header carries the measurements: the clip-length distribution that
+ * killed the mockup's scrub bar, why the rate ladder stops at 0.75, and why a
+ * take is ephemeral. This file is the wiring.
+ *
+ * ─── WHAT IS NOT ALLOWED TO CHANGE ──────────────────────────────────────────
+ *
+ * Decision 29's hard rule is untouched, and it is untouched STRUCTURALLY rather
+ * than carefully: `l` and `s` write two numbers, `m` opens a microphone, and
+ * none of the four can reach `audioController`. The only thing here that makes a
+ * sound is `playTake`, and it plays HIS voice from its own element.
+ */
+const PLAYBACK_KEY = "hashigo.playback";
+
+let playbackState: Playback = DEFAULT_PLAYBACK;
+try {
+  playbackState = readPlayback(localStorage.getItem(PLAYBACK_KEY));
+} catch {
+  /* a disabled or full localStorage costs the setting, not the session */
+}
+
+/**
+ * Handed to every `audioController` as `playback`, and asked at each play.
+ *
+ * A FUNCTION, NOT THE VALUE. A value read at mount would be frozen for the life
+ * of one card, so a rate he changed mid-card would not take until the next one —
+ * and "I pressed it and nothing happened" is how a control gets pressed twice.
+ */
+function currentPlayback(): Playback {
+  return playbackState;
+}
+
+const loopButton = el<HTMLButtonElement>("oploop");
+const speedButton = el<HTMLButtonElement>("opspeed");
+const recordButton = el<HTMLButtonElement>("oprecord");
+const takeButton = el<HTMLButtonElement>("optake");
+
+let takeState: TakeState = "idle";
+let takeUrl: string | null = null;
+let recorder: MediaRecorder | null = null;
+let recordingStream: MediaStream | null = null;
+/**
+ * A private element, NEVER the card's.
+ *
+ * His take must not travel through `audioController`: that would let it set
+ * `drill`, retarget the round replay button, and appear in `card.loop.log` — the
+ * log the hard-rule tests read. A recording of his own voice is not a clip.
+ */
+const takeAudio = new Audio();
+/**
+ * Which card a recording belongs to.
+ *
+ * `MediaRecorder.stop()` finishes ASYNCHRONOUSLY. Without this, stopping a
+ * recording by moving to the next card lands the finished blob on the card he
+ * has just arrived at — his 転出 take offered as his 償却 take.
+ */
+let takeGeneration = 0;
+
+function savePlayback(): void {
+  try {
+    localStorage.setItem(PLAYBACK_KEY, writePlayback(playbackState));
+  } catch {
+    /* full or disabled: the setting still applies for this session */
+  }
+  paintShadowbar();
+}
+
+function paintShadowbar(): void {
+  loopButton.classList.toggle("on", playbackState.loop);
+  loopButton.setAttribute("aria-pressed", String(playbackState.loop));
+  speedButton.firstChild!.textContent = speedLabel(playbackState.rate);
+  // Normal speed is the ABSENCE of a setting, so it does not light up.
+  speedButton.classList.toggle("on", playbackState.rate !== 1);
+
+  const labels = takeLabels(takeState);
+  recordButton.firstChild!.textContent = labels.record;
+  recordButton.disabled = labels.recordDisabled;
+  recordButton.classList.toggle("arm", takeState === "recording");
+  recordButton.title =
+    takeState === "denied"
+      ? "no microphone here — the permission was refused, or this browser has none"
+      : "record yourself saying it, then play both back";
+  takeButton.hidden = labels.take === null;
+  if (labels.take !== null) takeButton.firstChild!.textContent = labels.take;
+}
+
+/**
+ * Silence every clip on the card.
+ *
+ * Called before the microphone opens. He reviews on a phone, on its own speaker;
+ * a take captured over a playing clip contains that clip, and comparing his
+ * contour against a mix of itself and his voice is not weak feedback, it is
+ * confidently wrong feedback about the one thing he is training.
+ */
+function silenceClips(): void {
+  for (const media of mounted?.result.media ?? []) {
+    const element = media.element as unknown as { pause?: () => void };
+    element.pause?.();
+  }
+}
+
+function releaseTake(): void {
+  takeAudio.pause();
+  if (takeUrl !== null) URL.revokeObjectURL(takeUrl);
+  takeUrl = null;
+}
+
+/**
+ * The take does not follow him to the next card — see `shadow-controls.ts` for
+ * why it is ephemeral rather than stored.
+ *
+ * `denied` SURVIVES. It is a fact about the browser, not about the card, and
+ * resetting it would ask him for the microphone again on every single card after
+ * he has already said no once.
+ */
+function dropTake(): void {
+  takeGeneration += 1;
+  if (takeState === "recording") recorder?.stop();
+  recorder = null;
+  for (const track of recordingStream?.getTracks() ?? []) track.stop();
+  recordingStream = null;
+  releaseTake();
+  if (takeState !== "denied") takeState = "idle";
+  paintShadowbar();
+}
+
+async function toggleRecord(): Promise<void> {
+  if (takeState === "recording") {
+    recorder?.stop();
+    return;
+  }
+  if (takeState === "arming" || takeState === "denied") return;
+
+  silenceClips();
+  releaseTake();
+  takeState = "arming";
+  paintShadowbar();
+
+  const generation = takeGeneration;
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: CAPTURE });
+  } catch (cause) {
+    // DISABLED AND SAID, not hidden — the `.clip[data-clip="missing"]` rule. A
+    // control that vanishes leaves him wondering whether the feature exists.
+    takeState = "denied";
+    paintShadowbar();
+    say(`no microphone — ${(cause as Error).message}`, true);
+    return;
+  }
+  if (generation !== takeGeneration) {
+    for (const track of stream.getTracks()) track.stop();
+    return;
+  }
+
+  recordingStream = stream;
+  const type = pickRecordingType((candidate) => MediaRecorder.isTypeSupported(candidate));
+  recorder = new MediaRecorder(stream, type === "" ? {} : { mimeType: type });
+  const chunks: Blob[] = [];
+  recorder.addEventListener("dataavailable", (event) => {
+    if (event.data.size > 0) chunks.push(event.data);
+  });
+  recorder.addEventListener("stop", () => {
+    // THE MIC LIGHT HAS TO GO OUT. A live track left open keeps the phone's
+    // recording indicator on for the rest of the session, which on his handset
+    // looks exactly like an app that is still listening — because it is.
+    for (const track of stream.getTracks()) track.stop();
+    if (generation !== takeGeneration) return;
+    recordingStream = null;
+    takeUrl = URL.createObjectURL(new Blob(chunks, type === "" ? {} : { type }));
+    takeAudio.src = takeUrl;
+    takeState = "take";
+    paintShadowbar();
+  });
+  recorder.start();
+  takeState = "recording";
+  paintShadowbar();
+}
+
+function playTake(): void {
+  if (takeUrl === null) return;
+  takeAudio.currentTime = 0;
+  // AT THE SAME RATE AS THE REFERENCE, so the comparison is like for like. If he
+  // is listening to the clip at 0.75× and his own take comes back at 1×, the two
+  // contours are stretched differently and the thing he is comparing is tempo.
+  takeAudio.preservesPitch = true;
+  takeAudio.playbackRate = playbackState.rate;
+  void takeAudio.play().catch(() => say("could not play your take", true));
+}
+
+loopButton.addEventListener("click", () => {
+  playbackState = { ...playbackState, loop: !playbackState.loop };
+  savePlayback();
+});
+speedButton.addEventListener("click", () => {
+  playbackState = { ...playbackState, rate: nextSpeed(playbackState.rate) };
+  savePlayback();
+});
+recordButton.addEventListener("click", () => void toggleRecord());
+takeButton.addEventListener("click", playTake);
+paintShadowbar();
+
 /**
  * ONE DECISION, THEN ONE CALL EACH.
  *
@@ -1377,6 +1632,7 @@ document.addEventListener("keydown", (event) => {
     layerOpen: layerHost.childElementCount > 0,
     layerActs: layers.at(-1)?.ops === true,
     sidebarOpen: document.body.classList.contains("sidebar-open"),
+    hasTake: takeUrl !== null,
     reviewHidden: reviewView.hidden,
     revealed,
     moreToReveal: stepIndex < steps.length || !revealed,
@@ -1448,6 +1704,18 @@ document.addEventListener("keydown", (event) => {
     case "previous":
       void stepCard(-1);
       return;
+    case "toggleLoop":
+      loopButton.click();
+      return;
+    case "cycleSpeed":
+      speedButton.click();
+      return;
+    case "toggleRecord":
+      void toggleRecord();
+      return;
+    case "playTake":
+      playTake();
+      return;
     case "backToCard":
       void showSessionCard();
       return;
@@ -1461,7 +1729,7 @@ document.addEventListener("keydown", (event) => {
       void grade(true);
       return;
     case "replay":
-      drill?.replay();
+      if (mayPlayClip(takeState)) drill?.replay();
       return;
   }
 });
@@ -1702,6 +1970,11 @@ async function openPreview(cardId: string): Promise<void> {
 
   const mounted = mountPrepared<HTMLElement>(reply.card, {
     document: browserDocument(document),
+    // Decision 30 keeps a preview silent on entry but leaves a clip one tap
+    // away. When he takes that tap it should sound the way the review screen
+    // sounds — a rate that applied on one surface and not the other would be a
+    // setting he could not trust.
+    playback: currentPlayback,
     resolve: async (address) =>
       (await ask<"payload">({ kind: "payload", cardId: reply.card!.cardId, address })).payload,
   });

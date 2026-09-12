@@ -124,6 +124,15 @@ export interface MountOptions<E extends RenderElement> {
    */
   readonly playable?: AudioControllerOptions<E>["playable"];
   readonly onOutcome?: AudioControllerOptions<E>["onOutcome"];
+  /**
+   * His shadowing controls (2026-09-12) — rate and loop, asked for at each play.
+   *
+   * Passed straight through to the controller. This module is the POLICY half of
+   * the split described in `src/render/reveal.ts`, and it has no policy here: how
+   * fast he wants to hear a clip is a preference that belongs to the screen, and
+   * the screen is `app/`.
+   */
+  readonly playback?: AudioControllerOptions<E>["playback"];
 }
 
 /** `MountOptions` minus everything that needs a DOM. The worker's half. */
@@ -164,6 +173,15 @@ export interface MountPreparedOptions<E extends RenderElement> {
   readonly resolve: AudioResolver;
   readonly playable?: AudioControllerOptions<E>["playable"];
   readonly onOutcome?: AudioControllerOptions<E>["onOutcome"];
+  /**
+   * His shadowing controls (2026-09-12) — rate and loop, asked for at each play.
+   *
+   * Passed straight through to the controller. This module is the POLICY half of
+   * the split described in `src/render/reveal.ts`, and it has no policy here: how
+   * fast he wants to hear a clip is a preference that belongs to the screen, and
+   * the screen is `app/`.
+   */
+  readonly playback?: AudioControllerOptions<E>["playback"];
 }
 
 export interface MountedCard<E extends RenderElement> {
@@ -330,6 +348,7 @@ export function mountPrepared<E extends RenderElement>(
     resolve: options.resolve,
     ...(options.playable === undefined ? {} : { playable: options.playable }),
     ...(options.onOutcome === undefined ? {} : { onOutcome: options.onOutcome }),
+    ...(options.playback === undefined ? {} : { playback: options.playback }),
   });
 
   const loop = shadowingLoop<E>(result, { audio });
@@ -399,6 +418,7 @@ export function mountCard<E extends RenderElement>(
     }),
     ...(options.playable === undefined ? {} : { playable: options.playable }),
     ...(options.onOutcome === undefined ? {} : { onOutcome: options.onOutcome }),
+    ...(options.playback === undefined ? {} : { playback: options.playback }),
   });
 }
 

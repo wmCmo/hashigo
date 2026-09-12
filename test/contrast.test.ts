@@ -34,12 +34,15 @@ const GROUNDS = ["--paper", "--paper-sunk", "--card"] as const;
  * Foregrounds that do NOT land on the paper grounds, with where they do land.
  *
  * `--card` is the label on a FILLED button and nothing else — verified: every
- * `color: var(--card)` in the stylesheet sits in a rule that also sets
- * `background: var(--indigo)`. Checking it against paper would be checking a
- * pairing that never occurs, and would force a wrong "fix".
+ * `color: var(--card)` in the stylesheet sits in a rule that also sets a solid
+ * `background`. Indigo for the grade and reveal buttons; `--danger` since
+ * 2026-09-12 for `record` while the microphone is open, which is the one state
+ * here that must not be mistakable for a button that is merely selected.
+ * Checking `--card` against paper would be checking a pairing that never occurs,
+ * and would force a wrong "fix".
  */
 const ON_INSTEAD: Record<string, readonly string[]> = {
-  "--card": ["--indigo", "--indigo-deep"],
+  "--card": ["--indigo", "--indigo-deep", "--danger"],
 };
 
 /**
@@ -321,6 +324,7 @@ describe("text that lands on a FILLED ground, not on paper", () => {
   const ON_FILL: readonly [string, string, string][] = [
     ["--card", "--indigo", "a filled button's own label"],
     ["--card", "--indigo-deep", "a filled button's label, pressed"],
+    ["--card", "--danger", "the record button's label while the mic is open"],
     ["--ink", "--sunk", "a recessed row: deck rows, palette rows, menu rows"],
     ["--muted", "--sunk", "the subtitle on those rows — deck path, card count"],
     ["--muted", "--paper-sunk", "the cloze mask's own text"],
@@ -358,6 +362,31 @@ describe("text that lands on a FILLED ground, not on paper", () => {
     // colour — omitting it would pass the check above and still be correct, but
     // saying it is what makes the intent survive the next edit.
     expect(css).toMatch(/\.kbd\s*\{[^}]*color:\s*inherit/);
+  });
+
+  it("the 0.85 hint floor is checked against the ground, not inherited as a number", () => {
+    // DECISION 38 MEASURED 0.85 AGAINST INDIGO. That is where it came from, and
+    // it does not travel: `record` fills `--danger`, which is LIGHTER than
+    // indigo in dark mode, so the same 0.85 composites to under AA there. The
+    // rule opts that one button out, and this is the arithmetic that says why —
+    // if someone "tidies" the opt-out away, the number below fails first.
+    const over = (fg: string, bg: string, alpha: number): string => {
+      const [f, b] = [parseInt(fg.slice(1), 16), parseInt(bg.slice(1), 16)];
+      const mix = (shift: number): number =>
+        Math.round(alpha * ((f >> shift) & 255) + (1 - alpha) * ((b >> shift) & 255));
+      return `#${[16, 8, 0].map((s) => mix(s).toString(16).padStart(2, "0")).join("")}`;
+    };
+    const ground = resolve("--danger", dark);
+    const faded = ratio(over(resolve("--card", dark), ground, 0.85), ground);
+    expect(faded, `0.85 over --danger in dark is ${faded.toFixed(2)}:1`).toBeLessThan(4.5);
+    expect(
+      css,
+      "the armed record button's hint is back on the 0.85 floor, which does not " +
+        "clear AA on --danger in dark",
+    ).toMatch(/\.op\.arm \.kbd-inline \{[^}]*opacity:\s*1/);
+    // Full strength does clear it, which is the reason the opt-out is 1 and not
+    // some other number.
+    expect(ratio(resolve("--card", dark), ground)).toBeGreaterThanOrEqual(4.5);
   });
 
   it("decision 19: a keycap hint never renders where there is no keyboard", () => {
@@ -653,11 +682,17 @@ describe("every position: fixed rule has an answer for the rail", () => {
     expect(pad, "cannot read the card column's padding").toBeGreaterThan(0);
 
     const desktop = /@media \(min-width: 1024px\) \{([\s\S]*)\}/.exec(css)?.[1] ?? "";
-    const used = Number(
-      /\.ops,\s*\.bar \{[^}]*padding-inline:\s*max\([^,]+,\s*calc\(\(100% - (\d+)px\)/.exec(
-        desktop,
-      )?.[1],
+    const inset = /([^{}]+)\{[^}]*padding-inline:\s*max\([^,]+,\s*calc\(\(100% - (\d+)px\)/.exec(
+      desktop,
     );
+    // EVERY footer row, not only the two that existed when this was written. A
+    // row left out sits at the window's width under a column of text — which is
+    // how the shadowing row would have landed if this only named `.ops` and
+    // `.bar`.
+    for (const row of [".ops", ".shadowbar", ".bar"]) {
+      expect(inset?.[1] ?? "", `${row} is not inset to the card column`).toContain(row);
+    }
+    const used = Number(inset?.[2]);
     expect(
       used,
       `the footer insets to ${used}px but the card's text column is ` +

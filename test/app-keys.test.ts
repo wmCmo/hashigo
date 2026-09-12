@@ -247,3 +247,62 @@ describe("the sidebar and the boot screen", () => {
     expect(reviewAction({ key: "j", repeat: true }, state({ revealed: true }))).toBeNull();
   });
 });
+
+/**
+ * THE SHADOWING CONTROLS SIT BEFORE THE REVEAL, AND THAT IS THE POINT.
+ *
+ * The drill is produce-then-verify: look at the kanji, recall the contour, say it
+ * aloud, THEN reveal and compare. Setting the rate and arming the recorder belong
+ * to the first half. A control reachable only after the reveal is a control for
+ * an exercise he has already finished — which is the same mistake decision 29's
+ * `asked` gate exists to prevent for replay, and Zach reported that one out loud:
+ * *"now i can't replay it even if i want to"*.
+ */
+describe("loop, speed and recording (2026-09-12)", () => {
+  it("all work BEFORE anything is revealed", () => {
+    const fresh = state({ revealed: false, moreToReveal: true });
+    expect(reviewAction(press("l"), fresh)).toBe("toggleLoop");
+    expect(reviewAction(press("s"), fresh)).toBe("cycleSpeed");
+    expect(reviewAction(press("m"), fresh)).toBe("toggleRecord");
+  });
+
+  it("and after", () => {
+    const done = state({ revealed: true, moreToReveal: false });
+    expect(reviewAction(press("l"), done)).toBe("toggleLoop");
+    expect(reviewAction(press("s"), done)).toBe("cycleSpeed");
+    expect(reviewAction(press("m"), done)).toBe("toggleRecord");
+  });
+
+  it("shift+m plays the take, and does nothing when there is none", () => {
+    // `event.key` for shift+m is "M", which lowercases to the same "m" as the
+    // record key — so the shifted branch has to come first or recording starts
+    // every time he asks to hear himself.
+    expect(reviewAction(press("m", { shiftKey: true }), state({ hasTake: true }))).toBe("playTake");
+    expect(reviewAction(press("m", { shiftKey: true }), state({ hasTake: false }))).toBeNull();
+    // And the unshifted key is unaffected by the take existing.
+    expect(reviewAction(press("m"), state({ hasTake: true }))).toBe("toggleRecord");
+  });
+
+  it("does not reach past a text field, a layer, or a hidden review screen", () => {
+    // The guard every single-key shortcut in this table lives behind. Typing
+    // "small" into the gallery filter must not cycle the speed and open the mic.
+    for (const key of ["l", "s", "m"]) {
+      expect(reviewAction(press(key), state({ typing: true })), key).toBeNull();
+      expect(reviewAction(press(key), state({ layerOpen: true })), key).toBeNull();
+      expect(reviewAction(press(key), state({ reviewHidden: true })), key).toBeNull();
+      expect(reviewAction(press(key), state({ hasCard: false })), key).toBeNull();
+    }
+  });
+
+  it("takes no key that already meant something", () => {
+    // `l`, `s` and `m` were free; the ones in his fingers are not. If a future
+    // control reaches for one of these, this is where it gets caught.
+    const fresh = state();
+    expect(reviewAction(press("f"), state({ revealed: true }))).toBe("gradeForgot");
+    expect(reviewAction(press("j"), state({ revealed: true }))).toBe("gradeRemembered");
+    expect(reviewAction(press("a"), fresh)).toBe("archive");
+    expect(reviewAction(press("d"), fresh)).toBe("delete");
+    expect(reviewAction(press("e"), fresh)).toBe("edit");
+    expect(reviewAction(press("r"), state({ asked: true }))).toBe("replay");
+  });
+});

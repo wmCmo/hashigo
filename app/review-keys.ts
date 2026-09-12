@@ -88,6 +88,16 @@ export interface KeyState {
   readonly peeking: boolean;
   /** There is a card to act on. */
   readonly hasCard: boolean;
+  /**
+   * A recording of his own voice exists for this card, so there is something for
+   * `shift+m` to play.
+   *
+   * A flag rather than a no-op in `main.ts` for the reason the rest of this table
+   * exists: a key whose meaning depends on state should say so HERE, where it can
+   * be enumerated, instead of dying quietly at the call site. The take is
+   * ephemeral (see `app/shadow-controls.ts`), so this is false on every fresh card.
+   */
+  readonly hasTake: boolean;
 }
 
 export type ReviewAction =
@@ -111,6 +121,10 @@ export type ReviewAction =
   | "gradeForgot"
   | "gradeRemembered"
   | "replay"
+  | "toggleLoop"
+  | "cycleSpeed"
+  | "toggleRecord"
+  | "playTake"
   /** A grade was pressed while looking ahead. Say so; write nothing. */
   | "gradeBlocked"
   /** Nothing, and the browser keeps the keystroke. */
@@ -184,6 +198,23 @@ export function reviewAction(event: KeyEventShape, state: KeyState): ReviewActio
   // question again hands over the answer.
   if (key === "r" && state.asked) return "replay";
 
+  // ── the shadowing controls, and they are ALL above the reveal gate ──
+  //
+  // Not a convenience. The drill is: look at the kanji, recall the contour, SAY
+  // IT ALOUD, and only then reveal and compare. Every one of these belongs to the
+  // half that happens BEFORE the reveal — he sets the rate and arms the recorder
+  // while the answer is still hidden, and a control he can only reach afterwards
+  // is a control for an exercise he has already finished.
+  //
+  // None of them unmask anything, so decision 29 is untouched: `l` and `s` change
+  // settings and `m` opens a microphone. The one that sounds a clip is `replay`,
+  // above, which has its own gate.
+  if (key === "l") return "toggleLoop";
+  if (key === "s") return "cycleSpeed";
+  // Shift first: `event.key` for shift+m is "M", which lowercases to the same "m".
+  if (key === "m" && event.shiftKey === true) return state.hasTake ? "playTake" : null;
+  if (key === "m") return "toggleRecord";
+
   if (!state.revealed) return null;
 
   // ── grading ──
@@ -210,4 +241,5 @@ export const REVIEWING: KeyState = {
   asked: false,
   peeking: false,
   hasCard: true,
+  hasTake: false,
 };

@@ -139,6 +139,19 @@ export interface PlayableMediaElement extends RenderElement {
   play(): unknown;
   pause(): void;
   load(): void;
+  /**
+   * The three `playback` writes, OPTIONAL so a test fake need not carry them —
+   * but a fake that wants to observe them may, which is the point.
+   *
+   * `preservesPitch` is the one that matters here and it is set EXPLICITLY
+   * rather than left to the default. Every current browser defaults it to true,
+   * and if it were ever false a 0.75× rate would transpose the whole clip down
+   * about 2.5 semitones — on a corpus that exists to train 高低アクセント, the
+   * single most damaging thing a playback-rate control could do.
+   */
+  playbackRate?: number;
+  loop?: boolean;
+  preservesPitch?: boolean;
 }
 
 /** `data-` attributes this module writes. The renderer writes none of these. */
@@ -240,6 +253,21 @@ export interface AudioControllerOptions<E extends RenderElement = RenderElement>
    */
   readonly playable?: (mount: MediaMount<E>) => PlayableMediaElement | null;
   readonly onOutcome?: (outcome: AudioOutcome<E>) => void;
+  /**
+   * Rate and loop, asked for at the moment of each play — his shadowing
+   * controls (2026-09-12).
+   *
+   * A CALLBACK, NOT A VALUE, and that is the whole design. The settings are
+   * session-sticky and live in `app/`; a value passed at construction would be
+   * frozen for the life of one card, so changing the rate would not take until
+   * the next card. Asking at `start()` means the control he just pressed applies
+   * to the clip he presses next, which is what a practice tool has to do.
+   *
+   * MECHANISM HERE, POLICY IN `app/` — the same split as `reveal.ts` and
+   * `src/review/mount.ts`. This module knows how to apply a rate; it has no
+   * opinion about which rates exist or where they are remembered.
+   */
+  readonly playback?: () => { readonly rate: number; readonly loop: boolean };
 }
 
 export interface AudioTrack<E extends RenderElement = RenderElement> {
@@ -405,6 +433,15 @@ export function audioController<E extends RenderElement>(
       } catch {
         /* nothing to rewind yet */
       }
+    }
+    // Applied per PLAY rather than per attach: the same element is replayed, and
+    // a rate he changed between two presses has to reach the second one.
+    const playback = options.playback?.();
+    if (playback !== undefined) {
+      // Before `playbackRate`, because some engines read it when the rate is set.
+      element.preservesPitch = true;
+      element.playbackRate = playback.rate;
+      element.loop = playback.loop;
     }
     let result: unknown;
     try {
