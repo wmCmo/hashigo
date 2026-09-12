@@ -1309,6 +1309,135 @@ right**: it holds his verbatim reasoning and this quotes it.
    mattered: a first version matched `"image"` and `"inline"` out of an unrelated
    media-kind ternary and reported them as unstyled elements.
 
+40. **THE MOCKUP'S TWO REAL CONTRIBUTIONS: CONTROLS FOR THE DRILL, AND A
+   DESKTOP THAT WAS NEVER BUILT.** Zach handed over `hashigo-card-controls.html`
+   on 2026-09-12 — *"i think this mock up has a very good design, should we
+   incorporate everything into our design? or do you think there are things we
+   could improve?"* — and then the question that mattered: *"what about the rest
+   of the aestheticness of the design that we don't have yet? i know you can't
+   'see', but i don't know how to let you understand that that session generated
+   something more beautiful than what we have lol"*.
+
+   **THE BEAUTY GAP WAS MEASURABLE, AND IT WAS NOT COLOUR OR TYPE.**
+   `app/style.css` had **no width breakpoint above 640px** — every `@media` in
+   the file was dark mode, reduced motion, pointer detection, or
+   `max-width: 640px`/`520px`. So the review screen was a 720px column between a
+   full-width sticky header and a full-width fixed footer: a phone layout
+   stretched across a laptop, with several hundred pixels of empty paper down
+   each side. He reviews on the laptop when he is home. Offered the choice, he
+   picked **the composition** and neither of the other two candidates (the card
+   as a bounded raised surface, more air).
+
+   **ONE TOKEN DRIVES THE LAYOUT.** `--rail-w` is what the rail takes OUT of the
+   page and is `0px` until ≥1024px; `--rail-width` is the sidebar's own 330px at
+   every size, because it is the same element sliding or standing. `body {
+   padding-left }` carries normal flow. **The six `position: fixed` rules do not
+   all want the same treatment**, and that is the point: `.footer` offsets,
+   `.say` offsets *and* re-centres (`left: 50%` is the viewport's middle and
+   `max-width: 100%` its width), `.replay` needs nothing (anchored right),
+   `.sidebar` IS the rail, `.sidebar-scrim` never shows there, and **`.layer`
+   deliberately keeps `inset: 0`** — a preview's scrim must cover the rail, and a
+   modal with a live deck list behind it is not modal.
+   **`contain: layout` on a stage wrapper was the alternative** and it needs no
+   enumeration at all: fixed descendants resolve against the stage. Rejected —
+   it confines `.layer` too, with no opt-out, so it gets one of six certainly
+   wrong. `test/contrast.test.ts` classifies every fixed rule instead, because
+   **hand-enumeration already failed**: the first draft named `.banner` (not
+   positioned at all), `.sidebar-scrim` and `#layers` as needing the offset and
+   gave `.say` the wrong formula — four of five wrong before a line was written.
+
+   **THE CONTROLS LINE UP WITH THE CARD, NOT THE WINDOW.** `.ops`, `.shadowbar`
+   and `.bar` are flex rows of `flex: 1` children, right on a phone where the row
+   IS the thumb target and wrong at 1110px — four buttons at 267px each under a
+   720px card. Inset to the card's own text column (720 − 2 × 16 = 688px), with
+   the grounds and hairlines still spanning the footer. The 688 is **read out of
+   `main` by the test** rather than retyped, because two places holding one
+   measure is how text and buttons drift a few pixels apart with no single change
+   to blame.
+
+   **CARD OPERATIONS MOVED BEHIND `⋯`, AND ONE RULE WAS MISQUOTED TO GET THERE.**
+   An earlier draft justified the old always-visible row with "his standing rule",
+   and he caught it: *"i never state this rule?"* What is recorded, in four places
+   in `app/main.ts` and `app/index.html`, is **every 操作 on the desktop exists on
+   mobile**, as a real button and not only a shortcut — which a menu on both
+   surfaces satisfies. Measured first: **0 of 7,716 cards are pinned** (the column
+   is imported from Mochi, so that is four years without pinning once — evidence
+   about Mochi, not a prediction) and 244 archived, against a replay he presses
+   every card. `delete` two buttons from `undo` in his right thumb's zone did not
+   earn the room. **UNDO STAYS OUT of the menu** — it is the safety net, and the
+   thing you reach for when something has already gone wrong does not belong
+   behind two taps. The presentation is `openDeckMenu`'s existing modal
+   `.layer-menu`, **not** the mockup's popover-plus-bottom-sheet: two new
+   presentations to build and keep in step, and `⋯` on a card landing in a
+   different kind of object from `⋯` on a deck. Side effect worth recording: at
+   375px the row stopped wrapping to two lines, `--footer-h` 162px → 139px.
+
+   **THE SHADOWING CONTROLS ARE THE OTHER HALF, AND THE CORPUS PICKED THEM.**
+   1,200 speech blobs, MP3 frame headers parsed:
+
+   | | n | p50 | p90 | max |
+   |---|---|---|---|---|
+   | isolated word (source ≤ 8 ch) | 551 | **1.63s** | 1.80s | 2.59s |
+   | example sentence (> 8 ch) | 649 | **4.08s** | 6.10s | 25.44s |
+
+   12 of 1,200 (1.0%) run past ten seconds. **A 1.63s clip is a thing you loop,
+   not a thing you seek inside** — which killed the mockup's scrub bar (a seek
+   target smaller than the gesture that would use it) and made the case for loop
+   and rate. What the 1% needs is "is this still running", not "take me to 0:14",
+   and a 2px hairline under the clip button answers that. He chose it over both a
+   full scrub bar and nothing, shown all three side by side.
+
+   **0.5× IS DELIBERATELY ABSENT AND IT IS THE ONE REAL RISK IN THIS CHANGE.**
+   Rate change on an `<audio>` element is a phase vocoder: time stretched, pitch
+   held — exactly what is wanted, since the accent IS the F0 contour and a rate
+   that transposed it would be worthless. But the stretch smears rapid
+   transitions, and **the downstep is a rapid transition**. It is the fact being
+   trained (decision 27: on 2,148 cards `型` is the only thing carrying it).
+   0.75× is mild; 0.5× is where artifacts land on the one feature that matters.
+   `preservesPitch` is set EXPLICITLY rather than left to the default for the
+   same reason — every current browser defaults it true, and a false one would
+   drop 0.75× playback about 2.5 semitones.
+
+   **THE TAKE IS EPHEMERAL, AND THAT IS A DECISION.** In memory, revoked when the
+   card changes, so decision 17's backup and decision 33's sync have nothing to
+   say and no schema moves. Keeping takes — to compare his July self against his
+   September self — is a real feature and a separate decision. **It never touches
+   the audio path**: playback goes through a private `<audio>`, never
+   `audioController`, so it cannot set `drill`, retarget the round replay button,
+   or appear in `card.loop.log` — the log the hard-rule tests read. It plays at
+   the REFERENCE's rate, so the comparison is like for like rather than a
+   comparison of tempo. Capture is `{ echoCancellation: true, noiseSuppression:
+   false, autoGainControl: false }`: the last two are tuned for a phone call, and
+   AGC flattening dynamics on a pitch exercise is the wrong processing. Stopping
+   the recorder **stops the tracks**, or the phone's recording indicator stays on
+   for the rest of the session — accurately, which is the problem. A **generation
+   counter** exists because `MediaRecorder.stop()` finishes asynchronously:
+   without it, leaving a card mid-recording lands the 転出 take on 償却.
+
+   **NOTHING SOUNDS WHILE THE MICROPHONE IS OPEN.** He reviews on a phone, on its
+   own speaker; a take recorded over a playing clip contains that clip, and
+   comparing his contour against a mix of itself and his own voice is not weak
+   feedback, it is confidently wrong feedback about the thing he is training.
+
+   **DECISION 29 IS UNTOUCHED, STRUCTURALLY RATHER THAN CAREFULLY.** `l` and `s`
+   write two numbers, `m` opens a microphone, and none of the four new keys can
+   reach `audioController`. All of them work BEFORE the reveal, which is the
+   point — setting the rate and arming the recorder belong to the half of the
+   drill that happens while the answer is still hidden. Re-measured: putting
+   `play` inside `enter()` turns **25** tests red across `test/reveal.test.ts` and
+   `test/review.test.ts`. Browser-measured over a real mode-2 card: `s` → the
+   element's `playbackRate` 0.75 and `preservesPitch` true, `l` → `loop` true,
+   hairline filling, `data-state` still `prompt` and the clozes still `[…]転出`.
+
+   **WHAT WAS REJECTED FROM THE MOCKUP**, each against something already
+   recorded: one global player per card (decision 36 — the bug he reported that
+   morning); `Reveal` as a switch (34); a fixed 27px centred prompt (35, and 39
+   for the 1,424 list values); `--hair` as a hover ground (38 — measured at
+   3.57:1, with its menu shortcut at 4.21:1, the cell decision 32 already
+   flagged); keycap hints rendered unconditionally, including in its own mobile
+   view (19); a Latin-only stack loaded from a Google Fonts `<link>` (the app
+   self-hosts, and offline is the point); light-only; and grade keys `1`/`2`.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

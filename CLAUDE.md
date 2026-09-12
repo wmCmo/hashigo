@@ -665,6 +665,37 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     renderer that learns a new element fails until the stylesheet catches up.
     See `DECISIONS.md` 39.
 
+40. **THE MOCKUP GAVE TWO THINGS: CONTROLS FOR THE DRILL, AND A DESKTOP.**
+    Zach, 2026-09-12, over `hashigo-card-controls.html`: *"what about the rest of
+    the aestheticness of the design that we don't have yet? i know you can't
+    'see' …"* **The beauty gap was measurable and was not colour or type:
+    `app/style.css` had NO width breakpoint above 640px**, so the review screen
+    was a 720px column between a full-width header and footer — a phone layout
+    stretched across the laptop he reviews on at home. `--rail-w` (0px until
+    ≥1024px) drives a standing rail; the six `position: fixed` rules get
+    DIFFERENT treatments and `.layer` deliberately keeps `inset: 0`, because a
+    preview's scrim must cover the rail. `contain: layout` on a wrapper would
+    need no enumeration and was rejected for getting that one certainly wrong.
+    A test classifies every fixed rule, because hand-enumeration already failed —
+    four of five entries in the first draft were wrong. `.ops`/`.shadowbar`/`.bar`
+    inset to the card's own 688px text column, **derived from `main` by the test**
+    rather than retyped. **Card ops moved behind `⋯`** (0 of 7,716 cards pinned,
+    244 archived; `delete` did not earn a place beside his thumb) using the
+    EXISTING `.layer-menu`, not the mockup's popover-plus-sheet — and an earlier
+    draft misquoted him to justify the old row (*"i never state this rule?"*):
+    what is recorded is *every 操作 on the desktop exists on mobile*, which a menu
+    on both satisfies. **UNDO STAYS OUT of it.** **Loop, speed and record-and-
+    compare** came from measuring the corpus: word clips p50 **1.63s**, sentence
+    p50 **4.08s**, only 1.0% over ten seconds — so a scrub bar is a seek target
+    smaller than the gesture, and a 2px hairline answers the only question a long
+    clip raises. **0.5× is deliberately absent**: rate change is a phase vocoder
+    and the stretch smears the DOWNSTEP, which is the fact being trained;
+    `preservesPitch` is set explicitly for the same reason. **The take is
+    ephemeral and never touches the audio path** — its own element, so it cannot
+    set `drill` or appear in `card.loop.log` — and nothing sounds while the mic is
+    open. Decision 29 is untouched structurally: re-measured, `play` inside
+    `enter()` turns **25** tests red. See `DECISIONS.md` 40.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19
