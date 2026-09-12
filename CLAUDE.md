@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 40 files, 987 passed, 1 skipped (the FSRS refit, gated). ~90 s.
+npm test                # 41 files, 995 passed, 1 skipped (the FSRS refit, gated). ~90 s.
                         # EXITS 0 ON A PASSING RUN as of 2026-08-26. It is a wrapper
                         # (`scripts/test.mjs`) that reads the SUMMARY, which is
                         # STRICTER than the exit code, not looser: the run must have
@@ -522,7 +522,20 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     divergent databases. NOT BUILT: the transport.** Known gap, deferred on purpose:
     `card_field_values` has no clock, so field values merge at CARD level — the fix is a
     schema bump, and it waits for decision 16's final import rather than forcing a
-    destructive re-seed. See `DECISIONS.md` 33.
+    destructive re-seed.
+    **THE TRANSPORT IS BUILT TOO, and it is a MAILBOX** — `syncMailbox()` in
+    `vite.app.config.ts` stores one JSON file per device under `build/sync/` and has
+    no opinion about any of them, because **the laptop's database is in the laptop
+    BROWSER's OPFS and the Node process cannot read it either.** No device is
+    privileged. **That relaxes the cost above: the two devices never have to be up
+    together**, only each able to reach the server at some point.
+    **`decks.archived` had to be added to the payload** — the backup carries only
+    `cards.archived`, but `deckOp` archives a deck AND its cards, so card flags alone
+    move half the change and the tree still shows the deck open. That was his case.
+    **The sync indicator is part of the feature**: "never synced" is a state with its
+    own look, and the dot differs by SHAPE as well as hue because `--good` and
+    `--danger` are isoluminant. Measured end to end with `scripts/sync-peer.ts`
+    standing in for a second device. See `DECISIONS.md` 33.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

@@ -34,6 +34,7 @@
 
 import { SqliteBlobStore } from "../src/blobs/sqlite.js";
 import { exportLocalArchive } from "../src/backup/index.js";
+import { exportSync, mergeSync } from "../src/sync/index.js";
 import {
   databaseFilesInOpfs,
   importDatabaseBrowser,
@@ -91,6 +92,8 @@ import type {
   AppMessage,
   AppRequest,
   BackupRequest,
+  SyncExportRequest,
+  SyncMergeRequest,
   LogLevel,
   NextRequest,
   OpenRequest,
@@ -1409,6 +1412,54 @@ function preview(request: PreviewRequest): void {
 }
 
 /** Decision 17's archive. Read-only; the page turns it into a file. */
+/**
+ * Stage 11, the worker half. Two verbs, and neither knows about the network.
+ *
+ * `syncExport` reads this device's database into a payload; `syncMerge` applies a
+ * peer's. Which device, and how the two met, is the page's business — decision
+ * 33 chose a mailbox on the laptop's Vite server, and this file would not change
+ * if that choice did.
+ */
+function syncExport(request: SyncExportRequest): void {
+  const db = requireCards();
+  const payload = exportSync(db, new Date().toISOString());
+  const json = JSON.stringify(payload);
+  post({
+    kind: "syncExport",
+    id: request.id,
+    json,
+    // UTF-8 bytes, not `.length` — decision 6, name the basis. This payload is
+    // mostly Japanese and `.length` counts UTF-16 code units.
+    bytes: new TextEncoder().encode(json).length,
+  });
+}
+
+function syncMerge(request: SyncMergeRequest): void {
+  const db = requireCards();
+  const before = (
+    db.prepare("SELECT count(*) AS n FROM reviews WHERE source = 'local'").get() as {
+      n: number;
+    }
+  ).n;
+  const report = mergeSync(db, request.payload as never);
+  const after = (
+    db.prepare("SELECT count(*) AS n FROM reviews WHERE source = 'local'").get() as {
+      n: number;
+    }
+  ).n;
+  post({
+    kind: "syncMerge",
+    id: request.id,
+    // Counted from the table rather than taken from the apply report, because
+    // "how many of my grades arrived" is the number he would check, and it is
+    // the one a bug in the union would move.
+    reviewsAdded: after - before,
+    flagsTaken: report.flagsTaken,
+    trackStateTaken: report.trackStateTaken,
+    orphaned: report.flagsOrphaned + report.applied.reviewsOrphaned,
+  });
+}
+
 function backup(request: BackupRequest): void {
   const db = requireCards();
   const archive = exportLocalArchive(db, new Date().toISOString());
@@ -1979,6 +2030,12 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "backup":
           backup(request);
+          break;
+        case "syncExport":
+          syncExport(request);
+          break;
+        case "syncMerge":
+          syncMerge(request);
           break;
         case "preview":
           preview(request);

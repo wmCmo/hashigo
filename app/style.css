@@ -2362,3 +2362,98 @@ input[data-answer="incorrect"] {
   font-style: normal;
   padding: 8px 10px;
 }
+
+/* ── stage 11: the sync indicator (decision 33) ──────────────────────────────
+ *
+ * Zach asked for this after archiving 数字 on his phone twice and finding the
+ * desktop had never heard about it. The defect was that nothing failed — there
+ * was simply no sync, and no way to tell. So the dot's job is to make the
+ * ABSENCE of a sync visible, which is why "never" is a state with its own look
+ * rather than an empty one.
+ *
+ * COLOUR IS NOT THE ONLY SIGNAL. `--good` and `--danger` are isoluminant here
+ * (measured: 1.00:1 against each other in light), so a viewer who cannot
+ * separate them by hue cannot separate them by lightness either. The dot is
+ * therefore also a SHAPE: filled when synced, hollow when never, and the button
+ * carries the same words as the sidebar row for a screen reader and on hover.
+ */
+.syncdot {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  display: grid;
+  flex: none;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  width: 22px;
+}
+
+.syncdot i {
+  border: 1.5px solid var(--muted);
+  border-radius: 50%;
+  display: block;
+  height: 9px;
+  width: 9px;
+}
+
+/* Synced recently: filled. */
+.syncdot[data-state="ok"] i {
+  background: var(--good);
+  border-color: var(--good);
+}
+
+/* Never synced, or more than a day ago: HOLLOW, so it differs by shape as well
+   as hue. This is the state he was in and could not see. */
+.syncdot[data-state="never"] i,
+.syncdot[data-state="stale"] i {
+  background: none;
+  border-color: var(--muted);
+}
+
+.syncdot[data-state="failed"] i {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+/* In flight. `prefers-reduced-motion` gets a static half-tone rather than a
+   spin — the same rule the climb follows. */
+.syncdot[data-state="syncing"] i {
+  animation: syncpulse 1.1s ease-in-out infinite;
+  background: var(--indigo);
+  border-color: var(--indigo);
+}
+
+@keyframes syncpulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .syncdot[data-state="syncing"] i {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+.sidebar-action-sync {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Off-screen but reachable: the dot's state in words. */
+.visually-hidden {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}

@@ -66,6 +66,13 @@
  *                    ~7,716 rows is ~300 KB, against the 224 MB of audio the
  *                    device already holds. Not worth a delta watermark yet.
  *
+ * `decks.archived`   LWW on `decks.updated_at`, and it is NOT in the backup at
+ *                    all. `deckOp` archives a deck AND its cards, so a payload
+ *                    carrying only card flags moves half the change: the cards go
+ *                    quiet and the deck still reads unarchived in the tree.
+ *                    Zach archived the 数字 DECK — this is his case exactly, and
+ *                    it is why "reuse the backup payload" was not sufficient.
+ *
  * everything else    Upsert, which is what `applyLocalArchive` already does:
  *                    templates and their fields (they move together — a rename
  *                    rewrites the body's markers), settings, locally-created
@@ -114,6 +121,26 @@ export interface CardFlags {
   readonly updatedAt: string;
 }
 
+/**
+ * One deck's archive flag, with its clock.
+ *
+ * THIS IS THE CASE THAT PROMPTED SYNC AND IT IS NOT IN THE BACKUP. Decision 17's
+ * archive carries `cards.archived` and no deck state at all — correct for a
+ * backup, because `decks.archived` is re-derivable from nothing Mochi holds and
+ * a restore into a fresh import would have nothing to disagree with.
+ *
+ * For a MERGE it is missing data. `deckOp` archives the deck AND its cards
+ * ("archiving a deck also archives its cards, which is the honest reading of
+ * stop reviewing this"), so a payload with only card flags moves half the change:
+ * the cards go quiet and the deck still shows unarchived in the tree. Zach
+ * archived the 数字 DECK, which is exactly this.
+ */
+export interface DeckFlags {
+  readonly deckId: string;
+  readonly archived: boolean;
+  readonly updatedAt: string;
+}
+
 /** What one device sends the other. */
 export interface SyncPayload {
   readonly syncVersion: number;
@@ -121,6 +148,8 @@ export interface SyncPayload {
   readonly archive: LocalArchive;
   /** Every card's flags plus its clock. See the header for why every. */
   readonly cardFlags: readonly CardFlags[];
+  /** Every deck's archive flag. OPTIONAL — a payload from before this existed. */
+  readonly deckFlags?: readonly DeckFlags[];
 }
 
 export interface MergeReport {
@@ -136,6 +165,8 @@ export interface MergeReport {
   readonly flagsKept: number;
   /** Cards in the payload that this device does not have. */
   readonly flagsOrphaned: number;
+  /** Decks whose archive flag the remote won, by clock. */
+  readonly deckFlagsTaken: number;
 }
 
 const SELECT_CARD_FLAGS = `
@@ -161,6 +192,12 @@ UPDATE cards
  WHERE id = ?`;
 
 const CARD_EXISTS = `SELECT 1 FROM cards WHERE id = ? LIMIT 1`;
+
+const SELECT_DECK_FLAGS = `
+SELECT id AS deck_id, archived, updated_at FROM decks ORDER BY id`;
+
+const SET_DECK_FLAGS = `
+UPDATE decks SET archived = ?, updated_at = ? WHERE id = ?`;
 
 interface LocalTrack {
   readonly lastReviewedAt: string | null;
@@ -196,10 +233,18 @@ export function exportSync(db: SqliteHandle, createdAt: string): SyncPayload {
       updatedAt: String(r["updated_at"]),
     }),
   );
+  const deckFlags = (db.prepare(SELECT_DECK_FLAGS).all() as Record<string, unknown>[]).map(
+    (r): DeckFlags => ({
+      deckId: String(r['deck_id']),
+      archived: Number(r['archived']) === 1,
+      updatedAt: String(r['updated_at']),
+    }),
+  );
   return {
     syncVersion: SYNC_VERSION,
     archive: exportLocalArchive(db, createdAt),
     cardFlags,
+    deckFlags,
   };
 }
 
@@ -298,5 +343,31 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
     flagsTaken += 1;
   }
 
-  return { applied, trackStateTaken, trackStateKept, flagsTaken, flagsKept, flagsOrphaned };
+  // ── rule: deck archive is LWW on the deck clock ──────────────────────────
+  // `deckOp` archives a deck AND its cards, so without this the cards go quiet
+  // and the deck still reads unarchived in the tree — half a change, which is
+  // worse than none because nothing looks wrong.
+  let deckFlagsTaken = 0;
+  const localDecks = new Map<string, string>();
+  for (const r of db.prepare(SELECT_DECK_FLAGS).all() as Record<string, unknown>[]) {
+    localDecks.set(String(r["deck_id"]), String(r["updated_at"]));
+  }
+  const setDeck = db.prepare(SET_DECK_FLAGS);
+  for (const incoming of remote.deckFlags ?? []) {
+    const localClock = localDecks.get(incoming.deckId);
+    if (localClock === undefined) continue; // a deck this device does not have
+    if (!isNewer(incoming.updatedAt, localClock)) continue;
+    setDeck.run(incoming.archived ? 1 : 0, incoming.updatedAt, incoming.deckId);
+    deckFlagsTaken += 1;
+  }
+
+  return {
+    applied,
+    trackStateTaken,
+    trackStateKept,
+    flagsTaken,
+    flagsKept,
+    flagsOrphaned,
+    deckFlagsTaken,
+  };
 }

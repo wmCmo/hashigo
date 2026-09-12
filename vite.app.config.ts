@@ -22,7 +22,15 @@
  * a `public/` directory: they are ~70 MB and ~32 MiB, and copying them into the
  * build output on every `vite build` costs seconds and gains nothing.
  */
-import { createReadStream, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -224,6 +232,155 @@ function serviceWorkerPrecache(): Plugin {
   };
 }
 
+/**
+ * Stage 11's transport — a MAILBOX, and deliberately nothing more.
+ *
+ * ─── WHY THE SERVER CANNOT BE A PEER ────────────────────────────────────────
+ *
+ * The obvious design is "the laptop is the hub and the phone syncs to it". It
+ * does not work, and the reason is worth stating because it is easy to miss: the
+ * laptop's database lives in the laptop BROWSER's OPFS. This Node process cannot
+ * read it any more than it can read the phone's. There is no privileged device.
+ *
+ * So the server stores files and has no opinion. Each browser PUTs its own
+ * payload and GETs the others'; every merge happens in a browser, against that
+ * browser's own database, using `src/sync`'s rules. Nothing here parses a
+ * payload beyond checking it is JSON.
+ *
+ * ─── AND THAT DECOUPLES THE TWO DEVICES IN TIME ─────────────────────────────
+ *
+ * Decision 33 said both devices must be on the tailnet at once. With a mailbox
+ * they need not: the phone drops its payload when it can reach the laptop, and
+ * the laptop picks it up whenever it next runs. They never have to be up
+ * together — only each able to reach this server at some point. That is a
+ * strictly weaker requirement than the decision recorded, and the decision is
+ * amended rather than left to be discovered.
+ *
+ * ─── WHAT IS GUARDED, AND WHY EACH ──────────────────────────────────────────
+ *
+ * This writes files to disk from an HTTP body, on a server that `allowedHosts`
+ * deliberately exposes to a tunnel. Three guards, none optional:
+ *
+ *   · the device id is matched against `^[a-z0-9][a-z0-9-]{5,63}$` and is the
+ *     ONLY thing that reaches a path. No separators, no dots, so `..` and
+ *     absolute paths cannot be spelled;
+ *   · the body is capped and the cap is enforced WHILE READING, not after, so a
+ *     large upload is dropped rather than buffered;
+ *   · it is JSON-parsed before it is stored, so the mailbox cannot be used to
+ *     drop arbitrary bytes onto the disk.
+ */
+const SYNC_DIR = resolve(root, "build/sync");
+const SYNC_ID = /^[a-z0-9][a-z0-9-]{5,63}$/;
+/** A payload is card flags plus local reviews — ~300 KB today. 32 MB is slack. */
+const SYNC_MAX_BYTES = 32 * 1024 * 1024;
+
+function syncMailbox(): Plugin {
+  const handler = (
+    request: { url?: string | undefined; method?: string | undefined; on: Function },
+    response: {
+      statusCode: number;
+      setHeader(name: string, value: string | number): void;
+      end(body?: string): void;
+    },
+    next: () => void,
+  ): void => {
+    const url = request.url ?? "";
+    if (!url.startsWith("/sync/")) {
+      next();
+      return;
+    }
+
+    const send = (status: number, body: unknown): void => {
+      response.statusCode = status;
+      response.setHeader("Content-Type", "application/json; charset=utf-8");
+      response.setHeader("Cache-Control", "no-store");
+      response.end(JSON.stringify(body));
+    };
+
+    const rest = url.slice("/sync/".length).split("?")[0] ?? "";
+    const method = (request.method ?? "GET").toUpperCase();
+
+    // GET /sync/ — the index. Who has left something, how big, and when.
+    if (rest === "" && method === "GET") {
+      mkdirSync(SYNC_DIR, { recursive: true });
+      const peers = readdirSync(SYNC_DIR)
+        .filter((f) => f.endsWith(".json"))
+        .map((f) => {
+          const stat = statSync(resolve(SYNC_DIR, f));
+          return {
+            deviceId: f.slice(0, -".json".length),
+            bytes: stat.size,
+            updatedAt: stat.mtime.toISOString(),
+          };
+        });
+      send(200, { peers });
+      return;
+    }
+
+    if (!SYNC_ID.test(rest)) {
+      send(400, { error: "device id must match ^[a-z0-9][a-z0-9-]{5,63}$" });
+      return;
+    }
+    const file = resolve(SYNC_DIR, `${rest}.json`);
+
+    if (method === "GET") {
+      if (!existsSync(file)) {
+        send(404, { error: `no payload from ${rest}` });
+        return;
+      }
+      response.statusCode = 200;
+      response.setHeader("Content-Type", "application/json; charset=utf-8");
+      response.setHeader("Cache-Control", "no-store");
+      response.end(readFileSync(file, "utf8"));
+      return;
+    }
+
+    if (method === "PUT" || method === "POST") {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let aborted = false;
+      request.on("data", (chunk: Buffer) => {
+        if (aborted) return;
+        size += chunk.length;
+        // Enforced while reading: buffering first and checking after is how a
+        // size cap becomes a way to exhaust memory.
+        if (size > SYNC_MAX_BYTES) {
+          aborted = true;
+          send(413, { error: `payload over ${SYNC_MAX_BYTES} bytes` });
+          return;
+        }
+        chunks.push(chunk);
+      });
+      request.on("end", () => {
+        if (aborted) return;
+        const body = Buffer.concat(chunks).toString("utf8");
+        try {
+          JSON.parse(body);
+        } catch {
+          send(400, { error: "body is not JSON" });
+          return;
+        }
+        mkdirSync(SYNC_DIR, { recursive: true });
+        writeFileSync(file, body, "utf8");
+        send(200, { deviceId: rest, bytes: Buffer.byteLength(body) });
+      });
+      return;
+    }
+
+    send(405, { error: `${method} not allowed on /sync/` });
+  };
+
+  return {
+    name: "hashigo-sync-mailbox",
+    configureServer(server) {
+      server.middlewares.use(handler as never);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handler as never);
+    },
+  };
+}
+
 export default defineConfig({
   root: "app",
   /**
@@ -245,7 +402,7 @@ export default defineConfig({
    *   icons/*.png            referenced by that JSON, by absolute path
    */
   publicDir: "public",
-  plugins: [serveAppDatabases(), serviceWorkerPrecache()],
+  plugins: [serveAppDatabases(), syncMailbox(), serviceWorkerPrecache()],
   define: {
     __SCHEMA_VERSION_FROM_NODE__: JSON.stringify(schemaVersionFromNode()),
   },

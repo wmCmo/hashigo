@@ -91,6 +91,13 @@ import { childrenOf as treeChildrenOf, subtreeTotals } from "./deck-tree.js";
 import { isTypingTarget, type KeyTarget } from "./keys.js";
 import { mountClimb } from "./climb.js";
 import { installOrigin, registerServiceWorker, watchForInstall } from "./install.js";
+import {
+  initialStatus,
+  isStale,
+  sinceLabel,
+  syncNow,
+  type SyncStatus,
+} from "./sync-client.js";
 import { reviewAction } from "./review-keys.js";
 import {
   promptPositions as promptBoundary,
@@ -2079,6 +2086,100 @@ installButton.addEventListener("click", () => {
 });
 
 registerServiceWorker();
+
+/* ── stage 11: sync, and the indicator that says whether it happened ────────
+ *
+ * Zach, 2026-09-12, after archiving 数字 on his phone for the second time:
+ * *"on desktop it's still not archived, can we add icon or any visual to show
+ * the sync status"*. The archive was never the bug — there was no transport at
+ * all, and nothing on screen said so. An absent sync has to LOOK absent. */
+const syncDot = el<HTMLButtonElement>("syncdot");
+const syncDotText = el("syncdottext");
+const syncDetail = el("syncdetail");
+let syncStatus: SyncStatus = initialStatus();
+
+function paintSync(): void {
+  const label =
+    syncStatus.state === "syncing"
+      ? "syncing…"
+      : syncStatus.state === "failed"
+        ? `sync failed — ${syncStatus.detail ?? "unknown"}`
+        : sinceLabel(syncStatus.lastSyncedAt);
+  // "stale" is not a state the client returns — it is `ok` that has aged past a
+  // day, and the dot shows it hollow because at that point his two devices hold
+  // grades neither has seen.
+  const shown =
+    syncStatus.state === "ok" && isStale(syncStatus) ? "stale" : syncStatus.state;
+  syncDot.dataset["state"] = shown;
+  syncDot.title = label;
+  syncDot.setAttribute("aria-label", label);
+  syncDotText.textContent = label;
+  syncDetail.textContent = label;
+}
+
+const syncPorts = {
+  async exportPayload(): Promise<{ json: string; bytes: number }> {
+    const reply = await ask<"syncExport">({ kind: "syncExport" });
+    return { json: reply.json, bytes: reply.bytes };
+  },
+  async mergePayload(payload: unknown): Promise<{
+    reviewsAdded: number;
+    flagsTaken: number;
+    trackStateTaken: number;
+  }> {
+    const reply = await ask<"syncMerge">({ kind: "syncMerge", payload });
+    return {
+      reviewsAdded: reply.reviewsAdded,
+      flagsTaken: reply.flagsTaken,
+      trackStateTaken: reply.trackStateTaken,
+    };
+  },
+};
+
+async function runSync(): Promise<void> {
+  if (syncStatus.state === "syncing") return;
+  syncStatus = { ...syncStatus, state: "syncing", detail: null };
+  paintSync();
+  try {
+    const outcome = await syncNow(syncPorts);
+    syncStatus = {
+      state: "ok",
+      lastSyncedAt: new Date().toISOString(),
+      detail: null,
+      peers: outcome.peersMerged,
+    };
+    paintSync();
+    // A peer that could not be merged is reported rather than swallowed — the
+    // sync still completed for everyone else, and that distinction matters.
+    if (outcome.failures.length > 0) {
+      say(`synced, but ${outcome.failures.length} peer(s) failed — ${outcome.failures[0]}`, true);
+    } else {
+      say(
+        outcome.peersMerged === 0
+          ? "nothing to merge — this is the only device that has checked in"
+          : `synced · ${outcome.reviewsAdded} grades in · ${outcome.flagsTaken} cards changed`,
+      );
+    }
+    // A merge can change what is due and what is archived, so the queue the
+    // screen is holding may no longer be the right one.
+    if (outcome.reviewsAdded > 0 || outcome.flagsTaken > 0) await refreshAfterOp();
+  } catch (error) {
+    syncStatus = {
+      ...syncStatus,
+      state: "failed",
+      detail: error instanceof Error ? error.message : String(error),
+    };
+    paintSync();
+    say(`sync failed — ${syncStatus.detail ?? ""}`, true);
+  }
+}
+
+syncDot.addEventListener("click", () => void runSync());
+el("synclink").addEventListener("click", () => {
+  closeSidebar();
+  void runSync();
+});
+paintSync();
 
 // ─── his #3: Ctrl+K ─────────────────────────────────────────────────────────
 

@@ -669,6 +669,28 @@ export interface DashboardMessage {
   readonly elapsedMs: number;
 }
 
+/**
+ * Stage 11 — sync, and it is TWO messages rather than one because the transport
+ * lives in the page and the database lives in here.
+ *
+ *   syncExport   the worker reads its database and hands back a payload
+ *   syncMerge    a peer's payload comes in and is merged by `src/sync`'s rules
+ *
+ * The worker never speaks HTTP. Which device it is talking to, and how they met,
+ * is the page's business — see `app/sync-client.ts` and decision 33.
+ */
+export interface SyncExportRequest {
+  readonly kind: "syncExport";
+  readonly id: number;
+}
+
+export interface SyncMergeRequest {
+  readonly kind: "syncMerge";
+  readonly id: number;
+  /** A peer's payload, as it came off the wire. */
+  readonly payload: unknown;
+}
+
 /** Decision 17's archive, as JSON text, for the page to hand to a download. */
 export interface BackupRequest {
   readonly kind: "backup";
@@ -761,6 +783,8 @@ export type AppRequest =
   | AnswerRequest
   | ReadingRequest
   | BackupRequest
+  | SyncExportRequest
+  | SyncMergeRequest
   | PreviewRequest
   | DecksRequest
   | BrowseRequest
@@ -915,6 +939,27 @@ export interface BackupMessage {
   readonly counts: Readonly<Record<string, number>>;
 }
 
+export interface SyncExportMessage {
+  readonly kind: "syncExport";
+  readonly id: number;
+  /** The payload, already JSON text — the page only has to POST it. */
+  readonly json: string;
+  readonly bytes: number;
+}
+
+export interface SyncMergeMessage {
+  readonly kind: "syncMerge";
+  readonly id: number;
+  /** Local grades this merge brought in from the peer. The number he cares about. */
+  readonly reviewsAdded: number;
+  /** Cards whose archived/pinned the peer won, by clock. */
+  readonly flagsTaken: number;
+  /** Tracks whose schedule the peer won, by last review. */
+  readonly trackStateTaken: number;
+  /** Rows the peer had for cards this device does not hold. */
+  readonly orphaned: number;
+}
+
 /** A reply that failed. Carries the `id` so the page can reject that promise. */
 export interface ErrorMessage {
   readonly kind: "error";
@@ -941,6 +986,8 @@ export type AppMessage =
   | AnsweredMessage
   | ReadingMessage
   | BackupMessage
+  | SyncExportMessage
+  | SyncMergeMessage
   | SettingsMessage
   | SetSettingMessage
   | TemplateMessage
@@ -957,6 +1004,8 @@ export interface ReplyFor {
   readonly answer: AnsweredMessage;
   readonly reading: ReadingMessage;
   readonly backup: BackupMessage;
+  readonly syncExport: SyncExportMessage;
+  readonly syncMerge: SyncMergeMessage;
   readonly reset: ResetMessage;
   readonly preview: PreviewMessage;
   readonly setField: SetFieldMessage;

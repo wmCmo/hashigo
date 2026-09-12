@@ -95,6 +95,15 @@
           />
         </svg>
         <span class="wordmark-ui">hashigo</span>
+        <!-- Stage 11's status, at a glance. Zach asked for this because he
+             archived 数字 on his phone twice before realising the desktop had
+             never heard about it — the failure was SILENT, which is the part
+             worth fixing. A title and aria-label carry the same words the
+             sidebar row spells out, so it is not colour-only. -->
+        <button id="syncdot" class="syncdot" type="button" data-state="never"
+                aria-live="polite">
+          <i aria-hidden="true"></i><span id="syncdottext" class="visually-hidden"></span>
+        </button>
         <span id="progress">—</span>
         <!-- His request 4, and it sits INSIDE the header on purpose. Three
              separately-sticky elements each claiming `top: 0` is how a header
@@ -225,6 +234,12 @@
            drawer; finding one is Ctrl+K's job and seeing a set is the gallery's. -->
       <button id="palettebutton" class="sidebar-action" type="button">
         search cards <span class="kbd-inline">ctrl+k</span>
+      </button>
+      <!-- His standing rule: every 操作 on the desktop exists on mobile. The
+           header dot is the glance; this row is the control and the detail. -->
+      <button id="synclink" class="sidebar-action sidebar-action-sync" type="button">
+        <span>sync now</span>
+        <i id="syncdetail" class="sidebar-action-note"></i>
       </button>
       <button id="dashboardlink" class="sidebar-action" type="button">dashboard</button>
       <button id="settingslink" class="sidebar-action" type="button">settings</button>

@@ -905,12 +905,45 @@ right**: it holds his verbatim reasoning and this quotes it.
    final import, which is already a scheduled rebuild, rather than forcing a
    destructive re-seed now.
 
-   **WHAT IS BUILT AND WHAT IS NOT, 2026-09-12:** the merge engine and its tests
-   are done — `src/sync/`, 10 tests over divergent databases, both wrong rules
-   demonstrated to turn them red. **The transport is not.** `mergeSync` takes a
-   payload and a database and knows nothing about how the two devices met, which
-   is what makes it testable on one machine and what keeps the rendezvous above a
-   replaceable choice rather than a rewrite.
+   **THE TRANSPORT IS A MAILBOX, AND IT RELAXES THE CONSTRAINT ABOVE.** Built the
+   same day. `vite.app.config.ts`'s `syncMailbox()` stores one JSON file per
+   device under `build/sync/` and has no opinion about any of them — **it cannot
+   have one**, and that is the finding: the laptop's database lives in the laptop
+   BROWSER's OPFS, so the Node process can read it no more than it can read the
+   phone's. There is no privileged device and the server is not a peer.
+
+   So **the two devices never have to be up together** — the phone drops its
+   payload when it can reach the laptop, the laptop collects it whenever it next
+   runs. The "both on the tailnet at once" cost recorded above is therefore
+   WRONG, in the good direction; what is actually required is that each can reach
+   the server at some point.
+
+   **`decks.archived` had to be ADDED to the payload, and that was his case
+   exactly.** Decision 17's archive carries `cards.archived` and no deck state —
+   correct for a backup. But `deckOp` archives a deck AND its cards, so a payload
+   with only card flags moves half the change: the cards go quiet and the tree
+   still shows the deck open. Zach archived the 数字 DECK. "Reuse the backup
+   payload" was nearly right and would have shipped a half-sync.
+
+   **ONE BAD PEER MUST NOT STOP THE SYNC — found by accident, which is the best
+   kind.** A hand-written test payload was left in the mailbox with `archive: {}`;
+   the merge threw, the loop aborted, and the run never reached the push. A peer
+   on an older build or a file caught half-written does the same. Each peer is now
+   merged on its own and a failure is carried out in the result rather than thrown.
+
+   **THE INDICATOR IS PART OF THE FEATURE, not decoration.** Zach asked for it
+   after archiving 数字 twice: *"on desktop it's still not archived, can we add
+   icon or any visual to show the sync status"*. The defect was that nothing
+   failed — there was no sync and no way to tell. So "never synced" is a state
+   with its own look, the dot differs by SHAPE as well as hue (hollow when never
+   or stale, filled when synced) because `--good` and `--danger` are isoluminant,
+   and a sync older than a day reads stale because his workflow is daily.
+
+   **MEASURED END TO END, 2026-09-12**, with a second device stood in for by
+   `scripts/sync-peer.ts`: a 959 KB payload, 7,716 card flags, 39 deck flags; the
+   archive crossed, 90 cards and the deck flipped in the browser's OPFS database,
+   the tree went from `70 · 90` to `90`, and a second sync of the same payload
+   changed nothing.
 
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 

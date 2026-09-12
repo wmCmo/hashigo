@@ -278,3 +278,66 @@ describe("the payload refuses what it cannot merge", () => {
     phone.db.close();
   });
 });
+
+/**
+ * The case that prompted sync: he archived the 数字 DECK on his phone.
+ *
+ * `deckOp` archives the deck AND its cards, so a payload carrying only card
+ * flags moves half the change — the cards go quiet and the tree still shows the
+ * deck open. Half a change is worse than none, because nothing looks wrong.
+ */
+describe("a deck archive crosses too, not just its cards", () => {
+  const deckArchivedOn = (db: Db, id: string): number =>
+    (db.prepare("SELECT archived FROM decks WHERE id = ?").get(id) as { archived: number })
+      .archived;
+
+  it("carries decks.archived, which decision 17's backup does not", () => {
+    const laptop = device();
+    const phone = device();
+    // As `deckOp` does it: the deck and its cards together.
+    phone.db
+      .prepare("UPDATE decks SET archived = 1, updated_at = ? WHERE id = 'd'")
+      .run("2026-09-12T10:00:00.000Z");
+    phone.db
+      .prepare("UPDATE cards SET archived = 1, updated_at = ? WHERE deck_id = 'd'")
+      .run("2026-09-12T10:00:00.000Z");
+
+    const report = mergeSync(laptop.db, exportSync(phone.db, NOW));
+
+    expect(report.deckFlagsTaken).toBe(1);
+    expect(deckArchivedOn(laptop.db, "d")).toBe(1);
+    // …and the cards with it, so the two halves agree.
+    expect(flagsOf(laptop.db, "c0").archived).toBe(1);
+    laptop.db.close();
+    phone.db.close();
+  });
+
+  it("un-archives a deck too — the same direction the card flags go", () => {
+    const laptop = device();
+    const phone = device();
+    for (const db of [laptop.db, phone.db]) {
+      db.prepare("UPDATE decks SET archived = 1, updated_at = ? WHERE id = 'd'").run(
+        "2026-09-12T09:00:00.000Z",
+      );
+    }
+    phone.db
+      .prepare("UPDATE decks SET archived = 0, updated_at = ? WHERE id = 'd'")
+      .run("2026-09-12T11:00:00.000Z");
+
+    mergeSync(laptop.db, exportSync(phone.db, NOW));
+    expect(deckArchivedOn(laptop.db, "d")).toBe(0);
+    laptop.db.close();
+    phone.db.close();
+  });
+
+  it("a payload from before deck flags existed still merges", () => {
+    // `deckFlags` is optional so an older peer's payload is not a crash.
+    const laptop = device();
+    const phone = device();
+    const payload = exportSync(phone.db, NOW);
+    const { deckFlags: _dropped, ...older } = payload;
+    expect(() => mergeSync(laptop.db, older as typeof payload)).not.toThrow();
+    laptop.db.close();
+    phone.db.close();
+  });
+});
