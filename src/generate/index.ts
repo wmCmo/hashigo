@@ -46,6 +46,7 @@ export {
 } from "./voice.js";
 
 export {
+  resolveDescriptorText,
   resolveFieldGeneration,
   resolveFieldGenerations,
   storeTextResolver,

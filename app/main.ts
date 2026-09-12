@@ -581,6 +581,9 @@ async function showCardAt(): Promise<void> {
     },
   });
   mounted = card;
+  // The example sentence, the emoji line, the translations. Not awaited — see
+  // the function. The card is already usable without them.
+  void fillGeneratedText(card);
 
   const shown = visibleSides(card.result);
   const prompt = new Set(promptPositions(card));
@@ -816,6 +819,40 @@ const REFUSAL: Record<AnswerRefusal, string> = {
   "re-ask": "this one is a re-ask — it is shown again but never graded",
   "nothing-there": "there is no card there",
 };
+
+
+/**
+ * Fill the card's empty text generators — the example sentence, the emoji line,
+ * the translations.
+ *
+ * Zach, 2026-09-12: *"the sentence is literally not there"*. It never was: the
+ * renderer leaves an `ai` slot empty by contract (its children are the PROMPT,
+ * not the output) and nothing had ever written the output in — on any card in
+ * the corpus. See `src/review/text.ts`.
+ *
+ * Fire-and-forget on purpose. The card is already on screen and already usable;
+ * the sentence arriving a frame later is strictly better than holding the mount
+ * for a round trip. A failure leaves the slots `pending`, which is exactly what
+ * they were before this existed.
+ */
+async function fillGeneratedText(card: MountedCard<HTMLElement>): Promise<void> {
+  if (card.textSlots.length === 0) return;
+  try {
+    const reply = await ask<"generatedText">({
+      kind: "generatedText",
+      slots: card.textSlots.map((slot) => ({
+        kind: slot.kind,
+        text: slot.text,
+        lang: slot.lang,
+        voice: slot.voice,
+        options: slot.options,
+      })),
+    });
+    card.fillText(reply.texts);
+  } catch {
+    /* see the header: pending is the old behaviour, not a new failure */
+  }
+}
 
 async function grade(remembered: boolean): Promise<void> {
   if (mounted === null) return;
@@ -1443,6 +1480,7 @@ async function openPreview(cardId: string): Promise<void> {
   // Every side visible, every cloze open, and SILENT — decision 30's whole shape
   // in three lines. `{ silent: true }` is what keeps it a preview rather than a
   // reveal: unmask, do not sound.
+  void fillGeneratedText(mounted);
   for (const side of mounted.result.sides) side.element.hidden = side.empty;
   for (const side of mounted.loop.sides) side.reveal("caller", { silent: true });
 

@@ -42,6 +42,8 @@ export {
   type PreparedCard,
 } from "./mount.js";
 
+export { fillTextSlots, textSlots, type TextSlot } from "./text.js";
+
 export {
   ACCENT_FIELD_TYPE,
   READING_FIELD,

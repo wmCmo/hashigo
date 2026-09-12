@@ -8,6 +8,7 @@ import { memoryDocument, type MemoryElement } from "../src/render/dom.js";
 import type { MediaMount } from "../src/render/nodes.js";
 import type { PlayableMediaElement } from "../src/render/audio.js";
 import { loadCard } from "../src/cards/index.js";
+import { resolveDescriptorText } from "../src/generate/index.js";
 import {
   cardMode,
   mountCard,
@@ -952,6 +953,71 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       expect(() => card!.dispose()).not.toThrow();
     } finally {
       close();
+    }
+  });
+});
+
+/**
+ * The text generators, filled — the half of "stage 9" that was never wired.
+ *
+ * Zach, 2026-09-12, from his phone: *"the sentence is literally not there"*. He
+ * was right and the first diagnosis was wrong: the sentence WAS in the database,
+ * which is not the same claim as "it renders". `src/render/nodes.ts` leaves an
+ * `ai` slot empty by contract — its children are the PROMPT — and nothing had
+ * ever written the output in, on any card.
+ *
+ * Measured before the fix, over 400 cards: 575 `ai` and 236 `translate` slots
+ * empty, on 367 of them.
+ */
+describe("text generators get filled", () => {
+  it("fills the example sentence, and leaves audio alone", () => {
+    if (!HAS_CORPUS) return;
+    const db = openDatabase(DB, { readOnly: true, applySchema: false });
+    try {
+      const document = memoryDocument();
+      const prepared = prepareCard({ db, cardId: "YH9TDoyg" });
+      expect(prepared).not.toBeNull();
+      const card = mountPrepared(prepared!, { document, resolve: () => null });
+
+      // The slots the renderer left empty, and NEVER a speech mount: the filter
+      // is `media === null`, so this path cannot reach an audio element at all.
+      expect(card.textSlots.length).toBeGreaterThan(0);
+      expect(card.textSlots.every((s) => s.kind !== "speech")).toBe(true);
+
+      const texts = card.textSlots.map((slot) =>
+        resolveDescriptorText(db, {
+          kind: slot.kind as never,
+          text: slot.text,
+          lang: slot.lang,
+          voice: slot.voice,
+          options: slot.options,
+        }),
+      );
+      const filled = card.fillText(texts);
+      expect(filled).toBeGreaterThan(0);
+
+      // The sentence is now IN the rendered tree, not merely resolvable.
+      const rendered = JSON.stringify(card.result.root);
+      expect(rendered).toContain("皇居は東京にある日本の皇室の居所です。");
+      card.dispose();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("fills nothing when there is no generation, rather than emptying the slot", () => {
+    if (!HAS_CORPUS) return;
+    const db = openDatabase(DB, { readOnly: true, applySchema: false });
+    try {
+      const document = memoryDocument();
+      const prepared = prepareCard({ db, cardId: "YH9TDoyg" });
+      const card = mountPrepared(prepared!, { document, resolve: () => null });
+      // All nulls: a slot with nothing stored must stay `pending`, because
+      // "nothing generated" and "generated an empty string" are different facts.
+      expect(card.fillText(card.textSlots.map(() => null))).toBe(0);
+      card.dispose();
+    } finally {
+      db.close();
     }
   });
 });

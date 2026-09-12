@@ -90,6 +90,7 @@ import {
   type AudioResolver,
 } from "../render/audio.js";
 import { renderSides, type RenderResult } from "../render/index.js";
+import { fillTextSlots, textSlots, type TextSlot } from "./text.js";
 import type { RenderDocument, RenderElement } from "../render/dom.js";
 import { shadowingLoop, type ShadowingLoop, type ShadowingSide } from "../render/reveal.js";
 import { cardMode, promptsOnEntry, type CardMode } from "./mode.js";
@@ -187,6 +188,21 @@ export interface MountedCard<E extends RenderElement> {
    * twice. `loop.enter` remains available and remains silent.
    */
   enter(position: number): ShadowingSide<E> | null;
+  /**
+   * The `ai` / `translate` / `dictionary` slots this card rendered EMPTY.
+   *
+   * The renderer leaves them empty by contract — their children are the prompt,
+   * not the output — and until 2026-09-12 nothing ever filled them, so every
+   * example sentence in the corpus was invisible. The page hands these to the
+   * worker, which owns the store, and passes the answers to `fillText`.
+   */
+  readonly textSlots: readonly TextSlot[];
+  /**
+   * Write resolved text into those slots, in the order `textSlots` lists them.
+   * Returns how many were filled; a null or empty answer leaves the slot
+   * `pending`, which is a different fact from "generated nothing".
+   */
+  fillText(texts: readonly (string | null)[]): number;
   /** Speech/audio mounts the render produced, before any resolution is tried. */
   readonly clipCount: number;
   /** Generator fields expanded. Zero on a card with no generators. */
@@ -282,6 +298,10 @@ export function mountPrepared<E extends RenderElement>(
 ): MountedCard<E> {
   const result = renderSides(prepared.sides, { document: options.document });
 
+  // The empty text generators, collected but NOT filled — the page has no
+  // database. See ./text.ts for why this is a second step and what it fixes.
+  const text = textSlots(result);
+
   const audio = audioController<E>(result, {
     resolve: options.resolve,
     ...(options.playable === undefined ? {} : { playable: options.playable }),
@@ -319,6 +339,10 @@ export function mountPrepared<E extends RenderElement>(
         side.prompt();
       }
       return side;
+    },
+    textSlots: text.slots,
+    fillText(texts) {
+      return fillTextSlots(text.mounts, texts, options.document);
     },
     clipCount: result.media.filter((m) => m.kind === "audio" || m.kind === "video").length,
     expanded: prepared.expanded,

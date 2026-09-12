@@ -691,6 +691,37 @@ export interface SyncMergeRequest {
   readonly payload: unknown;
 }
 
+/**
+ * Resolve the text for a card's EMPTY generator slots.
+ *
+ * The renderer leaves `ai` / `translate` / `dictionary` slots empty by contract —
+ * their children are the PROMPT, not the output — and the page has no database to
+ * look the output up in. Until 2026-09-12 nothing filled them and every example
+ * sentence in the corpus was invisible; see `src/review/text.ts`.
+ *
+ * One message per CARD carries every slot rather than one message per slot: a
+ * 単語 card has two or three, and a round trip each would be three round trips
+ * per card at review speed.
+ */
+export interface GeneratedTextRequest {
+  readonly kind: "generatedText";
+  readonly id: number;
+  readonly slots: readonly {
+    readonly kind: string;
+    readonly text: string;
+    readonly lang: string | null;
+    readonly voice: string | null;
+    readonly options: Readonly<Record<string, string>>;
+  }[];
+}
+
+export interface GeneratedTextMessage {
+  readonly kind: "generatedText";
+  readonly id: number;
+  /** Same order as the request's slots. Null where nothing is stored. */
+  readonly texts: readonly (string | null)[];
+}
+
 /** Decision 17's archive, as JSON text, for the page to hand to a download. */
 export interface BackupRequest {
   readonly kind: "backup";
@@ -782,6 +813,7 @@ export type AppRequest =
   | PayloadRequest
   | AnswerRequest
   | ReadingRequest
+  | GeneratedTextRequest
   | BackupRequest
   | SyncExportRequest
   | SyncMergeRequest
@@ -985,6 +1017,7 @@ export type AppMessage =
   | PayloadMessage
   | AnsweredMessage
   | ReadingMessage
+  | GeneratedTextMessage
   | BackupMessage
   | SyncExportMessage
   | SyncMergeMessage
@@ -1004,6 +1037,7 @@ export interface ReplyFor {
   readonly answer: AnsweredMessage;
   readonly reading: ReadingMessage;
   readonly backup: BackupMessage;
+  readonly generatedText: GeneratedTextMessage;
   readonly syncExport: SyncExportMessage;
   readonly syncMerge: SyncMergeMessage;
   readonly reset: ResetMessage;

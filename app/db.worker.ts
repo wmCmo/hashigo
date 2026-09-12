@@ -35,6 +35,7 @@
 import { SqliteBlobStore } from "../src/blobs/sqlite.js";
 import { exportLocalArchive } from "../src/backup/index.js";
 import { exportSync, mergeSync } from "../src/sync/index.js";
+import { resolveDescriptorText } from "../src/generate/index.js";
 import {
   databaseFilesInOpfs,
   importDatabaseBrowser,
@@ -92,6 +93,7 @@ import type {
   AppMessage,
   AppRequest,
   BackupRequest,
+  GeneratedTextRequest,
   SyncExportRequest,
   SyncMergeRequest,
   LogLevel,
@@ -1460,6 +1462,26 @@ function syncMerge(request: SyncMergeRequest): void {
   });
 }
 
+/**
+ * The text for a card's empty generator slots — see `src/review/text.ts`.
+ *
+ * Resolution only. This reads `blobs` and writes nothing, and it cannot reach a
+ * media element: the page only sends slots whose mount has no `MediaMount`.
+ */
+function generatedText(request: GeneratedTextRequest): void {
+  const db = requireCards();
+  const texts = request.slots.map((slot) =>
+    resolveDescriptorText(db, {
+      kind: slot.kind as never,
+      text: slot.text,
+      lang: slot.lang,
+      voice: slot.voice,
+      options: slot.options,
+    }),
+  );
+  post({ kind: "generatedText", id: request.id, texts });
+}
+
 function backup(request: BackupRequest): void {
   const db = requireCards();
   const archive = exportLocalArchive(db, new Date().toISOString());
@@ -2030,6 +2052,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "backup":
           backup(request);
+          break;
+        case "generatedText":
+          generatedText(request);
           break;
         case "syncExport":
           syncExport(request);

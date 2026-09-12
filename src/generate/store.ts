@@ -178,3 +178,34 @@ export function storeTextResolver(
     return new TextDecoder().decode(row.bytes);
   };
 }
+
+/**
+ * The text a RENDERED generator element resolves to, or null.
+ *
+ * `storeTextResolver` above takes a `FieldGenerationRequest` — the shape
+ * `expandGeneratorFields` produces when it binds `<< 例文 >>` to a generator.
+ * This takes a `GenerationDescriptor`, which is what the RENDERER computes from
+ * the element it actually emitted, and that difference is the point:
+ *
+ *   · a field generator (`<< 例文 >>`) goes through the request shape;
+ *   · an INLINE one (`{{<ai>Describe a word << 単語 >> using emojis only</ai>}}`,
+ *     575 of them over 400 cards) never becomes a field request at all, so the
+ *     request path cannot see it.
+ *
+ * Both end up as the same identity, so both resolve here. `fieldId`/`fieldName`
+ * exist on the request only to name a diagnostic, so they are empty rather than
+ * invented.
+ */
+export function resolveDescriptorText(
+  db: SqliteHandle,
+  descriptor: {
+    readonly kind: BlobKind;
+    readonly text: string;
+    readonly lang: string | null;
+    readonly voice: string | null;
+    readonly options: Readonly<Record<string, string>>;
+  },
+  options: ResolveOptions = {},
+): string | null {
+  return storeTextResolver(db, options)({ ...descriptor, fieldId: "", fieldName: "" });
+}
