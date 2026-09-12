@@ -630,6 +630,26 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     latter would have been a new bug, since run-by-run alignment leaves the kana
     tail's `<rt>` empty by design. See `DECISIONS.md` 37.
 
+38. **A KEYCAP HINT TAKES THE COLOUR OF WHAT IT SITS IN.** Zach, 2026-09-12:
+    *"`space` is a little hard to read don't you think? is there any other place
+    that suffers like this?"* `.kbd` was `var(--muted)`, a grey chosen against
+    PAPER, inside buttons that fill solid indigo — **1.76:1 light, 1.05:1 dark**
+    (the same luminance: gone, not dim), and `--muted` on `--indigo-deep` 2.31 /
+    1.50. **`remembered` is a solid fill AT REST**, so its `j` failed permanently,
+    not just on hover — worse than the case he screenshotted. The fix is
+    `color: inherit`, because any fixed token is wrong for one of the two grounds;
+    `opacity: 0.85` is a MEASURED floor (worst pairing 4.88:1 there, 4.43:1 at
+    0.8). **Two more from the same sweep:** `.kbd-inline` had no rule at all, so it
+    was ungated and rendering `⇧p` on his phone — decision 19 violated by an
+    unstyled element; and `--line`, the hairline token, was a SURFACE under the
+    `--muted` subtitles of `.menu-item` / `.link-item` at **4.04:1 light** (the
+    deck path, which is how he tells two same-named cards apart) — moved to
+    `--sunk`. **`test/contrast.test.ts` was blind to all of it** because it checks
+    foregrounds against the three PAPER grounds only; it now pins filled-ground
+    pairings in both themes plus two structural rules (the hints may not name a
+    colour token; `--line` may not be a background outside three named
+    exceptions). See `DECISIONS.md` 38.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19

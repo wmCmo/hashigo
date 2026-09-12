@@ -283,3 +283,119 @@ describe("look-ahead says how to get out of it", () => {
     expect(rule?.[1]).toMatch(/cursor:\s*not-allowed/);
   });
 });
+
+// ─── text on a FILLED ground, which is where the check had a hole ───────────
+
+/**
+ * ZACH, 2026-09-12, over a screenshot of the reveal button under his cursor:
+ * *"`space` is a little hard to read don't you think? is there any other place
+ * that suffers like this?"*
+ *
+ * He was right, and the honest answer to the second half was yes — including one
+ * worse than the one he found.
+ *
+ * **WHY THE EXISTING TESTS ABOVE COULD NOT SEE IT.** They check every foreground
+ * token against the three PAPER grounds. That is the right check for a card, and
+ * it is blind to the case where an element paints itself a non-paper background
+ * and its CHILDREN keep their own colour. `.kbd` was `var(--muted)` — a grey
+ * chosen against paper — sitting inside buttons that fill solid indigo:
+ *
+ *     --muted on --indigo         1.76:1 light   1.05:1 dark
+ *     --muted on --indigo-deep    2.31:1 light   1.50:1 dark
+ *
+ * 1.05:1 is the same luminance. Not dim — gone. And `.ok` (remembered) is a
+ * solid fill AT REST, so its `j` hint failed permanently, not only under a
+ * cursor; his screenshot happened to catch the hover case on `reveal`.
+ *
+ * A third, found by the same sweep and unrelated to keycaps: `.menu-item i` and
+ * `.link-item i` are `--muted` subtitles on rows whose hover background was
+ * `var(--line)` — the HAIRLINE token used as a surface — at 4.04:1 in light.
+ * `.link-item i` is the deck path, which is how he tells two cards with the same
+ * head word apart.
+ *
+ * So this block pins the pairings that actually occur on a filled ground, and
+ * two structural rules that stop the class coming back rather than the instance.
+ */
+describe("text that lands on a FILLED ground, not on paper", () => {
+  /** Foreground, ground, and where the pairing occurs. All measured, not guessed. */
+  const ON_FILL: readonly [string, string, string][] = [
+    ["--card", "--indigo", "a filled button's own label"],
+    ["--card", "--indigo-deep", "a filled button's label, pressed"],
+    ["--ink", "--sunk", "a recessed row: deck rows, palette rows, menu rows"],
+    ["--muted", "--sunk", "the subtitle on those rows — deck path, card count"],
+    ["--muted", "--paper-sunk", "the cloze mask's own text"],
+    ["--indigo", "--sunk", "a link or a pressed operation button"],
+  ];
+
+  for (const [themeName, table] of [
+    ["light", light],
+    ["dark", dark],
+  ] as const) {
+    it(`${themeName}: every foreground on a filled ground clears AA`, () => {
+      const bad: string[] = [];
+      for (const [fg, bg, where] of ON_FILL) {
+        const r = ratio(resolve(fg, table), resolve(bg, table));
+        if (r < 4.5) bad.push(`${fg} on ${bg} = ${r.toFixed(2)}:1 — ${where}`);
+      }
+      expect(bad, `these fail AA on a filled ground in ${themeName}:\n  ${bad.join("\n  ")}`)
+        .toEqual([]);
+    });
+  }
+
+  it("the keycap hints take the colour of what they sit in, rather than a fixed token", () => {
+    // THE STRUCTURAL HALF, and it is the one with teeth. Any fixed colour is
+    // wrong for at least one of the grounds `.kbd` lands on, because it lands on
+    // paper AND on solid indigo — so the rule is `inherit`, and a future control
+    // that fills in some new state cannot reintroduce the defect.
+    for (const name of ["kbd", "kbd-inline"]) {
+      const rules = [...css.matchAll(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`, "g"))]
+        .map((m) => m[1] as string)
+        .join("\n");
+      expect(rules, `.${name} has no rule at all`).not.toBe("");
+      expect(rules, `.${name} must not pin a colour token`).not.toMatch(/color:\s*var\(/);
+    }
+    // And `.kbd` really does say inherit somewhere, rather than simply omitting
+    // colour — omitting it would pass the check above and still be correct, but
+    // saying it is what makes the intent survive the next edit.
+    expect(css).toMatch(/\.kbd\s*\{[^}]*color:\s*inherit/);
+  });
+
+  it("decision 19: a keycap hint never renders where there is no keyboard", () => {
+    // `.kbd-inline` had NO rule at all, so it showed on his phone — naming keys
+    // that device does not have. Both forms must be behind the pointer query.
+    const guarded = /@media \(hover: hover\) and \(pointer: fine\) \{([\s\S]*?)\n\}/g;
+    const inside = [...css.matchAll(guarded)].map((m) => m[1] as string).join("\n");
+    for (const name of ["kbd", "kbd-inline"]) {
+      expect(inside, `.${name} is not behind the pointer query`).toMatch(
+        new RegExp(`\\.${name}\\s*\\{`),
+      );
+    }
+  });
+
+  it("the hairline token is never a surface UNDER TEXT", () => {
+    // `--line` / `--hair` are declared "1px rules and borders only" by
+    // NOT_BODY_TEXT above. Using one as a background is the same category error
+    // from the other side, and it is what put a --muted subtitle at 4.04:1.
+    //
+    // The exceptions are named with their reason, the way NOT_BODY_TEXT is.
+    // Adding one should need a sentence.
+    const SURFACE_OK: Record<string, string> = {
+      ".fetchtrack": "a progress track — a bar, with no text on it",
+      ".progressbar": "the session's progress track — a bar, with no text on it",
+      ".tree-more": "the ⋯ chip must stand out FROM a deck row whose own hover " +
+        "ground is --sunk, and its only text is --ink at 9.21:1",
+    };
+    const TRACKS = new Set(Object.keys(SURFACE_OK));
+    const offenders: string[] = [];
+    for (const m of css.matchAll(/([^{}]+)\{([^}]*background:\s*var\(--line\)[^}]*)\}/g)) {
+      const selector = (m[1] as string).split("\n").pop()?.trim() ?? "";
+      const head = selector.split(",")[0]?.trim() ?? "";
+      if ([...TRACKS].some((track) => selector.includes(track))) continue;
+      offenders.push(head);
+    }
+    expect(
+      offenders,
+      `--line is a hairline, not a surface. These paint with it:\n  ${offenders.join("\n  ")}`,
+    ).toEqual([]);
+  });
+});

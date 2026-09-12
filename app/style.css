@@ -1057,16 +1057,51 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
  * hover, so a tooltip would hide them from the device this app is FOR — which is
  * decision 19's own argument, one level down. */
 
+/* THE COLOUR IS `inherit`, AND THAT IS THE FIX FOR A MEASURED FAILURE.
+   Zach, 2026-09-12, over a screenshot of `reveal` under the cursor: *"`space` is
+   a little hard to read don't you think?"*
+
+   It was `var(--muted)`, a fixed grey chosen against PAPER — and the buttons it
+   sits in fill solid indigo. Measured on both themes:
+
+       --muted on --indigo         1.76:1 light   1.05:1 dark
+       --muted on --indigo-deep    2.31:1 light   1.50:1 dark
+
+   1.05:1 is the same luminance: invisible, not merely dim. And `remembered` is a
+   solid fill AT REST, so its `j` failed permanently, not only under a cursor.
+
+   `inherit` takes the button's own label colour on every ground it can land on,
+   so a control that fills in some future state cannot reintroduce this. The
+   de-emphasis is `opacity`, and **0.85 is a measured floor, not a taste**: the
+   worst pairing (dark, filled) lands at 4.88:1 there and 4.43:1 at 0.8, which is
+   under AA for 11px text. Size and position carry the rest of the hierarchy. */
 .kbd {
   display: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .kbd {
-    color: var(--muted);
+    color: inherit;
     display: block;
     font-size: 11px;
     margin-top: 5px;
+    opacity: 0.85;
+  }
+}
+
+/* The inline form, on the operation row: `pin ⇧p`, `undo ⌃z`.
+   IT HAD NO RULE AT ALL, which meant two things at once — it was never
+   de-emphasised, and it was never gated. Decision 19 says keycap hints render
+   ONLY where a real pointer exists, and this one was showing on his phone, where
+   the keys it names do not exist. Same treatment as `.kbd` for the same reasons. */
+.kbd-inline {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .kbd-inline {
+    display: inline;
+    opacity: 0.85;
   }
 }
 
@@ -2035,9 +2070,15 @@ body[data-view="review"] .review main {
   width: 100%;
 }
 
+/* `--sunk`, NOT `--line`. `--line` is the hairline colour and this row carries
+   `.menu-item i` — a 0.76rem `--muted` subtitle — which measured **4.04:1** on
+   it in light, under AA for small text. `--sunk` is the recessed-row ground
+   every other hovered row in this file already uses (`.deck-row:active`,
+   `.palette-row.on`, `.tree-row:active`) and takes the same text to 4.76:1.
+   The border still changes, so the hover signal does not depend on the fill. */
 .menu-item:hover,
 .menu-item:focus-visible {
-  background: var(--line);
+  background: var(--sunk);
   border-color: var(--line-soft);
 }
 
@@ -2460,9 +2501,13 @@ input[data-answer="incorrect"] {
   width: 100%;
 }
 
+/* Same measurement, and this one matters more: `.link-item i` is the DECK PATH,
+   which is how he tells 蟻-as-単語 from 蟻-as-言葉 apart while picking a link. */
 .link-item.on,
 .link-item:hover {
-  background: var(--line);
+  background: var(--sunk);
+  border-left: 2px solid var(--indigo);
+  padding-left: 8px;
 }
 
 .link-item b {

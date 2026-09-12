@@ -1222,6 +1222,59 @@ right**: it holds his verbatim reasoning and this quotes it.
    have been a NEW bug: run-by-run alignment leaves the kana tail's `<rt>` empty
    BY DESIGN, so 見舞(みま)い would have grown a dash over the い.
 
+38. **A KEYCAP HINT TAKES THE COLOUR OF WHAT IT SITS IN — and the contrast check
+   had a hole the shape of a filled button.** Zach, 2026-09-12, over a screenshot
+   of `reveal` under his cursor: *"`space` is a little hard to read don't you think?
+   is there any other place that suffers like this?"*
+
+   Yes, and one of them was worse than the one he found.
+
+   **THE DEFECT.** `.kbd` was `var(--muted)` — a grey chosen against PAPER — and
+   the buttons it sits in fill solid indigo on hover, on press, and in one case at
+   rest. Measured in both themes:
+
+   ```
+   --muted on --indigo         1.76:1 light    1.05:1 dark
+   --muted on --indigo-deep    2.31:1 light    1.50:1 dark
+   ```
+
+   **1.05:1 is the same luminance — not dim, gone.** And `remembered` is a solid
+   fill AT REST (decision 32 made it the primary action), so its `j` hint failed
+   permanently rather than only under a cursor. His screenshot happened to catch
+   the hover case on `reveal`; the worse one was sitting beside it the whole time.
+
+   **THE FIX IS `color: inherit`, NOT A BETTER GREY.** Any fixed token is wrong for
+   at least one ground, because the hint lands on paper AND on indigo — so it takes
+   the button's own label colour, and a control that starts filling in some future
+   state cannot reintroduce this. The de-emphasis is `opacity`, and **0.85 is a
+   measured floor**: the worst pairing (dark, filled) is 4.88:1 there and 4.43:1 at
+   0.8, under AA for 11px text. Size and position carry the rest of the hierarchy.
+
+   **TWO MORE, FOUND BY SWEEPING RATHER THAN BY LOOKING.**
+
+   * **`.kbd-inline` had no rule at all.** Not de-emphasised, and — the part that
+     matters — **not gated on a pointer**, so `pin ⇧p` / `undo ⌃z` were rendering
+     on his phone, naming keys that device does not have. That is decision 19
+     being violated by an element nobody had styled. Both forms are behind
+     `(hover: hover) and (pointer: fine)` now, and verified hidden at 375px.
+   * **`--line` was a SURFACE under text.** `.menu-item i` and `.link-item i` are
+     `--muted` subtitles at ~12px on rows whose hover ground was the HAIRLINE
+     token: **4.04:1 in light**. `.link-item i` is the deck path — how he tells
+     蟻-as-単語 from 蟻-as-言葉 apart while picking a link. Moved to `--sunk`, the
+     recessed-row ground every other hovered row already uses, which takes the
+     same text to 4.76:1. `.link-item` gained an indigo edge so the hover signal
+     does not depend on the fill alone.
+
+   **WHY `test/contrast.test.ts` DID NOT CATCH ANY OF IT.** It checks every
+   foreground token against the three PAPER grounds. That is the right check for a
+   card and it is blind to an element that paints itself a non-paper background
+   while its CHILDREN keep their own colour. It now also pins the pairings that
+   occur on a filled ground, in both themes, plus two STRUCTURAL rules that stop
+   the class rather than the instance: `.kbd`/`.kbd-inline` may not name a colour
+   token at all, and `--line` may not be a background except for three exceptions
+   named with their reason (two progress tracks, which carry no text, and the ⋯
+   chip, which must stand out from a row whose own hover ground is `--sunk`).
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach
