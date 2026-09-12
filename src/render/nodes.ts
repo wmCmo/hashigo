@@ -220,6 +220,19 @@ export interface GeneratorMount<E extends RenderElement = RenderElement> {
   readonly output: E | null;
   /** The silent `<audio>` / empty `<img>` for speech and image generators. */
   readonly media: MediaMount<E> | null;
+  /**
+   * This generator was rendered INSIDE a cloze's answer, so whatever it produces
+   * is hidden until that cloze is revealed.
+   *
+   * **It exists for exactly one decision and it is a safety one.** `furigana`
+   * produces the READING, which on the 692 `Reading = true` cards is the answer
+   * the exercise asks him to produce — so filling one that is not behind a mask
+   * prints the answer on the question side. Measured over the real corpus, both
+   * directions: **6,754 furigana mounts, 42 of them outside a cloze, and all 42
+   * are on `produce` cards.** So the leak is real and this is the flag that stops
+   * it, rather than a rule about templates that would have to be kept in step.
+   */
+  readonly inCloze: boolean;
   readonly side: number;
   readonly ordinal: number;
 }
@@ -353,6 +366,17 @@ export interface RenderContext<E extends RenderElement = RenderElement> {
   /** Render many. */
   nodes(parent: E, nodes: readonly Node[]): void;
 
+  /**
+   * Render `run()` with everything it mounts marked `inCloze`.
+   *
+   * The cloze renderer builds its answer subtree BEFORE it calls `mountCloze`, so
+   * "was this generator inside a cloze" cannot be answered afterwards by looking
+   * at the mounts — the cloze does not exist yet when its children are made. A
+   * depth counter around the children is the only place the question has an
+   * answer. Nested clozes are counted, not toggled, so an inner one leaving does
+   * not un-mask the outer.
+   */
+  withinCloze<T>(run: () => T): T;
   mountCloze(parts: { element: E; mask: E; answer: E; index: number | null }): ClozeMount<E>;
   mountMedia(parts: {
     element: E;
@@ -749,7 +773,12 @@ export function defaultRenderers<E extends RenderElement>(): NodeRenderers<E> {
       const mask = context.element("span", CLASS.clozeMask);
       mask.appendChild(context.text(CLOZE_MASK_TEXT));
       const answer = context.element("span", CLASS.clozeAnswer);
-      context.nodes(answer, node.children);
+      // Everything mounted in here is behind the mask, and `furigana` needs to
+      // know: its output is the READING, which on a `Reading = true` card is the
+      // answer. See `GeneratorMount.inCloze`.
+      context.withinCloze(() => {
+        context.nodes(answer, node.children);
+      });
       element.appendChild(mask);
       element.appendChild(answer);
       parent.appendChild(element);

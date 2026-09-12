@@ -788,16 +788,55 @@ describe("replaying deliberately", () => {
     expect(h.events.map((event) => event.kind)).toEqual(["reveal", "replay"]);
   });
 
-  it("treats a replay asked for before the reveal AS the reveal", async () => {
-    // Otherwise there would be a second route to sound that left the side's
-    // clozes masked and its bookkeeping untouched.
+  it("REPLAY BEFORE THE REVEAL ASKS AGAIN — it does not answer", async () => {
+    // THIS TEST USED TO ASSERT THE OPPOSITE, and the reversal is a bug fix.
+    //
+    // It was written before decision 29 existed, and its stated reason was that
+    // otherwise "there would be a second route to sound that left the side's
+    // clozes masked". `prompt()` is now exactly that route, on purpose, on 3,177
+    // cards where the clip IS the question.
+    //
+    // What the old contract cost, measured in the browser 2026-09-12: on a mode-2
+    // card the round replay button — which decision 29 deliberately makes live
+    // BEFORE the reveal so he can hear the question again — unmasked both clozes.
+    // `data-state` still read `prompt` and the kanji was on screen. Zach would
+    // have met it the first time he tapped replay on a listening card.
     const h = harness(SHADOWING_SIDE, { store: STORE });
     h.loop.side(0)?.replay();
     await h.audio.idle();
+
+    expect(h.media().plays).toBe(1);
+    // Sound, and NOTHING unmasked. The question was repeated, not answered.
+    expect(h.loop.side(0)?.revealed).toBe(false);
+    expect(h.result.clozes[0]?.revealed).toBe(false);
+    expect(h.cloze(0).getAttribute(REVEAL_ATTRIBUTES.expanded)).toBe("false");
+    expect(h.events.map((event) => event.kind)).toEqual(["prompt"]);
+    expect(h.outcomes[0]?.reason).toBe("prompt");
+  });
+
+  it("still replays normally once the side IS revealed", async () => {
+    // `unmask: false` may only bite while something is masked. After the reveal
+    // there is nothing left to protect and this is the ordinary re-listen.
+    const h = harness(SHADOWING_SIDE, { store: STORE });
+    h.loop.side(0)?.reveal();
+    await h.audio.idle();
+    h.loop.side(0)?.replay();
+    await h.audio.idle();
+
+    expect(h.media().plays).toBe(2);
+    expect(h.events.map((event) => event.kind)).toEqual(["reveal", "replay"]);
+    expect(h.loop.side(0)?.revealed).toBe(true);
+  });
+
+  it("a deliberate tap on the clip ITSELF still unmasks, which is a different act", () => {
+    // The armed native control routes here. Tapping a clip is "show me"; tapping
+    // `replay` is "again". Only the caller knows which one happened, so only the
+    // caller passes the flag — `play()` keeps unmasking by default.
+    const h = harness(SHADOWING_SIDE, { store: STORE });
+    const clip = h.result.media[0] as MediaMount<MemoryElement>;
+    expect(h.loop.side(0)?.play(clip)).toBe(true);
     expect(h.loop.side(0)?.revealed).toBe(true);
     expect(h.result.clozes[0]?.revealed).toBe(true);
-    expect(h.events.map((event) => event.kind)).toEqual(["reveal"]);
-    expect(h.media().plays).toBe(1);
   });
 
   it("re-claims rather than reusing a revoked lease", async () => {

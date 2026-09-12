@@ -596,6 +596,40 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     rule keyed on direction would have left it broken and looked correct.
     `.drill` is still set; it just no longer decides size. See `DECISIONS.md` 35.
 
+36. **ONE PLAY CONTROL PER CLIP, BESIDE THE CLIP.** Zach, 2026-09-12: *"we only
+    have 1 play button, what if i have two audio like this and i wanna replay the
+    first one or the second one"*. The round button bottom-right does not move
+    (decision 23, his right thumb); it now means "again" for the clip the reveal
+    last sounded. The answer to "which one" is not a picker — every clip already
+    sits on the side that owns it, so a 34px square button in that line needs no
+    label. **Not the native `<audio controls>`**: sourceless so inert, full-width
+    with a seek bar, play at the far LEFT, and it cannot show playing/missing.
+    **A LIVE BUG FELL OUT OF THE QUESTION** — `side.play()` unmasked
+    unconditionally, so on a mode-2 card one press of replay (which decision 29
+    deliberately allows BEFORE the reveal) took the clozes from `hidden,hidden` to
+    `revealed,revealed` while `data-state` still read `prompt`. `play(mount,
+    { unmask: false })` gives `prompt()`'s contract instead; `replay()` always
+    passes it. See `DECISIONS.md` 36.
+37. **FURIGANA IS FILLED, THROUGH `src/render/ruby.ts`, AND ONLY BEHIND A MASK.**
+    Zach, 2026-09-12, over a head word wearing a floating em dash: *"why is the
+    text coming out like that bro😭"*. Three faults, each hiding the next.
+    **(a)** Nothing ever filled a furigana — excluded on purpose because the
+    reading is the ANSWER on a `Reading = true` card — so every `<rt>` was empty
+    and `ruby rt:empty::after` drew a dash over every head word in the corpus.
+    The old note said the template "probably" wraps it in a cloze; measured, **42
+    of 6,754 mounts are outside one and all 42 are on produce cards**. The guard
+    is now `GeneratorMount.inCloze`, set by the renderer, and it is on **furigana
+    alone** — a blanket rule would undo decision 34 (the example sentence is an
+    `ai` generator with no cloze near it). **(b)** A furigana generation holds the
+    INPUT with Mochi's brackets in it, not a reading; `readingOf()` unwraps it.
+    **(c)** `src/render/ruby.ts` was never wired into the shipping render — the
+    core emits ONE `<rt>` for the whole base, and **1,034 of 3,242 (31.9%)** bases
+    mix kanji and kana, so a third would have misaligned. `mountPrepared` renders
+    through `furiganaSupport` now: 120 cards, **120 annotated, 115 aligned run by
+    run**. The dash is excluded on `pending` AND on `segmented` rubies — the
+    latter would have been a new bug, since run-by-run alignment leaves the kana
+    tail's `<rt>` empty by design. See `DECISIONS.md` 37.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19

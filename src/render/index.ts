@@ -154,6 +154,23 @@ class Driver<E extends RenderElement> implements RenderContext<E> {
   }
 
   // ── mounts ──
+  /**
+   * How many cloze answers we are currently rendering inside. A COUNTER rather
+   * than a flag: a cloze nested in a cloze must not un-mask its parent on the way
+   * out. `try/finally` so a renderer that throws does not leave it raised and
+   * mark the rest of the card as masked.
+   */
+  #clozeDepth = 0;
+
+  withinCloze<T>(run: () => T): T {
+    this.#clozeDepth += 1;
+    try {
+      return run();
+    } finally {
+      this.#clozeDepth -= 1;
+    }
+  }
+
   mountCloze(parts: { element: E; mask: E; answer: E; index: number | null }): ClozeMount<E> {
     const ordinal = this.clozes.length;
     const side = this.side;
@@ -229,6 +246,7 @@ class Driver<E extends RenderElement> implements RenderContext<E> {
   }): GeneratorMount<E> {
     const mount: GeneratorMount<E> = {
       ...parts,
+      inCloze: this.#clozeDepth > 0,
       side: this.side,
       ordinal: this.generations.length,
     };

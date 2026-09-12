@@ -278,7 +278,7 @@ export interface ShadowingSide<E extends RenderElement = RenderElement> {
    * starts the first and defers the rest (two at once is noise); the rest stay
    * armed and reach the port through here.
    */
-  play(mount: MediaMount<E>): boolean;
+  play(mount: MediaMount<E>, options?: { readonly unmask?: boolean }): boolean;
   /**
    * Play this side's clips as the QUESTION, leaving every cloze masked.
    *
@@ -298,7 +298,14 @@ export interface ShadowingSide<E extends RenderElement = RenderElement> {
   prompt(): boolean;
   /** Re-mask the clozes and pause the audio. Does not revoke; a re-reveal replays. */
   conceal(): void;
-  /** Deliberate re-listen of the side's first clip. Reuses the live lease. */
+  /**
+   * Deliberate re-listen of the side's first clip. Reuses the live lease.
+   *
+   * **It never reveals anything.** Before the side is revealed the clip is still
+   * the question (decision 29's mode 2), and repeating a question is not
+   * answering it — see `play`'s `unmask` option for the measurement that made
+   * this a bug fix rather than a preference.
+   */
   replay(): boolean;
 }
 
@@ -448,17 +455,30 @@ export function shadowingLoop<E extends RenderElement>(
         settle(cause, options.silent === true);
         return true;
       },
-      play(mount): boolean {
+      play(mount, options = {}): boolean {
         if (!media.includes(mount)) return false;
-        // Sound implies revealed, always: a deliberate tap on one clip unmasks
-        // the side too, because you cannot hear the reading without being shown
-        // it. The reverse route — sound with the answer still masked — is the one
-        // this method must not open.
-        const changed = unmask();
+        // Sound implies revealed BY DEFAULT: a deliberate tap on one clip unmasks
+        // the side too, because on an ANSWER clip you cannot hear the reading
+        // without being shown it.
+        //
+        // `unmask: false` IS THE MODE-2 CASE AND IT IS A BUG FIX, 2026-09-12.
+        // Measured in the browser: on a card where the clip is the QUESTION, the
+        // replay button — which decision 29 deliberately makes available BEFORE
+        // the reveal, so he can hear the question again — unmasked both clozes on
+        // the side. `data-state` still said `prompt` and the kanji was on screen.
+        // That is precisely the defect the hard rule exists to prevent, arriving
+        // through the one control allowed past it.
+        //
+        // So a caller that knows the clip is still the question says so, and gets
+        // `prompt()`'s contract instead: sound, and nothing unmasked. It degrades
+        // to the ordinary path once the side IS revealed, where there is nothing
+        // left to protect.
+        const asking = options.unmask === false && !revealed;
+        const changed = asking ? null : unmask();
         const first = changed !== null;
-        audio?.play([mount], first ? "reveal" : "replay");
+        audio?.play([mount], asking ? "prompt" : first ? "reveal" : "replay");
         emit({
-          kind: first ? "reveal" : "replay",
+          kind: asking ? "prompt" : first ? "reveal" : "replay",
           side,
           cause: first ? "gesture" : null,
           clozes: changed ?? 0,
@@ -489,7 +509,11 @@ export function shadowingLoop<E extends RenderElement>(
       },
       replay(): boolean {
         const first = media[0];
-        return first === undefined ? false : side.play(first);
+        // NEVER REVEALS. "Again" is the same act as last time, not a bigger one —
+        // and before the side is revealed the clip is still the QUESTION, where
+        // repeating it must show nothing. Once the side IS revealed this is the
+        // ordinary re-listen, because `unmask: false` only bites while masked.
+        return first === undefined ? false : side.play(first, { unmask: false });
       },
     };
 

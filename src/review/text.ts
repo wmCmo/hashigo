@@ -36,14 +36,34 @@
  * produced, asks the worker once for all of it, and writes the answers back.
  * One message per card, not one per generator.
  *
- * ─── FURIGANA IS DELIBERATELY NOT FILLED HERE ───────────────────────────────
+ * ─── FURIGANA IS FILLED, BUT ONLY BEHIND A MASK — AND "PROBABLY" WAS WRONG ──
  *
- * `furigana` is a text kind and its `output` is the `<rt>`, so it would fill with
- * one more line. It is left alone because its content is the READING, and on a
- * `Reading = true` card the reading is the ANSWER (decisions 20 and 29). The
- * template happens to wrap it in a cloze today, so filling it would probably be
- * safe — "probably" is not the standard for the one rule this app cannot get
- * wrong. A separate change, with the reveal tests re-run against it.
+ * This header used to say furigana was left alone because its content is the
+ * READING, which on a `Reading = true` card is the ANSWER (decisions 20 and 29),
+ * and that "the template happens to wrap it in a cloze today, so filling it would
+ * probably be safe". Zach found the cost of that caution, 2026-09-12: an unfilled
+ * `<rt>` is an EMPTY `<rt>`, and the stylesheet draws an em dash over any empty
+ * reading — so the head word on every reverse 単語 card wore a floating dash.
+ * *"why is the text coming out like that bro😭"*
+ *
+ * **And "probably" was wrong.** Measured over the real corpus, both directions:
+ * **6,754 furigana mounts, 42 outside a cloze, and all 42 on `produce` cards** —
+ * precisely the leak the caution was about, on 21 real cards. A rule of "the
+ * template wraps it" would have shipped the answer on the question side of those.
+ *
+ * So the guard is structural and measured rather than a claim about templates:
+ * **`mount.inCloze`**, recorded by the renderer while it builds the cloze's answer
+ * subtree. Behind a mask, the reading is revealed by the same tap that reveals
+ * everything else on the side; outside one, it stays `pending` and this module
+ * does not touch it.
+ *
+ * **The guard is on furigana ALONE, and that asymmetry is load-bearing rather
+ * than untidy.** Applying it to all four kinds would be a neater sentence and
+ * would undo the fix that came before it: 単語's example sentence is an `ai`
+ * generator in a `<blockquote>` with no cloze anywhere near it, so a blanket
+ * `inCloze` rule makes it invisible again. The distinction is what the card ASKS
+ * him for — the reading is the exercise on 692 cards, a translation is never the
+ * exercise on any — so only the reading needs to stay behind the mask.
  */
 
 import { DATA } from "../render/index.js";
@@ -53,9 +73,31 @@ import type {
   RenderElement,
   RenderResult,
 } from "../render/index.js";
+import type { RubyMount } from "../render/ruby.js";
 
-/** The kinds this module writes. NOT `furigana` — see the header. */
-const FILLABLE = new Set(["ai", "translate", "dictionary"]);
+/** The kinds this module writes. */
+const FILLABLE = new Set(["ai", "translate", "dictionary", "furigana"]);
+
+/**
+ * Kinds whose output is the ANSWER, so they may only be written behind a mask.
+ *
+ * One entry, and it is not a placeholder for a future list: `furigana` produces
+ * the reading, which decisions 20 and 29 make the exercise on 692 cards. See the
+ * header for why the other three are deliberately NOT in here.
+ */
+const ANSWER_KINDS = new Set(["furigana"]);
+
+/**
+ * A slot and, when it is a furigana, the `<ruby>` that owns it.
+ *
+ * The ruby is carried rather than looked up at fill time because only the RENDER
+ * knows it: `furiganaSupport` is what built the multi-run skeleton, and the
+ * generator mount alone cannot say which `<rt>` belongs to which run.
+ */
+export interface FillTarget<E extends RenderElement = RenderElement> {
+  readonly mount: GeneratorMount<E>;
+  readonly ruby: RubyMount<E> | null;
+}
 
 export interface TextSlot {
   /** Stable within one mounted card; what the fill map is keyed on. */
@@ -78,17 +120,25 @@ export interface TextSlot {
  * nothing in this file can reach it — but the guard means nothing in this file
  * can reach the media ELEMENT either, which is the stronger statement.
  */
-export function textSlots<E extends RenderElement>(result: RenderResult<E>): {
+export function textSlots<E extends RenderElement>(
+  result: RenderResult<E>,
+  rubies: readonly RubyMount<E>[] = [],
+): {
   readonly slots: readonly TextSlot[];
-  readonly mounts: readonly GeneratorMount<E>[];
+  readonly mounts: readonly FillTarget<E>[];
 } {
   const slots: TextSlot[] = [];
-  const mounts: GeneratorMount<E>[] = [];
+  const mounts: FillTarget<E>[] = [];
+  const rubyFor = new Map<GeneratorMount<E>, RubyMount<E>>();
+  for (const ruby of rubies) rubyFor.set(ruby.generator as GeneratorMount<E>, ruby);
   for (const mount of result.generations) {
     if (mount.media !== null) continue;
     if (mount.output === null) continue;
     if (mount.request === null) continue;
     if (!FILLABLE.has(mount.name)) continue;
+    // The reading, outside a mask, on the side that asks him to produce it. 42 of
+    // 6,754 mounts over the real corpus, every one on a `produce` card.
+    if (ANSWER_KINDS.has(mount.name) && !mount.inCloze) continue;
     slots.push({
       id: slots.length,
       name: mount.name,
@@ -98,7 +148,7 @@ export function textSlots<E extends RenderElement>(result: RenderResult<E>): {
       voice: mount.request.voice,
       options: mount.request.options,
     });
-    mounts.push(mount);
+    mounts.push({ mount, ruby: rubyFor.get(mount) ?? null });
   }
   return { slots, mounts };
 }
@@ -112,21 +162,61 @@ export function textSlots<E extends RenderElement>(result: RenderResult<E>): {
  * diagnostic can tell them apart by.
  */
 export function fillTextSlots<E extends RenderElement>(
-  mounts: readonly GeneratorMount<E>[],
+  targets: readonly FillTarget<E>[],
   texts: readonly (string | null)[],
   document: RenderDocument<E>,
 ): number {
   let filled = 0;
-  mounts.forEach((mount, index) => {
+  targets.forEach(({ mount, ruby }, index) => {
     const text = texts[index];
     if (text === undefined || text === null || text === "") return;
     const output = mount.output;
     if (output === null) return;
-    output.appendChild(document.createTextNode(text));
+    if (ruby !== null) {
+      // A furigana goes through the ruby, never straight into an `<rt>`. See
+      // `readingOf` for what the stored form actually is.
+      const reading = readingOf(text);
+      if (reading === "") return;
+      ruby.annotate(reading);
+    } else {
+      output.appendChild(document.createTextNode(text));
+    }
     // `ready` rather than removing the attribute: the element keeps saying what
     // it is, which is what makes "575 ai generators, 575 ready" countable.
     mount.element.setAttribute(DATA.state, "ready");
     filled += 1;
   });
   return filled;
+}
+
+/** `X(Y)` — Mochi's bracket annotation, both bracket widths. */
+const ANNOTATION = /[^（(）)]+[（(]([^）)]*)[）)]/gu;
+
+/**
+ * The READING alone, out of what a `furigana` generation actually stores.
+ *
+ * ─── THE TRAP, FOUND BY RENDERING IT ────────────────────────────────────────
+ *
+ * A furigana generation does NOT hold a reading. It holds the input text with
+ * Mochi's bracket annotation written into it — the value filed under `野菜` is
+ * `野菜(やさい)`, and under `あり得る` it is `あり得(え)る`. Appending that into an
+ * `<rt>` puts "野菜(やさい)" over 野菜, which is what the first version of this
+ * did and what the browser showed.
+ *
+ * So the annotation is unwrapped back to a plain reading — `野菜(やさい)` → やさい,
+ * `あり得(え)る` → ありえる — and `RubyMount.annotate` re-derives the alignment
+ * against the run skeleton. Going through `alignFurigana` rather than trusting
+ * the brackets is deliberate: it REFUSES a split it cannot make unambiguously
+ * and falls back to one annotation over the whole base, where reading the
+ * brackets positionally would place a wrong one silently. A coarse annotation is
+ * acceptable; a wrong one is not.
+ *
+ * Text with no annotation at all comes back unchanged, which is right for the
+ * all-kana case (`ひとり` generates `ひとり`).
+ */
+export function readingOf(annotated: string): string {
+  ANNOTATION.lastIndex = 0;
+  if (!ANNOTATION.test(annotated)) return annotated.trim();
+  ANNOTATION.lastIndex = 0;
+  return annotated.replace(ANNOTATION, (_whole, reading: string) => reading).trim();
 }

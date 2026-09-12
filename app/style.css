@@ -780,9 +780,28 @@ body {
   }
 }
 
-/* An empty `rt` is a furigana the generator has not produced. Say so rather than
-   collapsing to nothing, which reads as "this word has no reading". */
-ruby rt:empty::after {
+/* An empty `rt` is a furigana with nothing in it. Say so rather than collapsing
+   to nothing, which reads as "this word has no reading".
+
+   SCOPED TO `:not([data-state="pending"])` SINCE 2026-09-12, and that scoping is
+   the whole point of the mark. Until then NOTHING ever filled a furigana — the
+   `<rt>` was empty on every card in the corpus — so this drew a dash over every
+   head word and meant nothing at all. Zach: *"why is the text coming out like
+   that bro😭"*, over 嘆く wearing one.
+
+   `pending` now means one of two honest things, and a dash is wrong for both:
+   the fill has not come back yet (it is one worker round trip behind the paint),
+   or this is one of the 42 mounts `src/review/text.ts` refuses to fill because
+   the reading is the ANSWER there. Withheld on purpose is not "has no reading".
+
+   `segmented` is excluded for a different reason, and it is the one that would
+   have been a NEW bug: a ruby aligned run by run puts the reading over the kanji
+   and leaves the kana tail's `<rt>` empty ON PURPOSE — 見舞(みま)い is exactly
+   right, and a dash over the い is exactly wrong.
+
+   What is left for the dash is a `<ruby>` with a genuinely empty reading and no
+   generator behind it — which is the case the mark was written for. */
+ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::after {
   content: "—";
   opacity: 0.45;
 }
@@ -797,6 +816,60 @@ ruby rt:empty::after {
 .hashigo-audio,
 .hashigo-video {
   display: none;
+}
+
+/* ── one play control per clip, beside the clip ──────────────────────────────
+ *
+ * Zach, 2026-09-12: *"we only have 1 play button, what if i have two audio like
+ * this and i wanna replay the first one or the second one... what's the best ui?"*
+ *
+ * The round button bottom-right stays — decision 23, his right thumb — and means
+ * "again" for whatever the walk last sounded. This is the one that can NAME a
+ * clip, and it does it by position rather than by a label: the clip already sits
+ * on the side that owns it, so the line is the label. `main.ts`'s
+ * `mountClipButtons` carries the rest of the argument.
+ *
+ * SQUARE, hairline, no fill — the brief's button, at the size of a line of text
+ * rather than a control bar. It is deliberately quieter than `.replay`: that one
+ * is the primary gesture and earns its circle; this is a precision tap. */
+.clip {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--indigo);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  margin-left: 0.4em;
+  /* 34px is below the 44px touch target the round button meets, and that is the
+     trade: this sits INSIDE running text, where a 44px box would push the lines
+     of a card apart. The thumb-sized control for the common case is `.replay`. */
+  min-height: 34px;
+  min-width: 34px;
+  padding: 0 8px;
+  vertical-align: middle;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .clip:hover {
+    background: var(--indigo);
+    color: var(--card);
+  }
+}
+
+.clip:active,
+.clip[data-clip="playing"] {
+  background: var(--indigo);
+  border-color: var(--indigo);
+  color: var(--card);
+}
+
+/* Not on this device. Shown and inert, never hidden — see `mountClipButtons`. */
+.clip[disabled] {
+  background: none;
+  border-color: var(--hair);
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 .hashigo-generator {

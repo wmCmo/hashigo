@@ -4,11 +4,12 @@ import { describe, expect, it } from "vitest";
 
 import { defaultStoreDatabase, openBlobStoreDatabase, type BlobStore } from "../src/blobs/index.js";
 import { openDatabase } from "../src/db/index.js";
-import { memoryDocument, type MemoryElement } from "../src/render/dom.js";
+import { elementsByTag, memoryDocument, type MemoryElement } from "../src/render/dom.js";
 import type { MediaMount } from "../src/render/nodes.js";
 import type { PlayableMediaElement } from "../src/render/audio.js";
 import { loadCard } from "../src/cards/index.js";
 import { resolveDescriptorText } from "../src/generate/index.js";
+import { readingOf } from "../src/review/text.js";
 import {
   cardMode,
   mountCard,
@@ -1070,6 +1071,140 @@ describe("text generators get filled", () => {
       card.dispose();
     } finally {
       db.close();
+    }
+  });
+});
+
+// ─── furigana: the reading, aligned, and only behind a mask ──────────────────
+
+describe("furigana fills", () => {
+  it("unwraps Mochi's bracket annotation to a plain reading", () => {
+    // THE TRAP: a `furigana` generation does not hold a reading. It holds the
+    // INPUT with the annotation written into it. The first version of the fill
+    // appended this straight into the `<rt>` and the browser showed 野菜(やさい)
+    // sitting over 野菜.
+    expect(readingOf("野菜(やさい)")).toBe("やさい");
+    expect(readingOf("あり得(え)る")).toBe("える");
+    expect(readingOf("見舞(みま)い")).toBe("みまい");
+    expect(readingOf("お世話(せわ)")).toBe("せわ");
+    // Full-width brackets, which the corpus also uses.
+    expect(readingOf("野菜（やさい）")).toBe("やさい");
+    // No annotation at all is an all-kana word: unchanged.
+    expect(readingOf("ひとり")).toBe("ひとり");
+    expect(readingOf("")).toBe("");
+  });
+
+  it.skipIf(!HAS_CORPUS)("aligns the reading to the KANJI RUN over the real corpus", () => {
+    // 1,034 of 3,242 furigana generations (31.9%) have a base mixing kanji and
+    // kana, so a single `<rt>` over the whole base would be visibly wrong on a
+    // third of them — る over る, めぐ over 巡. This is why `mountPrepared`
+    // renders through `furiganaSupport` rather than the core's one-`<rt>` shape.
+    const { db, store, close } = openCorpus();
+    try {
+      const ids = (
+        db
+          .prepare(
+            `SELECT c.id FROM cards c JOIN templates t ON t.id = c.template_id
+              WHERE t.name = '単語' AND c.archived = 0 ORDER BY c.id LIMIT 120`,
+          )
+          .all() as { id: string }[]
+      ).map((row) => row.id);
+
+      let filled = 0;
+      let segmented = 0;
+      for (const cardId of ids) {
+        const card = mountCard<MemoryElement>({
+          db,
+          cardId,
+          document: memoryDocument(),
+          store,
+        });
+        if (card === null) continue;
+        const slots = card.textSlots;
+        const texts = slots.map((slot) =>
+          resolveDescriptorText(db, {
+            kind: slot.kind,
+            text: slot.text,
+            lang: slot.lang,
+            voice: slot.voice,
+            options: slot.options,
+          } as never),
+        );
+        card.fillText(texts);
+        for (const ruby of elementsByTag(card.result.root, "ruby")) {
+          const align = ruby.getAttribute("data-ruby-align");
+          if (align === null) continue;
+          filled += 1;
+          if (align === "segmented") segmented += 1;
+          // Whatever the alignment, the `<rt>` must never contain a bracket —
+          // that would be the raw annotation leaking through.
+          expect(ruby.textContent, cardId).not.toContain("(");
+          expect(ruby.textContent, cardId).not.toContain("（");
+        }
+        card.dispose();
+      }
+      // eslint-disable-next-line no-console
+      console.log(`furigana: ${filled} annotated · ${segmented} aligned run-by-run`);
+      expect(filled).toBeGreaterThan(0);
+      expect(segmented).toBeGreaterThan(0);
+    } finally {
+      close();
+    }
+  });
+
+  it.skipIf(!HAS_CORPUS)("NEVER OFFERS a furigana that is not behind a mask", () => {
+    // 42 of 6,754 mounts over the corpus sit outside a cloze, and every one is on
+    // a `produce` card — where the reading is the ANSWER he is asked to produce.
+    // The slot list must hold exactly the masked ones: a count, so the assertion
+    // fails if a bare one is ever added OR a masked one is ever dropped.
+    const { db, store, close } = openCorpus();
+    try {
+      let masked = 0;
+      let bare = 0;
+      let offered = 0;
+      // `Reading = true` — the 692 produce cards, where the reading IS the answer.
+      const ids = (
+        db
+          .prepare(
+            `SELECT c.id FROM cards c
+               JOIN templates t ON t.id = c.template_id
+               JOIN template_fields f ON f.template_id = t.id AND f.name = 'Reading'
+               JOIN card_field_values v ON v.card_id = c.id AND v.field_id = f.id
+              WHERE c.archived = 0 AND v.value = 'true' ORDER BY c.id LIMIT 80`,
+          )
+          .all() as { id: string }[]
+      ).map((row) => row.id);
+      // AND the cards that actually HAVE a bare one, by id — otherwise this test
+      // passes trivially on a sample where the guard is never reached. These are
+      // five of the 21 the corpus sweep found.
+      ids.push("66APe4TF", "FbT06BiI", "I3DYYihl", "NzXtdG1C", "OglIuWhv");
+      for (const cardId of ids) {
+        const card = mountCard<MemoryElement>({
+          db,
+          cardId,
+          document: memoryDocument(),
+          store,
+        });
+        if (card === null) continue;
+        for (const mount of card.result.generations) {
+          if (mount.name !== "furigana") continue;
+          if (mount.request === null || mount.output === null) continue;
+          if (mount.inCloze) masked += 1;
+          else bare += 1;
+        }
+        offered += card.textSlots.filter((slot) => slot.name === "furigana").length;
+        card.dispose();
+      }
+      // eslint-disable-next-line no-console
+      console.log(`furigana on produce cards: ${masked} masked · ${bare} bare · ${offered} offered`);
+      expect(masked).toBeGreaterThan(0);
+      // The guard was actually reached. Without this the count below is vacuous.
+      expect(bare).toBeGreaterThan(0);
+      // EXACTLY the masked ones. Not "at most", which would pass on a module that
+      // offered nothing at all.
+      expect(offered).toBe(masked);
+    } finally {
+      close();
     }
   });
 });

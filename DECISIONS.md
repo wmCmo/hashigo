@@ -1124,6 +1124,104 @@ right**: it holds his verbatim reasoning and this quotes it.
    Verified on his own card (判断, reverse): definition 15px body · example sentence
    19px mid · 判断 26px display.
 
+36. **ONE PLAY CONTROL PER CLIP, BESIDE THE CLIP — and the round button follows
+   the walk.** Zach, 2026-09-12: *"we only have 1 play button, what if i have two
+   audio like this and i wanna replay the first one or the second one... what's the
+   best ui?"*
+
+   **The round button bottom-right does not move.** Decision 23 put it there for his
+   right thumb and that is unchanged; what changed is that it now means "again" for
+   the clip the reveal last sounded, rather than being nailed at mount time to "the
+   first side with audio" — which is what made 単語's example-sentence clip
+   unreachable by any gesture at all.
+
+   **The answer to "which one" is not a picker, it is to stop making the clip
+   anonymous.** Every clip already sits on the side that owns it: the word clip on
+   the side with the word, the sentence clip on the side with the sentence, sides
+   separated by hairlines. A small square button in that line needs no label,
+   because the line IS the label.
+
+   **Why not just unhide the native `<audio controls>`** — it is in the DOM and the
+   loop already arms it, so it would have been one CSS line: the renderer leaves
+   media elements with no `src`, so the native control is inert until bytes are
+   bound and a dead transport bar is worse than none; it is full-width with a seek
+   bar and a volume slider and puts play at the FAR LEFT, the worst corner for the
+   thumb decision 23 is built around; and it cannot show "playing" or "not on this
+   device". The clip button is 34px, which is under the 44px touch target `.replay`
+   meets — a deliberate trade, because it sits inside running text where a 44px box
+   would push the lines of a card apart. The thumb-sized control for the common
+   case is still the round one.
+
+   **A BUG FELL OUT OF ASKING THE QUESTION, and it was live.** `ShadowingSide.play`
+   unmasked the side unconditionally — *"sound implies revealed"*, which is right
+   for an ANSWER clip and exactly backwards for a QUESTION one. Decision 29
+   deliberately makes the replay button available BEFORE the reveal on the 3,177
+   mode-2 cards, so he can hear the question again. Measured in the browser: on a
+   mode-2 card, one press of replay took the side's clozes from `hidden,hidden` to
+   `revealed,revealed` while `data-state` still read `prompt`. The kanji was on
+   screen and the screen still thought it was asking. That is the defect the hard
+   rule exists to prevent, arriving through the one control allowed past it.
+
+   `play(mount, { unmask: false })` is the fix: a caller that knows the clip is
+   still the question gets `prompt()`'s contract — sound, nothing unmasked — and it
+   degrades to the ordinary path once the side IS revealed. `replay()` now always
+   passes it, because "again" is the same act as last time and never a bigger one.
+   The default is unchanged, so the armed native element still unmasks; only the
+   two callers that know better opt out. `test/reveal.test.ts` had a test asserting
+   the OLD behaviour ("treats a replay asked for before the reveal AS the reveal"),
+   written before `prompt()` existed and justified by "otherwise there would be a
+   second route to sound that left the clozes masked" — which is now the whole
+   point of mode 2. It is rewritten, with the measurement in it.
+
+37. **FURIGANA IS FILLED, THROUGH `src/render/ruby.ts`, AND ONLY BEHIND A MASK.**
+   Zach, 2026-09-12, over a head word wearing a floating em dash: *"why is the text
+   coming out like that bro😭"*
+
+   **Three separate things were wrong and each hid the next.**
+
+   **(a) Nothing ever filled a furigana.** `src/review/text.ts` excluded it on
+   purpose — the reading is the ANSWER on a `Reading = true` card (decisions 20 and
+   29) — and the note said the template "happens to wrap it in a cloze today, so
+   filling it would probably be safe". The caution had a cost nobody priced: an
+   unfilled `<rt>` is an EMPTY `<rt>`, and `ruby rt:empty::after` drew an em dash
+   over every head word in the corpus. The mark meant "this word has no reading"
+   and had never once been true.
+
+   **And "probably" was wrong.** Measured, both directions: **6,754 furigana
+   mounts, 42 outside a cloze, all 42 on `produce` cards** — 21 real cards where
+   filling would have printed the answer on the question side. So the guard is
+   structural: `GeneratorMount.inCloze`, recorded by the renderer while it builds
+   the cloze's answer subtree, because the cloze does not exist yet when its
+   children are made and the question has no answer afterwards. **The guard is on
+   furigana ALONE** — applying it to all four kinds would be a neater sentence and
+   would undo decision 34's fix, since 単語's example sentence is an `ai` generator
+   in a `<blockquote>` with no cloze near it.
+
+   **(b) A furigana generation does not hold a reading.** It holds the INPUT with
+   Mochi's bracket annotation written into it: the value filed under `野菜` is
+   `野菜(やさい)`. The first fill appended that straight into the `<rt>`, and the
+   browser showed 野菜(やさい) sitting over 野菜. `readingOf()` unwraps it.
+
+   **(c) `src/render/ruby.ts` WAS NOT WIRED INTO THE SHIPPING RENDER AT ALL** —
+   built, tested, and dead on the only path that matters. The core renderer emits
+   one base and ONE `<rt>`, which spreads the whole reading over the whole word:
+   `めぐる` across `巡る`, `る` over `る`. **1,034 of 3,242 furigana generations
+   (31.9%) have a base mixing kanji and kana**, so a third of every reading would
+   have been visibly wrong the moment they started being filled. `mountPrepared`
+   now renders through `furiganaSupport`, whose skeleton is one `<rt>` per base RUN
+   — and it has to be built at render time, because the DOM port has five
+   operations and `removeChild` is not one of them.
+
+   Measured over 120 real 単語 cards: **120 annotated, 115 aligned run by run**, no
+   bracket anywhere in an `<rt>`. On his own cards: 山頂 with さんちょう over it,
+   見舞(みま)い with the reading over the kanji and the kana tail bare.
+
+   **The em dash got two exclusions rather than a deletion.** Not on a `pending`
+   ruby — that is "the fill has not come back yet" or "withheld on purpose", and
+   neither is "no reading". Not on a `segmented` one either, and that one would
+   have been a NEW bug: run-by-run alignment leaves the kana tail's `<rt>` empty
+   BY DESIGN, so 見舞(みま)い would have grown a dash over the い.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

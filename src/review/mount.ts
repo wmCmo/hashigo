@@ -90,6 +90,7 @@ import {
   type AudioResolver,
 } from "../render/audio.js";
 import { renderSides, type RenderResult } from "../render/index.js";
+import { furiganaSupport } from "../render/ruby.js";
 import { fillTextSlots, textSlots, type TextSlot } from "./text.js";
 import type { RenderDocument, RenderElement } from "../render/dom.js";
 import { shadowingLoop, type ShadowingLoop, type ShadowingSide } from "../render/reveal.js";
@@ -296,11 +297,34 @@ export function mountPrepared<E extends RenderElement>(
   prepared: PreparedCard,
   options: MountPreparedOptions<E>,
 ): MountedCard<E> {
-  const result = renderSides(prepared.sides, { document: options.document });
+  /**
+   * FURIGANA RENDERS THROUGH `src/render/ruby.ts` HERE, AND UNTIL 2026-09-12 IT
+   * DID NOT — which made that module dead code on the only path that ships.
+   *
+   * The core renderer emits one base and ONE `<rt>`, which puts the whole reading
+   * over the whole word: `めぐる` spread across `巡る`, `る` sitting over `る`.
+   * `furiganaSupport` splits the base into kanji/kana RUNS at render time and
+   * emits an `<rt>` per run, so a late-arriving reading can be aligned to the
+   * kanji alone — 巡(めぐ)る, the way every dictionary Zach reads writes it.
+   *
+   * **It is not an edge case: 1,034 of the 3,242 furigana generations (31.9%)
+   * have a base mixing kanji and kana**, so a third of every reading would have
+   * been visibly wrong the moment they started being filled at all.
+   *
+   * The skeleton has to be built BEFORE the reading is known — the DOM port has
+   * five operations and `removeChild` is not one of them, so a `<ruby>` cannot be
+   * restructured afterwards. That is why this is a render-time decision and not
+   * something the fill step could have done on its own.
+   */
+  const furigana = furiganaSupport<E>();
+  const result = renderSides(prepared.sides, {
+    document: options.document,
+    renderers: furigana.renderers,
+  });
 
   // The empty text generators, collected but NOT filled — the page has no
   // database. See ./text.ts for why this is a second step and what it fixes.
-  const text = textSlots(result);
+  const text = textSlots(result, furigana.rubies);
 
   const audio = audioController<E>(result, {
     resolve: options.resolve,

@@ -597,6 +597,17 @@ async function showCardAt(): Promise<void> {
       address,
     })).payload,
     onOutcome: (outcome) => {
+      // The clip's own button, beside the line it plays. `missing` is DISABLED
+      // rather than hidden, for the same reason the round button is: a control
+      // that vanishes makes "not on this device" indistinguishable from "this
+      // card has no clip", and a control that fails identically every press
+      // reads as the app being broken.
+      const button = outcome.mount.element.nextElementSibling;
+      if (button instanceof HTMLButtonElement && button.classList.contains("clip")) {
+        button.setAttribute("data-clip", outcome.kind);
+        button.disabled = outcome.kind === "missing" || outcome.kind === "unaddressable";
+        if (button.disabled) button.title = `no clip on this device for ${outcome.mount.alt}`;
+      }
       if (outcome.kind === "playing" || outcome.kind === "replayed") {
         // A clip that DID play clears a previous step's failure: the button
         // points at this one now.
@@ -668,6 +679,7 @@ async function showCardAt(): Promise<void> {
     if (prompt.has(side.position)) side.element.classList.add("drill");
   }
   scaleSides(card);
+  mountClipButtons(card);
 
   cardHost.appendChild(card.result.root);
   // AFTER it is in the document: `attachDraw` sizes the backing store from the
@@ -924,6 +936,68 @@ function settleReveal(card: MountedCard<HTMLElement>): void {
     revealWord.textContent = `next · ${steps.length - stepIndex}`;
   }
   paintReplay(drill === null ? "none" : replayState);
+}
+
+/**
+ * ONE PLAY CONTROL PER CLIP, BESIDE THE CLIP IT PLAYS.
+ *
+ * ─── ZACH, 2026-09-12, ON A CARD CARRYING TWO ──────────────────────────────
+ *
+ * *"we only have 1 play button, what if i have two audio like this and i wanna
+ * replay the first one or the second one... what's the best ui?"*
+ *
+ * The round button bottom-right is decision 23 and stays exactly where it is: he
+ * reviews one-handed with his right thumb, and it now follows the walk, so it
+ * always means "again" for the clip he last heard. That covers the common case
+ * and costs no reach. What it cannot do is NAME a clip.
+ *
+ * So the answer is not a second global control or a picker — it is to stop making
+ * the clip anonymous. A clip already sits on the side that owns it: 単語's word
+ * clip is on the side with the word, its sentence clip on the side with the
+ * sentence, and the sides are separated by hairlines. A small square button in
+ * that line needs no label, because the line IS the label.
+ *
+ * ─── WHY NOT SIMPLY SHOW THE NATIVE `<audio controls>` ─────────────────────
+ *
+ * It is already in the DOM and `shadowingLoop` already arms it, so unhiding it
+ * would have been one CSS line. Three reasons not to, and the stylesheet has
+ * carried the first one since the design brief landed:
+ *
+ *   * the renderer creates media elements with **no `src`**, so the native
+ *     control is inert until something binds bytes — and a dead-looking transport
+ *     bar is worse than no control at all;
+ *   * it is a full-width transport with a seek bar and a volume slider, none of
+ *     which this card wants, and it puts play at the FAR LEFT — the worst corner
+ *     for the thumb decision 23 is built around;
+ *   * it cannot show the two states that matter here, "this one is playing" and
+ *     "this one is not on your device".
+ *
+ * ─── IT ASKS, IT DOES NOT ANSWER ────────────────────────────────────────────
+ *
+ * `{ unmask: false }`, always. On a mode-2 card the clip is the QUESTION and its
+ * side is on screen with the kanji still masked; a play button that revealed the
+ * answer would be the same defect the round button had until today.
+ */
+function mountClipButtons(card: MountedCard<HTMLElement>): void {
+  for (const side of card.loop.sides) {
+    for (const clip of side.audio) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "clip";
+      button.textContent = "▶";
+      // The clip's own alt text — the word, or the sentence. Never shown: the
+      // line beside it already says this, and repeating it would be noise on a
+      // card whose whole job is to be read.
+      button.setAttribute("aria-label", `play ${clip.alt}`);
+      button.title = clip.alt;
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        side.play(clip, { unmask: false });
+      });
+      clip.element.insertAdjacentElement("afterend", button);
+    }
+  }
 }
 
 /** Has this step's work already been done — by a tap on the cloze itself? */
