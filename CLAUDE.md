@@ -567,8 +567,17 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     question.) `app-bootstrap` spends 200 MiB on each card's CHEAPEST clip first, on
     purpose. The two sets are DISJOINT: first clips 5,279 blobs / 212 MiB, later
     clips 4,359 blobs / **346 MiB**, both 558 MiB — so there is no cheap middle.
-    Hearing them is a re-bootstrap at `--speech-bytes 650000000` and a ~560 MB
-    one-time download, which is his call. See `DECISIONS.md` 34.
+    **DONE 2026-09-12 after he reported it a third time, and "his call" was the
+    wrong framing** — a rebuild alone could not have reached him: the freshness
+    check was all about the CARD database and `seedReviews` does not move when only
+    the audio does, so `ensureFile` skipped the file for ever, in green. The audio
+    now has its own comparison on `blob_store_meta.created` (`audioIsStale()` in
+    `app/seed-freshness.ts`; the arm that must NOT fire — an older manifest with no
+    such field — is pinned, because firing it re-downloads 640 MB every boot).
+    Seed rebuilt at `--speech-bytes 650000000`: 10,826 payloads, **5,710 of 5,710
+    cards (100.0%)**, the card database left alone so local grades survived, and
+    both clips on four consecutive 単語 cards reached `playing`.
+    See `DECISIONS.md` 34.
 
 35. **TYPE SIZE FOLLOWS THE CONTENT, NOT THE POSITION.** Zach, 2026-09-12, on a
     reverse 単語 track: *"i think it's correct that the 漢字 has the big text because

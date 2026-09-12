@@ -9,6 +9,7 @@ import {
   type BoundarySide,
 } from "../app/review-boundary.js";
 import { revealSteps, type StepSide } from "../app/review-steps.js";
+import { audioIsStale } from "../app/seed-freshness.js";
 
 /**
  * THE FIRST TESTS `app/` HAS EVER HAD.
@@ -428,5 +429,50 @@ divination
       "コンピュータの五大装置のうち、演算装置と制御装置を合わせたものを何と呼ぶか。またその役割を説明せよ。";
     expect([...long].length).toBeGreaterThan(28);
     expect(sideScale(long)).not.toBe("display");
+  });
+});
+
+// ── is the seed on this device still the one being served? ───────────────────
+
+/**
+ * ZACH, 2026-09-12, reporting the same defect for the THIRD time: *"i don't know
+ * what to tell you but the example sentence audio is not there😭"*
+ *
+ * Half the diagnosis was the audio budget. The other half was that a rebuild
+ * could never have reached him: the freshness check was entirely about the CARD
+ * database, `seedReviews` does not move when only the audio changes, and
+ * `ensureFile` skips any file OPFS already holds — in green, saying "already in
+ * OPFS — not re-fetching".
+ */
+describe("the audio file's own freshness", () => {
+  it("re-fetches when the server is serving a different build", () => {
+    expect(audioIsStale("2026-09-12T12:11:02.236Z", "2026-09-08T01:58:28.378Z")).toBe(true);
+  });
+
+  it("leaves it alone when they match — the whole point is a local, offline app", () => {
+    expect(audioIsStale("2026-09-12T12:11:02.236Z", "2026-09-12T12:11:02.236Z")).toBe(false);
+  });
+
+  it("does NOT re-fetch against an older manifest that has no such field", () => {
+    // THE ARM THAT MUST NOT FIRE. A manifest written before 2026-09-12 carries no
+    // `storeCreated`, and a static host serving one has to keep working. Treating
+    // it as a mismatch re-downloads 640 MB on every boot, for ever, and the user
+    // has no way to tell why.
+    expect(audioIsStale(undefined, "2026-09-08T01:58:28.378Z")).toBe(false);
+    expect(audioIsStale("", "2026-09-08T01:58:28.378Z")).toBe(false);
+  });
+
+  it("DOES re-fetch a store that cannot say when it was built", () => {
+    // The other direction is not symmetric. A manifest that names a build and a
+    // local file that cannot answer is a file of unknown provenance, and the
+    // audio store is a pure cache — replacing it costs bandwidth and nothing else.
+    expect(audioIsStale("2026-09-12T12:11:02.236Z", undefined)).toBe(true);
+    expect(audioIsStale("2026-09-12T12:11:02.236Z", "")).toBe(true);
+  });
+
+  it("compares for DIFFERENCE, not for newer", () => {
+    // Re-bootstrapping at a smaller budget is a legitimate thing to want — his
+    // phone's storage is finite. "Older" is not "wrong".
+    expect(audioIsStale("2026-09-08T01:58:28.378Z", "2026-09-12T12:11:02.236Z")).toBe(true);
   });
 });

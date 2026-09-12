@@ -66,6 +66,7 @@ import { positionKeys, FIELD_TYPES } from "../src/schema/index.js";
 import { dueOnOrBefore, liveTrack } from "../src/scheduler/index.js";
 
 import { archiveSubtree, restoreArchive, scopeToSubtree } from "./deck-scope.js";
+import { audioIsStale } from "./seed-freshness.js";
 
 import type {
   AnswerRequest,
@@ -260,6 +261,11 @@ interface SeedManifest {
   readonly cards: number;
   readonly seedReviews: number;
   readonly payloads: number;
+  /**
+   * `blob_store_meta.created` of the audio file the server is serving. Absent on
+   * a manifest written before 2026-09-12, which is why every use is optional.
+   */
+  readonly storeCreated?: string;
 }
 
 /**
@@ -301,14 +307,35 @@ async function open(request: OpenRequest): Promise<void> {
   log(`pool holds ${JSON.stringify(await databaseFilesInOpfs())}`);
 
   // Asked BEFORE either fetch, because `ensureFile` is what changes the answer.
-  const cardsWerePresent = (await databaseFilesInOpfs()).includes(CARD_DB);
+  const present = await databaseFilesInOpfs();
+  const cardsWerePresent = present.includes(CARD_DB);
+  const storeWasPresent = present.includes(STORE_DB);
 
   // ── is what we already have still what the server is serving? ──
   let reimport = request.reimport;
+  // THE AUDIO FILE IS A SEPARATE QUESTION AND USED TO HAVE NO ANSWER AT ALL.
+  //
+  // Zach, 2026-09-12, having reported it three times: *"the example sentence audio
+  // is not there"*. The clip was genuinely absent from the shipped subset — and a
+  // bigger `--speech-bytes` would not have reached him either, because the
+  // freshness check below is entirely about the CARD database. `seedReviews` is
+  // deliberately a property of that file (it is the one number local grading
+  // cannot move), so it does not move when only the audio changes, and
+  // `ensureFile` skips any file OPFS already holds. Both devices would have gone
+  // on playing the old subset for ever, with the boot log cheerfully saying
+  // "already in OPFS — not re-fetching".
+  //
+  // Replacing it destroys nothing: the store is content-addressed, the worker
+  // only ever READS it (`{ create: false }`), and no local grade or card lives in
+  // it. So this needs none of the refuse-loudly machinery the card database has.
+  let refetchStore = request.reimport;
+  // One fetch, two questions. The card database and the audio file change for
+  // different reasons and are compared on different things.
+  const manifest = reimport && refetchStore ? null : await seedManifest();
+
   // `cards === null` as well: a second `open` in one session must not put a
   // SECOND handle on the same pool file just to read two counts off it.
   if (cardsWerePresent && !reimport && cards === null) {
-    const manifest = await seedManifest();
     if (manifest !== null) {
       const held = await openDatabaseBrowser({ filename: CARD_DB, applySchema: false });
       const count = (sql: string): number =>
@@ -343,9 +370,39 @@ async function open(request: OpenRequest): Promise<void> {
     }
   }
 
+  // ── and is the AUDIO still what the server is serving? ──
+  // Compared on `blob_store_meta.created`, one row, written fresh by the store's
+  // own DDL on every bootstrap — so it changes exactly when the file does.
+  // `count(*)` over `blob_payloads` answers the same question by walking every
+  // overflow page of a half-gigabyte file.
+  if (storeWasPresent && !refetchStore && payloads === null && manifest !== null) {
+    const serving = manifest.storeCreated ?? "";
+    const held = await openDatabaseBrowser({ filename: STORE_DB, applySchema: false });
+    const heldCreated =
+      (
+        held.prepare("SELECT value FROM blob_store_meta WHERE key = 'created'").get() as
+          | { value: string }
+          | undefined
+      )?.value ?? "";
+    // The rule itself is in `./seed-freshness.ts`, with no imports, so `test/`
+    // can reach it — including the arm that must NOT fire (an older manifest
+    // with no such field), which otherwise re-downloads 640 MB on every boot.
+    if (audioIsStale(serving, heldCreated)) {
+      held.close();
+      refetchStore = true;
+      log(
+        `  the audio here was built ${heldCreated || "(unknown)"} and the server is ` +
+          `serving ${serving} — re-fetching it`,
+        "step",
+      );
+    } else {
+      payloads ??= held;
+    }
+  }
+
   const imported =
     (await ensureFile(CARD_DB, CARD_URL, reimport, { index: 1, of: 2 })) +
-    (await ensureFile(STORE_DB, STORE_URL, reimport, { index: 2, of: 2 }));
+    (await ensureFile(STORE_DB, STORE_URL, refetchStore, { index: 2, of: 2 }));
 
   // `applySchema: false` on both: these arrive fully formed. An empty pool plus a
   // failed fetch must NOT quietly create a blank database and call it success.

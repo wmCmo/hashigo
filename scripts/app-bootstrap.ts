@@ -393,6 +393,32 @@ try {
         ),
         seedReviews,
         payloads: written,
+        /**
+         * THE AUDIO FILE'S OWN IDENTITY, AND IT IS A SEPARATE QUESTION FROM
+         * `seedReviews`.
+         *
+         * Zach, 2026-09-12, for the third time: *"the example sentence audio is
+         * not there"*. It was not there because the clip is not in the shipped
+         * subset — and **re-running this script with a bigger `--speech-bytes`
+         * would not have fixed it either**, because nothing could tell that the
+         * blob store had changed. `seedReviews` is deliberately a property of the
+         * CARD database (it is the one number local grading cannot move), so it
+         * does not move when only the audio does; `ensureFile` then skips the
+         * fetch because OPFS already holds a file by that name, and both devices
+         * go on playing the old subset for ever.
+         *
+         * `blob_store_meta.created` is written fresh by `SqliteBlobStore`'s DDL on
+         * every bootstrap, so it changes exactly when the file does. One row, one
+         * string — `count(*)` over `blob_payloads` would walk every overflow page
+         * of a 560 MB file to answer the same question.
+         */
+        storeCreated: String(
+          (
+            new Database(storeOut, { readonly: true })
+              .prepare("SELECT value FROM blob_store_meta WHERE key = 'created'")
+              .get() as { value: string } | undefined
+          )?.value ?? "",
+        ),
       },
       null,
       2,

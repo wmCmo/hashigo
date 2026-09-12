@@ -1040,8 +1040,34 @@ right**: it holds his verbatim reasoning and this quotes it.
 
    The two sets do not overlap at all, so there is no cheap middle: hearing example
    sentences costs **+346 MiB**, a seed of ~558 MiB, and a one-time download of that
-   size per origin. Uncapped over tailscale, but it is his phone's storage — his
-   call, and not an agent's.
+   size per origin.
+
+   **DONE 2026-09-12, after he reported it a THIRD time — and "his call" was the
+   wrong framing, because half the defect was ours.** Rebuilding at
+   `--speech-bytes 650000000` would not have reached him on its own: the freshness
+   check was entirely about the CARD database, `seedReviews` is deliberately a
+   number local grading cannot move and a seed carrying three times the audio has
+   exactly the same one, and `ensureFile` skips any file OPFS already holds — in
+   green, saying *"already in OPFS — not re-fetching"*. Both devices would have
+   played the old subset for ever. Offering him a download he could not actually
+   take delivery of was not a decision to hand over.
+
+   So the audio file got its own comparison, on `blob_store_meta.created` — one
+   row, written fresh by the blob store's DDL on every bootstrap, so it changes
+   exactly when the file does. `count(*)` over `blob_payloads` answers the same
+   question by walking every overflow page of a 640 MB file. The rule is
+   `audioIsStale()` in `app/seed-freshness.ts`, import-free so `test/` reaches it,
+   and the arm that must NOT fire is pinned: an older manifest with no such field
+   changes nothing, because treating it as a mismatch re-downloads 640 MB on every
+   boot for ever. Replacing the store destroys nothing — content-addressed, opened
+   `{ create: false }`, no grade or card in it.
+
+   Measured end to end in the browser: the boot log said *"the audio here was built
+   2026-09-08T01:58:28.378Z and the server is serving 2026-09-12T12:11:02.236Z —
+   re-fetching it"*, fetched 640.7 MB, **left the card database alone so his 12
+   local grades survived**, and came up on 10,826 payloads. Coverage **5,710 of
+   5,710 cards (100.0%)**. On four consecutive 単語 cards both clips reached
+   `data-audio-state="playing"` — the word AND the example sentence.
 
 35. **TYPE SIZE FOLLOWS THE CONTENT, NOT THE POSITION.** Zach, 2026-09-12, with a
    screenshot of a reverse 単語 track: *"this ui is kinda funny, i think it's correct
