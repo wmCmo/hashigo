@@ -1325,18 +1325,30 @@ el("backup").addEventListener("click", () => void exportBackup());
  * and a keystroke can all change the same row, and three writers of one label is
  * how a toggle starts lying.
  */
-const pinButton = el<HTMLButtonElement>("oppin");
-const archiveButton = el<HTMLButtonElement>("oparchive");
+const moreButton = el<HTMLButtonElement>("opmore");
 
+/**
+ * THE TWO STATES STILL HAVE TO BE READABLE WITHOUT OPENING ANYTHING.
+ *
+ * The old row spelled them out — the button itself read `unpin` / `unarchive`,
+ * which said the state and the action in one word. Behind a menu that is gone,
+ * and "you must open a menu to find out whether this card is archived" is a
+ * worse trade than the room it bought. So the handle carries them: `.on` is the
+ * same class the two buttons used, so the visual language does not change, and
+ * the `title` names them in words because a lit handle does not say WHICH.
+ */
 function paintCardOps(): void {
-  pinButton.firstChild!.textContent = currentPinned ? "unpin" : "pin";
-  pinButton.classList.toggle("on", currentPinned);
-  archiveButton.firstChild!.textContent = currentArchived ? "unarchive" : "archive";
-  archiveButton.classList.toggle("on", currentArchived);
+  const flags = [currentPinned ? "pinned" : "", currentArchived ? "archived" : ""].filter(
+    (flag) => flag !== "",
+  );
+  moreButton.classList.toggle("on", flags.length > 0);
+  moreButton.title = flags.length === 0 ? "card actions" : `card actions — ${flags.join(", ")}`;
 }
 
-pinButton.addEventListener("click", () => {
-  if (currentCardId !== null) void runCardOp(currentPinned ? "unpin" : "pin", currentCardId);
+moreButton.addEventListener("click", () => {
+  if (currentCardId !== null) {
+    openCardMenu(currentCardId, previewOfCurrent?.loaded.name ?? currentCardId);
+  }
 });
 
 /**
@@ -1498,16 +1510,6 @@ el("nextcard").addEventListener("click", () => void stepCard(1));
  * for "get me out of here". */
 el("peekback").addEventListener("click", () => {
   void showSessionCard().then(() => say("back to the card you were on"));
-});
-archiveButton.addEventListener("click", () => {
-  if (currentCardId !== null) {
-    void runCardOp(currentArchived ? "unarchive" : "archive", currentCardId);
-  }
-});
-el("opdelete").addEventListener("click", () => {
-  if (currentCardId !== null) {
-    confirmDelete(currentCardId, previewOfCurrent?.loaded.name ?? currentCardId);
-  }
 });
 el("palettebutton").addEventListener("click", () => {
   closeSidebar();
@@ -4738,6 +4740,105 @@ async function runDeckOp(request: {
  * change is one row and obvious; a per-deck override buried in a context menu is
  * how a deck ends up scheduled differently for a reason nobody remembers.
  */
+/**
+ * The card's own `⋯` — and it is the DECK menu's pattern rather than a new one.
+ *
+ * The mockup that prompted this (2026-09-12) reaches for a popover on desktop
+ * and a bottom sheet on mobile. That is two presentations to build, style, trap
+ * focus in and keep in step, and this app already has one that works on both:
+ * `openDeckMenu`'s modal `.layer-menu`, which he uses on every deck. Pressing
+ * `⋯` on a card and on a deck landing in two different kinds of object is a
+ * worse outcome than either shape on its own.
+ *
+ * `.menu-item`'s convention holds — a menu of DECISIONS, not a list of verbs, so
+ * every row carries the sentence that says what it costs. The expensive one
+ * still goes through `openConfirm` on top of this.
+ *
+ * The flags come from the module's own `currentPinned` / `currentArchived`
+ * because the only caller is the review card's handle. They are the same two
+ * values `paintCardOps` lights the handle with, so the menu cannot disagree with
+ * the thing that opened it.
+ */
+function openCardMenu(cardId: string, name: string): void {
+  const root = document.createElement("div");
+  root.className = "layer layer-confirm layer-menu";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.setAttribute("aria-label", `${name} actions`);
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+
+  const panel = document.createElement("div");
+  panel.className = "confirm-panel";
+  const heading = document.createElement("h2");
+  heading.textContent = name;
+  const flags = [currentPinned ? "pinned" : "", currentArchived ? "archived" : ""].filter(
+    (flag) => flag !== "",
+  );
+  const text = document.createElement("p");
+  text.textContent =
+    flags.length === 0 ? "Nothing flagged on this card." : `Currently ${flags.join(" and ")}.`;
+  panel.append(heading, text);
+
+  const list = document.createElement("div");
+  list.className = "menu-list";
+  const item = (label: string, note: string, run: () => void, danger = false): void => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "menu-item";
+    if (danger) button.classList.add("danger");
+    const bold = document.createElement("b");
+    bold.textContent = label;
+    const why = document.createElement("i");
+    why.textContent = note;
+    button.append(bold, why);
+    button.addEventListener("click", () => {
+      closeIfTop(root);
+      run();
+    });
+    list.appendChild(button);
+  };
+
+  item(
+    currentPinned ? "unpin" : "pin",
+    currentPinned ? "stop keeping it near the top" : "keep it near the top of a search",
+    () => void runCardOp(currentPinned ? "unpin" : "pin", cardId),
+  );
+
+  item(
+    currentArchived ? "unarchive" : "archive",
+    currentArchived
+      ? "put it back in the queue — its reviews were never touched"
+      : "it stops being scheduled. Nothing is deleted and undo puts it back",
+    () => void runCardOp(currentArchived ? "unarchive" : "archive", cardId),
+  );
+
+  item(
+    "delete",
+    "the card, its fields, its links and ALL of its review history",
+    () => confirmDelete(cardId, name),
+    true,
+  );
+
+  panel.appendChild(list);
+  root.append(backdrop, panel);
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  // `ops: false` like the deck menu: the single-key card operations must keep
+  // meaning the REVIEW card, not this dialog. The dialog has buttons for them.
+  layers.push({
+    root,
+    mounted: null,
+    prepared: null,
+    cardId: "",
+    ops: false,
+    pinned: false,
+    archived: false,
+  });
+  (list.firstElementChild as HTMLElement | null)?.focus();
+}
+
 function openDeckMenu(deck: DeckBrief): void {
   const root = document.createElement("div");
   root.className = "layer layer-confirm layer-menu";

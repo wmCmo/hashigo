@@ -637,6 +637,57 @@ describe("every position: fixed rule has an answer for the rail", () => {
     expect(desktop).toMatch(/\.say \{[^}]*max-width:\s*calc\(100% - var\(--rail-w\)/);
   });
 
+  it("lines the footer's controls up with the card column, DERIVED not retyped", () => {
+    // `.ops` and `.bar` are flex rows of `flex: 1` children, which is right on a
+    // phone where the row IS the thumb target and wrong at 1110px: four buttons
+    // split it into 267px each and `reveal` becomes a slab floating under a
+    // 720px card. They are inset to the card's own text column instead.
+    //
+    // THE NUMBER IS READ OUT OF `main` RATHER THAN TRUSTED. Two places holding
+    // the same measure is how the controls end up a few pixels off the text
+    // above them — visible, and unattributable to any one change.
+    const mainRule = /\.review main \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    const box = Number(/max-width:\s*(\d+)px/.exec(mainRule)?.[1]);
+    const pad = Number(/padding:\s*\d+px\s+(\d+)px/.exec(mainRule)?.[1]);
+    expect(box, "cannot read the card column's width").toBeGreaterThan(0);
+    expect(pad, "cannot read the card column's padding").toBeGreaterThan(0);
+
+    const desktop = /@media \(min-width: 1024px\) \{([\s\S]*)\}/.exec(css)?.[1] ?? "";
+    const used = Number(
+      /\.ops,\s*\.bar \{[^}]*padding-inline:\s*max\([^,]+,\s*calc\(\(100% - (\d+)px\)/.exec(
+        desktop,
+      )?.[1],
+    );
+    expect(
+      used,
+      `the footer insets to ${used}px but the card's text column is ` +
+        `${box - pad * 2}px (${box} box − 2 × ${pad} padding). The reveal button ` +
+        `no longer agrees with the text above it.`,
+    ).toBe(box - pad * 2);
+  });
+
+  it("keeps every card operation reachable as a real control", () => {
+    // Zach's rule is that every 操作 on the desktop exists on mobile AS A BUTTON,
+    // not only as a shortcut — so moving pin/archive/delete behind `⋯` is only
+    // legal while the handle and its menu both exist. If the menu ever loses one,
+    // that operation becomes desktop-keyboard-only and he cannot do it on the
+    // phone, which is where he reviews.
+    const html = readFileSync(new URL("../app/index.html", import.meta.url), "utf8");
+    const main = readFileSync(new URL("../app/main.ts", import.meta.url), "utf8");
+    expect(html, "the card ⋯ handle is gone").toMatch(/id="opmore"/);
+    const menu = /function openCardMenu\([\s\S]*?\n\}/.exec(main)?.[0] ?? "";
+    expect(menu, "openCardMenu is gone").not.toBe("");
+    for (const op of ["pin", "archive", "delete"]) {
+      expect(menu, `${op} is not reachable from the card menu`).toMatch(
+        new RegExp(`"${op}"|'${op}'`),
+      );
+    }
+    // UNDO STAYS OUT. It is the safety net, and the thing you reach for when
+    // something has already gone wrong does not belong behind two taps.
+    expect(html, "undo left the operation row").toMatch(/id="opundo"/);
+    expect(menu, "undo was put in the menu").not.toMatch(/runUndo/);
+  });
+
   it("contributes nothing to the layout until the rail stands", () => {
     // The whole design: one token, zero by default, so every `--rail-w` above is
     // correct at phone width without a second media query to keep in step.

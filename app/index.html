@@ -161,13 +161,20 @@
            instead of guessing. -->
       <div id="footer" class="footer">
       <!-- His #9 and #7 on mobile: every review operation as a real control.
-           Arrows step between cards WITHOUT grading; the rest act on the card. -->
+           Arrows step between cards WITHOUT grading; the rest act on the card.
+
+           PIN, ARCHIVE AND DELETE MOVED BEHIND `⋯` on 2026-09-12. His rule is
+           that every 操作 on the desktop exists on mobile, as a real button and
+           not only a shortcut — a menu present on both surfaces satisfies that,
+           and `delete` two buttons from `undo` in his right thumb's zone did
+           not deserve the room. Measured first: 0 of 7,716 cards are pinned and
+           244 archived, against a replay he presses every card. UNDO STAYS OUT
+           of the menu — it is the safety net, and putting the thing you reach
+           for when something already went wrong behind two taps is backwards. -->
       <div class="ops">
         <button id="prevcard" class="op" type="button" aria-label="previous card">←</button>
-        <button id="oppin" class="op" type="button" aria-label="pin">pin<span class="kbd-inline"> ⇧p</span></button>
-        <button id="oparchive" class="op" type="button" aria-label="archive">archive<span class="kbd-inline"> a</span></button>
+        <button id="opmore" class="op" type="button" aria-label="card actions">⋯</button>
         <button id="opundo" class="op" type="button" aria-label="undo">undo<span class="kbd-inline"> ⌃z</span></button>
-        <button id="opdelete" class="op danger" type="button" aria-label="delete">delete<span class="kbd-inline"> d</span></button>
         <button id="nextcard" class="op" type="button" aria-label="next card">→</button>
       </div>
 

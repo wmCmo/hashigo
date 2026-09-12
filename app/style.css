@@ -2830,6 +2830,22 @@ input[data-answer="incorrect"] {
     left: var(--rail-w);
   }
 
+  /* THE CONTROLS LINE UP WITH THE CARD, NOT WITH THE WINDOW — and this is the
+     half of the composition a rail alone does not give you. `.ops` and `.bar`
+     are flex rows whose children are `flex: 1`, which is right on a phone where
+     the row IS the thumb target and wrong the moment the footer is 1110px wide:
+     four buttons split it into 267px each and `reveal` becomes a 1110px slab
+     floating under a 720px card.
+
+     `main` is a 720px box with 16px of padding, so the card's text column is
+     688px — matching that is what makes the reveal button's edges agree with the
+     text above it. The grounds and the hairlines still span the whole footer: a
+     rule that stops in mid-air reads as a mistake rather than as alignment. */
+  .ops,
+  .bar {
+    padding-inline: max(12px, calc((100% - 688px) / 2));
+  }
+
   .say {
     left: calc(50% + var(--rail-w) / 2);
     max-width: calc(100% - var(--rail-w) - 32px);
