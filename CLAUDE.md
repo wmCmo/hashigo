@@ -559,12 +559,33 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     and the round replay button was nailed at mount to "the first side with audio",
     so 単語's example-sentence clip could not be played by any gesture. The button
     follows the walk now. **The other half of that complaint is a BUDGET, not a bug,
-    and is NOT fixed** — 5,044 cards carry two or more clips and **36 (0.7%)** have
-    all of them on the device, because `app-bootstrap` spends 200 MiB on each card's
-    CHEAPEST clip first, on purpose. Every card's second clip costs **613 MiB** of
-    the store's 619: the sentence clips ARE the store. Hearing them is a re-bootstrap
-    at `--speech-bytes 650000000` and a ~620 MB one-time download, which is his call.
-    See `DECISIONS.md` 34.
+    and is NOT fixed** — measured by walking real cards against the shipped seed,
+    the sentence clip plays on **0.0%** of 単語 and 0.5% of 言葉, while the word clip
+    plays on 99.2% / 97.8%. (An earlier figure here said "36 cards, 0.7%" and was
+    measured against `blob_refs` mp3 rows — those are ATTACHMENT clips; a 単語 card's
+    are `generator` mounts addressed by generation identity. Wrong table, wrong
+    question.) `app-bootstrap` spends 200 MiB on each card's CHEAPEST clip first, on
+    purpose. The two sets are DISJOINT: first clips 5,279 blobs / 212 MiB, later
+    clips 4,359 blobs / **346 MiB**, both 558 MiB — so there is no cheap middle.
+    Hearing them is a re-bootstrap at `--speech-bytes 650000000` and a ~560 MB
+    one-time download, which is his call. See `DECISIONS.md` 34.
+
+35. **TYPE SIZE FOLLOWS THE CONTENT, NOT THE POSITION.** Zach, 2026-09-12, on a
+    reverse 単語 track: *"i think it's correct that the 漢字 has the big text because
+    it's short, but when it's reverse, why is 漢字 small and the definition big...?
+    this is super ugly lol"*. The old rule keyed the display size on `.drill` — the
+    QUESTION side — which on a forward track is the head word and so looked like
+    typography, and on a reverse track is a six-synonym English definition at 40px
+    **with the kanji in body text below it**. His own sentence gives the rule:
+    *"because it's short"*. `sideScale()` in `app/review-boundary.ts` measures the
+    side's rendered length in CODE POINTS and applies it to EVERY side in both
+    directions: **≤28 display · ≤64 mid · above that body**. Reverse then needs no
+    special case. **28 is measured**: every forward vocabulary prompt fits in 26
+    characters and 90% of reverse prompts start at 28, so nothing sits on the line.
+    **基本情報 is why this is a LENGTH rule and not a DIRECTION rule** — its FORWARD
+    prompts run to 170 characters and had been rendering at 40px all along, so a
+    rule keyed on direction would have left it broken and looked correct.
+    `.drill` is still set; it just no longer decides size. See `DECISIONS.md` 35.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

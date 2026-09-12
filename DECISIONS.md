@@ -1007,15 +1007,96 @@ right**: it holds his verbatim reasoning and this quotes it.
    adding a second control — the step says which clip is current, so the button does.
 
    **THE OTHER HALF OF THAT COMPLAINT IS NOT A UI BUG AND IS NOT FIXED HERE.**
-   Measured over the shipped seed: **5,044 cards carry two or more clips and 36 of
-   them (0.7%) have all of them on the device.** `scripts/app-bootstrap.ts` spends
-   its 200 MiB taking each card's CHEAPEST clip first, deliberately, so that no card
-   gets a second before every card has a first — and a card's second clip is the
-   example sentence. Covering every card's second clip costs **613 MiB** against the
-   store's 619 MiB total: there is no cheap middle, because the sentence clips ARE
-   the bulk of the store. So hearing example sentences is a re-bootstrap at
-   `--speech-bytes 650000000` and a one-time ~620 MB download per origin, which is
-   his call and not an agent's.
+   **AND THE FIRST NUMBER PUT HERE FOR IT WAS MEASURED AGAINST THE WRONG TABLE** —
+   it said "5,044 cards carry two or more clips, 36 (0.7%) have all of them", from
+   counting `blob_refs` rows whose `ref_key` ends `.mp3`. Those are the ATTACHMENT
+   clips. The clips on a 単語 card are `generator` mounts addressed by GENERATION
+   IDENTITY, and counting the other table answers a different question. Re-measured
+   by walking real cards against the shipped seed, which is the only basis that
+   proves anything:
+
+   ```
+   単語   396 of 400 sampled cards carry two clips
+          the word clip     plays on 393  (99.2%)
+          the sentence clip plays on   0  ( 0.0%)
+   言葉   365 of 376
+          the word clip     plays on 357  (97.8%)
+          the sentence clip plays on   2  ( 0.5%)
+   ```
+
+   So it is not "rarely", it is **never**, and the corrected figure is worse than
+   the wrong one. `scripts/app-bootstrap.ts` spends its 200 MiB taking each card's
+   CHEAPEST clip first, deliberately, so that no card gets a second before every
+   card has a first — and a card's second clip is the example sentence.
+
+   **What it would cost, measured by proxying the blob store and recording what each
+   side's clip actually resolves to, over all 5,536 clip-bearing cards:**
+
+   ```
+   first clips   5,279 blobs   212 MiB   <- what the 200 MiB seed buys
+   later clips   4,359 blobs   346 MiB   <- disjoint: shares nothing with the first
+   both          9,638 blobs   558 MiB
+   ```
+
+   The two sets do not overlap at all, so there is no cheap middle: hearing example
+   sentences costs **+346 MiB**, a seed of ~558 MiB, and a one-time download of that
+   size per origin. Uncapped over tailscale, but it is his phone's storage — his
+   call, and not an agent's.
+
+35. **TYPE SIZE FOLLOWS THE CONTENT, NOT THE POSITION.** Zach, 2026-09-12, with a
+   screenshot of a reverse 単語 track: *"this ui is kinda funny, i think it's correct
+   that the 漢字 has the big text because it's short, but when it's reverse, why is
+   漢字 small and the definition big...? this is super ugly lol"*
+
+   **The old rule was positional and it was never really a typographic decision.**
+   `main.ts` marked the QUESTION side `.drill`; the stylesheet gave that side
+   `clamp(26px, 7vw, 40px)`. On a forward track the question is the head word — one
+   to three characters — so it LOOKED like "the head word is the biggest thing on
+   the screen". It was "the first side is big", and a reverse track puts a
+   six-synonym English definition there.
+
+   **And the second half of his sentence is the sharper half:** it also made the
+   kanji SMALL. On a reverse track the word sits on a later side, which was body
+   text, so the one thing on the card that earns display type was the one thing not
+   getting it.
+
+   **His own sentence states the rule — *"because it's short"*.** So it is measured
+   length, in CODE POINTS, applied to EVERY side in both directions; reverse then
+   needs no special case at all. `sideScale()` in `app/review-boundary.ts`:
+   **≤28 display · ≤64 mid · above that body.**
+
+   **THE THRESHOLD IS MEASURED, not chosen to look principled.** Rendered
+   `textContent` length of the question side over 1,200 cards in both directions:
+
+   ```
+                         p10   p50   p90   max
+     単語      forward      2    12    18    26
+     単語      reverse     28    60   155  1027
+     漢字      forward      1     1     1     1
+     漢字      reverse     54    75   100   147
+     言葉      forward      8    11    14    16
+     New Vocab forward      4     7    10    20
+     New Vocab reverse     34    61   107   168
+     基本情報   forward     26    41    72   170
+   ```
+
+   Every forward vocabulary prompt fits in 26 characters and 90% of reverse prompts
+   start at 28, so **28 separates the two groups with nothing sitting on the line**.
+
+   **基本情報 IS THE REASON THIS IS A LENGTH RULE AND NOT A DIRECTION RULE.** Its
+   FORWARD prompts run to 170 characters and have been rendering at 40px all along —
+   the same defect, in the direction the old rule assumed was safe. He had not
+   complained about that deck; the rule that fixes reverse fixes it too. A rule keyed
+   on `direction === "reverse"` would have left it broken and looked correct.
+
+   **`mid` is not decoration.** Without it a 40-character definition drops straight
+   from 40px to 17px beside a head word, and the two read as different cards.
+
+   **`.drill` is still set** — which side is the question is a real fact and
+   something will want it. It just no longer decides how big anything is.
+
+   Verified on his own card (判断, reverse): definition 15px body · example sentence
+   19px mid · 判断 26px display.
 
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 

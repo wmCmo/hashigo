@@ -24,7 +24,11 @@
  *   .hashigo-cloze-mask     the masked form, and it is the DEFAULT state here —
  *                           the answer is what is hidden. `src/render` owns these
  *                           class names; this file only dresses them.
- *   .drill                  the side the question is on, marked by main.ts.
+ *   .drill                  the side the question is on, marked by main.ts. It
+ *                           no longer sets the type size — `data-scale` does,
+ *                           from the side's own LENGTH. See that rule.
+ *   [data-scale]            display / mid / body, written by main.ts from
+ *                           `sideScale()`. Size follows content, not position.
  *
  * ─── CONTRAST IS A CORRECTNESS CONSTRAINT HERE, NOT A PREFERENCE ────────────
  *
@@ -602,21 +606,50 @@ body {
   padding-top: 0;
 }
 
-/* The side the question is on. The head word / reading on it is the biggest
-   thing on the screen. This is where `--jp-display` earns its 1.5 MB: Zen Maru's
-   round terminals agree with the mark's round line caps, which is the same
-   argument the brief used to set Fraunces to SOFT 100. */
-.hashigo-side.drill {
+/* ── SIZE FOLLOWS THE CONTENT, NOT THE POSITION ─────────────────────────────
+   `data-scale` is written by main.ts from `sideScale()`, which measures the
+   side's rendered length. That module's header carries the measurements and the
+   reason the old rule was wrong; the short version is Zach's own, 2026-09-12:
+   *"i think it's correct that the 漢字 has the big text because it's short, but
+   when it's reverse, why is 漢字 small and the definition big...?"*
+
+   It used to key on `.drill` — the QUESTION side — which on a forward track is
+   the head word and looks like a typographic decision, and on a reverse track is
+   a six-synonym English definition at 40px with the kanji in body text below it.
+
+   `.drill` is still set, because "which side is the question" is a real fact and
+   something will want it. It just no longer decides how big anything is.
+
+   This is where `--jp-display` earns its 1.5 MB: Zen Maru's round terminals agree
+   with the mark's round line caps, which is the same argument the brief used to
+   set Fraunces to SOFT 100. */
+.hashigo-side[data-scale="display"] {
   font-size: clamp(26px, 7vw, 40px);
   line-height: 1.35;
 }
 
+/* The step between display and body. Without it a 40-character definition drops
+   straight to 17px beside a 40px head word, and the two read as different cards. */
+.hashigo-side[data-scale="mid"] {
+  font-size: clamp(19px, 4.6vw, 26px);
+  line-height: 1.45;
+}
+
 /* Furigana. Was the accent yellow; it is the READING, which is secondary
    information on a card whose head word is the point — so it takes the primary
-   colour rather than an accent of its own. */
-.hashigo-side.drill ruby rt {
+   colour rather than an accent of its own. The ratio follows the size it sits
+   in: 0.42em is right over 40px and unreadably small over 19px. */
+.hashigo-side[data-scale="display"] ruby rt,
+.hashigo-side[data-scale="mid"] ruby rt {
   color: var(--indigo);
+}
+
+.hashigo-side[data-scale="display"] ruby rt {
   font-size: 0.42em;
+}
+
+.hashigo-side[data-scale="mid"] ruby rt {
+  font-size: 0.5em;
 }
 
 .hashigo-side p {

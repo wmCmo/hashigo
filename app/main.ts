@@ -101,6 +101,7 @@ import {
 import { reviewAction } from "./review-keys.js";
 import {
   promptPositions as promptBoundary,
+  sideScale,
   visiblePositions,
   type BoundarySide,
 } from "./review-boundary.js";
@@ -660,8 +661,13 @@ async function showCardAt(): Promise<void> {
   // `<<#Reading>>`), and a blank screen to tap through is not a side.
   for (const side of card.result.sides) {
     side.element.hidden = side.empty || !prompt.has(side.position);
+    // The question, marked for anything that wants to know which side it is. It
+    // no longer decides the TYPE SIZE — see `sideScale`: doing that positionally
+    // is what put a six-synonym English definition at 40px on a reverse track and
+    // left the kanji in body text.
     if (prompt.has(side.position)) side.element.classList.add("drill");
   }
+  scaleSides(card);
 
   cardHost.appendChild(card.result.root);
   // AFTER it is in the document: `attachDraw` sizes the backing store from the
@@ -973,8 +979,21 @@ async function fillGeneratedText(card: MountedCard<HTMLElement>): Promise<void> 
       })),
     });
     card.fillText(reply.texts);
+    // RE-SCALE, AND THIS IS NOT OPTIONAL. `sideScale` measures rendered text, and
+    // an `ai` slot is EMPTY at render time by contract — so 単語's example-sentence
+    // side measures as a two-character stub, lands in `display`, and then the
+    // sentence arrives a moment later at 40px. The fill is the only thing that
+    // knows the side's text is now final.
+    if (card === mounted) scaleSides(card);
   } catch {
     /* see the header: pending is the old behaviour, not a new failure */
+  }
+}
+
+/** Size every side from what it actually says. See `sideScale`. */
+function scaleSides(card: MountedCard<HTMLElement>): void {
+  for (const side of card.result.sides) {
+    side.element.setAttribute("data-scale", sideScale(side.element.textContent ?? ""));
   }
 }
 

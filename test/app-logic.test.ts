@@ -4,6 +4,7 @@ import { childrenOf, rootsOf, subtreeTotals, type TreeDeck } from "../app/deck-t
 import { isTypingTarget, survivesTyping } from "../app/keys.js";
 import {
   promptPositions,
+  sideScale,
   visiblePositions,
   type BoundarySide,
 } from "../app/review-boundary.js";
@@ -346,5 +347,86 @@ describe("the reveal order", () => {
       const clozes = reverse.filter((step) => step.position === position).map((s) => s.cloze);
       expect(clozes, `side ${position} must ascend`).toEqual([0, 1]);
     }
+  });
+});
+
+// ── the type scale ────────────────────────────────────────────────────────────
+
+/**
+ * ZACH, 2026-09-12: *"i think it's correct that the 漢字 has the big text because
+ * it's short, but when it's reverse, why is 漢字 small and the definition big...?
+ * this is super ugly lol"*
+ *
+ * The old rule was positional (`.drill`, the question side). These are the real
+ * strings from his corpus on both sides of the thresholds.
+ */
+describe("how big the text on a side should be", () => {
+  it("puts every forward vocabulary prompt in display", () => {
+    for (const text of [
+      "判断", // 単語 forward, Reading = true
+      "慈", // 漢字 forward — one character
+      "[…]係数[…]係数 中高(3)", // 単語 forward, Reading = false: masks and the accent
+      "[…]判断[…]判断頭高",
+      "にんじん",
+      "shun",
+    ]) {
+      expect(sideScale(text), text).toBe("display");
+    }
+  });
+
+  it("drops the reverse prompt that started all this out of display", () => {
+    // The card in his screenshot. At 40px it was three lines of English before the
+    // question had even been asked. The DEFINITION alone is 56 characters and lands
+    // in `mid`; the side as actually rendered carries the second sense and the two
+    // link labels with it, which is why the live card measured `body` at 15px.
+    const definition = "judgement; judgement; decision; conclusion; adjudication";
+    expect([...definition].length).toBe(56);
+    expect(sideScale(definition)).toBe("mid");
+    expect(sideScale(`${definition}
+divination
+🀄JPDB🎬IKD`)).toBe("body");
+    expect(sideScale("coefficient #Mathematics coefficient; factor; proportional constant")).toBe(
+      "body",
+    );
+    // Either way, the thing he objected to is gone: not display, on any of them.
+    for (const text of [definition, "coefficient #Mathematics coefficient; factor"]) {
+      expect(sideScale(text), text).not.toBe("display");
+    }
+  });
+
+  it("keeps a SHORT reverse prompt big, because the rule is length and not direction", () => {
+    // "protein" is a reverse prompt too. Nothing about being an answer-turned-
+    // question makes it want small type.
+    expect(sideScale("protein")).toBe("display");
+    expect(sideScale("cook; chef")).toBe("display");
+  });
+
+  it("has a middle, so the fall is not a cliff", () => {
+    expect(sideScale("mission; errandtask; duty; obligation")).toBe("mid");
+    expect(sideScale("彼の行動を判断するのは難しい。It is difficult to judge his behavior.")).toBe(
+      "mid",
+    );
+  });
+
+  it("counts CODE POINTS, so a surrogate pair does not cost two", () => {
+    // 28 astral characters: one bucket in code points, two in UTF-16 units.
+    const astral = "𠮟".repeat(28);
+    expect(astral.length).toBe(56);
+    expect(sideScale(astral)).toBe("display");
+  });
+
+  it("collapses whitespace before measuring, so a wrapped render is not punished", () => {
+    expect(sideScale("  judgement \n\n   decision  ")).toBe("display");
+    expect(sideScale("")).toBe("display");
+  });
+
+  it("is the rule that also fixes 基本情報 FORWARD, which nobody had reported", () => {
+    // Its forward prompts run to 170 characters and were rendering at 40px under
+    // the positional rule — the same defect, in the direction that looked safe. A
+    // rule keyed on `direction === "reverse"` would have left this one broken.
+    const long =
+      "コンピュータの五大装置のうち、演算装置と制御装置を合わせたものを何と呼ぶか。またその役割を説明せよ。";
+    expect([...long].length).toBeGreaterThan(28);
+    expect(sideScale(long)).not.toBe("display");
   });
 });
