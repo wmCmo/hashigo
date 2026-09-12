@@ -666,6 +666,66 @@ body {
   padding-left: 12px;
 }
 
+/* ── lists ───────────────────────────────────────────────────────────────────
+   Zach, 2026-09-12: *"the definition padding is still weird"*, over a 意味 side
+   reading `1. moving out (to)` / `2. transfer (to a new post)`.
+
+   There was no list rule AT ALL, so `* { padding: 0 }` at the top of this file
+   applied — and a list with no padding still renders its markers `outside`, so
+   the `1.` and `2.` hung to the LEFT of the text column, into the card's own
+   padding, aligned with nothing else on the card. The reset is right; what was
+   missing is the rule it was resetting FOR.
+
+   **1,424 field values in the corpus are lists**, so this is most 意味 sides, not
+   a corner. `1.4em` puts the marker inside the column and the text on a hanging
+   indent, so a definition that wraps on a phone lines up under itself rather than
+   under its own number. The bottom margin matches `p` — a card is one flow, and a
+   list that spaced differently from the paragraph above it read as a second card. */
+.hashigo-side ol,
+.hashigo-side ul {
+  margin: 0 0 10px;
+  padding-left: 1.4em;
+}
+
+.hashigo-side ol:last-child,
+.hashigo-side ul:last-child {
+  margin-bottom: 0;
+}
+
+/* Senses are separate facts; they need a little air between them at 1.6 leading. */
+.hashigo-side li + li {
+  margin-top: 3px;
+}
+
+/* A nested list stays tight against its parent — it is a continuation, not a
+   new block. */
+.hashigo-side li > ol,
+.hashigo-side li > ul {
+  margin: 3px 0 0;
+}
+
+/* ── tables ──────────────────────────────────────────────────────────────────
+   ONE card in the corpus has one, and it rendered as run-together text: the same
+   reset zeroes cell padding, and nothing put the borders back. Three lines is
+   cheaper than the next person finding it on a card they were mid-review on.
+   `collapse` so the hairlines do not double up — the brief has one rule weight. */
+.hashigo-side table {
+  border-collapse: collapse;
+  margin: 0 0 10px;
+  width: 100%;
+}
+
+.hashigo-side th,
+.hashigo-side td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.hashigo-side th {
+  font-weight: 500;
+}
+
 .hashigo-side h4 {
   font-size: 1em;
   font-weight: 400;

@@ -1275,6 +1275,40 @@ right**: it holds his verbatim reasoning and this quotes it.
    named with their reason (two progress tracks, which carry no text, and the ⋯
    chip, which must stand out from a row whose own hover ground is `--sunk`).
 
+39. **THE RESET ZEROES EVERY BOX; A CARD'S BLOCK ELEMENTS NEED A RULE BEHIND IT.**
+   Zach, 2026-09-12, over a 意味 side reading `1. moving out (to)` /
+   `2. transfer (to a new post)`: *"the definition padding is still weird"*.
+
+   **There was no list rule at all.** `* { margin: 0; padding: 0 }` at the top of
+   `app/style.css` is correct and deliberate — but a list with no padding still
+   renders its markers `outside`, so the `1.` and `2.` painted to the LEFT of the
+   content box, into the card's own 16px padding, aligned with nothing else on the
+   card. The reset was right; what was missing is the rule it resets FOR.
+
+   **It is not a corner: 1,424 field values in the corpus are lists**, which is
+   most 意味 sides. `padding-left: 1.4em` puts the marker inside the column and the
+   text on a hanging indent, so a definition that wraps on a phone lines up under
+   itself rather than under its own number. In `em` so it tracks decision 35's type
+   scale rather than fixing a pixel that is wrong at 40px and wrong again at 15px.
+   The bottom margin matches `p` — a card is one flow, and a list that spaced
+   differently from the paragraph above it read as a second card.
+
+   **THE SAME RESET HAD EATEN TABLES.** Zero cell padding, no borders: run-together
+   text. **One card in the corpus has a table**, which is exactly the kind of thing
+   nobody finds until they are mid-review on it, and three lines is cheaper than
+   that. `<pre>` is deliberately left alone — **zero code fences exist in the
+   corpus**, and `.hashigo-code` already covers the inline form.
+
+   **THE TEST READS THE RENDERER, NOT A LIST WRITTEN BY HAND.**
+   `test/contrast.test.ts` now extracts every tag inside a `context.element(...)`
+   call in `src/render/nodes.ts` and requires a `.hashigo-side` rule for each, with
+   an exemption table where every entry names its reason (inline elements, grouping
+   boxes that paint nothing, and the `hashigo-`-classed ones). A renderer that
+   learns a new element fails this until the stylesheet catches up — which is the
+   only moment anyone would think to look. Scoping that extraction to the CALL
+   mattered: a first version matched `"image"` and `"inline"` out of an unrelated
+   media-kind ternary and reported them as unstyled elements.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

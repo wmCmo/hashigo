@@ -650,6 +650,21 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     colour token; `--line` may not be a background outside three named
     exceptions). See `DECISIONS.md` 38.
 
+39. **THE RESET ZEROES EVERY BOX; A CARD'S BLOCK ELEMENTS NEED A RULE BEHIND IT.**
+    Zach, 2026-09-12: *"the definition padding is still weird"*. There was no list
+    rule at all — `* { padding: 0 }` applied, and a list with no padding still
+    renders markers `outside`, so `1.` and `2.` painted LEFT of the content box,
+    into the card's padding, aligned with nothing. **1,424 field values are
+    lists**, so that was most 意味 sides. `padding-left: 1.4em` (em, so it tracks
+    decision 35's type scale) puts the marker in the column and the text on a
+    hanging indent. **The same reset had eaten tables** — zero cell padding, no
+    borders, run-together text, on the one card in the corpus that has one.
+    `<pre>` is left alone: zero code fences exist. **The test reads the RENDERER**
+    — every tag inside a `context.element(...)` call in `src/render/nodes.ts` must
+    have a `.hashigo-side` rule, with a reason-per-entry exemption table — so a
+    renderer that learns a new element fails until the stylesheet catches up.
+    See `DECISIONS.md` 39.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19

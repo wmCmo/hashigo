@@ -399,3 +399,121 @@ describe("text that lands on a FILLED ground, not on paper", () => {
     ).toEqual([]);
   });
 });
+
+// ─── the reset zeroes everything; what puts it back? ────────────────────────
+
+/**
+ * ZACH, 2026-09-12, over a 意味 side reading `1. moving out (to)` / `2. transfer
+ * (to a new post)`: *"the definition padding is still weird"*.
+ *
+ * There was no list rule AT ALL. `* { padding: 0 }` at the top of `style.css` is
+ * correct and deliberate — but a list with no padding still renders its markers
+ * `outside`, so the `1.` and `2.` hung to the LEFT of the text column, into the
+ * card's own padding, aligned with nothing else on the card. **1,424 field values
+ * in the corpus are lists**, so that was most 意味 sides.
+ *
+ * The same reset had also left `<table>` with zero cell padding and no borders —
+ * one card, which rendered as run-together text — and `<pre>` bare, which nothing
+ * uses (0 code fences in the corpus).
+ *
+ * So the rule is structural, and it reads the RENDERER rather than a list written
+ * here: every block element `src/render/nodes.ts` can emit must have a
+ * `.hashigo-side` rule behind it. A renderer that learns a new element fails this
+ * until the stylesheet catches up, which is the only moment anyone would think to
+ * look.
+ */
+describe("every block element the renderer emits has a rule behind the reset", () => {
+  const nodes = readFileSync(new URL("../src/render/nodes.ts", import.meta.url), "utf8");
+
+  /**
+   * Inline elements and structural wrappers that inherit everything they need.
+   * Each is named because "it does not need a rule" is a claim, not an omission.
+   */
+  const NO_RULE_NEEDED: Record<string, string> = {
+    span: "inline, and every variant carries its own hashigo- class",
+    a: "styled by .hashigo-card-link / .hashigo-link",
+    img: ".hashigo-image",
+    audio: ".hashigo-audio",
+    video: ".hashigo-video",
+    ruby: "styled through ruby/rt rules and data-ruby-align",
+    rt: "same",
+    rb: "same",
+    br: "no box",
+    section: ".hashigo-side is the section",
+    div: ".hashigo-card is the root div",
+    canvas: ".hashigo-draw",
+    input: ".hashigo-input",
+    code: ".hashigo-code — inline, and 0 code fences exist in the corpus",
+    pre: "0 code fences in the corpus; .hashigo-code covers the inline form",
+    thead: "a grouping box with no painting of its own",
+    tbody: "same",
+    tr: "same — the borders live on th/td",
+    hr: ".hashigo-rule",
+    em: "inline",
+    strong: "inline",
+    del: "inline",
+    sup: "inline",
+    sub: "inline",
+    h1: "the renderer maps headings into h4 on a card",
+    h2: "same",
+    h3: "same",
+    h5: "same",
+    h6: "same",
+  };
+
+  it("emits nothing that lands on browser defaults", () => {
+    const emitted = new Set<string>();
+    // Every tag name inside a `context.element(...)` call — which covers both the
+    // literal form and the ternary one (`node.ordered ? "ol" : "ul"`). Scoped to
+    // the call, so that unrelated string ternaries elsewhere in the file cannot
+    // masquerade as elements; an earlier version matched `"image"` and `"inline"`
+    // out of a media-kind ternary and reported them as unstyled.
+    for (const call of nodes.matchAll(/\bcontext\.element\(([^)]*)\)/g)) {
+      for (const arg of (call[1] as string).matchAll(/"([a-z0-9]+)"/g)) {
+        const tag = arg[1] as string;
+        // `element(tag, className)` — a class name is not an element.
+        if (!tag.startsWith("hashigo-")) emitted.add(tag);
+      }
+    }
+    expect(emitted.size, "found no emitted elements — the pattern stopped matching").toBeGreaterThan(
+      8,
+    );
+    // The two the bug was about must be in there, or this test proves nothing.
+    expect(emitted.has("ol")).toBe(true);
+    expect(emitted.has("table")).toBe(true);
+
+    const unstyled: string[] = [];
+    for (const tag of [...emitted].sort()) {
+      if (tag in NO_RULE_NEEDED) continue;
+      const rule = new RegExp(`\\.hashigo-side\\s+(?:[^{,]*,\\s*)*${tag}\\b`);
+      if (!rule.test(css)) unstyled.push(tag);
+    }
+    expect(
+      unstyled,
+      "these are emitted onto a card and land on `* { margin: 0; padding: 0 }` " +
+        `with nothing behind it:\n  ${unstyled.join("\n  ")}`,
+    ).toEqual([]);
+  });
+
+  it("a list marker sits INSIDE the text column", () => {
+    // The actual defect: with no padding and `list-style-position: outside`, the
+    // marker paints left of the content box — outside the column every other
+    // block on the card lines up with.
+    const rule = /\.hashigo-side ol,\s*\.hashigo-side ul \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule, "no rule for lists on a card").not.toBe("");
+    const padding = /padding-left:\s*([\d.]+)em/.exec(rule)?.[1];
+    expect(padding, "list padding must be in em, so it tracks the type size").toBeDefined();
+    expect(Number(padding)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("a table on a card has cell padding and rules", () => {
+    // One card in the corpus, and it rendered as run-together text.
+    const cells = /\.hashigo-side th,\s*\.hashigo-side td \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(cells, "no rule for table cells on a card").not.toBe("");
+    expect(cells).toMatch(/padding:/);
+    expect(cells).toMatch(/border:\s*1px solid var\(--line\)/);
+    expect(/\.hashigo-side table \{([^}]*)\}/.exec(css)?.[1]).toMatch(
+      /border-collapse:\s*collapse/,
+    );
+  });
+});
