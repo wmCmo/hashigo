@@ -1,55 +1,228 @@
 /*
- * Decision 23, direction A2 — "A's terminal look, C's hand".
+ * DECISION 32 — the design brief of 2026-09-12.
  *
- * Dark, mono, dense, everything on one scroll; controls pinned to the bottom
- * edge; round replay bottom-RIGHT because he reviews one-handed with his right
- * hand; keycap hints only where a real pointer exists.
+ * Paper, indigo, hairlines. Flat ground, 1px rules, square corners, no shadows,
+ * depth by RECESSION rather than elevation. Fraunces for the wordmark, Zen Maru
+ * Gothic for Japanese display, Zen Kaku Gothic New for Japanese UI text.
  *
- * ─── WHAT IS DIFFERENT FROM THE MOCKUP, AND WHY ─────────────────────────────
+ * ─── WHAT SURVIVED FROM DECISION 23, AND WHY IT IS NOT A LEFTOVER ───────────
  *
- * `build/mock/out/a2-terminal.html` is a spec for the LOOK and NEVER for the
- * structure — its `.head` / `.answer` / `.reading` / `.contour` divs are
- * hand-authored by `scripts/mockup-html.ts` and `src/render` produces none of
- * them. So the colours, the type scale and the geometry below are lifted from it
- * verbatim, and the SELECTORS are `src/render`'s own `CLASS` names.
+ * Decision 23 settled two different kinds of thing and only one of them was
+ * withdrawn. The LOOK is gone — dark, mono, the yellow accent. The HAND is not:
  *
- * The two that carry the exercise:
+ *   · controls pinned to the bottom edge, everything on one scroll
+ *   · the replay button ROUND and bottom-RIGHT, because he reviews one-handed
+ *     with his right thumb. THE BRIEF SAYS `border-radius: 0` ON BUTTONS AND
+ *     THIS ONE IS THE EXCEPTION — its shape is ergonomic, not decorative, and
+ *     it is the only radius in this file. Every other control is square.
+ *   · keycap hints only where a real pointer exists, NEVER behind hover
+ *   · `remembered` on the RIGHT: 96.24% of taps over 103,110 reviews are that
+ *     button, so it belongs under the thumb that is already there
  *
- *   .hashigo-cloze-mask     the masked form. In the mockup this was
- *                           `display:none` because a mockup shows the answer.
- *                           Here it is the DEFAULT state and the answer is what
- *                           is hidden.
+ * ─── THE TWO THAT CARRY THE EXERCISE ────────────────────────────────────────
+ *
+ *   .hashigo-cloze-mask     the masked form, and it is the DEFAULT state here —
+ *                           the answer is what is hidden. `src/render` owns these
+ *                           class names; this file only dresses them.
  *   .drill                  the side the question is on, marked by main.ts.
  *
  * ─── CONTRAST IS A CORRECTNESS CONSTRAINT HERE, NOT A PREFERENCE ────────────
  *
- * Every grey in this file carries a Japanese reading at some point. A2's own
- * revision raised the side labels from 2.21:1 to 5.77:1 and the deck line from
- * 3.61:1 to 6.44:1 against #111214, both clear AA. Do not darken them back for
- * looks: a low-contrast furigana is unreadable at 12px on a phone in daylight,
- * which is where this app is used.
+ * Every grey in this file carries a Japanese reading at some point. That rule
+ * predates this design and survives the change of ground. Two cells of the
+ * brief's palette failed it as published and are corrected below, both measured:
  *
- * One accent, and it is green: green means `remembered` and nothing else. The
- * yellow (#e2b714, Monkeytype's) is for the thing being learned. A second
- * near-green anywhere reads as a bug — Zach's own rule, applied after the 型
- * badge broke it.
+ *   --muted was #6B6862, which is 4.21:1 on --paper-sunk — UNDER AA, and
+ *   --muted at 11-12px is exactly where the captions live. Darkened to #636059:
+ *   4.76:1 on sunk, 5.22:1 on paper, 6.01:1 on card. The change is invisible.
+ *
+ *   --vermilion is 3.47:1 on paper: LARGE TEXT ONLY. Correct for the focus ring,
+ *   the mark's top rung and big numerals; wrong for any small vermilion text.
+ *   Do not use it for a caption, a count or a label.
+ *
+ * ─── ONE VERMILION PER SCREEN, AND HERE IS WHERE IT WENT ─────────────────────
+ *
+ * The brief: "Vermilion appears roughly once per screen. If two things on a
+ * screen are vermilion, one of them is wrong." At rest that one thing is the
+ * MARK's top rung, in the header. The focus ring is the only other vermilion in
+ * this file, and it is transient, keyboard-only, and must be unmissable — so the
+ * two never really coexist on a phone, which has no focus ring at all.
+ *
+ * EVERYTHING THE OLD FILE PAINTED YELLOW IS NOW INDIGO: the progress fill, the
+ * due counts, furigana `rt`, the selected-row marker, the download bar. Yellow
+ * was one accent doing six jobs, which is the "lacks identity" complaint in its
+ * concrete form.
+ *
+ * ─── GRADING LOST ITS COLOURS, DELIBERATELY ─────────────────────────────────
+ *
+ * `remembered` was green and `forgot` was red. The brief adds no hues beyond
+ * indigo and vermilion, so the pair is now distinguished by WEIGHT and POSITION
+ * instead: `remembered` is the solid primary on the right, `forgot` is a 1px
+ * outline on the left. Both facts it relied on are intact — the position is
+ * decision 23's and the solid/outline split is the brief's own button rule.
+ * FLAGGED FOR ZACH: this is the one place the brief's palette discipline costs a
+ * semantic signal he has 103,110 reps of muscle memory for.
  */
 
 :root {
-  --bg: #111214;
-  --ink: #e6e6e6;
-  --ink-bright: #f4f4f4;
-  --muted: #9298a0;
-  --line: #212327;
-  --line-soft: #2c2f34;
-  --edge: #4d5158;
-  --accent: #e2b714;
-  --ok: #9fe6a0;
-  --ok-edge: #436b4d;
-  --no: #e9a3a3;
-  --no-edge: #6d4444;
-  --jp: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Yu Gothic UI", Meiryo, "Noto Sans JP";
+  color-scheme: light;
+
+  /* ── the brief's palette, primitives ── */
+  --indigo: #1b3b6f;
+  --indigo-deep: #12294d;
+  --vermilion: #e0451d;
+  --paper: #eceae5;
+  --paper-sunk: #e3e0d9;
+  --card: #fbfaf7;
+  --ink: #2c2a26;
+  /* #6B6862 as published; darkened for AA on --paper-sunk. See the header. */
+  --muted: #636059;
+  --hair: #d3cfc6;
+
+  /* ── roles. The 268 rules below speak THESE names, so a palette change is a
+     change here and nowhere else. ── */
+  --bg: var(--paper);
+  --ink-bright: #17150f;
+  --line: var(--hair);
+  --line-soft: var(--hair);
+  --edge: #b3ada1;
+  /* Was #e2b714, doing six jobs at once. Progress, due counts, furigana,
+     selection, the download bar — all of it is the primary colour now. */
+  --accent: var(--indigo);
+  --focus: var(--vermilion);
+  /* Grading. Weight and position, not hue — see the header. */
+  --ok: var(--card);
+  --ok-edge: var(--indigo);
+  --no: var(--indigo);
+  --no-edge: var(--edge);
+  --sunk: var(--paper-sunk);
+
+  /* ── type ──
+     Fraunces is the WORDMARK and the display face and never sets a Japanese
+     glyph, which is why its subset is Latin-only. `--jp-display` leans round to
+     agree with the mark's round line caps; `--jp-ui` is flat because a rounded
+     gothic goes blobby on an 11px 型 label. Zach's call, 2026-09-12. */
+  --display: "Fraunces VF", Georgia, serif;
+  --sans: "Avenir Next", Avenir, "Nunito Sans", "Segoe UI", system-ui, sans-serif;
+  --jp-display: "Zen Maru Gothic", "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN",
+    "Yu Gothic", Meiryo, sans-serif;
+  --jp: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Yu Gothic UI",
+    Meiryo, sans-serif;
+  /* Kept for the template body and code, which are authored text. */
   --mono: ui-monospace, "Cascadia Mono", Consolas, var(--jp), monospace;
+}
+
+/*
+ * ─── DARK ────────────────────────────────────────────────────────────────────
+ *
+ * DERIVED, not dimmed, and the brief's stated reason for leaving it open does
+ * not survive measurement — so it is recorded here rather than repeated.
+ *
+ * The brief says vermilion "goes muddy on dark grounds". As a CONTRAST claim
+ * that is false: #E0451D measures 4.25:1 on this ground and only 3.47:1 on
+ * paper, so it is better off here. The real problem is perceptual — a saturated
+ * red-orange on near-black reads dull, and blooms on OLED. The fix is therefore
+ * a LIGHTNESS lift at constant hue, not a new colour: #F05A2E, 5.24:1.
+ *
+ * The ground is the INK family deepened, not a blue-black. var(--paper) belonged to
+ * the terminal direction; a warm paper palette wants a warm dark or the whole
+ * thing reads as two unrelated products.
+ *
+ * INDIGO INVERTS ITS ROLE. On paper it is a foreground ON a light ground. Here
+ * it has to BE light: #7FA4E1 at 7.00:1. And `--indigo-deep` means "further in"
+ * rather than "darker", so on dark it gets BRIGHTER (#A8C4F0) — a hover that
+ * darkens on a dark ground reads as disabled.
+ *
+ * Measured against --paper #1a1815 unless noted:
+ *   ink #E8E4DC 13.97   muted #A49E94 6.66 (7.09 on sunk, 6.03 on card)
+ *   indigo #7FA4E1 7.00 (6.34 on card)   vermilion #F05A2E 5.24
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --indigo: #7fa4e1;
+    --indigo-deep: #a8c4f0;
+    --vermilion: #f05a2e;
+    --paper: #1a1815;
+    --paper-sunk: #121110;
+    --card: #232120;
+    --ink: #e8e4dc;
+    --muted: #a49e94;
+    --hair: #36322c;
+    --ink-bright: #fbf8f2;
+    --edge: #4f4a42;
+    --ok: var(--paper);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --indigo: #7fa4e1;
+  --indigo-deep: #a8c4f0;
+  --vermilion: #f05a2e;
+  --paper: #1a1815;
+  --paper-sunk: #121110;
+  --card: #232120;
+  --ink: #e8e4dc;
+  --muted: #a49e94;
+  --hair: #36322c;
+  --ink-bright: #fbf8f2;
+  --edge: #4f4a42;
+  --ok: var(--paper);
+}
+
+/* ── the faces, self-hosted. `python tools/fonts.py` builds app/fonts/. ──
+   `font-display: block` on the wordmark is the brief's call and it is right: a
+   brief gap reads as loading, a synthesized Georgia 650 reads as broken. The
+   Japanese faces `swap` instead — a card must never wait on a 1 MB download. */
+@font-face {
+  font-family: "Fraunces VF";
+  src: url("./fonts/fraunces-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Zen Kaku Gothic New";
+  src: url("./fonts/zenkaku-med.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Zen Maru Gothic";
+  src: url("./fonts/zenmaru-med.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+
+/* The wordmark, and the ONLY place the display instance is used at full size.
+   Every number in it was chosen against the mark by eye and is locked by the
+   brief — `opsz` is pinned with `font-optical-sizing: none` on purpose, so do
+   not "fix" that to auto. */
+.wordmark {
+  font-family: var(--display);
+  font-weight: 650;
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 144, "wght" 650, "SOFT" 100, "WONK" 1;
+  letter-spacing: 0.005em;
+}
+
+/* Under ~24px the brief turns WONK off — a leaning `h` is charm at 56px and
+   noise at 16px — and drops tracking back to zero. */
+.wordmark-ui {
+  font-family: var(--display);
+  font-weight: 620;
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 16, "wght" 620, "SOFT" 100, "WONK" 0;
+  letter-spacing: 0;
+}
+
+/* Visible keyboard focus, everywhere, at the brief's values. The only vermilion
+   in this file besides the mark's top rung. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 * {
@@ -61,7 +234,7 @@
 body {
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.6 var(--mono);
+  font: 15px/1.6 var(--sans);
   min-height: 100vh;
   -webkit-text-size-adjust: 100%;
 }
@@ -80,9 +253,9 @@ body {
    for the whole review. It is the first thing in the document, so he sees it on
    arrival, and scrolling past it is the correct behaviour. */
 .banner {
-  background: #241d10;
-  border-bottom: 1px solid #574018;
-  color: #f0d79a;
+  background: var(--paper-sunk);
+  border-bottom: 1px solid var(--edge);
+  color: var(--ink);
   font-size: 13px;
   line-height: 1.5;
   padding: 12px 16px;
@@ -90,8 +263,8 @@ body {
 
 .banner button {
   background: none;
-  border: 1px solid #7a5c22;
-  color: #f0d79a;
+  border: 1px solid var(--edge);
+  color: var(--ink);
   cursor: pointer;
   font: inherit;
   margin-left: 8px;
@@ -106,13 +279,28 @@ body {
   padding: 40px 16px;
 }
 
-.boot h1 {
-  font-family: var(--jp), serif;
-  font-size: 44px;
+/* The first thing he sees on a cold load, and the only place the mark gets to be
+   large. No container behind it — the brief forbids a badge outside the app-icon
+   context, and the lockup is mark + wordmark on the bare paper. */
+.boot-lockup {
+  align-items: center;
+  color: var(--indigo);
+  display: flex;
   font-weight: 400;
-  letter-spacing: 0.08em;
-  color: var(--ink-bright);
-  margin-bottom: 24px;
+  gap: 16px;
+  margin-bottom: 26px;
+}
+
+.boot-mark {
+  display: block;
+  flex: none;
+  height: 52px;
+  width: 52px;
+}
+
+.boot-lockup .wordmark {
+  font-size: 46px;
+  line-height: 1;
 }
 
 .bootlog {
@@ -159,7 +347,6 @@ body {
 
 .fetchtrack {
   background: var(--line);
-  border-radius: 2px;
   display: block;
   height: 4px;
   overflow: hidden;
@@ -206,21 +393,50 @@ body {
 
 /* ── the review screen ── */
 
+/* SENTENCE CASE, not uppercase. The brief: "Sentence case everywhere. Labels are
+   lowercase-first, not capitalised" and "no ALL-CAPS eyebrow labels". The old
+   `text-transform: uppercase` here was the terminal direction's voice. */
 .review header {
   align-items: center;
   background: var(--bg);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--hair);
   color: var(--muted);
   display: flex;
   font-size: 12px;
-  justify-content: space-between;
-  letter-spacing: 0.08em;
-  padding: 12px 16px;
+  gap: 9px;
+  justify-content: flex-start;
+  padding: 11px 14px;
   /* Positioned, so the progress bar can ride its bottom edge. */
   position: sticky;
-  text-transform: uppercase;
   top: 0;
   z-index: 4;
+}
+
+/* The mark, at the size it is actually legible. Below 24px the standard three-rung
+   construction collapses — the rungs go sub-pixel and the loose rung reads as a
+   floating dash — so `app/brand/favicon.svg`'s two-rung version is what goes in
+   small slots. 19px here is under that threshold, which is why the header uses
+   the small construction rather than a shrunken mark. */
+.review header .mark {
+  /* `currentColor` on the rails and rungs so the mark follows the theme; only
+     the top rung is pinned, to `var(--vermilion)`, which is itself re-derived on
+     dark (#F05A2E — lifted at constant hue, not dimmed). */
+  color: var(--indigo);
+  display: block;
+  flex: none;
+  height: 19px;
+  width: 19px;
+}
+
+.review header .wordmark-ui {
+  color: var(--indigo);
+  font-size: 15px;
+}
+
+/* Pushed to the right edge; tabular so the count does not jitter as it climbs. */
+#progress {
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
 }
 
 .review main {
@@ -249,18 +465,17 @@ body {
   color: var(--ink);
   display: inline-block;
   font-size: 10px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.04em;
   margin-left: 10px;
   padding: 2px 7px;
-  text-transform: uppercase;
   vertical-align: 1px;
 }
 
 /* Decision 13: shown again, and NOT graded. Said on the card, because a grade
    that silently does nothing is worse than no button. */
 .reasktag {
-  border-color: #7a5c22;
-  color: #f0d79a;
+  border-color: var(--edge);
+  color: var(--ink);
 }
 
 /* His request 6. Shares the chip shape so the row reads as one thing, and takes
@@ -268,8 +483,8 @@ body {
    being learned and the green is `remembered`. Direction is metadata about the
    card, which is what the blue already means here. */
 .reversetag {
-  border-color: #3c5a70;
-  color: #8cc3e8;
+  border-color: var(--edge);
+  color: var(--indigo);
 }
 
 /* His request 4. It rides the HEADER's bottom border rather than being sticky
@@ -330,12 +545,19 @@ body {
 
 /* ── the rendered card: src/render's own class names ── */
 
+/* THE ONE RAISED SURFACE IN THE APP. The brief: "Flashcards themselves are the
+   one raised surface: --card background, 1px --hair border, square corners."
+   It is raised by being LIGHTER than the paper with a hairline round it — there
+   is no shadow anywhere in this design, so elevation is carried by value. */
 .cardhost {
-  font-family: var(--jp), sans-serif;
+  background: var(--card);
+  border: 1px solid var(--hair);
+  font-family: var(--jp-display), sans-serif;
+  padding: 18px 16px;
 }
 
 .hashigo-side {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--hair);
   padding: 16px 0;
 }
 
@@ -345,14 +567,19 @@ body {
 }
 
 /* The side the question is on. The head word / reading on it is the biggest
-   thing on the screen, which is A2's `.head` arrived at honestly. */
+   thing on the screen. This is where `--jp-display` earns its 1.5 MB: Zen Maru's
+   round terminals agree with the mark's round line caps, which is the same
+   argument the brief used to set Fraunces to SOFT 100. */
 .hashigo-side.drill {
   font-size: clamp(26px, 7vw, 40px);
   line-height: 1.35;
 }
 
+/* Furigana. Was the accent yellow; it is the READING, which is secondary
+   information on a card whose head word is the point — so it takes the primary
+   colour rather than an accent of its own. */
 .hashigo-side.drill ruby rt {
-  color: var(--accent);
+  color: var(--indigo);
   font-size: 0.42em;
 }
 
@@ -395,7 +622,7 @@ body {
    direction, not styling one. And the affordance is never hover-only
    (decision 23) — colour and underline are there at rest; hover only brightens. */
 .hashigo-card-link {
-  color: #8cc3e8;
+  color: var(--indigo);
   cursor: pointer;
   /* Dotted: "this stays inside the app". Obsidian's internal-link convention,
      and it reads as a link at 12px in a mono face without shouting. */
@@ -405,7 +632,7 @@ body {
 
 .hashigo-card-link:hover,
 .hashigo-card-link:focus-visible {
-  color: #b6ddf5;
+  color: var(--indigo-deep);
   text-decoration: underline solid;
 }
 
@@ -413,7 +640,7 @@ body {
   /* A different hue as well as a different underline, because colour alone is
      the distinction a colour-blind reader loses — and the two do different
      things. */
-  color: #c9a6e0;
+  color: var(--indigo);
   cursor: pointer;
   text-decoration: underline solid;
   text-underline-offset: 3px;
@@ -421,7 +648,7 @@ body {
 
 .hashigo-link:hover,
 .hashigo-link:focus-visible {
-  color: #ddc6ef;
+  color: var(--indigo-deep);
 }
 
 /* It leaves the app. Said with a mark rather than only a colour, and it is
@@ -434,7 +661,7 @@ body {
 }
 
 .hashigo-code {
-  background: #17181b;
+  background: var(--sunk);
   font-family: var(--mono);
   font-size: 0.85em;
   padding: 1px 5px;
@@ -450,9 +677,15 @@ body {
   cursor: pointer;
 }
 
+/* NOT vermilion, and that is the "one accent, one place" rule being obeyed
+   rather than ignored. A `Reading = false` card carries TWO masks on side 2
+   (decision 29), so a vermilion mask would put two or three vermilion things on
+   one screen — and the mark's top rung is already the one. The mask is a
+   recessed well with a dashed indigo rule: something is missing HERE. */
 .hashigo-cloze-mask {
-  border-bottom: 1px dashed var(--accent);
-  color: var(--accent);
+  background: var(--paper-sunk);
+  border-bottom: 1px dashed var(--indigo);
+  color: var(--muted);
   padding: 0 0.35em;
 }
 
@@ -529,31 +762,43 @@ ruby rt:empty::after {
   padding: 10px 12px;
 }
 
+/* The brief's button: 1px indigo border on transparent, filling solid indigo on
+   hover. Square, because every control here is square except the replay. */
 .bar button {
   background: none;
-  border: 1px solid var(--edge);
-  color: var(--ink);
+  border: 1px solid var(--indigo);
+  color: var(--indigo);
   cursor: pointer;
   flex: 1;
   font: inherit;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.01em;
   padding: 17px 10px;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .bar button:hover {
+    background: var(--indigo);
+    color: var(--card);
+  }
+}
+
 .bar button:active {
-  background: #1b1d21;
+  background: var(--indigo);
+  color: var(--card);
 }
 
 .bar button[disabled] {
   opacity: 0.4;
 }
 
+/* Dashed, because "reveal" is a door rather than a commitment — and it is the
+   one control whose whole job is to be pressed without thinking. The dash is
+   the only thing distinguishing it now that the accent yellow is gone. */
 .reveal-zone {
   border-style: dashed !important;
-  color: var(--accent) !important;
 }
 
-/* `remembered` stays on the RIGHT: over 102,020 corpus reviews retention is
+/* `remembered` stays on the RIGHT: over 103,110 corpus reviews retention is
    96.24%, so ~96 of every 100 taps are that button and it belongs under the
    thumb that is already there. */
 .grades {
@@ -562,14 +807,26 @@ ruby rt:empty::after {
   gap: 10px;
 }
 
+/* GRADING IS NOW WEIGHT AND POSITION, NOT HUE — see the file header.
+   `remembered` is the solid primary, which is the brief's rule for a primary
+   action and is also the honest one here: it is 96% of the taps. `forgot` is the
+   outline. The green/red pair is gone with the terminal palette, and this is the
+   one place that costs a signal Zach has 103,110 reps of. */
 .no {
-  border-color: var(--no-edge) !important;
-  color: var(--no) !important;
+  border-color: var(--indigo) !important;
+  color: var(--indigo) !important;
 }
 
 .ok {
-  border-color: var(--ok-edge) !important;
-  color: var(--ok) !important;
+  background: var(--indigo) !important;
+  border-color: var(--indigo) !important;
+  color: var(--card) !important;
+}
+
+.ok:active,
+.ok:hover {
+  background: var(--indigo-deep) !important;
+  border-color: var(--indigo-deep) !important;
 }
 
 [data-state="prompt"] .grades {
@@ -580,15 +837,19 @@ ruby rt:empty::after {
   display: none;
 }
 
+/* THE ONE RADIUS IN THIS FILE, AND IT IS NOT DECORATION. The brief says
+   `border-radius: 0` on buttons; decision 23 put this one round and bottom-RIGHT
+   because he reviews one-handed with his right thumb. Shape follows the hand
+   here, so the hand wins. It is also the one raised-looking control, and it
+   earns that by sitting on --card against --paper with a hairline — no shadow. */
 .replay {
-  background: #1b1d21;
-  border: 1px solid var(--edge);
+  background: var(--card);
+  border: 1px solid var(--indigo);
   border-radius: 50%;
   /* Overridden by the `--footer-h` rule further down; this is the value before
      the footer has been measured, which is one frame at most. */
   bottom: calc(150px + env(safe-area-inset-bottom));
-  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
-  color: var(--accent);
+  color: var(--indigo);
   cursor: pointer;
   display: none;
   font-size: 22px;
@@ -600,7 +861,7 @@ ruby rt:empty::after {
 }
 
 .replay:active {
-  background: #24272c;
+  background: var(--sunk);
 }
 
 /* SHOWN WHEN THE CLIP IS THE QUESTION, not only after the reveal.
@@ -651,16 +912,42 @@ ruby rt:empty::after {
   padding: 60px 16px;
 }
 
+/* The mark, large, and the only moving thing in the app. It is at rest before
+   and after the climb — what moved is the camera. */
+.climb-mark {
+  color: var(--indigo);
+  display: block;
+  height: 104px;
+  margin-bottom: 26px;
+  width: 104px;
+}
+
 .done h2 {
-  color: var(--ink-bright);
-  font-size: 28px;
-  font-weight: 400;
-  letter-spacing: 0.06em;
+  color: var(--indigo);
+  font-family: var(--display);
+  font-optical-sizing: none;
+  font-size: 30px;
+  font-variation-settings: "opsz" 48, "wght" 650, "SOFT" 100, "WONK" 0;
+  font-weight: 650;
+  letter-spacing: 0.005em;
 }
 
 .done p {
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
   margin: 12px 0 28px;
+}
+
+.done button {
+  border-color: var(--indigo);
+  color: var(--indigo);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .done button:hover {
+    background: var(--indigo);
+    color: var(--card);
+  }
 }
 
 .done button {
@@ -697,7 +984,7 @@ ruby rt:empty::after {
 .layer-panel {
   background: var(--bg);
   border: 1px solid var(--line-soft);
-  box-shadow: 0 18px 60px rgb(0 0 0 / 60%);
+
   display: flex;
   flex-direction: column;
   /* Inset by a fixed amount per layer would be neater, but the stack is unbounded
@@ -723,7 +1010,6 @@ ruby rt:empty::after {
   justify-content: space-between;
   letter-spacing: 0.06em;
   padding: 12px 14px;
-  text-transform: uppercase;
 }
 
 .layer-close {
@@ -739,7 +1025,7 @@ ruby rt:empty::after {
 }
 
 .layer-close:active {
-  background: #1b1d21;
+  background: var(--sunk);
 }
 
 .layer-body {
@@ -810,12 +1096,11 @@ body.layered {
   color: var(--edge);
   font-size: 10px;
   font-style: normal;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .edit-input {
-  background: #17181b;
+  background: var(--sunk);
   border: 1px solid var(--line-soft);
   color: var(--ink-bright);
   /* The JAPANESE stack, not the mono one: he is typing readings and head words,
@@ -931,12 +1216,11 @@ body.sidebar-open .sidebar-scrim {
   justify-content: space-between;
   letter-spacing: 0.08em;
   padding: 12px 12px 12px 16px;
-  text-transform: uppercase;
 }
 
 /* 16px, because iOS Safari zooms the viewport on focus for anything smaller. */
 .searchbox {
-  background: #17181b;
+  background: var(--sunk);
   border: 0;
   border-bottom: 1px solid var(--line);
   color: var(--ink-bright);
@@ -980,11 +1264,11 @@ body.sidebar-open .sidebar-scrim {
 
 .deck-row:active,
 .result-row:active {
-  background: #1b1d21;
+  background: var(--sunk);
 }
 
 .deck-row.on {
-  background: #191b1f;
+  background: var(--sunk);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
@@ -1013,7 +1297,6 @@ body.sidebar-open .sidebar-scrim {
   justify-content: space-between;
   letter-spacing: 0.1em;
   padding: 10px 16px 6px;
-  text-transform: uppercase;
 }
 
 .result-list {
@@ -1023,7 +1306,7 @@ body.sidebar-open .sidebar-scrim {
 }
 
 .result-row {
-  border-top: 1px solid #1a1c20;
+  border-top: 1px solid var(--hair);
   flex-direction: column;
   gap: 3px;
 }
@@ -1087,7 +1370,7 @@ body.sidebar-open .sidebar-scrim {
    anything smaller, and losing his place is worse than a slightly large box. */
 .newcard-title,
 .newcard-select {
-  background: #17181b;
+  background: var(--sunk);
   border: 1px solid var(--line-soft);
   color: var(--ink-bright);
   font: 16px/1.4 var(--jp), sans-serif;
@@ -1113,7 +1396,7 @@ body.sidebar-open .sidebar-scrim {
 }
 
 .newcard-submit:active {
-  background: #1b1d21;
+  background: var(--sunk);
 }
 
 .newcard-submit[disabled] {
@@ -1134,7 +1417,7 @@ body.sidebar-open .sidebar-scrim {
 /* ── the drawing surface (his #10) ── */
 
 .hashigo-draw {
-  background: #17181b;
+  background: var(--sunk);
   border: 1px solid var(--line-soft);
   display: block;
   /* `attachDraw` sets touch-action itself — without it the first finger movement
@@ -1161,7 +1444,7 @@ body.sidebar-open .sidebar-scrim {
 }
 
 .draw-button:active {
-  background: #1b1d21;
+  background: var(--sunk);
 }
 
 /* ── the sidebar as a TREE (his #2, #4, #5) ── */
@@ -1182,7 +1465,7 @@ body.sidebar-open .sidebar-scrim {
   width: 100%;
 }
 
-.sidebar-action:active { background: #1b1d21; }
+.sidebar-action:active { background: var(--sunk); }
 
 .deck-list {
   -webkit-overflow-scrolling: touch;
@@ -1206,8 +1489,8 @@ body.sidebar-open .sidebar-scrim {
   width: 100%;
 }
 
-.tree-row:active { background: #1b1d21; }
-.tree-header { color: var(--muted); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+.tree-row:active { background: var(--sunk); }
+.tree-header { color: var(--muted); font-size: 11px; letter-spacing: .04em; }
 .tree-row.is-archived .tree-name { color: var(--edge); text-decoration: line-through; }
 .tree-row.is-template .tree-name { font-family: var(--mono); }
 
@@ -1233,7 +1516,7 @@ body.sidebar-open .sidebar-scrim {
 .palette-panel {
   background: var(--bg);
   border: 1px solid var(--line-soft);
-  box-shadow: 0 18px 60px rgb(0 0 0 / 60%);
+
   display: flex;
   flex-direction: column;
   margin: 8vh auto 0;
@@ -1244,7 +1527,7 @@ body.sidebar-open .sidebar-scrim {
 }
 
 .palette-input {
-  background: #17181b;
+  background: var(--sunk);
   border: 0;
   border-bottom: 1px solid var(--line);
   color: var(--ink-bright);
@@ -1260,7 +1543,7 @@ body.sidebar-open .sidebar-scrim {
 .palette-row {
   background: none;
   border: 0;
-  border-top: 1px solid #1a1c20;
+  border-top: 1px solid var(--hair);
   color: var(--ink);
   cursor: pointer;
   display: flex;
@@ -1272,7 +1555,7 @@ body.sidebar-open .sidebar-scrim {
   width: 100%;
 }
 
-.palette-row.on { background: #191b1f; box-shadow: inset 2px 0 0 var(--accent); }
+.palette-row.on { background: var(--sunk); box-shadow: inset 2px 0 0 var(--accent); }
 .palette-row.is-archived .palette-name { color: var(--muted); }
 .palette-name { font-family: var(--jp), sans-serif; font-size: 15px; }
 .palette-meta { color: var(--edge); font-size: 11px; }
@@ -1301,8 +1584,8 @@ body[data-view="gallery"] .review { display: none; }
 .gallery-count { color: var(--edge); font-size: 12px; }
 
 .gallery-controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
-.gallery-search { background: #17181b; border: 1px solid var(--line-soft); color: var(--ink-bright); flex: 1; font: 16px/1.4 var(--jp), sans-serif; min-width: 160px; padding: 9px 10px; }
-.gallery-sort { background: #17181b; border: 1px solid var(--line-soft); color: var(--ink); font: 16px/1.4 var(--mono); padding: 9px 10px; }
+.gallery-search { background: var(--sunk); border: 1px solid var(--line-soft); color: var(--ink-bright); flex: 1; font: 16px/1.4 var(--jp), sans-serif; min-width: 160px; padding: 9px 10px; }
+.gallery-sort { background: var(--sunk); border: 1px solid var(--line-soft); color: var(--ink); font: 16px/1.4 var(--mono); padding: 9px 10px; }
 .gallery-toggle { align-items: center; color: var(--muted); display: flex; font-size: 12px; gap: 6px; }
 
 /* A GRID, which is what "notion gallery view" means. auto-fill so it is one
@@ -1314,8 +1597,8 @@ body[data-view="gallery"] .review { display: none; }
   padding: 0 16px 40px;
 }
 
-.gcard { background: #15171a; border: 1px solid var(--line-soft); cursor: pointer; display: flex; flex-direction: column; gap: 6px; padding: 12px; }
-.gcard:active { background: #1b1d21; }
+.gcard { background: var(--card); border: 1px solid var(--line-soft); cursor: pointer; display: flex; flex-direction: column; gap: 6px; padding: 12px; }
+.gcard:active { background: var(--sunk); }
 .gcard.is-archived { opacity: .6; }
 .gcard-name { color: var(--ink-bright); font: 400 17px/1.35 var(--jp), sans-serif; }
 .gcard-meta { color: var(--edge); font-size: 11px; }
@@ -1336,7 +1619,7 @@ body[data-view="gallery"] .review { display: none; }
 }
 
 .op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; flex: 1; font: inherit; font-size: 12px; padding: 10px 4px; }
-.op:active { background: #1b1d21; }
+.op:active { background: var(--sunk); }
 .op[disabled] { opacity: .35; }
 .op.danger { border-color: var(--no-edge); color: var(--no); }
 
@@ -1354,7 +1637,7 @@ body[data-view="review"] .review main {
 /* ── the status strip and the confirm dialog ── */
 
 .say {
-  background: #17181b;
+  background: var(--sunk);
   border: 1px solid var(--line-soft);
   bottom: calc(var(--footer-h, 150px) + 12px);
   color: var(--ink);
@@ -1426,7 +1709,6 @@ body[data-view="review"] .review main {
 .layer-op {
   background: none;
   border: 1px solid var(--line-soft);
-  border-radius: 3px;
   color: var(--muted);
   cursor: pointer;
   font: inherit;
@@ -1461,7 +1743,6 @@ body[data-view="review"] .review main {
 
 .settings-bad {
   border: 1px solid var(--no-edge);
-  border-radius: 3px;
   color: var(--no);
   font-size: 0.82rem;
   line-height: 1.5;
@@ -1499,7 +1780,6 @@ body[data-view="review"] .review main {
    and shown at all times rather than on hover: decision 19 says an affordance
    must never live behind a hover, because a phone has none. */
 .tree-more {
-  border-radius: 3px;
   color: var(--muted);
   flex: 0 0 auto;
   font-size: 0.9rem;
@@ -1517,7 +1797,6 @@ body[data-view="review"] .review main {
 .tree-add {
   background: none;
   border: 1px dashed var(--line-soft);
-  border-radius: 3px;
   color: var(--muted);
   cursor: pointer;
   font: inherit;
@@ -1546,7 +1825,6 @@ body[data-view="review"] .review main {
 .menu-item {
   background: none;
   border: 1px solid transparent;
-  border-radius: 3px;
   color: var(--ink);
   cursor: pointer;
   display: block;
@@ -1611,7 +1889,6 @@ body[data-view="review"] .review main {
 
 .tpl-field {
   border: 1px solid var(--line);
-  border-radius: 3px;
   display: grid;
   gap: 4px 10px;
   grid-template-columns: minmax(10ch, 24ch) 1fr auto;
@@ -1691,9 +1968,8 @@ body[data-view="review"] .review main {
 }
 
 .dashboard-frame {
-  background: #fff;
+  background: var(--card);
   border: 0;
-  border-radius: 0 0 4px 4px;
   display: block;
   flex: 1 1 auto;
   height: 100%;
@@ -1707,7 +1983,6 @@ body[data-view="review"] .review main {
    not looking at. The dead buttons say the same thing; this says why. */
 .peek {
   border: 1px solid var(--accent);
-  border-radius: 3px;
   color: var(--accent);
   font-size: 12px;
   letter-spacing: 0.04em;
@@ -1753,7 +2028,6 @@ input[data-answer="incorrect"] {
 
 .glance-tile {
   border: 1px solid var(--line);
-  border-radius: 3px;
   padding: 12px;
 }
 
@@ -1803,7 +2077,6 @@ input[data-answer="incorrect"] {
 
 .glance-bar {
   background: var(--accent);
-  border-radius: 1px 1px 0 0;
   display: block;
   width: 100%;
 }
@@ -1863,7 +2136,7 @@ input[data-answer="incorrect"] {
 .edit-field {
   /* The chrome moves OFF the textarea and onto the shell, so the mirror sits
      inside the border instead of under it. */
-  background: #17181b;
+  background: var(--sunk);
   border: 1px solid var(--line-soft);
   /* The completion menu is appended here now (`area.parentElement`), so it hangs
      directly off the bottom edge of the field rather than the whole row. */
@@ -1917,9 +2190,8 @@ input[data-answer="incorrect"] {
    two modes now read as different at a glance, which is what he asked for. */
 .edit-mirror .edit-link {
   background: rgb(140 195 232 / 13%);
-  border-radius: 2px;
   color: transparent;
-  text-decoration: underline dotted #8cc3e8;
+  text-decoration: underline dotted var(--indigo);
   text-underline-offset: 3px;
 }
 
@@ -1935,10 +2207,9 @@ input[data-answer="incorrect"] {
 }
 
 .link-menu {
-  background: #17181b;
+  background: var(--sunk);
   border: 1px solid var(--edge);
-  border-radius: 3px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 55%);
+
   left: 0;
   max-height: 220px;
   overflow-y: auto;

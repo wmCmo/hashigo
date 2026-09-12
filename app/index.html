@@ -5,9 +5,24 @@
     <!-- No `maximum-scale`: pinch-zoom is how he reads a small 型 label, and
          locking it out is an accessibility regression, not a polish. -->
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-    <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#111214" />
+    <!-- Decision 32: both grounds ship. The two `theme-color` entries let the
+         phone's own chrome follow, which is what stops a light app from sitting
+         in a black status bar (and the reverse at night). -->
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ECEAE5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1A1815" media="(prefers-color-scheme: dark)" />
     <title>梯子 · review</title>
+    <link rel="icon" href="./brand/favicon.svg" />
+    <!-- The wordmark is `font-display: block`, so it is on the critical path by
+         design — a brief gap reads as loading, a synthesized Georgia 650 reads as
+         broken. Preloaded so that gap is as short as it can be. -->
+    <link
+      rel="preload"
+      href="./fonts/fraunces-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body data-view="review">
@@ -16,7 +31,30 @@
     <div id="banner" class="banner" role="status" hidden></div>
 
     <section id="boot" class="boot">
-      <h1>梯子</h1>
+      <!-- The mark at full size — the THREE-rung construction, because this one
+           is large enough for it. The wordmark is the locked display instance:
+           opsz 144, wght 650, SOFT 100, WONK 1. -->
+      <h1 class="boot-lockup">
+        <svg class="boot-mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+          <g fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round">
+            <path d="M16 87L27.5 32" />
+            <path d="M84 87L72.5 32" />
+          </g>
+          <g fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round">
+            <path d="M18.09 77H81.91" />
+            <path d="M22.27 57H77.73" />
+            <path d="M25.83 40H74.17" />
+          </g>
+          <path
+            d="M31.47 13H68.53"
+            fill="none"
+            stroke="var(--vermilion)"
+            stroke-width="9"
+            stroke-linecap="round"
+          />
+        </svg>
+        <span class="wordmark">hashigo</span>
+      </h1>
       <div id="bootlog" class="bootlog" aria-live="polite"></div>
       <p class="bootnote">
         First run fetches the database into OPFS. After that it is local and offline.
@@ -30,7 +68,25 @@
              be opened by accident mid-card. -->
         <button id="sidebartoggle" class="sidebartoggle" type="button"
                 aria-controls="sidebar" aria-expanded="false" aria-label="browse the collection">☰</button>
-        <span>梯子 · review</span>
+        <!-- Decision 32's mark, in the two-rung small construction: below 24px
+             the three-rung one collapses. The top rung is the ONE vermilion on
+             this screen — everything else that used to be an accent is indigo. -->
+        <svg class="mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+          <g fill="none" stroke="currentColor" stroke-linecap="round">
+            <path d="M17 86L27 38" stroke-width="12" />
+            <path d="M83 86L73 38" stroke-width="12" />
+            <path d="M19.5 74H80.5" stroke-width="11" />
+            <path d="M23.67 54H76.33" stroke-width="11" />
+          </g>
+          <path
+            d="M30 16H70"
+            fill="none"
+            stroke="var(--vermilion)"
+            stroke-width="11"
+            stroke-linecap="round"
+          />
+        </svg>
+        <span class="wordmark-ui">hashigo</span>
         <span id="progress">—</span>
         <!-- His request 4, and it sits INSIDE the header on purpose. Three
              separately-sticky elements each claiming `top: 0` is how a header
@@ -130,7 +186,13 @@
          mobile. Undo is a BUTTON, not only ctrl+z. -->
     <div id="say" class="say" role="status" hidden></div>
 
+    <!-- Decision 32 §5. The mark climbs ONE rung when a session is cleared: the
+         ladder does not grow, the camera moves. It is identical at rest before
+         and after, which is the point — the movement is the feedback, not a
+         changed picture. -->
     <section id="done" class="done" hidden>
+      <svg id="climbmark" class="climb-mark" viewBox="0 0 100 100" aria-hidden="true"
+           focusable="false"></svg>
       <h2>done</h2>
       <p id="donetext"></p>
       <button id="backup" type="button">export backup</button>

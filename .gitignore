@@ -89,8 +89,13 @@ Thumbs.db
 *.ts.net.crt
 *.ts.net.key
 
-# Webfonts. Reproduced by `python tools/fonts.py` — see that file for why the
-# Japanese faces are NOT subset by codepoint. Candidates stay out of history
-# until one is chosen.
-app/fonts/
+# Webfonts, built by `python tools/fonts.py`.
+# The THREE SHIPPING faces are committed: the app is offline-first and must not
+# need a build step to render its own text. The candidates the specimen renders
+# side by side (Shippori, Noto Sans JP) are not — they are 7.3 MB of decision
+# that has already been made.
+app/fonts/*
+!app/fonts/fraunces-latin.woff2
+!app/fonts/zenkaku-med.woff2
+!app/fonts/zenmaru-med.woff2
 build/fonts-src/

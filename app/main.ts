@@ -89,6 +89,7 @@ import type { ShadowingSide } from "../src/render/reveal.js";
 // `test/app-logic.test.ts` and the headers of both files.
 import { childrenOf as treeChildrenOf, subtreeTotals } from "./deck-tree.js";
 import { isTypingTarget, type KeyTarget } from "./keys.js";
+import { mountClimb } from "./climb.js";
 import { reviewAction } from "./review-keys.js";
 import {
   promptPositions as promptBoundary,
@@ -179,6 +180,13 @@ const readingButton = el<HTMLButtonElement>("readingtoggle");
 const banner = el("banner");
 const doneView = el("done");
 const doneText = el("donetext");
+
+/* Decision 32 §5. Built once, at rest, and stepped when a session is cleared —
+   `mountClimb` draws the static mark, so the done screen is never blank while it
+   waits for the animation. */
+const climb = mountClimb(
+  document.getElementById("climbmark") as unknown as SVGSVGElement,
+);
 
 function line(text: string, level = "info"): void {
   const row = document.createElement("div");
@@ -511,6 +519,9 @@ async function showCardAt(): Promise<void> {
     doneView.hidden = false;
     doneText.textContent =
       `${reply.progress.answered} answered · ${reply.progress.reasksQueued} shown again`;
+    // One rung, once, when the plan is cleared. Not awaited: the done screen is
+    // already correct and the climb is feedback, not a step in the flow.
+    void climb.step();
     return;
   }
 

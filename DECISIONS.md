@@ -801,7 +801,7 @@ right**: it holds his verbatim reasoning and this quotes it.
    **Dark mode is named OPEN by the brief and it is not a small open item here.** The
    brief says vermilion goes muddy on dark grounds and *"do not ship a guess"*. But the
    app it replaces is dark, and he reviews on his phone. Going light-only is a change he
-   would feel on the first night. Also his: see `notes/zach-design-taste.md`.
+   would feel on the first night. Also his.
 
    **Two cells of the brief's palette need a rule attached, measured 2026-09-12:**
    `--muted` on `--paper-sunk` is **4.21:1** — below AA for small text, and `--muted` at
