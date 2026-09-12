@@ -217,3 +217,51 @@ describe("the state colours survived the repoint that broke them", () => {
     expect(rule?.[1]).not.toMatch(/var\(--ok/);
   });
 });
+
+/**
+ * A dead-end state has to name its exit.
+ *
+ * Reported by Zach 2026-09-12: he tapped the right arrow, landed in look-ahead,
+ * and found `remembered` did nothing. The banner said what could NOT be done and
+ * said nothing about how to leave — and `remembered`, being a solid fill at 0.4
+ * opacity, still looked pressable. Two separate failures adding up to "the app
+ * is broken".
+ *
+ * The grading lock itself is CORRECT and must stay: grading while the offset is
+ * not zero would write a grade against a different card from the one on screen,
+ * which is silent corruption of the study history. So the fix is the exit and
+ * the affordance, never the lock.
+ */
+describe("look-ahead says how to get out of it", () => {
+  const html = readFileSync(new URL("../app/index.html", import.meta.url), "utf8");
+  const main = readFileSync(new URL("../app/main.ts", import.meta.url), "utf8");
+
+  it("the peek banner carries a real exit control", () => {
+    const banner = /<div id="peek"[\s\S]*?<\/div>/.exec(html);
+    expect(banner, "#peek is not in index.html").not.toBeNull();
+    expect(banner?.[0], "the look-ahead banner has no exit button").toMatch(/id="peekback"/);
+  });
+
+  it("the exit returns to the session cursor, not one step back", () => {
+    // One tap out from ANY offset. Stepping back with the arrow costs as many
+    // presses as he took forward, which is the wrong shape for "get me out".
+    const handler = /el\("peekback"\)\.addEventListener\([\s\S]{0,220}?\}\);/.exec(main);
+    expect(handler, "#peekback is never wired up").not.toBeNull();
+    expect(handler?.[0]).toMatch(/showSessionCard/);
+  });
+
+  it("grading is still locked while looking ahead", () => {
+    // The lock is the safety property. If this ever goes, a grade can land on
+    // the wrong card.
+    expect(main).toMatch(/forgotButton\.disabled = peeking/);
+    expect(main).toMatch(/rememberedButton\.disabled = peeking/);
+  });
+
+  it("a disabled grade button does not look pressable", () => {
+    // It was `opacity: 0.4` on a solid fill, which still reads as a button.
+    const rule = /\.bar button\[disabled\]\s*\{([^}]*)\}/.exec(css);
+    expect(rule?.[1], ".bar button[disabled] is gone").toBeDefined();
+    expect(rule?.[1]).toMatch(/background:\s*none/);
+    expect(rule?.[1]).toMatch(/cursor:\s*not-allowed/);
+  });
+});

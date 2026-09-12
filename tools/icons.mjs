@@ -56,9 +56,21 @@ const PAPER = [0xec, 0xea, 0xe5];
  *                  where the icon competes with other icons rather than sitting
  *                  on the app's own ground.
  */
+const CARD = [0xfb, 0xfa, 0xf7];
+
 const WAYS = {
   "ink-on-paper": { ground: PAPER, ink: INDIGO },
   "paper-on-ink": { ground: INDIGO, ink: PAPER },
+  // Zach, 2026-09-12, looking at the installed icon: "the logo doesn't sit on
+  // paper, you think it's a little gray". Measured, and he is right about what
+  // he is seeing: --paper is luminance 0.82 against white's 1.00, so it is 18%
+  // darker than white. IN THE APP that reads as paper, because the whole screen
+  // is that colour and --card sits brighter on top of it — paper is paper by
+  // RELATIONSHIP. An icon has no relationship; it is one small tile alone on a
+  // wallpaper, and 18% below white with nothing to compare against is read as
+  // grey. --card is 0.96, only 4% below white, and it is also the honest token:
+  // the palette's RAISED surface, which is exactly what an app tile is.
+  "ink-on-card": { ground: CARD, ink: INDIGO },
 };
 
 /** Two rails, three rungs, one loose rung. Each is a round-capped segment. */
@@ -219,14 +231,19 @@ mkdirSync(DEST, { recursive: true });
  *
  * `--paper-on-ink` switches the shipped set to the inverted reading.
  */
-const WAY = process.argv.includes('--paper-on-ink') ? 'paper-on-ink' : 'ink-on-paper';
+const WAY = process.argv.includes('--paper-on-ink')
+  ? 'paper-on-ink'
+  : process.argv.includes('--ink-on-card')
+    ? 'ink-on-card'
+    : 'ink-on-paper';
 
 const targets = process.argv.includes('--compare')
   ? [
-      { file: 'compare-ink-on-paper-512.png', size: 512, inset: 0.68, badge: true, way: 'ink-on-paper' },
-      { file: 'compare-paper-on-ink-512.png', size: 512, inset: 0.68, badge: true, way: 'paper-on-ink' },
-      { file: 'compare-ink-on-paper-192.png', size: 192, inset: 0.68, badge: true, way: 'ink-on-paper' },
-      { file: 'compare-paper-on-ink-192.png', size: 192, inset: 0.68, badge: true, way: 'paper-on-ink' },
+      // Full bleed, like the MASKABLE icon the launcher actually shows, so the
+      // comparison is of what lands on a home screen rather than of a badge.
+      { file: 'A-paper-ECEAE5.png', size: 384, inset: 0.52, badge: false, way: 'ink-on-paper' },
+      { file: 'B-card-FBFAF7.png', size: 384, inset: 0.52, badge: false, way: 'ink-on-card' },
+      { file: 'C-indigo-1B3B6F.png', size: 384, inset: 0.52, badge: false, way: 'paper-on-ink' },
     ]
   : [
       // `any`: the mark on its badge, generous.

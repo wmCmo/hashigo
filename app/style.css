@@ -822,8 +822,15 @@ ruby rt:empty::after {
   color: var(--card);
 }
 
+/* INERT, not merely faded. `remembered` is a solid fill now, and a solid fill at
+   0.4 opacity still reads as a button you are allowed to press — which is
+   exactly what Zach hit in look-ahead: he tapped it, nothing happened, and
+   concluded the app was stuck. Disabled drops the fill entirely. */
 .bar button[disabled] {
-  opacity: 0.4;
+  background: none !important;
+  border-color: var(--hair) !important;
+  color: var(--muted) !important;
+  cursor: not-allowed;
 }
 
 /* Dashed, because "reveal" is a door rather than a commitment — and it is the
@@ -2052,12 +2059,39 @@ body[data-view="review"] .review main {
    the two keys he presses a hundred times a day, are pointed at a card he is
    not looking at. The dead buttons say the same thing; this says why. */
 .peek {
+  align-items: center;
   border: 1px solid var(--accent);
   color: var(--accent);
+  display: flex;
+  flex-wrap: wrap;
   font-size: 12px;
+  gap: 10px;
+  justify-content: space-between;
   letter-spacing: 0.04em;
   margin: 14px 0 0;
   padding: 8px 10px;
+}
+
+/* Solid, because it is the primary action of this state — everything else on
+   screen is deliberately inert while the offset is not zero. 44px tall: he is
+   one-handed on a phone and this is the control that unsticks him. */
+.peek-back {
+  background: var(--indigo);
+  border: 1px solid var(--indigo);
+  color: var(--card);
+  cursor: pointer;
+  flex: none;
+  font: inherit;
+  font-size: 12px;
+  min-height: 44px;
+  padding: 8px 14px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .peek-back:hover {
+    background: var(--indigo-deep);
+    border-color: var(--indigo-deep);
+  }
 }
 
 /* The arrows are the way OUT of this state, so they are the only two controls

@@ -170,6 +170,7 @@ const deckLine = el("deck");
 const cardHost = el("cardhost");
 const hintLine = el("hint");
 const peekLine = el("peek");
+const peekText = el("peektext");
 const progressLabel = el("progress");
 const progressBar = el("progressbar");
 const progressFill = el("progressfill");
@@ -721,7 +722,11 @@ function paintPeek(): void {
   forgotButton.disabled = peeking;
   rememberedButton.disabled = peeking;
   peekLine.hidden = !peeking;
-  peekLine.textContent = peeking
+  // Only the sentence is rewritten — the button beside it is the way out and is
+  // part of the markup. Reported by Zach 2026-09-12: the old banner said what
+  // could NOT be done and nothing about how to leave, so a state that is one tap
+  // deep read as a frozen app.
+  peekText.textContent = peeking
     ? `${peekOffset > 0 ? "+" : ""}${peekOffset} from your card — nothing here can be graded`
     : "";
 }
@@ -1178,6 +1183,14 @@ let maxLookBehind = 0;
 
 el("prevcard").addEventListener("click", () => void stepCard(-1));
 el("nextcard").addEventListener("click", () => void stepCard(1));
+
+/* The exit from look-ahead, as a control rather than a thing to work out. It
+ * returns to the session cursor in ONE tap from any offset — stepping back with
+ * the arrow takes as many presses as he took forward, which is the wrong shape
+ * for "get me out of here". */
+el("peekback").addEventListener("click", () => {
+  void showSessionCard().then(() => say("back to the card you were on"));
+});
 archiveButton.addEventListener("click", () => {
   if (currentCardId !== null) {
     void runCardOp(currentArchived ? "unarchive" : "archive", currentCardId);

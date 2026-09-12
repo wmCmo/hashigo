@@ -122,7 +122,14 @@
         <!-- His #9's look-ahead. Visible rather than subtle, because the state it
              announces is one where a familiar keystroke would do the wrong thing
              to a card he cannot see. -->
-        <div id="peek" class="peek" role="status" hidden></div>
+        <!-- His #9's look-ahead. The banner CARRIES THE WAY OUT as a real
+             button: the old one stated that nothing could be graded and left
+             the escape to be inferred from the arrows, and Zach read that as
+             the app being stuck. A dead-end state has to name its exit. -->
+        <div id="peek" class="peek" role="status" hidden>
+          <span id="peektext"></span>
+          <button id="peekback" class="peek-back" type="button">back to your card</button>
+        </div>
         <button id="readingtoggle" class="readingtoggle" hidden></button>
       </main>
 
