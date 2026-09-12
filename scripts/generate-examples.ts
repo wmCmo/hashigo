@@ -42,10 +42,13 @@
  * most of those are `speech` — audio, which is deferred by a decision repeated to
  * five agents. This script filters to `ai` and will not regenerate a clip.
  */
+import { existsSync } from "node:fs";
+
 import Anthropic from "@anthropic-ai/sdk";
 
 import { openDatabase } from "../src/db/index.js";
 import { addBlobRef, putBlob } from "../src/import/blobs.js";
+import { canonicaliseOptions } from "../src/blobs/generation.js";
 import {
   fieldGenerationRequest,
   resolveFieldGeneration,
@@ -54,6 +57,16 @@ import {
 } from "../src/generate/index.js";
 
 process.stdout.write("");
+
+// The key lives in `.env` (gitignored). `new Anthropic()` reads the ENVIRONMENT,
+// and vite-node does not load `.env` into `process.env` for a script — Vite's own
+// `.env` handling is for `import.meta.env` in bundled client code, behind a
+// `VITE_` prefix, which is neither of those things. Without this the script fails
+// with an auth error while the key sits in a file in the repo root, which is the
+// least helpful failure available.
+if (existsSync(".env") && process.env["ANTHROPIC_API_KEY"] === undefined) {
+  process.loadEnvFile(".env");
+}
 
 const argv = process.argv;
 const arg = (name: string): string | undefined => {
@@ -110,6 +123,19 @@ interface Job {
   readonly field: string;
   readonly fieldId: string;
   readonly prompt: string;
+  /**
+   * The identity the RESOLVER will compute. Storing anything else files the blob
+   * under a key nothing looks up. Measured: writing `options: "{}"` instead of
+   * the field's own option subset put all 67 at `other-voice` rather than
+   * `exact` — they rendered, but under a near-miss, and Mochi files these with
+   * `{"ai-task":"custom"}`.
+   */
+  readonly identity: {
+    readonly sourceText: string;
+    readonly voice: string | null;
+    readonly lang: string | null;
+    readonly options: string;
+  };
 }
 
 const jobs: Job[] = [];
@@ -145,6 +171,12 @@ for (const field of targets) {
       // the cache key, so the sentence has to be stored under exactly this text
       // or the renderer will not find it.
       prompt: request.text,
+      identity: {
+        sourceText: request.text,
+        voice: request.voice,
+        lang: request.lang,
+        options: canonicaliseOptions(request.options),
+      },
     });
   }
 }
@@ -205,7 +237,7 @@ for (const job of jobs.slice(0, limit)) {
       mime: "text/plain; charset=utf-8",
       // Stored under the field's resolved prompt — the cache key the renderer
       // will compute. Anything else and this is written but never read.
-      identity: { sourceText: job.prompt, voice: null, lang: null, options: "{}" },
+      identity: job.identity,
     });
     // `refKey` is the GENERATION KEY for cached text — see `BlobRef`. The field id
     // is carried too, which the Mochi import never set (all 42,596 rows are NULL).

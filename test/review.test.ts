@@ -135,7 +135,14 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       // 2026-08-23, which passed at 120 clips and at 238 — it could not tell a
       // corpus with a third of its audio missing from a whole one. See the
       // `resolveGenerated` test below for what that hid.
-      expect(clips).toBe(238);
+      //
+      // 238 -> 240 on 2026-09-12, and the +2 is the figure doing its job:
+      // `scripts/generate-examples.ts` filled the 67 missing `例文`, and 単語's
+      // `Audio` field reads the SENTENCE that `例文` generates. So a resolvable
+      // 例文 makes an Audio request buildable — for the two of those 67 whose
+      // sentence already had a matching speech blob. The other 65 have no clip
+      // because nothing has synthesised one; audio regeneration is deferred.
+      expect(clips).toBe(240);
       // eslint-disable-next-line no-console
       console.log(
         `mount+enter over ${mounted} 単語 cards: ${clips} clip mounts · ` +
@@ -236,7 +243,7 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       const off = count(null);
       // eslint-disable-next-line no-console
       console.log(`resolveGenerated on: ${on} clip mounts · off: ${off}`);
-      expect(on).toBe(238);
+      expect(on).toBe(240); // see the note at the 240 above
       expect(off).toBe(120);
       // The whole point: the default must be the ON number.
       expect(on).toBeGreaterThan(off);
