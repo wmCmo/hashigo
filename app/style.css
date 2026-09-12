@@ -1467,6 +1467,29 @@ body.sidebar-open .sidebar-scrim {
 
 .sidebar-action:active { background: var(--sunk); }
 
+/* "install on this device". Stacked rather than the row's usual two-column
+   layout, because the warning under it is a sentence and not a shortcut hint. */
+.sidebar-action-install {
+  align-items: flex-start;
+  color: var(--indigo);
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The origin warning. NOT vermilion — it would be the second vermilion on a
+   screen that already has the mark, and `--vermilion` on paper is 3.47:1, which
+   is large-text-only and this is 11px. Said in words instead. */
+.sidebar-action-note {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.sidebar-action-note:empty {
+  display: none;
+}
+
 .deck-list {
   -webkit-overflow-scrolling: touch;
   flex: 1;

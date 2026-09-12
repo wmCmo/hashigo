@@ -90,6 +90,7 @@ import type { ShadowingSide } from "../src/render/reveal.js";
 import { childrenOf as treeChildrenOf, subtreeTotals } from "./deck-tree.js";
 import { isTypingTarget, type KeyTarget } from "./keys.js";
 import { mountClimb } from "./climb.js";
+import { installOrigin, registerServiceWorker, watchForInstall } from "./install.js";
 import { reviewAction } from "./review-keys.js";
 import {
   promptPositions as promptBoundary,
@@ -1991,6 +1992,34 @@ el("settingslink").addEventListener("click", () => {
   closeSidebar();
   void openSettings();
 });
+
+/* ── "add to home screen" (his PWA ask, 2026-09-12) ─────────────────────────
+ *
+ * The button is hidden until `beforeinstallprompt` fires, so it is never a dead
+ * control. The NOTE under it is the part that earns its place: OPFS is keyed by
+ * ORIGIN and an install pins the origin, so installing from a quick tunnel — a
+ * new random hostname every run — produces a home-screen icon pointing at a host
+ * that will not exist tomorrow, and a second empty database if it ever did. */
+const installButton = el<HTMLButtonElement>("installapp");
+const installNote = el("installnote");
+
+const install = watchForInstall({
+  setAvailable(available) {
+    installButton.hidden = !available;
+    if (!available) return;
+    const where = installOrigin();
+    installNote.textContent = where.durable ? "" : `⚠ ${where.why}`;
+    installButton.classList.toggle("is-risky", !where.durable);
+  },
+  say,
+});
+
+installButton.addEventListener("click", () => {
+  closeSidebar();
+  void install.install();
+});
+
+registerServiceWorker();
 
 // ─── his #3: Ctrl+K ─────────────────────────────────────────────────────────
 

@@ -13,6 +13,14 @@
     <meta name="theme-color" content="#1A1815" media="(prefers-color-scheme: dark)" />
     <title>梯子 · review</title>
     <link rel="icon" href="./brand/favicon.svg" />
+    <!-- The PWA set. `manifest.webmanifest`, `sw.js` and `icons/` are copied
+         verbatim out of `app/public/` — their URLs are a contract, so they are
+         the one thing in this build that must not be hashed. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- iOS never reads the manifest. -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Hashigo" />
     <!-- The wordmark is `font-display: block`, so it is on the critical path by
          design — a brief gap reads as loading, a synthesized Georgia 650 reads as
          broken. Preloaded so that gap is as short as it can be. -->
@@ -213,6 +221,13 @@
       </button>
       <button id="dashboardlink" class="sidebar-action" type="button">dashboard</button>
       <button id="settingslink" class="sidebar-action" type="button">settings</button>
+      <!-- Hidden until the browser actually offers an install. A control that
+           cannot work is worse than no control — the same rule the sourceless
+           <audio> element is hidden under. `app/install.ts` says why. -->
+      <button id="installapp" class="sidebar-action sidebar-action-install" type="button" hidden>
+        install on this device
+        <i id="installnote" class="sidebar-action-note"></i>
+      </button>
       <div id="decklist" class="deck-list"></div>
       <div id="newcardhost" class="newcard-host"></div>
     </aside>

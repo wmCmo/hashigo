@@ -1,0 +1,25 @@
+{
+  "name": "Hashigo — 梯子",
+  "short_name": "Hashigo",
+  "description": "Local-first spaced repetition for Japanese. The database, the audio and the schedule all live on this device.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#ECEAE5",
+  "theme_color": "#ECEAE5",
+  "lang": "ja",
+  "dir": "ltr",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

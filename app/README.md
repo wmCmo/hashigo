@@ -644,17 +644,70 @@ with its own stylesheet setting rules on `body`, `table` and `h1`, and two full
 stylesheets in one document restyle each other. It runs no script, so the empty
 sandbox costs it nothing.
 
+## Installing it — the PWA, and the one trap that will bite
+
+Built 2026-09-12. `app/public/` carries `manifest.webmanifest`, `sw.js` and the
+icons; `app/install.ts` owns the button. `python`-free: `node tools/icons.mjs`
+rasterises the mark into the four PNGs.
+
+**The button is hidden until the browser offers.** `beforeinstallprompt` fires
+only when Chromium has already decided the page is installable, and the control
+appears then and not before — a button that cannot work is the dead-`<audio>`
+mistake in different clothes. iOS never fires it; there the route is the Share
+sheet and the app says nothing rather than lying.
+
+> [!warning] **OPFS IS KEYED BY ORIGIN, AND INSTALLING PINS THE ORIGIN.**
+> An installed PWA launches at the `start_url` of the origin it was installed
+> FROM. A **quick** cloudflared tunnel gets a new random hostname every run, so
+> installing from one produces a home-screen icon pointing at a host that will
+> not exist tomorrow — and, being a different origin, a second empty database and
+> another ~300 MB download if it ever did resolve.
+>
+> **Install from the FIXED hostname** — `.tunnel-named`, i.e. `tailscale serve`.
+> The app says so itself: the install row carries a ⚠ note naming the reason
+> whenever the current origin is `localhost` or `*.trycloudflare.com`.
+
+**The service worker caches the shell and NEVER the databases.** That is not
+tidiness. `/hashigo-app-blobs.db` is ~224 MB and Cache Storage shares the origin
+quota with OPFS, so a cached copy would make the app hold ~600 MB to use ~300 —
+on a phone, the difference between fitting and being evicted, and decision 17
+exists because eviction has already happened once. The seed manifest `hashigo-app.json` is
+bypassed too: it is the seed manifest `db.worker.ts` compares against OPFS, and a
+cached one makes a stale database look current. `test/pwa.test.ts` checks the
+worker's refusal list against the config's own served list, so adding a fourth
+seeded file fails the suite until `sw.js` knows about it.
+
+**The precache list is written by the build, and it has to be.** Runtime caching
+only stores what actually crossed the network — measured 2026-09-12, the shell
+and the CSS cached and the wordmark font did not, purely because that load never
+re-requested it. The hole only appears on the train. `serviceWorkerPrecache()` in
+`vite.app.config.ts` prepends the emitted asset list (17 URLs: both fonts, the
+wasm, the worker, the icons) to `sw.js`, hashed into the cache name so a new
+build retires the old cache.
+
+```bash
+node tools/icons.mjs           # regenerate the icons from the mark
+node tools/icons.mjs --compare # both colourways into build/icon-compare/
+npm run app:build              # writes the precache list into build/app-dist/sw.js
+```
+
+**What is verified and what is not.** Registration, scope, shell caching and the
+database bypass were measured in a real browser on the dev origin; the build's
+precache list and emitted files were measured too. **The install prompt itself
+was NOT** — the embedded browser pane never fires `beforeinstallprompt`, so the
+button's reveal was exercised with a synthetic event. Whether Samsung Internet
+offers the install, and with which icon, needs his handset on the tailscale
+origin. That is one tap to find out and nothing else depends on it.
+
 ## What is NOT here yet
 
 * **Sync (stage 11).** The last structural gap. Stage 10 is now complete: field
   editing (`e`), template and field editing (his #11), deck CRUD including `move`
   (his #14). The `Reading` toggle was the FIRST editor-shaped thing the shell had,
   because decision 29's audit loop dies without it.
-* **A service worker / manifest.** `spike/persist/` has a working pair and
-  persistence was granted there on his handset **in a plain browser tab, not
-  installed** — so install is not the precondition the notes assumed. Decision
-  17's banner is here; the "add to home screen" prompt is not, and drops in
-  priority.
+* ~~A service worker / manifest.~~ **BUILT 2026-09-12**, at his request — see
+  "Installing it" below. The spike's pair cached nothing on purpose; this one
+  caches the shell and never the databases.
 * Nothing else on the critical path. Eviction detection landed 2026-08-23 — see
   below.
 * **A tap target on the head word.** Decision 23 deliberately does not settle
