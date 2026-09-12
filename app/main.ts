@@ -2299,18 +2299,51 @@ function navRow(
   return row;
 }
 
-function openSidebar(): void {
-  document.body.classList.add("sidebar-open");
-  sidebarToggle.setAttribute("aria-expanded", "true");
+/**
+ * THE RAIL STANDS AT ≥1024px — and two things in here assumed a drawer.
+ *
+ * The breakpoint is named once, in JS and in CSS, and they have to agree: the
+ * stylesheet's composition block at the end of `style.css` carries the reasoning
+ * for the number. 1024 is the width at which a 330px rail plus a 720px card
+ * column plus air still fits, and below it the drawer is the honest answer.
+ *
+ * **`openSidebar` was the only thing that ever filled the sidebar.** That was
+ * right while opening was the only way to see it, and wrong the moment the rail
+ * is on screen from boot — it would stand there empty until he pressed a key
+ * that visibly does nothing. So filling is split out and boot calls it.
+ */
+const railStanding = window.matchMedia("(min-width: 1024px)");
+
+function fillSidebar(): void {
   const host = el("newcardhost");
   if (host.childElementCount === 0) host.appendChild(buildNewCardForm());
   void loadDecks();
+}
+
+function openSidebar(): void {
+  fillSidebar();
+  // The rail is already on screen, so `/` cannot mean "open it". It means "put
+  // me in it" — a key that does nothing visible reads as a broken key.
+  if (railStanding.matches) {
+    el("sidebar").querySelector<HTMLElement>("button:not([hidden]), input")?.focus();
+    return;
+  }
+  document.body.classList.add("sidebar-open");
+  sidebarToggle.setAttribute("aria-expanded", "true");
 }
 
 function closeSidebar(): void {
   document.body.classList.remove("sidebar-open");
   sidebarToggle.setAttribute("aria-expanded", "false");
 }
+
+// Crossing the breakpoint with a window drag: the rail has to fill itself on the
+// way up, and shed the drawer class on the way down so a later resize does not
+// find it open behind a scrim that the composition block has hidden.
+railStanding.addEventListener("change", (event) => {
+  if (event.matches) fillSidebar();
+  else closeSidebar();
+});
 
 sidebarToggle.addEventListener("click", () => {
   if (document.body.classList.contains("sidebar-open")) closeSidebar();
@@ -4922,6 +4955,9 @@ async function boot(): Promise<void> {
     await checkPersistence();
     bootView.hidden = true;
     reviewView.hidden = false;
+    // The rail is on screen from here at ≥1024px, so it has to have something in
+    // it. Below that it is still a drawer and fills when it opens.
+    if (railStanding.matches) fillSidebar();
     await showSessionCard();
   } catch (cause) {
     line(String((cause as Error).message), "bad");

@@ -134,6 +134,17 @@
   --no-edge: var(--danger);
   --sunk: var(--paper-sunk);
 
+  /* ── the rail ──
+     TWO NAMES, BECAUSE THEY ANSWER TWO QUESTIONS. `--rail-width` is how wide
+     the sidebar is, which is 330px at every size — it is the same element
+     whether it slides in over the card or stands beside it. `--rail-w` is how
+     much room it TAKES OUT of the layout, which is zero until it stops being a
+     drawer. Everything that has to dodge the rail reads the second one, so it
+     is correct at every width with no media query of its own. See the desktop
+     composition at the end of this file. */
+  --rail-width: 330px;
+  --rail-w: 0px;
+
   /* ── type ──
      Fraunces is the WORDMARK and the display face and never sets a Japanese
      glyph, which is why its subset is Latin-only. `--jp-display` leans round to
@@ -1445,7 +1456,7 @@ textarea.edit-input:not(.tpl-body) {
   top: 0;
   transform: translateX(-100%);
   transition: transform 0.18s ease-out;
-  width: 330px;
+  width: var(--rail-width);
   z-index: 15;
 }
 
@@ -1465,6 +1476,33 @@ body.sidebar-open .sidebar {
 
 body.sidebar-open .sidebar-scrim {
   display: block;
+}
+
+/* The rail's lockup. DISPLAY: NONE IS THE DEFAULT and the media query at the
+   end of this file is the only thing that turns it on — as a drawer the sidebar
+   slides over a header already carrying the mark, and two marks on screen at
+   once is not a brand, it is a bug. The small two-rung construction, same as the
+   header's: below 24px the three-rung one collapses. */
+.rail-brand {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: none;
+  flex: none;
+  gap: 9px;
+  padding: 15px 16px;
+}
+
+.rail-brand .mark {
+  color: var(--indigo);
+  display: block;
+  flex: none;
+  height: 22px;
+  width: 22px;
+}
+
+.rail-brand .wordmark-ui {
+  color: var(--indigo);
+  font-size: 19px;
 }
 
 .sidebar-head {
@@ -2685,4 +2723,115 @@ input[data-answer="incorrect"] {
   position: absolute;
   white-space: nowrap;
   width: 1px;
+}
+
+/* ── THE DESKTOP COMPOSITION ────────────────────────────────────────────────
+
+   ZACH, 2026-09-12, handing over a card-controls mockup another session had
+   built: *"what about the rest of the aestheticness of the design that we don't
+   have yet? i know you can't 'see', but i don't know how to let you understand
+   that that session generated something more beautiful than what we have lol"*.
+
+   IT IS NOT A COLOUR OR A TYPEFACE, AND THE FACT SAYS SO: until this block,
+   `app/style.css` had NO WIDTH BREAKPOINT ABOVE 640px. Every `@media` in the
+   file was dark mode, reduced motion, pointer detection, or `max-width` 640 /
+   520. So the review screen was a 720px column between a full-width sticky
+   header and a full-width fixed footer — a phone layout stretched across a
+   laptop, with several hundred pixels of empty paper down each side doing
+   nothing. He reviews on the laptop when he is home, so that is a screen he
+   looks at daily.
+
+   The mockup's contribution is a COMPOSITION: the deck rail stands rather than
+   slides, the header becomes a topbar over the card instead of over the whole
+   window, and the card sits on a stage with the controls bounded to it.
+
+   ── WHAT DECISION 23 KEEPS ─────────────────────────────────────────────────
+   Its bottom-pinned controls and its round replay bottom-RIGHT both survive.
+   The replay button's reason is his right thumb, which is a PHONE argument —
+   but a control that moves corners between his two devices is worse than one
+   derived twice, so it stays put.
+
+   ── `position: fixed` IGNORES THE BODY PADDING ─────────────────────────────
+   `body { padding-left }` carries everything in normal flow. The six fixed
+   rules do NOT all want the same treatment, and the difference is the point:
+
+     .footer         offset — it must stop at the rail
+     .say            offset, but CENTRED: `left: 50%` is the viewport's middle,
+                     and `max-width: 100%` is the viewport's width
+     .replay         nothing — anchored `right`, so the rail cannot reach it
+     .sidebar        nothing — it IS the rail
+     .sidebar-scrim  nothing — it never shows here; the rail is permanent
+     .layer          NOTHING, DELIBERATELY. `inset: 0` is why a preview's scrim
+                     covers the rail, and a modal that leaves the deck list live
+                     behind it is not modal.
+
+   `test/contrast.test.ts` classifies every `position: fixed` rule against that
+   table and fails on one it cannot place, because hand-enumeration is exactly
+   how this goes wrong — the first draft of this change named three elements
+   that need no offset and gave `.say` a formula that would have been wrong.
+
+   `contain: layout` on a stage wrapper was the alternative: it makes fixed
+   descendants resolve against the stage, so nothing needs enumerating ever.
+   Rejected — it confines `.layer` too, with no way to opt out, and that one
+   genuinely wants the viewport.                                             */
+
+@media (min-width: 1024px) {
+  :root {
+    --rail-w: var(--rail-width);
+  }
+
+  body {
+    padding-left: var(--rail-w);
+  }
+
+  /* Standing, not sliding. `--sunk` rather than `--bg` so the rail reads as the
+     recessed plane the card sits above — and it is the ROLE token, so dark mode
+     follows without a second rule. `--muted` was already darkened to #636059
+     for exactly this ground (see the header), so the deck counts clear AA on it. */
+  .sidebar {
+    background: var(--sunk);
+    transform: none;
+    transition: none;
+    z-index: 4;
+  }
+
+  /* `sidebar-open` can survive a resize from a narrow window. Neither the scrim
+     nor the close button may act on it once the rail is permanent. */
+  body.sidebar-open .sidebar-scrim,
+  .sidebar-scrim {
+    display: none;
+  }
+
+  .sidebartoggle,
+  .sidebar .layer-close {
+    display: none;
+  }
+
+  /* In a drawer the deck list is one capped panel among several. In a rail it
+     is the rail's body, and 34vh of it beside 900px of empty column was the
+     drawer's constraint leaking into a place that does not have it. */
+  .deck-list {
+    flex: 1;
+    max-height: none;
+  }
+
+  /* The brand goes where the mockup puts it — the top of the rail — and the
+     header becomes a topbar carrying what it already held: deck, progress, sync. */
+  .rail-brand {
+    display: flex;
+  }
+
+  .review header .mark,
+  .review header .wordmark-ui {
+    display: none;
+  }
+
+  .footer {
+    left: var(--rail-w);
+  }
+
+  .say {
+    left: calc(50% + var(--rail-w) / 2);
+    max-width: calc(100% - var(--rail-w) - 32px);
+  }
 }

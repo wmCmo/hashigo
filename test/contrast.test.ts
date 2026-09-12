@@ -517,3 +517,129 @@ describe("every block element the renderer emits has a rule behind the reset", (
     );
   });
 });
+
+// ─── the rail takes room out of the layout; `position: fixed` does not know ──
+
+/**
+ * ZACH, 2026-09-12, on a mockup another session had built: *"what about the rest
+ * of the aestheticness of the design that we don't have yet?"* The answer turned
+ * out to be measurable — `app/style.css` had NO width breakpoint above 640px, so
+ * the review screen was a phone column stretched across a laptop. The fix is a
+ * standing rail at ≥1024px, and `body { padding-left: var(--rail-w) }` carries
+ * everything in normal flow.
+ *
+ * IT CANNOT CARRY `position: fixed`, WHICH RESOLVES AGAINST THE VIEWPORT. Those
+ * rules have to be handled one at a time — and they do NOT all want the same
+ * thing, which is the reason this is a classification and not an allowlist:
+ * `.layer` is `inset: 0` precisely so a preview's scrim covers the rail, and a
+ * modal that leaves the deck list live behind it is not modal.
+ *
+ * ─── THIS TEST EXISTS BECAUSE THE ENUMERATION WAS ALREADY WRONG ─────────────
+ *
+ * The first draft of the change listed `.banner`, `.sidebar-scrim` and `#layers`
+ * as needing the offset — `.banner` is not even positioned — and gave `.say` a
+ * formula that ignored both `left: 50%` and a `max-width` measured against the
+ * viewport. Four of five entries wrong before a line was written. A new fixed
+ * element added later would land under the rail in silence.
+ *
+ * `contain: layout` on a stage wrapper was the alternative, and it needs no test
+ * at all: fixed descendants resolve against the stage instead. Rejected — it
+ * confines `.layer` too, with no way to opt out.
+ */
+describe("every position: fixed rule has an answer for the rail", () => {
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  interface Rule {
+    readonly selector: string;
+    readonly decls: Map<string, string>;
+  }
+
+  const rules: Rule[] = [];
+  for (const match of bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = (match[1] as string).trim();
+    // An at-rule prelude (`@media …`) reaches here only when its block is empty,
+    // which is not a rule. Nested blocks are matched innermost-first, so the
+    // rules inside a media query arrive with their own selector and no prelude.
+    if (selector.startsWith("@")) continue;
+    const decls = new Map<string, string>();
+    for (const part of (match[2] as string).split(";")) {
+      const at = part.indexOf(":");
+      if (at === -1) continue;
+      decls.set(part.slice(0, at).trim(), part.slice(at + 1).trim());
+    }
+    for (const one of selector.split(",")) rules.push({ selector: one.trim(), decls });
+  }
+
+  /** Selectors that deliberately span the whole viewport, rail included. */
+  const OVERLAY: Record<string, string> = {
+    ".layer":
+      "a preview's scrim must cover the rail — a modal that leaves the deck " +
+      "list clickable behind it is not modal",
+    ".sidebar-scrim":
+      "never shows at this width; the composition block hides it because the " +
+      "rail is permanent and has nothing to dismiss",
+  };
+
+  /** The rail itself. Offsetting it by its own width is the obvious own-goal. */
+  const RAIL = ".sidebar";
+
+  it("classifies, and knows of no fixed rule it cannot place", () => {
+    const fixed = rules.filter((rule) => rule.decls.get("position") === "fixed");
+    // If the parser stops finding rules this test passes while measuring nothing.
+    expect(fixed.length, "no position: fixed rules found — the parser broke").toBeGreaterThan(4);
+
+    const unplaced: string[] = [];
+    for (const rule of fixed) {
+      if (rule.selector === RAIL) continue;
+      if (rule.selector in OVERLAY) continue;
+      // Anchored to the right edge, which the rail cannot reach. `.replay` is
+      // this, and decision 23 keeps it in that corner on both surfaces.
+      const left = rule.decls.get("left") ?? rule.decls.get("inset");
+      if (left === undefined && rule.decls.has("right")) continue;
+      // Offset: SOME rule for this selector speaks `--rail-w`. It lives in the
+      // media query rather than here, which is why this looks at every rule for
+      // the selector and not only at the fixed one.
+      const offset = rules.some(
+        (other) =>
+          other.selector === rule.selector &&
+          [...other.decls.values()].some((value) => value.includes("--rail-w")),
+      );
+      if (offset) continue;
+      unplaced.push(rule.selector);
+    }
+
+    expect(
+      unplaced,
+      "these are `position: fixed` and say nothing about the rail, so at " +
+        "≥1024px they sit under it. Give each one an offset, or an entry in " +
+        `OVERLAY with the reason it covers the rail:\n  ${unplaced.join("\n  ")}`,
+    ).toEqual([]);
+  });
+
+  it("names no overlay that has stopped being one", () => {
+    const fixed = new Set(
+      rules.filter((rule) => rule.decls.get("position") === "fixed").map((rule) => rule.selector),
+    );
+    const stale = Object.keys(OVERLAY).filter((selector) => !fixed.has(selector));
+    expect(stale, `OVERLAY names selectors that are no longer fixed: ${stale.join(", ")}`).toEqual(
+      [],
+    );
+  });
+
+  it("offsets the two that need it, and centres the toast rather than shifting it", () => {
+    // `.say` is the one the first draft got wrong: `left: 50%` is the VIEWPORT's
+    // middle and `max-width: 100%` its width, so a flat `left: var(--rail-w)`
+    // would have pushed it off-centre and left it too wide.
+    const desktop = /@media \(min-width: 1024px\) \{([\s\S]*)\}/.exec(css)?.[1] ?? "";
+    expect(desktop, "no ≥1024px block in the stylesheet").not.toBe("");
+    expect(desktop).toMatch(/\.footer \{[^}]*left:\s*var\(--rail-w\)/);
+    expect(desktop).toMatch(/\.say \{[^}]*left:\s*calc\(50% \+ var\(--rail-w\) \/ 2\)/);
+    expect(desktop).toMatch(/\.say \{[^}]*max-width:\s*calc\(100% - var\(--rail-w\)/);
+  });
+
+  it("contributes nothing to the layout until the rail stands", () => {
+    // The whole design: one token, zero by default, so every `--rail-w` above is
+    // correct at phone width without a second media query to keep in step.
+    expect(/:root \{[\s\S]*?--rail-w:\s*0px;/.exec(css)).not.toBeNull();
+  });
+});
