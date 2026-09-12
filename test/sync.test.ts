@@ -20,11 +20,14 @@ import { exportSync, mergeSync, SYNC_VERSION } from "../src/sync/index.js";
 /** Two cards, one forward track each, no history — the smallest divergence. */
 function device(cards = 3): { db: Db; trackIds: number[] } {
   const db = openDatabase(MEMORY);
-  db.prepare("INSERT INTO decks (id, name) VALUES ('d', '日本語')").run();
+  // Clocks are pinned, never defaulted: these tests compare an incoming
+  // timestamp against the local row's, and a `strftime('now')` default makes
+  // the result depend on what time the suite runs. Found the hard way.
+  db.prepare("INSERT INTO decks (id, name, updated_at) VALUES ('d', '日本語', ?)").run(EPOCH);
   const trackIds: number[] = [];
   for (let i = 0; i < cards; i += 1) {
     const id = `c${i}`;
-    db.prepare("INSERT INTO cards (id, deck_id, name) VALUES (?, 'd', ?)").run(id, `橋${i}`);
+    db.prepare("INSERT INTO cards (id, deck_id, name, updated_at) VALUES (?, 'd', ?, ?)").run(id, `橋${i}`, EPOCH);
     const row = db
       .prepare(
         "INSERT INTO card_tracks (card_id, kind) VALUES (?, 'forward') RETURNING id",
@@ -58,6 +61,8 @@ const flagsOf = (db: Db, cardId: string): { archived: number; pinned: number } =
     pinned: number;
   };
 
+/** Every locally-seeded row starts here, so every incoming clock is newer. */
+const EPOCH = "2020-01-01T00:00:00.000Z";
 const NOW = "2026-09-12T12:00:00.000Z";
 
 describe("a grade can never be lost by a merge", () => {
