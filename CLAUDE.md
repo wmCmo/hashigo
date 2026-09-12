@@ -476,6 +476,29 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     A question that costs him a round trip to say "yes, obviously" was not worth asking.
     **What is still his:** taste about the screen he lives in, and anything that changes
     what he is DRILLED on. See `DECISIONS.md` 31 for the line.
+32. **THE DESIGN BRIEF OF 2026-09-12 SUPERSEDES DECISION 23'S VISUAL DIRECTION.** Zach,
+    handing over a brief written with another session: *"we are doing the design
+    revolution, it turned out i didn't like what we have now."* What he disliked is not a
+    detail — *"it lacks identity … it feels like the person couldn't decide the design and
+    ended up with whatever is 'okay'"*. **Dark, mono, terminal is withdrawn.** In comes a
+    ladder/torii mark, aizome indigo on paper, Fraunces for display, flat hairline-ruled
+    square-cornered surfaces with no shadows, and a 520 ms climb animation.
+    **DECISION 23 IS NOT DELETED AND NOTHING RENUMBERS.** Most of what it settled is about
+    the HAND, not the look — bottom-pinned controls, the round replay bottom-RIGHT for his
+    right thumb, keycap hints only where a pointer exists and never behind hover, one
+    scroll — and **all of that survives**. The one collision is the replay button: the
+    brief says square, decision 23 says round for a reason that is ergonomic, and **the
+    hand wins.** **The brief's stack assumption is WRONG and changes nothing** — it guesses
+    Next.js on Vercel; `app/` is vanilla TS on Vite, local-first, and the work reaches
+    `app/style.css`, `app/index.html` and some new assets, nothing else.
+    **TWO THINGS ARE STILL HIS, and decision 31's own line puts them there:** the Japanese
+    typeface (the brief is SILENT on it, and specifies a Latin-only stack — but 1,725
+    distinct kanji are 100% of what is studied), and dark mode (the brief calls it open and
+    says do not ship a guess; the app it replaces is dark and he reviews on his phone).
+    Both rendered side by side in `app/specimen.html` and `app/specimen-review.html`.
+    **Two palette cells need a rule, measured:** `--muted` on `--paper-sunk` is 4.21:1,
+    below AA for small text; `--vermilion` on `--paper` is 3.47:1, large-text-only — fine
+    for the focus ring and the mark's top rung, wrong for small text. See `DECISIONS.md` 32.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

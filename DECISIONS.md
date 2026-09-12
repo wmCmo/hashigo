@@ -729,6 +729,89 @@ right**: it holds his verbatim reasoning and this quotes it.
    clothes.** An agent that asks has not reduced the risk of being wrong; it has moved
    the work of being right onto him, and charged him for the move.
 
+32. **The design brief of 2026-09-12 SUPERSEDES decision 23's visual direction.** Zach
+   handed over a brief written with another Claude session and said *"we are doing the
+   design revolution, it turned out i didn't like what we have now"*. The brief's own
+   status line — *"this document supersedes all prior visual direction in this project"*
+   — is the authority; this entry records it so the index stays the only place a
+   decision counts.
+
+   **What he disliked, verbatim, is the part to keep in view:** it looks confusing, it
+   does not encourage him to use the app, **it lacks identity**, *"it feels like the
+   person couldn't decide the design and ended up with whatever is 'okay'"*. Decision 23
+   is not being corrected on a detail. Its whole premise — dark, mono, terminal — is
+   withdrawn.
+
+   **Decision 23 is NOT deleted, and the numbering does not move.** It is cited across
+   `src/`, `test/` and the notes, and most of what it settled is about the HAND, not the
+   look: controls pinned to the bottom edge, the round replay button bottom-RIGHT because
+   he reviews one-handed with his right hand, keycap hints only where a real pointer
+   exists and never behind hover, everything on one scroll. **All of that survives.** What
+   the brief replaces is the surface: dark ground, monospace, the yellow accent.
+
+   **The one collision between them is the replay button, and the HAND wins.** The brief
+   says `border-radius: 0` on buttons and inputs. The replay button is round by decision
+   23 for a reason that is ergonomic rather than decorative. It stays round; every other
+   control goes square.
+
+   **What the brief settles, and is therefore no longer anyone's to re-propose:** the
+   mark (an H built as a ladder in one-point perspective, top rung floating free and
+   vermilion, also reading as a torii); the palette (aizome indigo `#1B3B6F`, vermilion
+   `#E0451D`, paper `#ECEAE5`, and the rest); Fraunces at `'opsz' 144, 'wght' 650,
+   'SOFT' 100, 'WONK' 1` with `+0.005em` tracking; the flat-paper, hairline-ruled,
+   square-cornered, shadow-free UI language; and the climb animation at 520 ms,
+   easeOutCubic, no overshoot. Its §7 lists seven things already rejected.
+
+   **Three of the brief's claims were checked rather than taken on trust, 2026-09-12:**
+
+   ```plaintext
+   the mark's geometry   Every rung endpoint recomputed from the stated rail equation
+                         xLeft(y) = 16 + (87-y)*0.20909. All four land exactly on the
+                         published path data: 18.09/81.91, 22.27/77.73, 25.83/74.17,
+                         31.47/68.53. The numbers are derived, as it says. Do not
+                         "clean them up".
+   the WONK trap         Real. Subset without `--layout-features='*'` and the emitted
+                         woff2 still reports four axes and still renders — it simply
+                         stops leaning the `h`, because WONK is delivered through the
+                         `rvrn` GSUB feature and the default subsetter drops it.
+                         `tools/fonts.py` asserts `rvrn` survives and fails loudly.
+   "identical at rest"   Verified, not asserted. After a full climb the mark returns
+                         byte-for-byte to the static SVG — every `d`, every stroke,
+                         every opacity — with four rungs and no orphaned exit rung.
+   ```
+
+   **The stack assumption in the brief's §1 is WRONG, and it changes nothing.** It says
+   *"TypeScript / Next.js, deployed on Vercel"* and asks to be corrected. `app/` is
+   vanilla TypeScript on Vite, local-first, no server and no deploy — the whole point of
+   the project (SPEC problem #3). **No restructuring follows from the brief**, which
+   reaches `app/style.css` (268 rules), `app/index.html` and a handful of new assets and
+   nothing else.
+
+   **The brief is SILENT on Japanese type, which is the gap that matters most here.** It
+   specifies Fraunces for display and `'Avenir Next', Avenir, 'Nunito Sans', 'Segoe UI'`
+   for body — a Latin-only stack, and a Latin-only subset range (`U+0000-00FF`). Measured
+   over the real corpus: **2,209 distinct codepoints, of which 1,725 are kanji**; kanji is
+   5.9% of the corpus by character count and 100% of what is being studied. Under the
+   brief as written every head word, every `型` label and every example sentence falls
+   through to an unspecified system face. Its own rule — *"where it is silent, ask rather
+   than invent"* — applies, and so does decision 31's line, which puts *taste about the
+   screen he lives in* on his side. **Rendered side by side in `app/specimen.html`**; his
+   call.
+
+   **Dark mode is named OPEN by the brief and it is not a small open item here.** The
+   brief says vermilion goes muddy on dark grounds and *"do not ship a guess"*. But the
+   app it replaces is dark, and he reviews on his phone. Going light-only is a change he
+   would feel on the first night. Also his: see `notes/zach-design-taste.md`.
+
+   **Two cells of the brief's palette need a rule attached, measured 2026-09-12:**
+   `--muted` on `--paper-sunk` is **4.21:1** — below AA for small text, and `--muted` at
+   11-12px is exactly where the captions live. `--vermilion` on `--paper` is **3.47:1**,
+   large-text-only, so it is correct for the focus ring, the mark's top rung and big
+   numerals, and wrong for any small vermilion text. Everything else clears AA and most
+   clears AAA. **This is the same constraint the old stylesheet's header names** — every
+   grey in this app carries a Japanese reading at some point — and it survives the
+   change of ground.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

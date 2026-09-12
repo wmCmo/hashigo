@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Hashigo">
+  <g fill="none" stroke="#1B3B6F" stroke-linecap="round">
+    <path d="M17 86L27 38" stroke-width="12"/>
+    <path d="M83 86L73 38" stroke-width="12"/>
+    <path d="M19.5 74H80.5" stroke-width="11"/>
+    <path d="M23.67 54H76.33" stroke-width="11"/>
+  </g>
+  <path d="M30 16H70" fill="none" stroke="#E0451D" stroke-width="11" stroke-linecap="round"/>
+</svg>

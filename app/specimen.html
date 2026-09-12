@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>hashigo — type &amp; palette specimen</title>
+<link rel="icon" href="./brand/favicon.svg">
+<style>
+@font-face{font-family:'Fraunces VF';src:url('./fonts/fraunces-latin.woff2') format('woff2');
+  font-weight:100 900;font-display:block}
+@font-face{font-family:'ZenKaku';src:url('./fonts/zenkaku-med.woff2') format('woff2');font-display:swap}
+@font-face{font-family:'ZenMaru';src:url('./fonts/zenmaru-med.woff2') format('woff2');font-display:swap}
+@font-face{font-family:'Shippori';src:url('./fonts/shippori-med.woff2') format('woff2');font-display:swap}
+@font-face{font-family:'NotoJP';src:url('./fonts/notosansjp-var.woff2') format('woff2');
+  font-weight:100 900;font-display:swap}
+
+:root{
+  --indigo:#1B3B6F; --indigo-deep:#12294D; --vermilion:#E0451D;
+  --paper:#ECEAE5; --paper-sunk:#E3E0D9; --card:#FBFAF7;
+  --ink:#2C2A26; --muted:#6B6862; --hair:#D3CFC6;
+  --sans:'Avenir Next',Avenir,'Nunito Sans','Segoe UI',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font:15px/1.6 var(--sans)}
+.wrap{max-width:1180px;margin:0 auto;padding:48px 24px 96px}
+
+.wordmark{font-family:'Fraunces VF',Georgia,serif;font-weight:650;font-optical-sizing:none;
+  font-variation-settings:'opsz' 144,'wght' 650,'SOFT' 100,'WONK' 1;letter-spacing:.005em}
+
+header.top{display:flex;align-items:center;gap:18px;padding-bottom:28px;border-bottom:1px solid var(--hair)}
+header.top svg{width:56px;height:56px;display:block}
+header.top .wordmark{font-size:52px;line-height:1;color:var(--indigo)}
+header.top .sub{margin-left:auto;color:var(--muted);font-size:13px;text-align:right}
+
+h2{font-family:'Fraunces VF',Georgia,serif;font-weight:650;font-optical-sizing:none;
+  font-variation-settings:'opsz' 48,'wght' 650,'SOFT' 100,'WONK' 0;
+  font-size:26px;color:var(--indigo);margin:56px 0 6px}
+.lede{color:var(--muted);font-size:14px;margin-bottom:20px;max-width:64ch}
+
+.grid{display:grid;gap:1px;background:var(--hair);border:1px solid var(--hair)}
+@media(min-width:900px){.grid{grid-template-columns:1fr 1fr}}
+.pane{background:var(--card);padding:22px}
+.pane .name{font-size:12px;color:var(--ink);font-weight:600;margin-bottom:2px}
+.pane .weight{font-size:11px;color:var(--muted);margin-bottom:18px;font-variant-numeric:tabular-nums}
+
+.deckline{font-size:12px;color:var(--muted);margin-bottom:14px}
+.head{font-size:40px;line-height:1.3}
+.reading{font-size:19px;color:var(--indigo);margin-top:6px}
+.small{font-size:12px;margin-top:10px;color:var(--muted);line-height:1.8}
+.kgate{display:inline-block;border:1px solid var(--hair);background:var(--paper-sunk);
+  padding:3px 9px;font-size:13px;margin-top:14px}
+.mean{font-size:13px;color:var(--muted);margin-top:12px;line-height:1.6}
+
+.p-zenkaku .jp{font-family:'ZenKaku',sans-serif}
+.p-zenmaru .jp{font-family:'ZenMaru',sans-serif}
+.p-shippori .jp{font-family:'Shippori',serif}
+.p-noto .jp{font-family:'NotoJP',sans-serif;font-weight:500}
+
+.swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:1px;
+  background:var(--hair);border:1px solid var(--hair)}
+.sw{background:var(--card)}
+.sw .chip{height:62px}
+.sw .meta{padding:9px 11px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.sw .meta b{display:block;color:var(--ink);font-size:12px;font-weight:600}
+
+.ui{display:grid;gap:26px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  border:1px solid var(--hair);background:var(--card);padding:24px}
+.kicker{font-size:11px;letter-spacing:.1em;color:var(--muted);margin-bottom:10px}
+.btn{border:1px solid var(--indigo);background:none;color:var(--indigo);border-radius:0;
+  font:inherit;font-size:14px;padding:12px 18px;cursor:pointer}
+.btn:hover{background:var(--indigo);color:var(--card)}
+.btn.primary{background:var(--indigo);color:var(--card)}
+.btn.primary:hover{background:var(--indigo-deep)}
+.btn:focus-visible{outline:2px solid var(--vermilion);outline-offset:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.pips{display:flex;gap:3px;margin-top:6px}
+.pips i{height:6px;flex:1;background:var(--paper-sunk)}
+.pips i.on{background:var(--indigo)}
+.sunk{background:var(--paper-sunk);padding:14px;font-size:13px;color:var(--ink)}
+.cap{font-size:11px;color:var(--muted);margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+td,th{text-align:left;padding:7px 0;border-bottom:1px solid var(--hair)}
+th{color:var(--muted);font-weight:400;font-size:11px;letter-spacing:.08em}
+td.jp{font-family:'ZenKaku',sans-serif}
+
+.climb{display:flex;gap:36px;align-items:center;border:1px solid var(--hair);
+  background:var(--card);padding:28px;flex-wrap:wrap}
+#climb{width:150px;height:150px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <svg viewBox="0 0 100 100" aria-label="hashigo">
+    <g fill="none" stroke="#1B3B6F" stroke-width="10" stroke-linecap="round">
+      <path d="M16 87L27.5 32"/><path d="M84 87L72.5 32"/></g>
+    <g fill="none" stroke="#1B3B6F" stroke-width="9" stroke-linecap="round">
+      <path d="M18.09 77H81.91"/><path d="M22.27 57H77.73"/><path d="M25.83 40H74.17"/></g>
+    <path d="M31.47 13H68.53" fill="none" stroke="#E0451D" stroke-width="9" stroke-linecap="round"/>
+  </svg>
+  <span class="wordmark">hashigo</span>
+  <span class="sub">type &amp; palette specimen<br>real cards from 日本語 › 単語</span>
+</header>
+
+<h2>1 — the open question: which Japanese face</h2>
+<p class="lede">The brief locks Fraunces for display and a Latin sans for body, and is silent on
+Japanese. Kanji is 5.9% of the corpus by character count and 100% of what is being studied —
+every head word, every 型 label, every example sentence. Same card, four faces, each paired with
+the same locked Fraunces instance above.</p>
+
+<div class="grid">
+  <div class="pane p-zenkaku">
+    <div class="name">A — Zen Kaku Gothic New</div>
+    <div class="weight">1,026 KB woff2 · modern gothic, flat terminals</div>
+    <div class="deckline jp">日本語 › 単語 · <span style="font-variant-numeric:tabular-nums">42 / 656</span></div>
+    <div class="head jp">粗方</div>
+    <div class="reading jp">あらかた</div>
+    <div class="kgate jp">型 平板</div>
+    <div class="mean">Mostly; almost; nearly. <span class="jp">禁じ得ない・～に引き換え・が早いか</span></div>
+    <div class="small jp">償却 · 係数 · 慈善 · 群衆 · 蟻 · にんじん · 雄 · 茄子 · 灰汁 · 頭高 中高 平板 尾高</div>
+  </div>
+
+  <div class="pane p-zenmaru">
+    <div class="name">B — Zen Maru Gothic</div>
+    <div class="weight">1,571 KB woff2 · ROUND terminals — echoes the mark's round caps</div>
+    <div class="deckline jp">日本語 › 単語 · <span style="font-variant-numeric:tabular-nums">42 / 656</span></div>
+    <div class="head jp">粗方</div>
+    <div class="reading jp">あらかた</div>
+    <div class="kgate jp">型 平板</div>
+    <div class="mean">Mostly; almost; nearly. <span class="jp">禁じ得ない・～に引き換え・が早いか</span></div>
+    <div class="small jp">償却 · 係数 · 慈善 · 群衆 · 蟻 · にんじん · 雄 · 茄子 · 灰汁 · 頭高 中高 平板 尾高</div>
+  </div>
+
+  <div class="pane p-shippori">
+    <div class="name">C — Shippori Mincho</div>
+    <div class="weight">3,109 KB woff2 · serif — matches Fraunces by category</div>
+    <div class="deckline jp">日本語 › 単語 · <span style="font-variant-numeric:tabular-nums">42 / 656</span></div>
+    <div class="head jp">粗方</div>
+    <div class="reading jp">あらかた</div>
+    <div class="kgate jp">型 平板</div>
+    <div class="mean">Mostly; almost; nearly. <span class="jp">禁じ得ない・～に引き換え・が早いか</span></div>
+    <div class="small jp">償却 · 係数 · 慈善 · 群衆 · 蟻 · にんじん · 雄 · 茄子 · 灰汁 · 頭高 中高 平板 尾高</div>
+  </div>
+
+  <div class="pane p-noto">
+    <div class="name">D — Noto Sans JP</div>
+    <div class="weight">4,226 KB woff2 · the neutral default</div>
+    <div class="deckline jp">日本語 › 単語 · <span style="font-variant-numeric:tabular-nums">42 / 656</span></div>
+    <div class="head jp">粗方</div>
+    <div class="reading jp">あらかた</div>
+    <div class="kgate jp">型 平板</div>
+    <div class="mean">Mostly; almost; nearly. <span class="jp">禁じ得ない・～に引き換え・が早いか</span></div>
+    <div class="small jp">償却 · 係数 · 慈善 · 群衆 · 蟻 · にんじん · 雄 · 茄子 · 灰汁 · 頭高 中高 平板 尾高</div>
+  </div>
+</div>
+
+<h2>2 — the palette, measured</h2>
+<p class="lede">Every pair a reading lands on, as a WCAG contrast ratio. Two need a rule attached
+to them, marked below.</p>
+<div class="swatches">
+  <div class="sw"><div class="chip" style="background:#1B3B6F"></div><div class="meta"><b>indigo</b>#1B3B6F · 9.18:1 on paper</div></div>
+  <div class="sw"><div class="chip" style="background:#12294D"></div><div class="meta"><b>indigo-deep</b>#12294D · hover / pressed</div></div>
+  <div class="sw"><div class="chip" style="background:#E0451D"></div><div class="meta"><b>vermilion</b>#E0451D · 3.47:1 — large text only</div></div>
+  <div class="sw"><div class="chip" style="background:#ECEAE5"></div><div class="meta"><b>paper</b>#ECEAE5 · page</div></div>
+  <div class="sw"><div class="chip" style="background:#E3E0D9"></div><div class="meta"><b>paper-sunk</b>#E3E0D9 · recessed</div></div>
+  <div class="sw"><div class="chip" style="background:#FBFAF7"></div><div class="meta"><b>card</b>#FBFAF7 · raised</div></div>
+  <div class="sw"><div class="chip" style="background:#2C2A26"></div><div class="meta"><b>ink</b>#2C2A26 · 11.91:1 on paper</div></div>
+  <div class="sw"><div class="chip" style="background:#6B6862"></div><div class="meta"><b>muted</b>#6B6862 · 4.21:1 on sunk — fails AA</div></div>
+  <div class="sw"><div class="chip" style="background:#D3CFC6"></div><div class="meta"><b>hair</b>#D3CFC6 · 1.29:1 — rules only, never text</div></div>
+</div>
+
+<h2>3 — UI language</h2>
+<div class="ui">
+  <div>
+    <div class="kicker">buttons</div>
+    <div class="row">
+      <button class="btn primary">remembered</button>
+      <button class="btn">forgot</button>
+      <button class="btn">reveal</button>
+    </div>
+    <p class="cap">1px indigo on transparent, filling solid on hover. Square. Tab to one to see
+    the vermilion focus ring.</p>
+  </div>
+  <div>
+    <div class="kicker">progress</div>
+    <div class="pips"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i></div>
+    <p class="cap">flat pips — not a ring, not a percentage</p>
+    <div class="sunk" style="margin-top:16px">recessed panel — depth by recession, no shadow</div>
+  </div>
+  <div>
+    <div class="kicker">counting</div>
+    <table>
+      <tr><th>deck</th><th>due</th><th>new</th></tr>
+      <tr><td class="jp">日本語 › 単語</td><td>1,104</td><td>10</td></tr>
+      <tr><td class="jp">日本語 › 言葉</td><td>218</td><td>10</td></tr>
+      <tr><td class="jp">基本情報</td><td>118</td><td>0</td></tr>
+    </table>
+    <p class="cap">tabular-nums, hairline rules, sentence case</p>
+  </div>
+</div>
+
+<h2>4 — the climb</h2>
+<div class="climb">
+  <svg id="climb" viewBox="0 0 100 100"></svg>
+  <div style="flex:1;min-width:240px">
+    <p class="lede" style="margin-bottom:14px">520 ms, easeOutCubic, no overshoot. The ladder does
+    not grow — the camera climbs. The mark is identical at rest, forever.</p>
+    <div class="row">
+      <button class="btn primary" id="go">clear a deck</button>
+      <button class="btn" id="rm">reduced motion (cross-fade)</button>
+    </div>
+  </div>
+</div>
+
+</div>
+<script type="module">
+const SLOT_Y = [13, 40, 57, 77, 101];
+const SLOPE = 0.20909;
+const railX = y => { const d = (87 - y) * SLOPE; return [16 + d, 84 - d]; };
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('climb');
+const VERM = [0xE0, 0x45, 0x1D], IND = [0x1B, 0x3B, 0x6F];
+const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+const rgb = c => 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+const easeOutCubic = p => 1 - Math.pow(1 - p, 3);
+
+function rung() {
+  const p = document.createElementNS(NS, 'path');
+  p.setAttribute('fill', 'none');
+  p.setAttribute('stroke-width', '9');
+  p.setAttribute('stroke-linecap', 'round');
+  svg.appendChild(p);
+  return p;
+}
+function place(el, y, t, opacity) {
+  const [l, r] = railX(y);
+  el.setAttribute('d', 'M' + l.toFixed(2) + ' ' + y.toFixed(2) + 'H' + r.toFixed(2));
+  el.setAttribute('stroke', rgb(mix(VERM, IND, Math.min(1, Math.max(0, t)))));
+  el.setAttribute('opacity', opacity.toFixed(3));
+}
+
+let rungs = [];
+function build() {
+  svg.innerHTML = '';
+  const rails = document.createElementNS(NS, 'g');
+  rails.setAttribute('fill', 'none');
+  rails.setAttribute('stroke', '#1B3B6F');
+  rails.setAttribute('stroke-width', '10');
+  rails.setAttribute('stroke-linecap', 'round');
+  for (const d of ['M16 87L27.5 32', 'M84 87L72.5 32']) {
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', d);
+    rails.appendChild(p);
+  }
+  svg.appendChild(rails);
+  rungs = [0, 1, 2, 3].map(slot => ({ slot, el: rung() }));
+  for (const r of rungs) place(r.el, SLOT_Y[r.slot], r.slot, 1);
+}
+
+let busy = false;
+function climb(reduced) {
+  if (busy) return;
+  busy = true;
+  const from = rungs.map(r => r.slot);
+  const fresh = { slot: 0, el: rung() };
+  const DUR = 520, t0 = performance.now();
+  function frame(now) {
+    const raw = Math.min(1, (now - t0) / DUR);
+    const p = reduced ? raw : easeOutCubic(raw);
+    rungs.forEach((r, i) => {
+      const a = from[i], b = a + 1;
+      const y = reduced ? SLOT_Y[b] : SLOT_Y[a] + (SLOT_Y[b] - SLOT_Y[a]) * p;
+      const t = reduced ? b : a + p;
+      let op = 1;
+      if (b === 4) op = reduced ? 1 - raw : (p < 0.45 ? 1 : 1 - (p - 0.45) / 0.55);
+      else if (reduced) op = raw;
+      place(r.el, y, t, op);
+    });
+    place(fresh.el, SLOT_Y[0], 0, reduced ? raw : (p < 0.55 ? 0 : (p - 0.55) / 0.45));
+    if (raw < 1) { requestAnimationFrame(frame); return; }
+    rungs.forEach((r, i) => { r.slot = from[i] + 1; });
+    for (const r of rungs) if (r.slot === 4) r.el.remove();
+    rungs = rungs.filter(r => r.slot !== 4);
+    rungs.unshift(fresh);
+    for (const r of rungs) place(r.el, SLOT_Y[r.slot], r.slot, 1);
+    busy = false;
+  }
+  requestAnimationFrame(frame);
+}
+
+build();
+document.getElementById('go').onclick = () => climb(false);
+document.getElementById('rm').onclick = () => climb(true);
+</script>
+</body>
+</html>

@@ -88,3 +88,9 @@ Thumbs.db
 # someone probing whether certs work. Ignored so a probe can never be committed.
 *.ts.net.crt
 *.ts.net.key
+
+# Webfonts. Reproduced by `python tools/fonts.py` — see that file for why the
+# Japanese faces are NOT subset by codepoint. Candidates stay out of history
+# until one is chosen.
+app/fonts/
+build/fonts-src/
