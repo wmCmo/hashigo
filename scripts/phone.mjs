@@ -121,6 +121,51 @@ if (!existsSync(resolve(ROOT, "build/app-dist/index.html"))) {
   die("build/app-dist/ is missing. Build it:\n  npm run app:build");
 }
 
+// ─── IS SOMETHING ELSE ALREADY ON THE PORT? ─────────────────────────────────
+//
+// THIS IS THE ONE THAT COSTS A DEBUGGING SESSION, because the failure lands on
+// the PHONE and looks like a bug in the app.
+//
+// `tailscale serve --bg 4274` is persistent configuration, not a process — so
+// the tunnel keeps pointing at this port whether or not the server behind it is
+// the one this script started. A leftover `vite preview` from an earlier run,
+// or from an older checkout, holds the port; `strictPort` makes Vite exit; this
+// script prints its advice and stops — and the tunnel carries right on serving
+// his phone from the zombie.
+//
+// AND THE ZOMBIE LOOKS ALIVE. `vite preview` reads `build/app-dist` from disk on
+// every request, so a rebuild reaches the phone even though the PROCESS is old.
+// The screen is today's; the middleware chain is whatever the config said when
+// that process started. Zach hit exactly this on 2026-09-13: a current-looking
+// app, and `sync failed — Unexpected token '<', "<!doctype "...` because that
+// server had no `/sync/` route and Vite's SPA fallback answered with the page.
+//
+// So: refuse BEFORE starting, rather than discovering it after the tunnel is up.
+const portHolder = spawnSync(
+  process.platform === "win32" ? "netstat" : "lsof",
+  process.platform === "win32" ? ["-ano"] : ["-ti", `tcp:${PORT}`],
+  { encoding: "utf8" },
+);
+const occupied =
+  process.platform === "win32"
+    ? (portHolder.stdout ?? "")
+        .split("\n")
+        .some((line) => line.includes(`:${PORT}`) && line.includes("LISTENING"))
+    : (portHolder.stdout ?? "").trim() !== "";
+if (occupied) {
+  die(
+    `Port ${PORT} is already being served by something this script did not start.\n\n` +
+      `  That is worse than it sounds: \`tailscale serve\` points at ${PORT}\n` +
+      `  permanently, so your phone will keep talking to THAT server — and\n` +
+      `  because preview reads build/app-dist from disk, it will even show your\n` +
+      `  newest build. An old process serving a new screen is how you get\n` +
+      `  "sync failed — Unexpected token '<'": no /sync/ route, so the page\n` +
+      `  came back instead of JSON.\n\n` +
+      `  Stop it, then run this again:\n` +
+      `    npx kill-port ${PORT}`,
+  );
+}
+
 function firstLine(file) {
   if (!existsSync(file)) return undefined;
   return readFileSync(file, "utf8")

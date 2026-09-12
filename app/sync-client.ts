@@ -108,6 +108,55 @@ export function initialStatus(): SyncStatus {
   };
 }
 
+/**
+ * GET something from the mailbox and insist it is actually JSON.
+ *
+ * ─── THE ERROR THIS EXISTS TO REPLACE ───────────────────────────────────────
+ *
+ * Zach, on his phone, 2026-09-13:
+ *
+ *     sync failed — Unexpected token '<', "<!doctype "... is not valid JSON
+ *
+ * There is nothing he can do with that. It is `JSON.parse` describing the first
+ * character of a page, and it says neither which request failed nor that the
+ * answer was a PAGE — which is the entire diagnosis.
+ *
+ * **`response.ok` does not catch it and cannot.** A server with no `/sync/`
+ * route does not 404: Vite's SPA fallback answers **200 with `index.html`**,
+ * because a single-page app's unknown routes are supposed to be the app. So the
+ * status check passes and the parser is the first thing to notice.
+ *
+ * **What produced it was a STALE SERVER.** `npm run phone` runs `vite preview`
+ * on port 4274 and `tailscale serve` points there permanently. A preview process
+ * left over from an older checkout keeps that port, keeps answering the phone,
+ * and — because preview reads `build/app-dist` from disk — keeps serving the
+ * NEWEST bundle out of a process whose middleware chain is old. New screen, old
+ * server, and the only symptom is this one line. `scripts/phone.mjs` now refuses
+ * to leave the tunnel pointed at a server it did not start; this is the other
+ * half, for every other way a mailbox can be absent.
+ */
+async function mailboxJson(url: string): Promise<unknown> {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+  // Read as TEXT and parse here rather than trusting `response.json()`, so the
+  // failure can say what actually came back. Checking `content-type` instead
+  // would be one more thing to be wrong about a server we do not control.
+  const body = await response.text();
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    const looksLikePage = /^\s*<!doctype|^\s*<html/i.test(body);
+    throw new Error(
+      looksLikePage
+        ? `${url} answered with a PAGE, not JSON — this server has no sync ` +
+          `mailbox. A stale preview server holding the port does this: stop it ` +
+          `and run npm run phone again.`
+        : `${url} answered with something that is not JSON: ` +
+          `"${body.slice(0, 40).replace(/\s+/g, " ")}…"`,
+    );
+  }
+}
+
 export interface SyncPorts {
   /** Ask the worker for this device's payload. */
   exportPayload(): Promise<{ json: string; bytes: number }>;
@@ -130,9 +179,7 @@ export interface SyncPorts {
 export async function syncNow(ports: SyncPorts): Promise<SyncOutcome> {
   const self = deviceId();
 
-  const index = await fetch("/sync/", { cache: "no-store" });
-  if (!index.ok) throw new Error(`the mailbox answered ${index.status}`);
-  const { peers } = (await index.json()) as { peers: PeerRow[] };
+  const { peers } = (await mailboxJson("/sync/")) as { peers: PeerRow[] };
 
   let reviewsAdded = 0;
   let flagsTaken = 0;
@@ -148,9 +195,7 @@ export async function syncNow(ports: SyncPorts): Promise<SyncOutcome> {
   for (const peer of peers) {
     if (peer.deviceId === self) continue;
     try {
-      const response = await fetch(`/sync/${peer.deviceId}`, { cache: "no-store" });
-      if (!response.ok) throw new Error(`the mailbox answered ${response.status}`);
-      const payload: unknown = await response.json();
+      const payload = await mailboxJson(`/sync/${peer.deviceId}`);
       const report = await ports.mergePayload(payload);
       reviewsAdded += report.reviewsAdded;
       flagsTaken += report.flagsTaken;

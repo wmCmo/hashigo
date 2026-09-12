@@ -63,6 +63,24 @@ const PRECACHE = self.__HASHIGO_PRECACHE__ ?? ["/"];
 /** Fetched straight from the network, never stored. See the header. */
 const NEVER_CACHE = new Set(["/hashigo-app.db", "/hashigo-app-blobs.db", "/hashigo-app.json"]);
 
+/*
+ * `/sync/` IS STATE, NOT A SHELL ASSET, AND CACHING IT IS ACTIVELY WRONG.
+ *
+ * Added 2026-09-13, alongside the stale-server fix. The mailbox index and every
+ * peer payload are served `Cache-Control: no-store` and this worker was storing
+ * them anyway — `response.ok && type === "basic"` is true for both.
+ *
+ * Network-first hides it while he is online. Offline, it does not: `syncNow`
+ * would read a CACHED peers list, fetch CACHED payloads, and merge a snapshot of
+ * his other device from whenever it was last seen. The push that follows is a
+ * PUT, which this worker ignores, so the run fails at the end — but by then it
+ * has already merged old state, and "sync failed" after a silent partial merge
+ * is the worst of both. Sync should simply not work offline.
+ */
+function isMailbox(pathname) {
+  return pathname === "/sync" || pathname.startsWith("/sync/");
+}
+
 /** Vite's dev-server plumbing. Caching any of it would serve a dead module
  *  graph after a restart, and none of it exists in a build. */
 function isDevPlumbing(pathname, search) {
@@ -118,6 +136,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
   if (NEVER_CACHE.has(url.pathname)) return;
+  if (isMailbox(url.pathname)) return;
   if (isDevPlumbing(url.pathname, url.search)) return;
   // A ranged request is a media seek. Let the browser own it.
   if (request.headers.has("range")) return;

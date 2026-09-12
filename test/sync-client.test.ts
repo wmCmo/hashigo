@@ -17,6 +17,15 @@ import { isStale, sinceLabel, syncNow, type SyncPorts } from "../app/sync-client
 
 const NOW = new Date("2026-09-12T12:00:00.000Z");
 
+/**
+ * A response the client will accept. `text`, not `json`: the client reads the
+ * body as text and parses it itself, so that an answer which is NOT JSON can be
+ * described instead of reaching him as a parser error.
+ */
+function json(body: unknown): { ok: boolean; status: number; text: () => Promise<string> } {
+  return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+}
+
 function fakeMailbox(files: Record<string, unknown>): void {
   const store = new Map<string, string>([["hashigo.sync.deviceId", "dev-selftest01"]]);
   vi.stubGlobal("localStorage", {
@@ -28,21 +37,17 @@ function fakeMailbox(files: Record<string, unknown>): void {
       return { ok: true, status: 200, json: async () => ({}) };
     }
     if (url === "/sync/") {
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({
-          peers: Object.keys(files).map((deviceId) => ({
-            deviceId,
-            bytes: 1,
-            updatedAt: NOW.toISOString(),
-          })),
-        }),
-      };
+      return json({
+        peers: Object.keys(files).map((deviceId) => ({
+          deviceId,
+          bytes: 1,
+          updatedAt: NOW.toISOString(),
+        })),
+      });
     }
     const id = url.slice("/sync/".length);
-    if (!(id in files)) return { ok: false, status: 404, json: async () => ({}) };
-    return { ok: true, status: 200, json: async () => files[id] };
+    if (!(id in files)) return { ok: false, status: 404, text: async () => "" };
+    return json(files[id]);
   });
 }
 
@@ -109,5 +114,84 @@ describe("what the indicator says", () => {
     expect(isStale({ ...base, state: "ok", lastSyncedAt: "2026-09-10T11:00:00.000Z" }, NOW)).toBe(
       true,
     );
+  });
+});
+
+/**
+ * ─── THE ERROR ZACH GOT ON HIS PHONE, 2026-09-13 ────────────────────────────
+ *
+ *     sync failed — Unexpected token '<', "<!doctype "... is not valid JSON
+ *
+ * Nothing in that is actionable. It is `JSON.parse` describing the first
+ * character of a web page, and it names neither the request nor the fact that
+ * the answer WAS a page — which is the whole diagnosis.
+ *
+ * **`response.ok` cannot catch this.** A server with no `/sync/` route does not
+ * 404: a single-page app's fallback answers 200 with `index.html`, on purpose,
+ * because unknown routes are supposed to be the app. So the status check passes
+ * and the parser is the first thing to notice anything is wrong.
+ *
+ * The cause that day was a stale `vite preview` holding port 4274 while
+ * `tailscale serve` kept pointing at it — a process whose middleware predated
+ * the mailbox, serving a bundle rebuilt that evening. Today's screen, last
+ * week's server. `scripts/phone.mjs` now refuses to start into that; this is the
+ * half that covers every other way a mailbox can be missing.
+ */
+describe("a mailbox that answers with a page", () => {
+  function pageInsteadOfJson(): void {
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string): string | null => (k === "hashigo.sync.deviceId" ? "dev-selftest01" : null),
+      setItem: (): void => undefined,
+    });
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        ['<!doctype html>', '<html lang="ja">', "  <head>", "    <title>梯子</title>"].join("\n"),
+    }));
+  }
+
+  it("says the answer was a PAGE, rather than quoting a parser", async () => {
+    pageInsteadOfJson();
+    await expect(syncNow(ports(() => undefined))).rejects.toThrow(/answered with a PAGE, not JSON/);
+  });
+
+  it("names the request, and what to actually do about it", async () => {
+    pageInsteadOfJson();
+    const failure = await syncNow(ports(() => undefined)).catch((cause: Error) => cause.message);
+    // Which request. Without this he cannot tell a missing mailbox from a
+    // missing peer.
+    expect(failure).toContain("/sync/");
+    // And the fix, because the cause is almost always the same one.
+    expect(failure).toContain("npm run phone");
+    // The thing it must NOT be.
+    expect(failure).not.toContain("Unexpected token");
+  });
+
+  it("quotes the body when it is neither JSON nor a page", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: (): string | null => "dev-selftest01",
+      setItem: (): void => undefined,
+    });
+    vi.stubGlobal("fetch", async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        ["502 Bad Gateway", "", "the tunnel is up but nothing is behind it"].join("\n"),
+    }));
+    const failure = await syncNow(ports(() => undefined)).catch((cause: Error) => cause.message);
+    expect(failure).toContain("502 Bad Gateway");
+    expect(failure).not.toContain("Unexpected token");
+  });
+
+  it("still reports a plain HTTP failure as a status", async () => {
+    // The case that DID work before must keep working: a real 404 or 500 is
+    // already a clear answer and must not be dressed up as a parse problem.
+    vi.stubGlobal("localStorage", {
+      getItem: (): string | null => "dev-selftest01",
+      setItem: (): void => undefined,
+    });
+    vi.stubGlobal("fetch", async () => ({ ok: false, status: 503, text: async () => "" }));
+    await expect(syncNow(ports(() => undefined))).rejects.toThrow(/answered 503/);
   });
 });

@@ -192,3 +192,42 @@ describe("the icons on disk are what the manifest promises", () => {
     expect(bytes.length).toBeGreaterThan(1000);
   });
 });
+
+/**
+ * ZACH, ON HIS PHONE, 2026-09-13: `sync failed — Unexpected token '<', "<!doctype "`.
+ *
+ * The cause was a stale server (see `app/sync-client.ts`), but the sweep that
+ * followed found a second, quieter fault in here: this worker was CACHING the
+ * mailbox. `/sync/` and every peer payload are served `Cache-Control: no-store`
+ * and the store rule — `response.ok && response.type === "basic"` — is true for
+ * both, so they went into Cache Storage like any shell asset.
+ *
+ * Network-first hides it while he is online. Offline it does not: `syncNow`
+ * would read a cached peers list, fetch cached payloads, and MERGE A SNAPSHOT of
+ * his other device from whenever it was last seen. The push after it is a PUT,
+ * which this worker ignores, so the run fails at the end — after the merge has
+ * already happened. A partial merge reported as a failure is worse than a clean
+ * refusal, and sync simply should not work offline.
+ */
+describe("the service worker never caches sync state", () => {
+  it("passes the mailbox straight through, like the databases", () => {
+    // A prefix, not a Set entry: `/sync/` carries a device id per peer, so there
+    // is no fixed list of paths to name.
+    expect(sw, "no mailbox guard in the fetch handler").toMatch(/isMailbox\(url\.pathname\)/);
+    const guard = /function isMailbox\([^)]*\) \{([\s\S]*?)\n\}/.exec(sw)?.[1] ?? "";
+    expect(guard, "isMailbox is gone").not.toBe("");
+    expect(guard).toMatch(/startsWith\("\/sync\/"\)/);
+  });
+
+  it("bails BEFORE respondWith, so nothing is stored and nothing is served back", () => {
+    // The guard has to sit with the other pass-throughs, above `event.respondWith`.
+    // Below it, the worker would still answer from cache when the network fails,
+    // which is the half that merges stale state.
+    const handler = /addEventListener\("fetch"[\s\S]*$/.exec(sw)?.[0] ?? "";
+    const guardAt = handler.indexOf("isMailbox(url.pathname)");
+    const respondAt = handler.indexOf("event.respondWith");
+    expect(guardAt, "the mailbox guard is not in the fetch handler").toBeGreaterThan(-1);
+    expect(respondAt).toBeGreaterThan(-1);
+    expect(guardAt, "the mailbox guard runs after respondWith").toBeLessThan(respondAt);
+  });
+});
