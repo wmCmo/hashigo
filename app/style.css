@@ -556,7 +556,8 @@ body {
    that was already revealed — which is how a revealed card reads as a prompt
    leaking its own answer. Reported by Zach with a screenshot of exactly that on a
    数字 card, 2026-08-23. The mockup had this rule; the port dropped it. */
-[data-state="revealed"] .hint {
+[data-state="revealed"] .hint,
+[data-state="revealing"] .hint {
   display: none;
 }
 
@@ -840,6 +841,15 @@ ruby rt:empty::after {
   border-style: dashed !important;
 }
 
+/* MID-WALK IT YIELDS THE ROW. Zach's stepped reveal (2026-09-12) puts `next`
+   beside the two grade buttons, and the grades are the wider commitment — he is
+   allowed to answer before the walk is finished and usually will. So `next`
+   shrinks to its text and `forgot` / `remembered` keep their width; three equal
+   thirds on a 375px phone would wrap `remembered`. */
+[data-state="revealing"] .reveal-zone {
+  flex: 0 0 auto;
+}
+
 /* `remembered` stays on the RIGHT: over 103,110 corpus reviews retention is
    96.24%, so ~96 of every 100 taps are that button and it belongs under the
    thumb that is already there. */
@@ -915,8 +925,16 @@ ruby rt:empty::after {
    card neither attribute is present before the reveal, and that is decision 29
    rather than an oversight: there the clip is the ANSWER, and a play button on
    screen before he has produced the contour is the defect the hard rule exists to
-   stop. `[hidden]` still wins — a card with no audio side shows nothing. */
+   stop. `[hidden]` still wins — a card with no audio side shows nothing.
+
+   `revealing` is in here for the stepped reveal: 単語's sentence clip sounds
+   partway through the walk, and "play that again" has to be reachable while it is
+   still the current clip. `main.ts` hides the button outright (`paintReplay`)
+   until something has actually sounded, so this selector cannot put it on screen
+   before the clip it points at exists — which is what keeps decision 29's
+   produce-mode silence intact. */
 [data-state="revealed"] .replay,
+[data-state="revealing"] .replay,
 [data-asked] .replay {
   display: block;
 }

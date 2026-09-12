@@ -172,8 +172,12 @@
       </div>
 
       <div id="bar" class="bar">
+        <!-- The word is its own span because the reveal is a WALK now, not a
+             switch: it reads `reveal`, then `next · 3`, `next · 2`, `next · 1`,
+             then the button goes. A stepper that does not say how far it has to
+             go reads as a button that stopped working. -->
         <button id="reveal" class="reveal-zone" type="button">
-          reveal<span class="kbd">space</span>
+          <span id="revealword">reveal</span><span class="kbd">space</span>
         </button>
         <div id="grades" class="grades">
           <button id="forgot" class="no" type="button">forgot<span class="kbd">f</span></button>

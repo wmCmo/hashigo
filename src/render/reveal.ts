@@ -52,29 +52,42 @@
  * hand; `test/review.test.ts` asserts mode 1 at exactly 0 play calls so that
  * shows up as a red test rather than as a quiet loss of the exercise.
  *
- * ── DO CLOZES ON A SIDE REVEAL INDIVIDUALLY OR TOGETHER? TOGETHER, PER SIDE ──
+ * ── ONE CLOZE AT A TIME, THEN THE NEXT SIDE — ZACH, 2026-09-12 ──────────────
  *
- * Implemented as a per-SIDE group. Measured reasons, in the order they decided it:
+ * **This REVERSES an earlier call recorded in this header, and the reversal is
+ * his.** *"when you click reveal, it shows the whole thing, the next slide, and
+ * the third slide, and every cloze. the correct order should be, each cloze in
+ * that slide, once every clozes are shown, the next side and so on."*
  *
- *   1. `cloze/indexes` is empty on all 7,716 cards, so 11,476 of 11,476 clozes
- *      are the unindexed form and NOTHING is index-grouped. SPEC states the
- *      consequence outright: "every cloze reveals together".
- *   2. 2,968 sides carry exactly two clozes, and on 単語 side 2 they are the same
- *      fact written twice — `{{<<Reference>>}}` is the reading as text and
- *      `{{<furigana><<単語>></furigana>}}` is the reading as ruby. Revealing one
- *      and masking the other would print the answer and hide it simultaneously.
- *   3. There is nowhere to record a partial reveal. Grades are binary
- *      (remembered / forgot) and scheduling is per track; the `cloze:n` track
- *      exists in the schema and has **zero reviews in four years**, so a
- *      half-revealed side has no representable outcome.
+ * So `revealNext()` is the unit now and `reveal()` is the bulk operation. What
+ * the old three reasons were actually worth, having been overruled:
  *
- * PER SIDE, not per card, because sides are presented in sequence: revealing
- * side 3's cloze while side 2 is on screen leaks the answer to side 2.
+ *   1. **"`cloze/indexes` is empty on all 7,716 cards, so nothing is
+ *      index-grouped"** — still true, and it never argued for a group. It argued
+ *      that the AUTHOR named no groups, which leaves the order to the screen.
+ *      Document order is the order he reads in.
+ *   2. **"単語 side 2's two clozes are the same fact written twice"** — measured
+ *      again and it is not one fact. `{{<<Reference>>}}` is the READING;
+ *      `{{<furigana><<単語>></furigana>}}` is the KANJI with the reading as ruby.
+ *      On the 3,177 mode-2 cards, where the clip is the question, showing the
+ *      reading first and the kanji second is the exercise in two steps rather
+ *      than one — hear しょうきゃく, confirm the reading, then meet 償却.
+ *   3. **"there is nowhere to record a partial reveal"** — correct, and it stays
+ *      correct: nothing here is graded or persisted. A step is a thing on screen,
+ *      not a thing in the schema. Decision 2's binary grade is untouched.
  *
- * The group is enforced rather than merely offered. The loop listens on each
- * `ClozeMount.onReveal`, so a cloze revealed by ANY route — a tap, a direct
- * `mount.reveal()`, or `result.revealAll()` — pulls its whole side with it. There
- * is deliberately no `revealOne`.
+ * PER SIDE still bounds it: a step never crosses into the next side, because
+ * sides are presented in sequence and revealing side 3's cloze while side 2 is on
+ * screen leaks the answer to side 2. That part was always the load-bearing half.
+ *
+ * **A side sounds its clip when its LAST cloze is unmasked**, not when its first
+ * is — so the shadowing comparison still lands on the complete answer, and a
+ * stepped reveal plays no earlier than the old one-shot did.
+ *
+ * The loop still listens on every `ClozeMount.onReveal`, so a cloze revealed by
+ * ANY route — a tap, a direct `mount.reveal()`, `result.revealAll()` — keeps the
+ * side's bookkeeping honest: `side.revealed` means "every cloze on it is shown",
+ * on every route, and that is what fires the clip and the `reveal` event.
  *
  * ── A SIDE WITH AUDIO AND NO CLOZE: MEASURED, THEN DECIDED ──────────────────
  *
@@ -211,7 +224,10 @@ export interface ShadowingSide<E extends RenderElement = RenderElement> {
   /** Audio and video mounts on this side, in document order. */
   readonly audio: readonly MediaMount<E>[];
   readonly trigger: RevealTrigger;
+  /** Every cloze on this side is unmasked. A side with no clozes turns true on `reveal()`. */
   readonly revealed: boolean;
+  /** How many clozes are still hidden. `0` on a side that has none. */
+  readonly masked: number;
   /** True once `enter()` has been called. Entering plays nothing. */
   readonly entered: boolean;
   /**
@@ -235,6 +251,24 @@ export interface ShadowingSide<E extends RenderElement = RenderElement> {
    * it means to play.
    */
   reveal(cause?: RevealCause, options?: { readonly silent?: boolean }): boolean;
+  /**
+   * Unmask the NEXT hidden cloze on this side, in document order — one step of
+   * Zach's 2026-09-12 ordering. Returns false when nothing was left to unmask.
+   *
+   * The clip sounds only on the step that unmasks the LAST one, so a side with
+   * two clozes takes two presses and makes exactly one sound. A side with no
+   * clozes has no steps at all: `reveal()` is its only verb.
+   */
+  revealNext(cause?: RevealCause, options?: { readonly silent?: boolean }): boolean;
+  /**
+   * Unmask ONE named cloze — what a tap on that cloze means, now that a tap no
+   * longer drags its neighbours with it. Out-of-order is allowed: he tapped it.
+   */
+  revealCloze(
+    mount: ClozeMount<E>,
+    cause?: RevealCause,
+    options?: { readonly silent?: boolean },
+  ): boolean;
   /**
    * Deliberately play ONE clip on this side — the armed element's own play
    * affordance, or a "play again" button. Unmasks the side first if it was still
@@ -269,7 +303,12 @@ export interface ShadowingSide<E extends RenderElement = RenderElement> {
 }
 
 export interface RevealEvent<E extends RenderElement = RenderElement> {
-  readonly kind: "enter" | "reveal" | "conceal" | "replay" | "prompt";
+  /**
+   * `step` is one cloze unmasked on a side that still has more — the partial
+   * move Zach's ordering introduced. The side's `reveal` event still fires once,
+   * when the last one goes, so anything counting reveals counts sides.
+   */
+  readonly kind: "enter" | "reveal" | "step" | "conceal" | "replay" | "prompt";
   readonly side: ShadowingSide<E>;
   readonly cause: RevealCause | null;
   /** Clozes this event changed. */
@@ -342,10 +381,15 @@ export function shadowingLoop<E extends RenderElement>(
       clozes.length > 0 ? "cloze" : media.length > 0 ? "audio" : "none";
     let revealed = false;
     let entered = false;
-    // Guards the re-entry that the enforced grouping creates: revealing cloze A
-    // fires A's listener, which reveals the side, which reveals cloze B, whose
-    // listener reveals the side again.
+    // Set while THIS file is driving `mount.reveal()`, so the bookkeeping
+    // listener below knows the call is already accounted for and stays out of it.
+    // It is also the re-entry guard: `unmask()` reveals several mounts in a row
+    // and each one fires a listener.
     let revealing = false;
+    // Clozes unmasked since the side was last fully masked. Reported on the
+    // side's one `reveal` event, so "how many did this act show" survives a
+    // stepped reveal as well as a one-shot one.
+    let unmasked = 0;
 
     const side: ShadowingSide<E> = {
       index: rendered.index,
@@ -356,6 +400,9 @@ export function shadowingLoop<E extends RenderElement>(
       trigger,
       get revealed(): boolean {
         return revealed;
+      },
+      get masked(): number {
+        return clozes.reduce((count, mount) => count + (mount.revealed ? 0 : 1), 0);
       },
       get entered(): boolean {
         return entered;
@@ -376,6 +423,29 @@ export function shadowingLoop<E extends RenderElement>(
         }
         emit({ kind: "reveal", side, cause, clozes: changed, audio: played });
         announce();
+        return true;
+      },
+      revealNext(cause = "caller", options = {}): boolean {
+        const next = clozes.find((mount) => !mount.revealed);
+        return next === undefined ? false : side.revealCloze(next, cause, options);
+      },
+      revealCloze(mount, cause = "caller", options = {}): boolean {
+        if (!clozes.includes(mount) || mount.revealed || revealed || revealing) return false;
+        // `revealing` is up for exactly the DOM write, so the bookkeeping
+        // listener sees an accounted-for reveal and this method owns what
+        // follows. Not held across `settle()` — `settle` may play, and a clip is
+        // not part of the re-entry it guards against.
+        revealing = true;
+        try {
+          mount.reveal();
+        } finally {
+          revealing = false;
+        }
+        if (bindClozes) {
+          asTarget(mount.element)?.setAttribute(REVEAL_ATTRIBUTES.expanded, "true");
+        }
+        unmasked += 1;
+        settle(cause, options.silent === true);
         return true;
       },
       play(mount): boolean {
@@ -409,6 +479,7 @@ export function shadowingLoop<E extends RenderElement>(
       conceal(): void {
         if (!revealed) return;
         revealed = false;
+        unmasked = 0;
         for (const mount of clozes) {
           mount.conceal();
           if (bindClozes) asTarget(mount.element)?.setAttribute(REVEAL_ATTRIBUTES.expanded, "false");
@@ -454,8 +525,53 @@ export function shadowingLoop<E extends RenderElement>(
       return changed;
     }
 
+    /**
+     * One cloze has just been unmasked. Decide whether that finished the side.
+     *
+     * This is the only place a stepped reveal can turn into a `reveal` event and
+     * a clip, and it is deliberately the SAME place the old whole-side path
+     * ended up in — so "the side is revealed" cannot mean two different things
+     * depending on which verb got there.
+     */
+    function settle(cause: RevealCause, silent: boolean): void {
+      if (clozes.some((mount) => !mount.revealed)) {
+        emit({ kind: "step", side, cause, clozes: 1, audio: 0 });
+        return;
+      }
+      revealed = true;
+      let played = 0;
+      if (media.length > 0 && audio !== null && !silent) {
+        played = media.length;
+        audio.play(media, "reveal");
+      }
+      emit({ kind: "reveal", side, cause, clozes: unmasked, audio: played });
+      announce();
+    }
+
     function announce(): void {
       for (const listener of [...listeners]) listener(side);
+    }
+
+    // BOOKKEEPING, NOT GROUPING — the difference is Zach's 2026-09-12 ordering.
+    // This listener used to pull the whole side; now it only notices. A cloze
+    // unmasked by a route this file did not drive (`result.revealAll()`, a direct
+    // `mount.reveal()`, a render hook) still has to count, or `side.revealed`
+    // would stay false on a side that is visibly open and its clip would never
+    // sound.
+    //
+    // `revealCloze` and `unmask` both raise `revealing` while they write, so
+    // their own reveals arrive here already accounted for and are skipped.
+    for (const mount of clozes) {
+      unbinds.push(
+        mount.onReveal(() => {
+          if (revealing || revealed) return;
+          if (bindClozes) {
+            asTarget(mount.element)?.setAttribute(REVEAL_ATTRIBUTES.expanded, "true");
+          }
+          unmasked += 1;
+          settle("cloze", false);
+        }),
+      );
     }
 
     return side;
@@ -467,14 +583,6 @@ export function shadowingLoop<E extends RenderElement>(
   }
 
   // ── wiring ──
-  // The group is enforced here rather than at the tap: a cloze revealed by any
-  // route pulls its whole side with it, so `result.revealAll()` and a direct
-  // `mount.reveal()` behave exactly like a tap.
-  for (const side of sides) {
-    for (const mount of side.clozes) {
-      unbinds.push(mount.onReveal(() => side.reveal("cloze")));
-    }
-  }
 
   if (bindClozes) {
     for (const side of sides) {
@@ -487,8 +595,10 @@ export function shadowingLoop<E extends RenderElement>(
         target.setAttribute(REVEAL_ATTRIBUTES.role, "button");
         target.setAttribute(REVEAL_ATTRIBUTES.tabIndex, "0");
         target.setAttribute(REVEAL_ATTRIBUTES.expanded, mount.revealed ? "true" : "false");
+        // THIS cloze, not its neighbours — Zach's 2026-09-12 ordering. He tapped
+        // a specific mask; out of order is allowed, because he chose it.
         const onClick = (): void => {
-          side.reveal("cloze");
+          side.revealCloze(mount, "cloze");
         };
         const onKey = (event: unknown): void => {
           const key = (event as { key?: unknown }).key;
@@ -496,7 +606,7 @@ export function shadowingLoop<E extends RenderElement>(
           // Space scrolls the page otherwise, which on a phone-sized review screen
           // moves the card out from under the answer he just revealed.
           (event as { preventDefault?: () => void }).preventDefault?.();
-          side.reveal("cloze");
+          side.revealCloze(mount, "cloze");
         };
         target.addEventListener("click", onClick);
         target.addEventListener("keydown", onKey);

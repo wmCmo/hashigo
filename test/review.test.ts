@@ -838,6 +838,58 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
     }
   });
 
+  it("REVERSE PERMUTES SIDES AND NOTHING ELSE — cloze order stays ascending inside each", () => {
+    // ZACH, 2026-09-12, spelling out the second half of his reveal order: *"for
+    // the reverse, the cloze are still in the same ascending order, just the side
+    // reverse."*
+    //
+    // `app/review-steps.ts` relies on that being free — it walks sides by display
+    // position and clozes by document order, and does nothing to either. "Free by
+    // construction" is how a property stops being true without anyone noticing,
+    // so it is measured here over real cards rather than asserted in a comment.
+    const { db, store, close } = openCorpus();
+    try {
+      const ids = byMode(db, false, 40);
+      let permuted = 0;
+      let sidesChecked = 0;
+      for (const cardId of ids) {
+        const shape = (kind: "forward" | "reverse"): { order: number[]; clozes: number[][] } => {
+          const card = mountTrack<MemoryElement>({
+            db,
+            track: { cardId, kind },
+            document: memoryDocument(),
+            store,
+          });
+          if (card === null) return { order: [], clozes: [] };
+          const order = card.loop.sides.map((side) => side.index);
+          const clozes = card.loop.sides.map((side) => side.clozes.map((mount) => mount.ordinal));
+          card.dispose();
+          return { order, clozes };
+        };
+        const forward = shape("forward");
+        const reverse = shape("reverse");
+        if (forward.order.length === 0) continue;
+
+        // The SAME sides, in a different order.
+        expect(new Set(reverse.order), cardId).toEqual(new Set(forward.order));
+        if (reverse.order.join() !== forward.order.join()) permuted += 1;
+
+        // And inside every side, on both directions, the clozes ascend.
+        for (const perSide of [...forward.clozes, ...reverse.clozes]) {
+          const ascending = [...perSide].sort((a, b) => a - b);
+          expect(perSide, `${cardId} cloze order`).toEqual(ascending);
+          sidesChecked += 1;
+        }
+      }
+      // eslint-disable-next-line no-console
+      console.log(`reverse: ${permuted}/40 cards permuted · ${sidesChecked} sides cloze-ordered`);
+      // A test where nothing was actually reversed would prove nothing.
+      expect(permuted).toBeGreaterThan(0);
+    } finally {
+      close();
+    }
+  });
+
   // ─── the process boundary the shell has ────────────────────────────────────
 
   it("PreparedCard survives a REAL structuredClone, over 300 cards", () => {

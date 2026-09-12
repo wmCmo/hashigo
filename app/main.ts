@@ -104,6 +104,7 @@ import {
   visiblePositions,
   type BoundarySide,
 } from "./review-boundary.js";
+import { revealSteps, type RevealStep } from "./review-steps.js";
 import type {
   AnswerRefusal,
   AppMessage,
@@ -183,6 +184,7 @@ const progressLabel = el("progress");
 const progressBar = el("progressbar");
 const progressFill = el("progressfill");
 const revealButton = el<HTMLButtonElement>("reveal");
+const revealWord = el("revealword");
 const forgotButton = el<HTMLButtonElement>("forgot");
 const rememberedButton = el<HTMLButtonElement>("remembered");
 const replayButton = el<HTMLButtonElement>("replay");
@@ -261,9 +263,40 @@ function showFetchProgress(message: Extract<AppMessage, { kind: "fetching" }>): 
 /** One scope per card presentation: the scope that mints a URL revokes it. */
 let scope: BlobUrlScope | null = null;
 let mounted: MountedCard<HTMLElement> | null = null;
+/**
+ * The side the round replay button plays — the last one that actually SOUNDED.
+ *
+ * It used to be fixed at mount to "the first side with audio", which is what made
+ * the example sentence unreachable: 単語 carries two clips (the word on side 2, the
+ * sentence on side 3), the native `<audio>` is hidden in review, and the one
+ * visible affordance was nailed to the first of them. Following the reveal answers
+ * Zach's own question from 2026-09-12 — *"a single play button where we couldn't
+ * distinguish which audio to play shouldn't work right?"* — without adding a
+ * second control: the step says which clip is current, so the button does too.
+ */
 let drill: ShadowingSide<HTMLElement> | null = null;
-let tail: ShadowingSide<HTMLElement>[] = [];
+/** His reveal order, as a plan. See `./review-steps.ts`. */
+let steps: RevealStep[] = [];
+let stepIndex = 0;
+/**
+ * Whether the clip the replay button points at is actually on this device.
+ *
+ * Remembered rather than recomputed because it cannot be known at mount time — the
+ * resolve is async, so a missing payload only announces itself through
+ * `onOutcome`, after the step that asked for it. The button follows `drill` now,
+ * so it moves from clip to clip and this has to move with it.
+ */
+let replayState: "ready" | "missing" = "ready";
 let shownAt = 0;
+/**
+ * The answer is on screen, so a grade is meaningful. TRUE FROM THE FIRST STEP —
+ * not from the last.
+ *
+ * Stepping must never make grading wait: he knows whether he remembered the moment
+ * the reading appears, and forcing three more presses to say so would be a worse
+ * screen than the one he complained about. `moreToReveal` is the separate
+ * question, and it is what `space` reads.
+ */
 let revealed = false;
 /**
  * Whether the current card ASKED something on entry — decision 29's mode 2, or a
@@ -425,8 +458,15 @@ function makeCheckable(
   return handles;
 }
 
-/** `data-state` on the review view, which is what `style.css` switches on. */
-function setState(state: "prompt" | "revealed"): void {
+/**
+ * `data-state` on the review view, which is what `style.css` switches on.
+ *
+ * THREE states since Zach's stepped reveal, and the middle one is the whole
+ * change: `revealing` is "part of the answer is up and there is more to come".
+ * The grades are live in it — see `revealed` — and the reveal button is still
+ * there, reading `next`.
+ */
+function setState(state: "prompt" | "revealing" | "revealed"): void {
   reviewView.setAttribute("data-state", state);
 }
 
@@ -472,7 +512,8 @@ function releaseCard(): void {
   mounted = null;
   scope = null;
   drill = null;
-  tail = [];
+  steps = [];
+  stepIndex = 0;
   cardHost.replaceChildren();
 }
 
@@ -555,7 +596,13 @@ async function showCardAt(): Promise<void> {
       address,
     })).payload,
     onOutcome: (outcome) => {
-      if (outcome.kind === "playing" || outcome.kind === "replayed") return;
+      if (outcome.kind === "playing" || outcome.kind === "replayed") {
+        // A clip that DID play clears a previous step's failure: the button
+        // points at this one now.
+        replayState = "ready";
+        paintReplay(drill === null ? "none" : "ready");
+        return;
+      }
       // A clip that cannot be produced is worth saying out loud whenever it was the
       // QUESTION: silence there is not a missing extra, it is the card asking
       // nothing at all.
@@ -577,6 +624,7 @@ async function showCardAt(): Promise<void> {
       }
       // The button cannot know this at mount time — the resolve is async — so the
       // failure is what tells it. See `paintReplay`.
+      replayState = "missing";
       paintReplay("missing");
     },
   });
@@ -587,13 +635,25 @@ async function showCardAt(): Promise<void> {
 
   const shown = visibleSides(card.result);
   const prompt = new Set(promptPositions(card));
-  tail = shown
-    .filter((position) => !prompt.has(position))
-    .map((position) => card.loop.side(position))
-    .filter((side): side is ShadowingSide<HTMLElement> => side !== null);
-  // The side the replay button plays: the first one with a clip, question side or
-  // answer side. On an identify card that is the question itself.
-  drill = card.loop.sides.find((side) => side.audio.length > 0) ?? null;
+  // His reveal order, computed once. `./review-steps.ts` owns the rule; this just
+  // reduces the mounted card to the four fields it reads.
+  steps = revealSteps(
+    shown.map((position) => {
+      const side = card.loop.side(position);
+      return {
+        position,
+        clozes: side?.clozes.length ?? 0,
+        audio: side?.audio.length ?? 0,
+        prompt: prompt.has(position),
+      };
+    }),
+  );
+  stepIndex = 0;
+  // Nothing has sounded yet, so there is nothing to replay yet. The entry prompt
+  // below sets it when the clip IS the question; every step that sounds a side
+  // sets it after that.
+  drill = null;
+  replayState = "ready";
 
   // Hide what is not part of the question yet, and hide empty sides outright: a
   // mode-2 単語 card renders side 1 EMPTY (its whole body is inside
@@ -638,6 +698,7 @@ async function showCardAt(): Promise<void> {
   readingButton.textContent = card.mode.reading ? "Reading → false" : "Reading → true";
 
   setState("prompt");
+  revealWord.textContent = "reveal";
   // The mode-aware entry. On a produce card this plays nothing; on an identify
   // card it asks the question and leaves every cloze masked.
   for (const position of prompt) card.enter(position);
@@ -659,7 +720,11 @@ async function showCardAt(): Promise<void> {
   //
   // So the contour line is gated on `accentDrill`, which is the only thing that
   // actually means "naming a pitch pattern is the exercise here".
-  const asked = card.loop.log.some((event) => event.kind === "prompt");
+  const prompted = card.loop.log.find((event) => event.kind === "prompt");
+  const asked = prompted !== undefined;
+  // The question sounded, so THAT is what "play it again" means until a step
+  // sounds something else.
+  if (prompted !== undefined) drill = prompted.side;
   const typing = card.result.widgets.some((widget) => prompt.has(
     card.result.sides.find((side) => side.index === widget.side)?.position ?? -1,
   ));
@@ -775,33 +840,92 @@ function tag(text: string, className: string): HTMLElement {
   return span;
 }
 
+/**
+ * ONE STEP of the reveal — Zach, 2026-09-12.
+ *
+ * *"when you click reveal, it shows the whole thing, the next slide, and the third
+ * slide, and every cloze. the correct order should be, each cloze in that slide,
+ * once every clozes are shown, the next side and so on."*
+ *
+ * The old body is worth keeping in mind, because two of its properties had to
+ * survive and one of them was a bug:
+ *
+ *   * **exactly one clip per press — KEPT, and now for free.** The old code had to
+ *     arbitrate (`audioController.play()` defers extras only within one call, so
+ *     unmasking three sides started three clips) by nominating one side to sound
+ *     and revealing the rest with `{silent:true}`. A step touches ONE side, so
+ *     there is nothing to arbitrate.
+ *   * **the other clips were unreachable — FIXED.** The nominated side was "the
+ *     first with audio", the native `<audio>` is `display:none` in review, and the
+ *     replay button was pinned to the same side. So 単語's example-sentence clip
+ *     could not be played at all, on any card, by any gesture. *"i still can't
+ *     hear audio of example sentence"*. Now side 3's step sounds side 3.
+ */
 function reveal(): void {
   const card = mounted;
-  if (card === null || revealed) return;
-  revealed = true;
+  if (card === null) return;
 
-  // Show the whole card — decision 23's one scroll — and enter the sides that
-  // were not part of the question.
-  for (const side of tail) {
+  const step = steps[stepIndex];
+  if (step !== undefined) {
+    stepIndex += 1;
+    runStep(card, step);
+  }
+  settleReveal(card);
+}
+
+/** Perform one step: put the side on screen if this is its first, unmask, sound. */
+function runStep(card: MountedCard<HTMLElement>, step: RevealStep): void {
+  const side = card.loop.side(step.position);
+  if (side === null) return;
+  if (step.show) {
     side.element.hidden = false;
-    card.loop.enter(side.position);
+    // `loop.enter`, NOT `card.enter` — the mount's entry is the one that asks
+    // decision 29's mode-2 question, and an answer side is not a question.
+    card.loop.enter(step.position);
   }
-  for (const rendered of card.result.sides) {
-    if (!rendered.empty) rendered.element.hidden = false;
-  }
+  const mount = step.cloze === null ? undefined : side.clozes[step.cloze];
+  if (mount !== undefined) side.revealCloze(mount, "caller");
+  else side.reveal("caller");
+  // `revealed` on a side means every cloze on it is shown, which is when its clip
+  // sounds — so this is exactly "the clip he just heard".
+  if (side.revealed && side.audio.length > 0) drill = side;
+}
 
-  // EXACTLY ONE CLIP. `audioController.play()` defers extras only within a single
-  // call, so unmasking three sides the obvious way starts three clips — measured
-  // on 単語, whose word clip and example-sentence clip both fired. `sounding` is
-  // the one that plays; every other side is unmasked silently.
-  const sounding = card.loop.sides.find((side) => side.audio.length > 0) ?? null;
-  for (const side of card.loop.sides) {
-    if (side === sounding) continue;
-    side.reveal("caller", { silent: true });
-  }
-  sounding?.reveal("caller");
+/**
+ * Bring the screen into line with how far the reveal has got.
+ *
+ * Called after a press AND after a tap on a cloze, because the loop reveals that
+ * cloze itself (`bindClozes`) and the plan has to notice rather than replay it —
+ * without this, a tapped cloze would be revealed once by the loop and then the
+ * next press would spend a step re-revealing it.
+ */
+function settleReveal(card: MountedCard<HTMLElement>): void {
+  while (stepIndex < steps.length && stepDone(card, steps[stepIndex]!)) stepIndex += 1;
+  if (stepIndex > 0) revealed = true;
 
-  setState("revealed");
+  if (stepIndex >= steps.length) {
+    revealed = true;
+    // Decision 23's one scroll, at the end of the walk. Anything the plan did not
+    // cover — a side with no clozes and no clip, which earns no step — is
+    // unmasked here, silently.
+    for (const rendered of card.result.sides) {
+      if (!rendered.empty) rendered.element.hidden = false;
+    }
+    for (const side of card.loop.sides) side.reveal("caller", { silent: true });
+    setState("revealed");
+  } else {
+    setState("revealing");
+    revealWord.textContent = `next · ${steps.length - stepIndex}`;
+  }
+  paintReplay(drill === null ? "none" : replayState);
+}
+
+/** Has this step's work already been done — by a tap on the cloze itself? */
+function stepDone(card: MountedCard<HTMLElement>, step: RevealStep): boolean {
+  const side = card.loop.side(step.position);
+  if (side === null) return true;
+  if (step.cloze === null) return side.revealed;
+  return side.clozes[step.cloze]?.revealed === true;
 }
 
 /**
@@ -1150,6 +1274,7 @@ document.addEventListener("keydown", (event) => {
     sidebarOpen: document.body.classList.contains("sidebar-open"),
     reviewHidden: reviewView.hidden,
     revealed,
+    moreToReveal: stepIndex < steps.length || !revealed,
     asked: askedOnEntry,
     peeking: peekOffset !== 0,
     hasCard: currentCardId !== null,
@@ -1298,6 +1423,11 @@ el("palettebutton").addEventListener("click", () => {
 
 // A tap on a cloze reveals too — `shadowingLoop`'s `bindClozes` does that for
 // free — so the screen has to follow the state it did not cause.
+//
+// IT MUST NOT ALSO TAKE A STEP. The loop has already unmasked exactly the cloze he
+// touched; running `reveal()` here would spend a step on top of it and skip the
+// next one. `settleReveal` walks the plan past whatever is already done instead,
+// which also copes with him tapping the clozes out of order.
 document.addEventListener(
   "click",
   (event) => {
@@ -1306,10 +1436,14 @@ document.addEventListener(
     // this the click would reveal the REVIEW card sitting behind it — answering a
     // question he has not been asked yet.
     if (target?.closest(".layer") != null) return;
-    if (target?.closest(`.${CLASS.cloze}`) === null || revealed) return;
-    reveal();
+    if (target?.closest(`.${CLASS.cloze}`) === null) return;
+    const card = mounted;
+    if (card !== null) settleReveal(card);
   },
-  true,
+  // BUBBLE, not capture — it used to be capture and had to stop being. The loop's
+  // own listener sits on the cloze element, so a capturing handler on `document`
+  // runs BEFORE the cloze is unmasked and would see nothing to settle.
+  false,
 );
 
 /**

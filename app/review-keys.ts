@@ -54,7 +54,20 @@ export interface KeyState {
   readonly sidebarOpen: boolean;
   /** The review view is not on screen at all — boot, or the done screen. */
   readonly reviewHidden: boolean;
+  /**
+   * The answer is on screen, so grading is meaningful.
+   *
+   * SINCE ZACH'S STEPPED REVEAL (2026-09-12) THIS IS NOT THE OPPOSITE OF
+   * `moreToReveal`, and conflating them re-creates a bug he has already hit once.
+   * A reveal is a walk now — one cloze, then the next, then the next side — and
+   * this turns true on the FIRST step: he knows whether he remembered the moment
+   * the reading appears, so `f` and `j` must work from there. If this were "the
+   * walk is finished", the grade buttons would sit on screen looking pressable
+   * and do nothing, which is exactly what *"it won't let me click remember"* was.
+   */
   readonly revealed: boolean;
+  /** Steps remain in the walk, so `space` has somewhere to go. */
+  readonly moreToReveal: boolean;
   /**
    * The card ASKED something on entry — decision 29's mode 2, or a widget card.
    *
@@ -153,7 +166,9 @@ export function reviewAction(event: KeyEventShape, state: KeyState): ReviewActio
   if (state.reviewHidden) return null;
 
   if (key === "e") return "edit";
-  if (key === " " || key === "enter") return state.revealed ? null : "reveal";
+  // `moreToReveal`, NOT `!revealed` — see `KeyState.revealed`. Space walks the
+  // reveal; the two questions stopped being the same one on 2026-09-12.
+  if (key === " " || key === "enter") return state.moreToReveal ? "reveal" : null;
 
   // ── operations, which act WITHOUT grading ──
   if (!state.hasCard) return null;
@@ -191,6 +206,7 @@ export const REVIEWING: KeyState = {
   sidebarOpen: false,
   reviewHidden: false,
   revealed: false,
+  moreToReveal: true,
   asked: false,
   peeking: false,
   hasCard: true,

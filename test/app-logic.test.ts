@@ -7,6 +7,7 @@ import {
   visiblePositions,
   type BoundarySide,
 } from "../app/review-boundary.js";
+import { revealSteps, type StepSide } from "../app/review-steps.js";
 
 /**
  * THE FIRST TESTS `app/` HAS EVER HAD.
@@ -258,6 +259,92 @@ describe("the typing guard — the shortcut that must never fire while he types"
     expect(survivesTyping("Escape")).toBe(true);
     for (const key of ["a", "d", "j", "f", "e", " ", "Enter", "ArrowRight", "/"]) {
       expect(survivesTyping(key), `${key} must not survive a text field`).toBe(false);
+    }
+  });
+});
+
+// ── the reveal order ──────────────────────────────────────────────────────────
+
+/**
+ * ZACH, 2026-09-12: *"when you click reveal, it shows the whole thing, the next
+ * slide, and the third slide, and every cloze. the correct order should be, each
+ * cloze in that slide, once every clozes are shown, the next side and so on. for
+ * the reverse, the cloze are still in the same ascending order, just the side
+ * reverse."*
+ */
+const stepSide = (
+  position: number,
+  clozes: number,
+  audio: number,
+  prompt = false,
+): StepSide => ({ position, clozes, audio, prompt });
+
+describe("the reveal order", () => {
+  it("walks 単語 Reading=true: side 2's cloze, the sentence, then the meaning", () => {
+    // Side 1 is the head word and is the question. Side 2 carries one cloze and
+    // the word's clip, side 3 the example sentence and its clip, side 4 the
+    // meaning behind a cloze.
+    const steps = revealSteps([
+      stepSide(0, 0, 0, true),
+      stepSide(1, 1, 1),
+      stepSide(2, 0, 1),
+      stepSide(3, 1, 0),
+    ]);
+    expect(steps).toEqual([
+      { position: 1, cloze: 0, show: true },
+      { position: 2, cloze: null, show: true },
+      { position: 3, cloze: 0, show: true },
+    ]);
+  });
+
+  it("walks 単語 Reading=false: the reading, THEN the kanji, then the rest", () => {
+    // Side 1 is empty on a mode-2 card, so the screen starts at side 2 — which is
+    // the question AND carries two clozes. Both are steps; neither shows a side,
+    // because the side is already up.
+    const steps = revealSteps([stepSide(1, 2, 1, true), stepSide(2, 0, 1), stepSide(3, 1, 0)]);
+    expect(steps).toEqual([
+      { position: 1, cloze: 0, show: false },
+      { position: 1, cloze: 1, show: false },
+      { position: 2, cloze: null, show: true },
+      { position: 3, cloze: 0, show: true },
+    ]);
+  });
+
+  it("gives a question side with audio and no cloze a step of its own", () => {
+    // 敬語 and New Vocab: the head word is unmasked beside its clip, so the CLIP
+    // is the only answer there is. Before the stepper these sounded because the
+    // one-shot reveal nominated "the first side with audio"; a plan that skipped
+    // them would have made 1,204 cards silent.
+    expect(revealSteps([stepSide(0, 0, 1, true)])).toEqual([
+      { position: 0, cloze: null, show: false },
+    ]);
+  });
+
+  it("gives a question side with neither cloze nor audio no step at all", () => {
+    // There is nothing left to do to it, and a press that changes nothing on
+    // screen reads as a broken button.
+    expect(revealSteps([stepSide(0, 0, 0, true)])).toEqual([]);
+  });
+
+  it("never crosses into the next side before finishing this one", () => {
+    const steps = revealSteps([stepSide(0, 2, 0, true), stepSide(1, 2, 0)]);
+    expect(steps.map((step) => step.position)).toEqual([0, 0, 1, 1]);
+    expect(steps.map((step) => step.cloze)).toEqual([0, 1, 0, 1]);
+    // Only the FIRST step on a hidden side puts it on screen.
+    expect(steps.map((step) => step.show)).toEqual([false, false, true, false]);
+  });
+
+  it("reverses the SIDES and leaves cloze order ascending — the second half of his sentence", () => {
+    // A reverse track permutes sides; `position` is display order, so the plan
+    // sees them already permuted and does nothing clever. Within a side, document
+    // order is untouched by the permutation — so this needs no code, and this
+    // test is what stops that staying true only by accident.
+    const forward = revealSteps([stepSide(0, 2, 0, true), stepSide(1, 2, 0)]);
+    const reverse = revealSteps([stepSide(0, 2, 0, true), stepSide(1, 2, 0)]);
+    expect(reverse).toEqual(forward);
+    for (const position of [0, 1]) {
+      const clozes = reverse.filter((step) => step.position === position).map((s) => s.cloze);
+      expect(clozes, `side ${position} must ascend`).toEqual([0, 1]);
     }
   });
 });

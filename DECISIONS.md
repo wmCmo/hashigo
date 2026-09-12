@@ -945,6 +945,78 @@ right**: it holds his verbatim reasoning and this quotes it.
    the tree went from `70 · 90` to `90`, and a second sync of the same payload
    changed nothing.
 
+34. **A REVEAL IS A WALK, NOT A SWITCH: one cloze at a time, then the next side.**
+   Zach, 2026-09-12, on the shipped screen: *"when you click reveal, it shows the
+   whole thing, the next slide, and the third slide, and every cloze. the correct
+   order should be, each cloze in that slide, once every clozes are shown, the next
+   side and so on. for the reverse, the cloze are still in the same ascending order,
+   just the side reverse."*
+
+   **THIS REVERSES A CALL THAT WAS RECORDED AND ARGUED FOR** — `src/render/reveal.ts`
+   carried a header section titled "DO CLOZES ON A SIDE REVEAL INDIVIDUALLY OR
+   TOGETHER? TOGETHER, PER SIDE" with three measured reasons. It was never a
+   decision of his; it was an agent's, taken in his absence and written up
+   persuasively, which is exactly the shape of thing this file exists to distinguish
+   from the real ones. Re-examined against his instruction:
+
+   * **"`cloze/indexes` is empty on all 7,716 cards, so nothing is index-grouped"**
+     — true, and it never argued for a group. It says the AUTHOR named no groups,
+     which leaves the order to the screen. Document order is the order he reads in.
+   * **"単語 side 2's two clozes are the same fact written twice"** — this one was
+     simply wrong. `{{<<Reference>>}}` is the READING; `{{<furigana><<単語>></furigana>}}`
+     is the KANJI with the reading as ruby. On the 3,177 mode-2 cards, where the clip
+     is the question, that is the exercise in two steps rather than one: hear
+     しょうきゃく, confirm the reading, then meet 償却.
+   * **"there is nowhere to record a partial reveal"** — correct, and it stays
+     correct. Nothing about a step is graded or persisted; decision 2's binary grade
+     is untouched. A step is a thing on screen, not a thing in the schema.
+
+   **PER SIDE still bounds it.** A step never crosses into the next side — revealing
+   side 3's cloze while side 2 is on screen leaks the answer to side 2. That was
+   always the load-bearing half of the old rule and it survives intact.
+
+   **THE UNITS, and the one place they are not one-per-cloze.** A hidden side's
+   arrival and its FIRST cloze are one step. Splitting them would spend a whole
+   press on a side whose every answer is still masked — a tap that changes nothing
+   he can read. Every further cloze on that side is its own step.
+
+   **A SIDE SOUNDS ITS CLIP WHEN ITS LAST CLOZE GOES**, not its first. So the
+   stepped path plays no earlier than the one-shot path did, and decision 29's hard
+   rule is untouched — `enter()` still does nothing, and the mode-1 tests still pin
+   zero plays on entry.
+
+   **REVERSE NEEDS NO CODE, AND THAT IS MEASURED RATHER THAN ASSERTED.** Sides
+   arrive at the planner already permuted and keyed by display position; a side's
+   clozes are in document order, which the permutation never touches. Over 40 real
+   reverse cards: **40/40 permuted, 320 sides, every one ascending.**
+
+   **GRADING DOES NOT WAIT FOR THE END OF THE WALK.** `revealed` (grade is
+   meaningful) turns true on the FIRST step; `moreToReveal` (space has somewhere to
+   go) is a separate flag. Conflating them would put the grade buttons on screen
+   looking pressable and dead, which is exactly the defect he reported on 2026-09-07
+   as *"it won't let me click remember"*.
+
+   **AND IT IS WHAT MAKES THE SECOND CLIP REACHABLE AT ALL.** He reported in the
+   same message: *"i still can't hear audio of example sentence"*. The native
+   `<audio>` is `display:none` in review, the one visible affordance is the round
+   replay button, and that button was nailed at mount time to "the first side with
+   audio" — so 単語's example-sentence clip could not be played by any gesture, on
+   any card. The button now follows the walk: it plays the clip the current step
+   sounded. That also answers his 2026-09-12 question *"a single play button where
+   we couldn't distinguish which audio to play shouldn't work right?"* without
+   adding a second control — the step says which clip is current, so the button does.
+
+   **THE OTHER HALF OF THAT COMPLAINT IS NOT A UI BUG AND IS NOT FIXED HERE.**
+   Measured over the shipped seed: **5,044 cards carry two or more clips and 36 of
+   them (0.7%) have all of them on the device.** `scripts/app-bootstrap.ts` spends
+   its 200 MiB taking each card's CHEAPEST clip first, deliberately, so that no card
+   gets a second before every card has a first — and a card's second clip is the
+   example sentence. Covering every card's second clip costs **613 MiB** against the
+   store's 619 MiB total: there is no cheap middle, because the sentence clips ARE
+   the bulk of the store. So hearing example sentences is a re-bootstrap at
+   `--speech-bytes 650000000` and a one-time ~620 MB download per origin, which is
+   his call and not an agent's.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

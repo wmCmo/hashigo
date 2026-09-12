@@ -523,31 +523,75 @@ describe("prompt(): the mode-2 question", () => {
 
 describe("cloze grouping", () => {
   /**
-   * 単語 side 2 in the shape the template writes it: the reading as text and the
-   * reading as ruby, both clozed. They are the same fact, so revealing one and
-   * masking the other would print the answer and hide it at once.
+   * 単語 side 2 in the shape the template writes it: the READING as text, then the
+   * KANJI with the reading as ruby. Both clozed, and they are two facts rather
+   * than one — which is what Zach's 2026-09-12 ordering turns into two steps.
    */
   const TWO_CLOZES = "{{あらかた}}\n{{<furigana>粗方</furigana>}}";
 
-  it("reveals every cloze on the side from one tap, and only that side", () => {
+  it("reveals ONE cloze per tap, in document order, and never crosses the side", () => {
+    // ZACH, 2026-09-12: *"the correct order should be, each cloze in that slide,
+    // once every clozes are shown, the next side and so on"*. This test used to
+    // assert the opposite — one tap, whole side — and the reversal is his.
     const h = harness(`${TWO_CLOZES}\n---\n{{意味}}`);
     expect(h.result.clozes).toHaveLength(3);
     expect(h.loop.sides.map((side) => side.clozes.length)).toEqual([2, 1]);
 
     h.cloze(0).dispatch("click");
 
+    expect(h.result.clozes.map((mount) => mount.revealed)).toEqual([true, false, false]);
+    expect(h.loop.sides.map((side) => side.revealed)).toEqual([false, false]);
+    expect(h.loop.sides[0]?.masked).toBe(1);
+    // A partial move is a `step`, not a `reveal`: the side is not finished.
+    expect(h.events.filter((event) => event.kind === "step")).toHaveLength(1);
+    expect(h.events.filter((event) => event.kind === "reveal")).toHaveLength(0);
+
+    h.cloze(1).dispatch("click");
+
     expect(h.result.clozes.map((mount) => mount.revealed)).toEqual([true, true, false]);
+    // NOW the side is revealed — and the cloze on the NEXT side is untouched.
     expect(h.loop.sides.map((side) => side.revealed)).toEqual([true, false]);
-    // One reveal event, not two: the group is one act.
     expect(h.events.filter((event) => event.kind === "reveal")).toHaveLength(1);
+    // The count on that one event is the whole act, not the last step of it.
     expect(h.events.find((event) => event.kind === "reveal")?.clozes).toBe(2);
   });
 
-  it("groups a cloze revealed by ANY route, including result.revealAll()", () => {
-    // The grouping is enforced on `ClozeMount.onReveal`, not on the tap, so there
-    // is no way to reveal half a side — `revealOne` does not exist.
+  it("steps in order from revealNext(), and sounds the clip only on the LAST one", async () => {
+    // The stepped path must not move the clip earlier than the one-shot path did.
+    // On a mode-1 card that would be the hard rule failing by a different door.
+    const h = harness(`{{あらかた}}\n{{<furigana>粗方</furigana>}}\n![clip](uVQp0iMb.mp3)`, {
+      store: STORE,
+    });
+    const side = h.loop.side(0);
+    expect(side?.masked).toBe(2);
+
+    expect(side?.revealNext()).toBe(true);
+    await h.audio.idle();
+    expect(h.result.clozes.map((mount) => mount.revealed)).toEqual([true, false]);
+    expect(h.audio.stats.requested).toBe(0);
+    expect(h.media().plays).toBe(0);
+
+    expect(side?.revealNext()).toBe(true);
+    await h.audio.idle();
+    expect(side?.revealed).toBe(true);
+    expect(h.media().plays).toBe(1);
+    expect(h.outcomes[0]?.reason).toBe("reveal");
+
+    // Nothing left to step.
+    expect(side?.revealNext()).toBe(false);
+    expect(h.media().plays).toBe(1);
+  });
+
+  it("counts a cloze revealed by ANY route, including result.revealAll()", () => {
+    // The loop no longer PULLS the side, but it still has to NOTICE: a cloze
+    // unmasked by a route the loop did not drive must still finish the side when
+    // it is the last one, or a visibly-open side stays `revealed === false` and
+    // its clip never sounds.
     const direct = harness(TWO_CLOZES);
     direct.result.clozes[1]?.reveal();
+    expect(direct.loop.sides[0]?.revealed).toBe(false);
+    expect(direct.loop.sides[0]?.masked).toBe(1);
+    direct.result.clozes[0]?.reveal();
     expect(direct.loop.sides[0]?.revealed).toBe(true);
     expect(direct.result.clozes.map((mount) => mount.revealed)).toEqual([true, true]);
 
@@ -931,15 +975,22 @@ describe("source discipline", () => {
     }
   });
 
-  it("starts playback from exactly three NAMED places, and none of them is `enter`", () => {
+  it("starts playback from exactly four NAMED places, and none of them is `enter`", () => {
     const reveal = stripComments(readFileSync(resolve(SRC_RENDER, "reveal.ts"), "utf8"));
     // `reveal.ts` may only ask the port, and only with a reason it names at the
     // call site. Counting the calls alone was the old assertion and it was too
     // weak the moment decision 29 added a third: a fourth could have arrived as
     // `audio.play(media, reason)` with `reason` computed anywhere. So the reasons
     // are read out of the source, and the SET is what is pinned.
+    //
+    // **FOUR since 2026-09-12, and the fourth is `settle`** — Zach's stepped
+    // reveal moved "this side is now fully unmasked" out of `reveal()`, because
+    // a side can reach that state one cloze at a time. It asks with `"reveal"`,
+    // which is the honest reason: the answer is complete and this is the
+    // comparison. The set of reasons is therefore UNCHANGED, which is the
+    // property that matters — no new way to ask, one new caller of an old one.
     const asks = [...reveal.matchAll(/audio(?:\?)?\.play\(\s*\[?[^,)]*\]?\s*,\s*(.*?)\)/g)];
-    expect(asks).toHaveLength(3);
+    expect(asks).toHaveLength(4);
     const reasons = asks.map((match) => (match[1] ?? "").trim());
     // `play()`'s is a conditional over two literals; the other two are literals.
     expect(reasons).toContain('"reveal"');

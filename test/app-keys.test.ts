@@ -26,8 +26,13 @@ describe("reviewing a card", () => {
   it("reveals, then grades", () => {
     expect(reviewAction(press(" "), state())).toBe("reveal");
     expect(reviewAction(press("Enter"), state())).toBe("reveal");
-    // Not twice: a second space on a revealed card must not re-enter anything.
-    expect(reviewAction(press(" "), state({ revealed: true }))).toBeNull();
+    // SPACE WALKS, AND `revealed` DOES NOT STOP IT — Zach's stepped reveal,
+    // 2026-09-12. Mid-walk the answer is partly up (so `revealed`) and there is
+    // still somewhere to go (so `moreToReveal`), and space has to keep going or
+    // the keyboard stops halfway through a card the thumb can still finish.
+    expect(reviewAction(press(" "), state({ revealed: true }))).toBe("reveal");
+    // At the END of the walk it stops: a spare space must not re-enter anything.
+    expect(reviewAction(press(" "), state({ revealed: true, moreToReveal: false }))).toBeNull();
 
     // f and j are DEAD until the reveal. That is decision 2's binary grade being
     // an answer to a question he has actually been asked.

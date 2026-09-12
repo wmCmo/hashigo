@@ -537,6 +537,35 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     `--danger` are isoluminant. Measured end to end with `scripts/sync-peer.ts`
     standing in for a second device. See `DECISIONS.md` 33.
 
+34. **A REVEAL IS A WALK, NOT A SWITCH — one cloze at a time, then the next side.**
+    Zach, 2026-09-12: *"when you click reveal, it shows the whole thing, the next
+    slide, and the third slide, and every cloze. the correct order should be, each
+    cloze in that slide, once every clozes are shown, the next side and so on. for
+    the reverse, the cloze are still in the same ascending order, just the side
+    reverse."* **This REVERSES the "TOGETHER, PER SIDE" call that `src/render/reveal.ts`
+    argued for in its own header** — that was an agent's call, not his, and one of
+    its three reasons was simply wrong (単語 side 2's two clozes are the READING and
+    the KANJI, not one fact twice). **PER SIDE still bounds it**: a step never
+    crosses into the next side. **A side sounds its clip when its LAST cloze goes**,
+    so the stepped path plays no earlier than the one-shot path did and decision 29
+    is untouched — `enter()` still does nothing. **Reverse needs no code**: sides
+    arrive already permuted and keyed by display position, clozes are in document
+    order within a side. Measured, 40 real reverse cards: 40/40 permuted, 320 sides,
+    every one ascending. **Grading does not wait for the end of the walk** —
+    `revealed` turns true on the FIRST step and `moreToReveal` is a separate flag,
+    because conflating them puts live-looking dead buttons on screen, which is the
+    2026-09-07 *"it won't let me click remember"* defect. **It is also what makes the
+    SECOND clip reachable at all**: the native `<audio>` is `display:none` in review
+    and the round replay button was nailed at mount to "the first side with audio",
+    so 単語's example-sentence clip could not be played by any gesture. The button
+    follows the walk now. **The other half of that complaint is a BUDGET, not a bug,
+    and is NOT fixed** — 5,044 cards carry two or more clips and **36 (0.7%)** have
+    all of them on the device, because `app-bootstrap` spends 200 MiB on each card's
+    CHEAPEST clip first, on purpose. Every card's second clip costs **613 MiB** of
+    the store's 619: the sentence clips ARE the store. Hearing them is a re-bootstrap
+    at `--speech-bytes 650000000` and a ~620 MB one-time download, which is his call.
+    See `DECISIONS.md` 34.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19
