@@ -11,6 +11,13 @@ import {
 import { revealSteps, type StepSide } from "../app/review-steps.js";
 import { audioIsStale } from "../app/seed-freshness.js";
 import {
+  forcedChrome,
+  readTheme,
+  themeAttribute,
+  themeLabel,
+  THEMES,
+} from "../app/theme.js";
+import {
   CAPTURE,
   DEFAULT_PLAYBACK,
   mayPlayClip,
@@ -618,5 +625,49 @@ describe("shadowing controls", () => {
       // Nothing recognised: the empty string is legal and means "you pick".
       expect(pickRecordingType(() => false)).toBe("");
     });
+  });
+});
+
+// ─── light, dark, or whatever the device says ───────────────────────────────
+
+/**
+ * Zach, 2026-09-13: *"where do i change light dark theme?"* He could not — the
+ * app followed `prefers-color-scheme` and offered no control, though
+ * `app/style.css` has carried both `[data-theme]` branches since decision 32.
+ *
+ * The rule with the silent failure is `themeAttribute`, and it is worth a test
+ * on its own: the stylesheet's media block is guarded `:not([data-theme="light"])`,
+ * so ANY string in that attribute is a statement. Writing "system" into it would
+ * leave a dark phone permanently light, and the screen would still read
+ * "follow this device".
+ */
+describe("theme", () => {
+  it("says `follow this device` by taking the attribute OFF, not by naming it", () => {
+    expect(themeAttribute("system")).toBeNull();
+    expect(themeAttribute("light")).toBe("light");
+    expect(themeAttribute("dark")).toBe("dark");
+  });
+
+  it("offers three states, because a switch would take his sunset away", () => {
+    // A phone that turns dark at sunset is a feature he already has. A two-way
+    // toggle removes it the first time he touches it, with no way back short of
+    // clearing site data.
+    expect([...THEMES]).toEqual(["system", "light", "dark"]);
+    expect(themeLabel("system")).toBe("follow this device");
+  });
+
+  it("forces the phone's chrome only when he has actually chosen", () => {
+    // On `system` the two media-scoped <meta> tags answer for themselves; a
+    // forced value there would freeze the status bar at one ground.
+    expect(forcedChrome("system")).toBeNull();
+    expect(forcedChrome("dark")).toBe("#1A1815");
+    expect(forcedChrome("light")).toBe("#ECEAE5");
+  });
+
+  it("falls back to following the device on anything unrecognised", () => {
+    for (const raw of [null, undefined, "", "System", "auto", "{}", "DARK"]) {
+      expect(readTheme(raw), `readTheme(${String(raw)})`).toBe("system");
+    }
+    expect(readTheme("dark")).toBe("dark");
   });
 });

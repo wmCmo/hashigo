@@ -723,6 +723,53 @@ describe("every position: fixed rule has an answer for the rail", () => {
     expect(menu, "undo was put in the menu").not.toMatch(/runUndo/);
   });
 
+  it("the theme override agrees with the stylesheet in three separate places", () => {
+    // FOUR LINES OF THE THEME LIVE IN `index.html`'s <head>, inline, because
+    // `main.ts` is a module script and runs too late to stop the boot screen
+    // flashing the wrong ground. Duplication bought on purpose — so the three
+    // copies are pinned against each other here rather than trusted.
+    const html = readFileSync(new URL("../app/index.html", import.meta.url), "utf8");
+    const theme = readFileSync(new URL("../app/theme.ts", import.meta.url), "utf8");
+
+    // 1. the storage key.
+    const key = /THEME_KEY = "([^"]+)"/.exec(theme)?.[1];
+    expect(key, "app/theme.ts no longer exports a key").toBeDefined();
+    expect(html, `the inline script does not read ${String(key)}`).toContain(
+      `localStorage.getItem("${String(key)}")`,
+    );
+
+    // 2. the chrome colours ARE `--paper` in each theme. `<meta>` cannot read a
+    //    custom property — the phone paints its chrome before any CSS resolves —
+    //    so these are hand-copied, which is exactly why they need checking.
+    const chrome = /CHROME = \{ light: "(#[0-9A-Fa-f]{6})", dark: "(#[0-9A-Fa-f]{6})" \}/.exec(
+      theme,
+    );
+    expect(chrome, "app/theme.ts no longer declares CHROME").not.toBeNull();
+    expect((chrome?.[1] ?? "").toLowerCase()).toBe(resolve("--paper", light).toLowerCase());
+    expect((chrome?.[2] ?? "").toLowerCase()).toBe(resolve("--paper", dark).toLowerCase());
+
+    // 3. and the inline script forces the same two.
+    for (const colour of [chrome?.[1], chrome?.[2]]) {
+      expect(html, `the inline script does not force ${String(colour)}`).toContain(
+        String(colour),
+      );
+    }
+  });
+
+  it("the stylesheet can actually be overruled in BOTH directions", () => {
+    // The media block is guarded `:not([data-theme="light"])` so a forced light
+    // wins on a dark device, and `[data-theme="dark"]` exists so a forced dark
+    // wins on a light one. Only one of the two is obvious; a stylesheet with the
+    // media block alone would make the picker work in one direction and silently
+    // not the other.
+    expect(css, "a forced light cannot overrule a dark device").toMatch(
+      /@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\)/,
+    );
+    expect(css, "a forced dark cannot overrule a light device").toMatch(
+      /:root\[data-theme="dark"\] \{/,
+    );
+  });
+
   it("contributes nothing to the layout until the rail stands", () => {
     // The whole design: one token, zero by default, so every `--rail-w` above is
     // correct at phone width without a second media query to keep in step.

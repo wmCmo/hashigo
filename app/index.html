@@ -32,6 +32,25 @@
       crossorigin
     />
     <link rel="stylesheet" href="./style.css" />
+    <!-- HIS THEME, APPLIED BEFORE ANYTHING PAINTS.
+         `main.ts` is a module script and therefore runs after the document is
+         parsed, which is too late: a forced-light user would watch the boot
+         screen flash dark first, and the boot screen is on display for as long
+         as the database takes to fetch. These four lines are the only reason
+         this is inline. Everything else about the theme is in `app/theme.ts`,
+         which exports the key this reads; a test pins that the two agree. -->
+    <script>
+      try {
+        var t = localStorage.getItem("hashigo.theme");
+        if (t === "light" || t === "dark") {
+          document.documentElement.setAttribute("data-theme", t);
+          var c = t === "dark" ? "#1A1815" : "#ECEAE5";
+          for (var m of document.querySelectorAll('meta[name="theme-color"]')) m.content = c;
+        }
+      } catch (cause) {
+        /* a disabled localStorage costs the preference, not the page */
+      }
+    </script>
   </head>
   <body data-view="review">
     <!-- Decision 17's banner. Not dismissible, and it is the FIRST thing in the

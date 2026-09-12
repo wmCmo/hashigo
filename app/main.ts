@@ -107,6 +107,15 @@ import {
 } from "./review-boundary.js";
 import { revealSteps, type RevealStep } from "./review-steps.js";
 import {
+  readTheme,
+  themeAttribute,
+  themeLabel,
+  forcedChrome,
+  THEMES,
+  THEME_KEY,
+  type Theme,
+} from "./theme.js";
+import {
   CAPTURE,
   DEFAULT_PLAYBACK,
   mayPlayClip,
@@ -1396,6 +1405,50 @@ moreButton.addEventListener("click", () => {
     openCardMenu(currentCardId, previewOfCurrent?.loaded.name ?? currentCardId);
   }
 });
+
+// ─── his theme ──────────────────────────────────────────────────────────────
+
+/**
+ * Zach, 2026-09-13: *"where do i change light dark theme?"* He could not — the
+ * app followed `prefers-color-scheme` and had no control at all, even though
+ * `style.css` has carried `[data-theme]` for both directions since decision 32.
+ *
+ * The attribute is applied twice on purpose: once by four inline lines in
+ * `index.html`'s `<head>`, before anything paints, and once here. This module
+ * runs after the document is parsed, which is too late to stop the boot screen
+ * flashing the wrong ground — and the boot screen is up for as long as the
+ * database takes to fetch. `app/theme.ts` owns the key both of them read.
+ */
+let currentTheme: Theme = "system";
+try {
+  currentTheme = readTheme(localStorage.getItem(THEME_KEY));
+} catch {
+  /* a disabled localStorage costs the preference, not the session */
+}
+
+function applyTheme(theme: Theme): void {
+  currentTheme = theme;
+  const attribute = themeAttribute(theme);
+  if (attribute === null) document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", attribute);
+
+  // THE PHONE'S OWN CHROME HAS TO FOLLOW, or a forced-light app sits in a black
+  // status bar. `index.html` ships two media-scoped `theme-color` tags; forcing
+  // a theme means overriding BOTH, because either may be the one that matches.
+  const forced = forcedChrome(theme);
+  for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+    if (forced !== null) meta.content = forced;
+    else meta.content = meta.media.includes("dark") ? "#1A1815" : "#ECEAE5";
+  }
+
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    /* full or disabled: it still applies for this session */
+  }
+}
+
+applyTheme(currentTheme);
 
 // ─── the shadowing controls: loop, speed, and his own voice ─────────────────
 
@@ -4702,6 +4755,12 @@ async function openSettings(): Promise<void> {
     "new.limit": String(reply.resolved.newLimit),
     "session.interleave": reply.resolved.interleave,
   };
+  // FIRST, AND IT IS THE ONE ROW THAT DOES NOT WRITE TO THE DATABASE. Every
+  // other setting here syncs between his two devices (decision 33); a theme must
+  // not, because the laptop at his desk in the afternoon and the phone in bed at
+  // night are different answers to the same question. See `app/theme.ts`.
+  body.appendChild(themeRow());
+
   for (const row of SETTING_ROWS) {
     const stored = reply.values[row.key];
     body.appendChild(
@@ -4723,6 +4782,52 @@ async function openSettings(): Promise<void> {
     archived: false,
   });
   (body.querySelector(".edit-input") as HTMLElement | null)?.focus();
+}
+
+/**
+ * The theme picker — the same `.edit-row` shape as the six below it, so it does
+ * not read as a different kind of thing, and a plainly different mechanism.
+ *
+ * `system` is a real choice rather than the absence of one. A phone that turns
+ * dark at sunset is a feature he already has, and a two-way switch takes it away
+ * the first time he touches it with no way back short of clearing site data.
+ */
+function themeRow(): HTMLElement {
+  const wrap = document.createElement("label");
+  wrap.className = "edit-row";
+
+  const label = document.createElement("span");
+  label.className = "edit-label";
+  label.textContent = "theme";
+  const when = document.createElement("i");
+  when.className = "edit-type";
+  when.textContent = "at once · this device only";
+  label.appendChild(when);
+  wrap.appendChild(label);
+
+  const select = document.createElement("select");
+  select.className = "edit-input";
+  for (const value of THEMES) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = themeLabel(value);
+    select.appendChild(option);
+  }
+  select.value = currentTheme;
+  select.addEventListener("change", () => {
+    applyTheme(readTheme(select.value));
+  });
+  wrap.appendChild(select);
+
+  const note = document.createElement("p");
+  note.className = "settings-note";
+  note.textContent =
+    "Both grounds are measured for contrast in every colour this app puts text " +
+    "in — decision 32 ships them as equals rather than one being the real one. " +
+    "This does NOT sync: it is the one preference where his two devices should " +
+    "be allowed to disagree.";
+  wrap.appendChild(note);
+  return wrap;
 }
 
 function settingRow(
