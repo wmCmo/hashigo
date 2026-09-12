@@ -517,3 +517,123 @@ describe("the session state machine", () => {
     }
   });
 });
+
+/**
+ * Grading the card he is LOOKING at, not the one the cursor is on.
+ *
+ * Zach, 2026-09-12: *"in mochi, you can use arrows to go to next or previous
+ * cards to review them, not stuck like this"*. The arrows moved a read-only peek
+ * offset and grading was locked while it was non-zero, so arrowing forward meant
+ * landing somewhere nothing worked.
+ *
+ * THE PROPERTY THAT MATTERS IS THE ONE THE MIXER HAS: TOTALITY. `answerAt` grades
+ * out of order by SWAPPING the target into the cursor, and a swap that drops or
+ * duplicates a card would lose a review — the same failure an off-by-one in
+ * `interleaveTracks` causes, one layer up.
+ */
+describe("answerAt — grading out of order", () => {
+  it("grades the card he is reading, not the one at the cursor", () => {
+    const { db } = fixture(5, 0);
+    const session = buildSession(db, { now: AT, newLimit: 0 });
+    const target = session.peek(2);
+    expect(target).not.toBeNull();
+
+    const result = session.answerAt(2, true, { at: AT });
+    expect("refused" in result).toBe(false);
+    if ("refused" in result) return;
+    expect(result.graded).toBe(true);
+    expect(result.item.trackId).toBe(target?.trackId);
+
+    // Exactly one review row, on the track he was reading.
+    const rows = db
+      .prepare("SELECT track_id FROM reviews WHERE source = 'local'")
+      .all() as { track_id: number }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.track_id).toBe(target?.trackId);
+    db.close();
+  });
+
+  it("LOSES NOTHING — the card it displaced is still reached", () => {
+    const { db } = fixture(5, 0);
+    const session = buildSession(db, { now: AT, newLimit: 0 });
+    const before = session.planned().map((i) => i.trackId);
+
+    session.answerAt(3, true, { at: AT });
+
+    // Walk the rest of the session out.
+    const seen: number[] = [];
+    let guard = 0;
+    while (!session.done && guard < 50) {
+      const item = session.current();
+      if (item === null) break;
+      seen.push(item.trackId);
+      session.answerAt(0, true, { at: AT });
+      guard += 1;
+    }
+
+    // Every track appears exactly once across the whole session.
+    const graded = (
+      db.prepare("SELECT track_id FROM reviews WHERE source = 'local'").all() as {
+        track_id: number;
+      }[]
+    ).map((r) => r.track_id);
+    expect([...graded].sort((a, b) => a - b)).toEqual([...before].sort((a, b) => a - b));
+    expect(new Set(graded).size).toBe(before.length);
+    db.close();
+  });
+
+  it("refuses a card already answered, rather than writing a second review", () => {
+    const { db } = fixture(4, 0);
+    const session = buildSession(db, { now: AT, newLimit: 0 });
+    session.answerAt(0, true, { at: AT });
+    const after = counts(db);
+
+    const result = session.answerAt(-1, false, { at: AT });
+    expect(result).toEqual({ refused: "already-answered" });
+    // A second row for one event is not a correction — it is two data points
+    // where one thing happened, and it feeds FSRS.
+    expect(counts(db)).toEqual(after);
+    db.close();
+  });
+
+  it("refuses to reach forward into the decision-13 re-ask tail", () => {
+    const { db } = fixture(2, 0);
+    const session = buildSession(db, { now: AT, newLimit: 0 });
+    session.answerAt(0, false, { at: AT }); // forgotten -> queues a re-ask
+    session.answerAt(0, true, { at: AT }); // the other fresh card
+
+    // The cursor is now in the re-ask tail. A re-ask writes no review at all.
+    const before = counts(db);
+    const result = session.answerAt(1, true, { at: AT });
+    expect("refused" in result).toBe(true);
+    expect(counts(db)).toEqual(before);
+    db.close();
+  });
+
+  it("undo needs no special case, because the grade happened at the cursor", () => {
+    const { db } = fixture(5, 0);
+    const session = buildSession(db, { now: AT, newLimit: 0 });
+    const before = counts(db);
+    const target = session.peek(2);
+
+    const result = session.answerAt(2, true, { at: AT });
+    if ("refused" in result) throw new Error("expected a grade");
+    expect(counts(db).reviews).toBe(before.reviews + 1);
+
+    session.unanswer(result);
+    expect(counts(db)).toEqual(before);
+    // And the card is back in front of him.
+    expect(session.current()?.trackId).toBe(target?.trackId);
+    db.close();
+  });
+
+  it("answerAt(0) is answer() — one path, so the two cannot drift", () => {
+    const { db } = fixture(3, 0);
+    const session = buildSession(db, { now: AT, newLimit: 0 });
+    const current = session.current();
+    const result = session.answerAt(0, true, { at: AT });
+    if ("refused" in result) throw new Error("expected a grade");
+    expect(result.item.trackId).toBe(current?.trackId);
+    db.close();
+  });
+});

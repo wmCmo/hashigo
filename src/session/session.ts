@@ -289,13 +289,18 @@ function toItem(track: QueuedTrack, origin: "due" | "new"): SessionItem {
  */
 export class ReviewSession {
   private readonly db: SqliteHandle;
-  private readonly plan: readonly SessionItem[];
+  /**
+   * MUTABLE, and only `answerAt` may reorder it — see that method for why a swap
+   * is the whole mechanism. Length never changes, so every index-derived figure
+   * in `progress()` keeps meaning what it meant.
+   */
+  private readonly plan: SessionItem[];
   private readonly reasks: SessionItem[] = [];
   private cursor = 0;
 
   constructor(db: SqliteHandle, plan: readonly SessionItem[]) {
     this.db = db;
-    this.plan = plan;
+    this.plan = [...plan];
   }
 
   /**
@@ -385,6 +390,69 @@ export class ReviewSession {
     }
     this.cursor += 1;
     return { item, graded: true, review, queuedReask, undo: { reviewId: review.reviewId, snapshot } };
+  }
+
+  /**
+   * Grade the card he is LOOKING AT, even when that is not the one the cursor is
+   * on. Returns null when the target cannot be graded, with the reason.
+   *
+   * ─── WHY THIS EXISTS ────────────────────────────────────────────────────────
+   *
+   * Zach, 2026-09-12: *"in mochi, you can use arrows to go to next or previous
+   * cards to review them, not stuck like this"*. The arrows moved a read-only
+   * `peek` offset and grading was hard-locked while it was non-zero, so arrowing
+   * forward put him in a state where nothing worked and the way out was to come
+   * back. That lock was protecting a real hazard — `answer()` grades
+   * `plan[cursor]`, so grading while the screen showed a different card would
+   * write a review against the wrong track — but locking the buttons treated the
+   * symptom. The cause is that the screen and the cursor were allowed to disagree.
+   *
+   * ─── THE MECHANISM IS A SWAP, AND THAT IS WHY IT IS SAFE ────────────────────
+   *
+   * Grading at offset N swaps `plan[cursor]` and `plan[cursor + N]`, then grades
+   * normally at the cursor. So:
+   *
+   *   · the card he is reading is the card that gets graded — by construction,
+   *     not by a second code path that could drift from `answer()`;
+   *   · NOTHING IS LOST. The card he arrowed past takes the vacated slot and he
+   *     reaches it later. A "skip forward" that advanced the cursor would drop it
+   *     out of the session silently, which is the failure `skipCurrent` documents;
+   *   · the plan's LENGTH never changes, so `planned`, `answered`, `remaining`
+   *     and every other index-derived figure keep meaning what they meant;
+   *   · `unanswer` needs no special case. The grade happened at the cursor like
+   *     any other, so undo restores it like any other.
+   *
+   * ─── THE TWO REFUSALS, BOTH DELIBERATE ──────────────────────────────────────
+   *
+   * BACKWARD (`offset < 0`) is refused because those cards are already answered
+   * this session. Grading one again would write a SECOND review row for the same
+   * track on the same day, which is not a correction — it is two data points where
+   * one event happened, and it feeds FSRS. The way to change an answer is undo.
+   *
+   * A RE-ASK (offset landing past the plan) is refused because decision 13 says a
+   * re-ask writes no review at all. Reaching forward into the re-ask tail to
+   * "grade" one would be a no-op dressed as an action.
+   */
+  answerAt(
+    offset: number,
+    remembered: boolean,
+    options: { readonly at?: string; readonly durationMs?: number | null } = {},
+  ): AnswerResult | { readonly refused: "already-answered" | "re-ask" | "nothing-there" } {
+    if (offset === 0) return this.answer(remembered, options);
+    if (offset < 0) return { refused: "already-answered" };
+
+    const at = this.cursor + offset;
+    if (at >= this.plan.length) {
+      return { refused: this.peek(offset) === null ? "nothing-there" : "re-ask" };
+    }
+    if (this.cursor >= this.plan.length) return { refused: "nothing-there" };
+
+    const here = this.plan[this.cursor] as SessionItem;
+    const there = this.plan[at] as SessionItem;
+    this.plan[this.cursor] = there;
+    this.plan[at] = here;
+
+    return this.answer(remembered, options);
   }
 
   /**

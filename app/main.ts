@@ -98,6 +98,7 @@ import {
   type BoundarySide,
 } from "./review-boundary.js";
 import type {
+  AnswerRefusal,
   AppMessage,
   AppRequest,
   BrowseHit,
@@ -719,15 +720,28 @@ function paintReplay(state: "none" | "ready" | "missing"): void {
 function paintPeek(): void {
   const peeking = peekOffset !== 0;
   reviewView.toggleAttribute("data-peek", peeking);
-  forgotButton.disabled = peeking;
-  rememberedButton.disabled = peeking;
+  // GRADING IS NO LONGER LOCKED WHILE LOOKING AHEAD — 2026-09-12. Zach: *"in
+  // mochi, you can use arrows to go to next or previous cards to review them,
+  // not stuck like this"*. The lock was protecting a real hazard (grading writes
+  // to `plan[cursor]`, so a screen out of step with the cursor would grade the
+  // wrong card) but it treated the symptom. `answerAt` fixes the cause by
+  // swapping the card he is reading into the cursor before grading it, so the
+  // two can no longer disagree — and the buttons can stay live.
+  //
+  // BACKWARD is still not gradable, because those cards are answered: a second
+  // review row for one event is not a correction. The worker refuses and says so.
+  const behind = peekOffset < 0;
+  forgotButton.disabled = behind;
+  rememberedButton.disabled = behind;
   peekLine.hidden = !peeking;
   // Only the sentence is rewritten — the button beside it is the way out and is
   // part of the markup. Reported by Zach 2026-09-12: the old banner said what
   // could NOT be done and nothing about how to leave, so a state that is one tap
   // deep read as a frozen app.
   peekText.textContent = peeking
-    ? `${peekOffset > 0 ? "+" : ""}${peekOffset} from your card — nothing here can be graded`
+    ? behind
+      ? `${peekOffset} back — already answered, so it cannot be graded again`
+      : `+${peekOffset} ahead — grade it here and it leaves the queue`
     : "";
 }
 
@@ -780,13 +794,45 @@ function reveal(): void {
   setState("revealed");
 }
 
+/**
+ * Why a grade was refused, in words he can act on.
+ *
+ * Every one of these is a thing he DID, not a fault — so they are said plainly
+ * and the app keeps going. A refusal that showed nothing is what made the old
+ * look-ahead read as a frozen app.
+ */
+const REFUSAL: Record<AnswerRefusal, string> = {
+  // Grading it again would write a SECOND review row for one event, and that
+  // feeds the scheduler. Undo is the way to change an answer.
+  "already-answered": "you already answered this one — ctrl+z to take it back",
+  // Decision 13: a re-ask writes no review at all.
+  "re-ask": "this one is a re-ask — it is shown again but never graded",
+  "nothing-there": "there is no card there",
+};
+
 async function grade(remembered: boolean): Promise<void> {
   if (mounted === null) return;
   const durationMs = Math.round(performance.now() - shownAt);
   forgotButton.disabled = true;
   rememberedButton.disabled = true;
   try {
-    const reply = await ask<"answer">({ kind: "answer", remembered, durationMs });
+    // The offset travels WITH the grade. He can be reading a card ahead of the
+    // cursor — that is the point of the arrows — and the worker swaps it into
+    // place before grading, so the card he read is the card that is graded.
+    const reply = await ask<"answer">({
+      kind: "answer",
+      remembered,
+      durationMs,
+      offset: peekOffset,
+    });
+    if (reply.refused !== null) {
+      say(REFUSAL[reply.refused], true);
+      paintPeek();
+      return;
+    }
+    // Graded: the swap put that card at the cursor and the cursor advanced, so
+    // the screen is back in step with the session.
+    peekOffset = 0;
     if (reply.graded && reply.dueAt !== null) {
       line(
         `graded · due ${reply.dueAt.slice(0, 10)} · ${reply.writeMs.toFixed(1)} ms write · ` +

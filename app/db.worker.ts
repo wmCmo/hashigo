@@ -479,18 +479,40 @@ function answer(request: AnswerRequest): void {
   // P1's second half: the per-grade OPFS write, measured where it happens rather
   // than inferred from the page's round trip, which would include postMessage.
   const started = performance.now();
-  const result = active.answer(request.remembered, {
+  // `answerAt(0)` IS `answer()` — one path, so an out-of-order grade cannot drift
+  // from an in-order one. It swaps the target into the cursor and grades there,
+  // which is why undo needs no special case.
+  const outcome = active.answerAt(request.offset, request.remembered, {
     ...(request.durationMs === null ? {} : { durationMs: request.durationMs }),
   });
   const writeMs = performance.now() - started;
-  answers.push(result);
+
+  if ("refused" in outcome) {
+    post({
+      kind: "answered",
+      id: request.id,
+      graded: false,
+      queuedReask: false,
+      refused: outcome.refused,
+      dueAt: null,
+      scheduledDays: null,
+      progress: active.progress(),
+      writeMs,
+      openStatements: requireCards().openStatements,
+      cachedStatements: requireCards().cachedStatements,
+    });
+    return;
+  }
+
+  answers.push(outcome);
   post({
     kind: "answered",
     id: request.id,
-    graded: result.graded,
-    queuedReask: result.queuedReask,
-    dueAt: result.review?.dueAt ?? null,
-    scheduledDays: result.review?.intervalDays ?? null,
+    graded: outcome.graded,
+    queuedReask: outcome.queuedReask,
+    refused: null,
+    dueAt: outcome.review?.dueAt ?? null,
+    scheduledDays: outcome.review?.intervalDays ?? null,
     progress: active.progress(),
     writeMs,
     openStatements: requireCards().openStatements,

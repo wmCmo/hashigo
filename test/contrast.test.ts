@@ -250,11 +250,29 @@ describe("look-ahead says how to get out of it", () => {
     expect(handler?.[0]).toMatch(/showSessionCard/);
   });
 
-  it("grading is still locked while looking ahead", () => {
-    // The lock is the safety property. If this ever goes, a grade can land on
-    // the wrong card.
-    expect(main).toMatch(/forgotButton\.disabled = peeking/);
-    expect(main).toMatch(/rememberedButton\.disabled = peeking/);
+  it("grading a card he arrowed to sends the OFFSET, so it cannot hit the wrong one", () => {
+    // The old safety property was "grading is locked while the offset is not
+    // zero". That was protecting a real hazard — `answer()` writes to
+    // `plan[cursor]` — but by disabling the app rather than fixing the cause.
+    // Zach, 2026-09-12: "not stuck like this". The property is now stronger: the
+    // offset travels with the grade and `answerAt` swaps the target into the
+    // cursor, so the card he read IS the card graded. If this regresses, a grade
+    // lands on a different card than the one on screen — silently.
+    const call = /ask<"answer">\(\{[\s\S]{0,200}?\}\)/.exec(main);
+    expect(call, "the grade call is gone").not.toBeNull();
+    expect(call?.[0], "the grade no longer carries the offset").toMatch(/offset:\s*peekOffset/);
+  });
+
+  it("only BACKWARD grading is locked — those cards are already answered", () => {
+    expect(main).toMatch(/const behind = peekOffset < 0/);
+    expect(main).toMatch(/forgotButton\.disabled = behind/);
+    expect(main).toMatch(/rememberedButton\.disabled = behind/);
+  });
+
+  it("a refused grade is said out loud, never a silent no-op", () => {
+    // A silent no-op is exactly what made the old look-ahead read as broken.
+    expect(main).toMatch(/reply\.refused !== null/);
+    expect(main).toMatch(/REFUSAL\[reply\.refused\]/);
   });
 
   it("a disabled grade button does not look pressable", () => {

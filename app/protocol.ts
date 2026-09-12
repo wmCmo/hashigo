@@ -69,13 +69,27 @@ export interface PayloadRequest {
   readonly address: AudioAddress;
 }
 
-/** Grade the current item and advance. A decision-13 re-ask is not graded. */
+/** Grade the item and advance. A decision-13 re-ask is not graded. */
 export interface AnswerRequest {
   readonly kind: "answer";
   readonly id: number;
   readonly remembered: boolean;
   readonly durationMs: number | null;
+  /**
+   * Which card, relative to the session cursor. Zero is the one the session is
+   * on, and was the only possibility until 2026-09-12.
+   *
+   * NON-ZERO IS THE WHOLE POINT: the screen lets him arrow forward and grade what
+   * he is reading, so the offset has to travel WITH the grade. Deriving it in the
+   * worker is impossible and remembering it there would be a second copy of the
+   * screen's state — which is exactly how a grade lands on the wrong card.
+   * See `ReviewSession.answerAt`.
+   */
+  readonly offset: number;
 }
+
+/** Why a grade was refused. The screen turns each into a sentence. */
+export type AnswerRefusal = "already-answered" | "re-ask" | "nothing-there";
 
 /**
  * Flip `Reading` on one card, mid-session — decision 29's audit loop.
@@ -861,6 +875,13 @@ export interface AnsweredMessage {
   readonly id: number;
   readonly graded: boolean;
   readonly queuedReask: boolean;
+  /**
+   * Set when NOTHING was graded because the target could not be. Null on every
+   * successful grade. It is reported rather than thrown because every refusal
+   * here is a thing he did, not a fault — and a silent no-op is what made the
+   * look-ahead read as a frozen app in the first place.
+   */
+  readonly refused: AnswerRefusal | null;
   /** `due_at` the scheduler issued, when it graded. */
   readonly dueAt: string | null;
   readonly scheduledDays: number | null;
