@@ -827,6 +827,91 @@ right**: it holds his verbatim reasoning and this quotes it.
    grey in this app carries a Japanese reading at some point — and it survives the
    change of ground.
 
+33. **STAGE 11 SYNC IS DEVICE-TO-DEVICE OVER THE TAILNET, AND TWO OF ITS MERGE
+   RULES ARE NOT LAST-WRITE-WINS.** Zach delegated this outright, 2026-09-12:
+   *"任せます lol"*, after being given the choice between SPEC's locked Cloudflare
+   answer and something smaller. **This supersedes one row of SPEC's locked
+   Architecture table and amends another.** Both changes are recorded here because
+   SPEC is the authoritative design document and this contradicts it in writing.
+
+   **THE RENDEZVOUS: no cloud. SPEC says `Server — Workers + D1 + R2`, "Two PCs
+   need a rendezvous; free tier, nothing to maintain".** That was written before
+   the rendezvous existed. It does now:
+
+   * **`tailscale serve` is already built, measured and in daily use** — fixed
+     hostname, real TLS, tailnet-only, free, uncapped, verified 2026-09-07.
+     `npm run phone` runs it. The laptop is the hub; the phone is the spoke.
+   * **It is the choice already made, for the same reason.** `app/README.md`
+     picked tailscale over cloudflared and ngrok because it "is the only one of
+     the four that is not public, and that is the part worth more than the
+     convenience: the other three put a server holding his entire study history
+     on the open internet behind an unguessable name." **D1 + R2 would put that
+     history on a third party's disk permanently**, which is a larger version of
+     the thing that reasoning rejected. Choosing Cloudflare after it would be
+     incoherent.
+   * **Nothing to keep in step.** No D1 schema shadowing `SCHEMA_VERSION`, no R2
+     lifecycle for 657 MB of audio, no account, no secret, no auth.
+
+   **WHAT IT COSTS, said plainly: both devices must be on the tailnet at the same
+   time.** A review on the train syncs when he gets home. For one user, two
+   devices and an SRS that is acceptable — but it is the real constraint, and it
+   is the reason to revisit: **if he ever wants to sync without the laptop being
+   on, this decision is the thing to reopen**, not the merge engine, which knows
+   nothing about transport. Decision 18's TTS proxy is unaffected — that is a
+   separate tiny Worker holding a key, and audio regeneration is deferred anyway.
+
+   **THE MERGE RULES. SPEC locks "bidirectional, field-level last-write-wins".
+   That is right for most of the database and WRONG for the two things that matter
+   most**, so `src/sync/merge.ts` states a rule per kind of data:
+
+   ```plaintext
+   reviews            UNION, deduped on (track, reviewed_at, source). Append-only
+                      per track, so it cannot conflict — SPEC's own reasoning, and
+                      why no merge can ever lose a grade.
+   card_tracks state  LAST REVIEW WINS, not last write. The schedule is a FUNCTION
+                      of the last grade. Flat LWW picks whichever device WROTE
+                      last, which need not be the one that GRADED last — the log
+                      and the schedule would then disagree and the due date would
+                      be one the history does not explain. `last_reviewed_at` is
+                      the honest clock.
+                      RECOMPUTING from the merged log is also wrong: decision 11
+                      fuzzes ONCE at grade time, so a replay re-fuzzes and moves
+                      dates decision 14 says not to respread.
+   archived / pinned  LWW on `cards.updated_at`, and the payload carries EVERY
+                      card's flags rather than only the raised ones. The backup
+                      exports `WHERE archived = 1 OR pinned = 1` and applies with
+                      `max(archived, ?)` — deliberately additive, because a backup
+                      must never clear a flag it does not know about. A MERGE
+                      must: otherwise he can archive 数字 once and never undo it
+                      from the other device. An unarchive is invisible as an
+                      absence, so the row has to be present with its clock.
+   everything else    Upsert, which `applyLocalArchive` already does.
+   ```
+
+   **IT IS BUILT ON DECISION 17's BACKUP RATHER THAN BESIDE IT**, because that
+   module already solved the two hard problems: `reviews.id` and `card_tracks.id`
+   are local INTEGER PRIMARY KEYs that two devices both hand out, so the archive
+   keys every row on `(card_id, kind)`; and apply is idempotent, matched on
+   `(track, reviewed_at, source)`. A second copy of that SQL would be a second
+   place for the identity rules to drift.
+
+   **ONE KNOWN GAP, recorded rather than papered over.** `schema.sql` says "sync
+   is field-level last-write-wins, so the writer owns the clock" — but
+   `card_field_values` is `(card_id, field_id, value)` and has NO clock. The
+   finest timestamp in the database is `cards.updated_at`, which is CARD level. So
+   editing `意味` on the laptop and `例文` on the phone, same card, before a sync,
+   is a card-level conflict and one loses. Fixing it is a schema bump, and a bump
+   means a full re-import — so it is deliberately deferred to decision 16's ONE
+   final import, which is already a scheduled rebuild, rather than forcing a
+   destructive re-seed now.
+
+   **WHAT IS BUILT AND WHAT IS NOT, 2026-09-12:** the merge engine and its tests
+   are done — `src/sync/`, 10 tests over divergent databases, both wrong rules
+   demonstrated to turn them red. **The transport is not.** `mergeSync` takes a
+   payload and a database and knows nothing about how the two devices met, which
+   is what makes it testable on one machine and what keeps the rendezvous above a
+   replaceable choice rather than a rewrite.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

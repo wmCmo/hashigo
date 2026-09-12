@@ -91,6 +91,10 @@
       "types": "./dist/session/index.d.ts",
       "default": "./dist/session/index.js"
     },
+    "./sync": {
+      "types": "./dist/sync/index.d.ts",
+      "default": "./dist/sync/index.js"
+    },
     "./review": {
       "types": "./dist/review/index.d.ts",
       "default": "./dist/review/index.js"

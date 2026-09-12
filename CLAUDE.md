@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 39 files, 977 passed, 1 skipped (the FSRS refit, gated). ~90 s.
+npm test                # 40 files, 987 passed, 1 skipped (the FSRS refit, gated). ~90 s.
                         # EXITS 0 ON A PASSING RUN as of 2026-08-26. It is a wrapper
                         # (`scripts/test.mjs`) that reads the SUMMARY, which is
                         # STRICTER than the exit code, not looser: the run must have
@@ -154,7 +154,7 @@ npm test                # 39 files, 977 passed, 1 skipped (the FSRS refit, gated
                         # already covers. Deliberately not done.
 npm run typecheck       # exit 0
 npm run app:check       # exit 0 — app/ has its OWN tsconfig and this is a REQUIRED gate
-npm run build           # refuses to exit 0 unless dist/ actually imports (27 export subpaths)
+npm run build           # refuses to exit 0 unless dist/ actually imports (28 export subpaths)
 npm run rebuild -- --force   # the schema-bump chore as ONE command, with invariants
                         # that fail loudly on the step everyone skips. See below.
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
@@ -499,6 +499,30 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     **Two palette cells need a rule, measured:** `--muted` on `--paper-sunk` is 4.21:1,
     below AA for small text; `--vermilion` on `--paper` is 3.47:1, large-text-only — fine
     for the focus ring and the mark's top rung, wrong for small text. See `DECISIONS.md` 32.
+33. **STAGE 11 SYNC IS DEVICE-TO-DEVICE OVER THE TAILNET, AND TWO OF ITS MERGE RULES
+    ARE NOT LAST-WRITE-WINS.** Zach delegated it outright 2026-09-12 (*"任せます lol"*).
+    **This supersedes one row of SPEC's locked Architecture table and amends another.**
+    **No cloud.** SPEC says Workers + D1 + R2 because "two PCs need a rendezvous"; that
+    rendezvous now exists and is measured — `tailscale serve`, fixed hostname, tailnet
+    only, free, in daily use via `npm run phone`. It is also the choice already made for
+    the same reason: tailscale beat cloudflared and ngrok because it is the one that does
+    NOT put his study history on the open internet, and D1 + R2 is a larger version of
+    what that rejected. **The cost is real and is the thing to reopen if it bites: both
+    devices must be on the tailnet at once**, so a review on the train syncs when he gets
+    home. **The merge rules** — reviews UNION (append-only, cannot conflict, so no merge
+    can lose a grade); `card_tracks` state is **LAST REVIEW WINS, not last write** (the
+    schedule is a function of the last grade, and flat LWW picks whoever WROTE last, so
+    the log and the schedule would disagree — and recomputing is also wrong, because
+    decision 11 fuzzes once at grade time and a replay re-fuzzes); `archived`/`pinned` are
+    LWW on `cards.updated_at` with **every** card's flags in the payload, because the
+    backup's additive `max(archived, ?)` can set a flag and never clear one, which would
+    mean he could archive 数字 once and never undo it. **Built on decision 17's backup**,
+    which already keys on `(card_id, kind)` — `reviews.id` and `card_tracks.id` are local
+    integers both devices hand out. **BUILT: `src/sync/`, the merge engine, 10 tests over
+    divergent databases. NOT BUILT: the transport.** Known gap, deferred on purpose:
+    `card_field_values` has no clock, so field values merge at CARD level — the fix is a
+    schema bump, and it waits for decision 16's final import rather than forcing a
+    destructive re-seed. See `DECISIONS.md` 33.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
