@@ -146,6 +146,42 @@ describe("the icons on disk are what the manifest promises", () => {
     expect(ihdr("app/public/icons/apple-touch-icon.png").width).toBe(180);
   });
 
+  it("the icon ground is --card, not --paper", () => {
+    // Zach, 2026-09-12, looking at the installed icon: it read GREY on his home
+    // screen. Measured rather than adjudicated by taste — --paper #ECEAE5 is
+    // luminance 0.82 against white's 1.00, so 18% darker. Inside the app that
+    // reads as paper because the whole screen is that colour and --card sits
+    // brighter on it; paper is paper by RELATIONSHIP. An icon has no
+    // relationship. --card #FBFAF7 is 0.96, and is also the honest token: an
+    // app tile is a raised surface, which is what --card means here.
+    const bytes = readFileSync(
+      new URL("../app/public/icons/icon-maskable-512.png", import.meta.url),
+    );
+    // First pixel of the first row, past the IHDR/IDAT plumbing: decode instead.
+    const { inflateSync } = require("node:zlib") as typeof import("node:zlib");
+    let offset = 8;
+    const chunks: Buffer[] = [];
+    let width = 0;
+    while (offset < bytes.length) {
+      const length = bytes.readUInt32BE(offset);
+      const type = bytes.toString("ascii", offset + 4, offset + 8);
+      const data = bytes.subarray(offset + 8, offset + 8 + length);
+      if (type === "IHDR") width = data.readUInt32BE(0);
+      if (type === "IDAT") chunks.push(data);
+      offset += 12 + length;
+    }
+    const raw = inflateSync(Buffer.concat(chunks));
+    const stride = width * 4 + 1;
+    const at = 6 * stride + 1 + 6 * 4;
+    const hex =
+      "#" +
+      [raw[at], raw[at + 1], raw[at + 2]]
+        .map((v) => (v as number).toString(16).padStart(2, "0"))
+        .join("")
+        .toUpperCase();
+    expect(hex, "the icon ground drifted off --card").toBe("#FBFAF7");
+  });
+
   it("the maskable icon is FULL BLEED — a transparent corner is a visible notch", () => {
     const bytes = readFileSync(
       new URL("../app/public/icons/icon-maskable-512.png", import.meta.url),

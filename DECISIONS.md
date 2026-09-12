@@ -803,6 +803,21 @@ right**: it holds his verbatim reasoning and this quotes it.
    app it replaces is dark, and he reviews on his phone. Going light-only is a change he
    would feel on the first night. Also his.
 
+   **THE APP ICON'S COLOURWAY IS NOT IN THE BRIEF, and Zach settled it in two
+   passes, 2026-09-12.** §2 fixes the badge at `rx: 15` on a 64-unit square and
+   "only the top rung is vermilion" — and says nothing about what colour the badge
+   or the mark is there. He chose **ink on a light ground** (not the inverted
+   indigo tile), and then, after seeing it installed on his home screen, moved the
+   ground from `--paper` to **`--card` `#FBFAF7`**. That second call is measured
+   rather than aesthetic: `--paper` is luminance **0.82** against white's 1.00, so
+   18% darker. In the app it reads as paper because the whole screen is that
+   colour and `--card` sits brighter on top — **paper is paper by RELATIONSHIP**.
+   An icon has no relationship; it is one tile alone on a wallpaper, and reads
+   grey. `--card` is 0.96, and is the honest token besides: an app tile is a
+   raised surface, which is what `--card` means in this design.
+   `tools/icons.mjs` keeps the other two reachable by flag so the comparison can
+   be re-run rather than re-argued, and `test/pwa.test.ts` pins the shipped ground.
+
    **Two cells of the brief's palette need a rule attached, measured 2026-09-12:**
    `--muted` on `--paper-sunk` is **4.21:1** — below AA for small text, and `--muted` at
    11-12px is exactly where the captions live. `--vermilion` on `--paper` is **3.47:1**,

@@ -231,11 +231,18 @@ mkdirSync(DEST, { recursive: true });
  *
  * `--paper-on-ink` switches the shipped set to the inverted reading.
  */
+/**
+ * SHIPPED: `ink-on-card`. Zach's call, 2026-09-12, after seeing the installed
+ * icon on his home screen — `--paper` read as grey there, and the measurement
+ * says why rather than it being a matter of taste: #ECEAE5 is luminance 0.82
+ * against white's 1.00. The other two remain reachable by flag so the
+ * comparison can be re-run rather than re-argued.
+ */
 const WAY = process.argv.includes('--paper-on-ink')
   ? 'paper-on-ink'
-  : process.argv.includes('--ink-on-card')
-    ? 'ink-on-card'
-    : 'ink-on-paper';
+  : process.argv.includes('--ink-on-paper')
+    ? 'ink-on-paper'
+    : 'ink-on-card';
 
 const targets = process.argv.includes('--compare')
   ? [
