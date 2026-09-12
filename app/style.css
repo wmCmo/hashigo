@@ -90,11 +90,44 @@
      selection, the download bar — all of it is the primary colour now. */
   --accent: var(--indigo);
   --focus: var(--vermilion);
-  /* Grading. Weight and position, not hue — see the header. */
-  --ok: var(--card);
-  --ok-edge: var(--indigo);
-  --no: var(--indigo);
-  --no-edge: var(--edge);
+
+  /* ── STATES, and they are NOT decoration ────────────────────────────────
+     Grading lost its colours on purpose (see the header) — but `--ok`/`--no`
+     were never only the two grade buttons, and repointing them at indigo
+     silently deleted the signal from the answer verdict, the boot log, the edit
+     status, every `.danger` control and the low-retention bar. Found by Zach:
+     the create button went invisible, because `--ok` had become near-white text
+     on paper. That is the whole class of bug, not one button.
+
+     So states get their own two colours, derived rather than picked, in the
+     brief's dye family and measured against every ground they land on:
+
+       --danger  the brief's vermilion hue, DARKENED until it clears AA for
+                 SMALL text. `--vermilion` itself is 3.47:1 on paper — correct
+                 for the mark and the focus ring, unreadable as a 12px label.
+                 light #B93109  paper 4.98 · sunk 4.54 · card 5.74
+                 dark  #F05A2E  paper 5.24 · sunk 5.57 · card 4.74
+       --good    seeded from 千歳緑, so it reads as a dye rather than a UI green.
+                 light #386E4C  paper 4.99 · sunk 4.55 · card 5.74
+                 dark  #5D9470  paper 5.01 · sunk 5.33 · card 4.53
+
+     THEY ARE ISOLUMINANT — measured, 1.00:1 against each other in light. That is
+     deliberate (both sit at the same AA distance from the same grounds) and it
+     means COLOUR ALONE MUST NEVER CARRY A STATE HERE. Every place that uses them
+     carries a second signal: the answer box thickens its border for correct and
+     adds an inset rule for incorrect, the log lines say what happened in words,
+     the danger controls are labelled `delete`. Do not remove a second signal on
+     the grounds that "the colour says it". */
+  --good: #386e4c;
+  --danger: #b93109;
+
+  /* Kept as the names 26 rules already speak. `.ok`/`.no` — the two GRADE
+     buttons — no longer read these: they are solid-vs-outline indigo, set
+     explicitly, so these four mean "success" and "failure" and nothing else. */
+  --ok: var(--good);
+  --ok-edge: var(--good);
+  --no: var(--danger);
+  --no-edge: var(--danger);
   --sunk: var(--paper-sunk);
 
   /* ── type ──
@@ -151,7 +184,8 @@
     --hair: #36322c;
     --ink-bright: #fbf8f2;
     --edge: #4f4a42;
-    --ok: var(--paper);
+    --good: #5d9470;
+    --danger: #f05a2e;
   }
 }
 
@@ -168,7 +202,8 @@
   --hair: #36322c;
   --ink-bright: #fbf8f2;
   --edge: #4f4a42;
-  --ok: var(--paper);
+  --good: #5d9470;
+  --danger: #f05a2e;
 }
 
 /* ── the faces, self-hosted. `python tools/fonts.py` builds app/fonts/. ──
@@ -1093,7 +1128,7 @@ body.layered {
 }
 
 .edit-type {
-  color: var(--edge);
+  color: var(--muted);
   font-size: 10px;
   font-style: normal;
   letter-spacing: 0.04em;
@@ -1135,7 +1170,7 @@ textarea.edit-input:not(.tpl-body) {
 /* Said, not merely greyed out. A control that is disabled without a reason
    teaches him the app is broken. */
 .edit-readonly {
-  color: var(--edge);
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.55;
 }
@@ -1280,7 +1315,7 @@ body.sidebar-open .sidebar-scrim {
 }
 
 .deck-counts {
-  color: var(--edge);
+  color: var(--muted);
   flex: none;
   font-size: 11px;
 }
@@ -1319,7 +1354,7 @@ body.sidebar-open .sidebar-scrim {
 
 .result-meta,
 .result-snippet {
-  color: var(--edge);
+  color: var(--muted);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1340,7 +1375,7 @@ body.sidebar-open .sidebar-scrim {
 
 .sidebar-note {
   border-top: 1px solid var(--line);
-  color: var(--edge);
+  color: var(--muted);
   flex: none;
   font-size: 11px;
   line-height: 1.6;
@@ -1384,19 +1419,31 @@ body.sidebar-open .sidebar-scrim {
   outline: none;
 }
 
+/* THE ONE ZACH FOUND. It used to be `--ok`, from when that token meant "green",
+   and it is not a success state — it is the primary action of this form. The
+   brief: "Primary actions are solid from the start." Solid indigo, like
+   `remembered`, so the two primary actions in the app look like each other. */
 .newcard-submit {
-  background: none;
-  border: 1px solid var(--ok-edge);
-  color: var(--ok);
+  background: var(--indigo);
+  border: 1px solid var(--indigo);
+  color: var(--card);
   cursor: pointer;
   font: inherit;
   grid-column: 1 / -1;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.01em;
   padding: 11px;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .newcard-submit:hover:not([disabled]) {
+    background: var(--indigo-deep);
+    border-color: var(--indigo-deep);
+  }
+}
+
 .newcard-submit:active {
-  background: var(--sunk);
+  background: var(--indigo-deep);
+  border-color: var(--indigo-deep);
 }
 
 .newcard-submit[disabled] {
@@ -1514,13 +1561,13 @@ body.sidebar-open .sidebar-scrim {
 
 .tree-row:active { background: var(--sunk); }
 .tree-header { color: var(--muted); font-size: 11px; letter-spacing: .04em; }
-.tree-row.is-archived .tree-name { color: var(--edge); text-decoration: line-through; }
+.tree-row.is-archived .tree-name { color: var(--muted); text-decoration: line-through; }
 .tree-row.is-template .tree-name { font-family: var(--mono); }
 
 /* A real tap target, not a 10px glyph — his rule that every operation works on a
    phone applies to expanding a deck as much as to grading one. */
 .tree-twist {
-  color: var(--edge);
+  color: var(--muted);
   display: inline-block;
   flex: none;
   font-size: 10px;
@@ -1531,7 +1578,7 @@ body.sidebar-open .sidebar-scrim {
 }
 
 .tree-name { flex: 1; font-family: var(--jp), sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-counts { color: var(--edge); flex: none; font-size: 11px; }
+.tree-counts { color: var(--muted); flex: none; font-size: 11px; }
 .tree-counts.has-due { color: var(--accent); }
 
 /* ── the palette (his #3) ── */
@@ -1581,8 +1628,8 @@ body.sidebar-open .sidebar-scrim {
 .palette-row.on { background: var(--sunk); box-shadow: inset 2px 0 0 var(--accent); }
 .palette-row.is-archived .palette-name { color: var(--muted); }
 .palette-name { font-family: var(--jp), sans-serif; font-size: 15px; }
-.palette-meta { color: var(--edge); font-size: 11px; }
-.palette-foot { border-top: 1px solid var(--line); color: var(--edge); flex: none; font-size: 11px; padding: 8px 16px; }
+.palette-meta { color: var(--muted); font-size: 11px; }
+.palette-foot { border-top: 1px solid var(--line); color: var(--muted); flex: none; font-size: 11px; padding: 8px 16px; }
 
 /* ── the gallery (his #6) ── */
 
@@ -1604,7 +1651,7 @@ body[data-view="gallery"] .review { display: none; }
 
 .gallery-back { background: none; border: 1px solid var(--line-soft); color: var(--ink); cursor: pointer; font: inherit; font-size: 12px; padding: 8px 12px; }
 .gallery-title { color: var(--ink-bright); flex: 1; font-family: var(--jp), sans-serif; font-size: 15px; }
-.gallery-count { color: var(--edge); font-size: 12px; }
+.gallery-count { color: var(--muted); font-size: 12px; }
 
 .gallery-controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
 .gallery-search { background: var(--sunk); border: 1px solid var(--line-soft); color: var(--ink-bright); flex: 1; font: 16px/1.4 var(--jp), sans-serif; min-width: 160px; padding: 9px 10px; }
@@ -1624,12 +1671,12 @@ body[data-view="gallery"] .review { display: none; }
 .gcard:active { background: var(--sunk); }
 .gcard.is-archived { opacity: .6; }
 .gcard-name { color: var(--ink-bright); font: 400 17px/1.35 var(--jp), sans-serif; }
-.gcard-meta { color: var(--edge); font-size: 11px; }
+.gcard-meta { color: var(--muted); font-size: 11px; }
 .gcard-snippet { color: var(--muted); font-family: var(--jp), sans-serif; font-size: 12px; line-height: 1.5; max-height: 3em; overflow: hidden; }
 .gcard-ops { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .gcard-op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; font: inherit; font-size: 11px; padding: 6px 8px; }
 .gcard-op.danger { border-color: var(--no-edge); color: var(--no); }
-.gallery-empty { color: var(--edge); grid-column: 1 / -1; padding: 30px 0; }
+.gallery-empty { color: var(--muted); grid-column: 1 / -1; padding: 30px 0; }
 
 /* ── the review op bar (his #7, #9, #13 on MOBILE) ── */
 
