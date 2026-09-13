@@ -123,7 +123,7 @@ for (const row of rows) {
     <span class="preview-meta">${escape(row.template)} · ${row.phrases + 1} phrases · ` +
       `${row.heads} head${row.heads === 1 ? "" : "s"} · ${row.devoiced} devoiced</span>
   </header>
-  <div class="hashigo-card">${sides}</div>
+  <div class="cardhost">${sides}</div>
   <pre class="preview-marks">${escape(row.marks)}</pre>
 </section>`,
   );
@@ -137,6 +137,9 @@ const page = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OJAD preview — ${rendered} real cards</title>
 <style>${readFileSync('app/style.css', 'utf8')}</style>
+<style>${fontFace('Zen Maru Gothic', 'app/fonts/zenmaru-med.woff2')}
+${fontFace('Zen Kaku Gothic New', 'app/fonts/zenkaku-med.woff2')}
+</style>
 <style>
   body { margin: 0; padding: 24px; background: var(--paper); color: var(--ink);
          font-family: var(--sans, system-ui), sans-serif; }
@@ -153,6 +156,19 @@ const page = `<!doctype html>
   /* The stored value, so the notation can be checked against what is drawn. */
   .preview-marks { color: var(--muted); font-size: 11px; margin: 14px 0 0;
                    white-space: pre-wrap; word-break: break-all; opacity: 0.75; }
+  .preview-controls { position: sticky; top: 0; z-index: 2; max-width: 720px;
+                      margin: 0 auto 24px; background: var(--card);
+                      border: 1px solid var(--line); padding: 12px 14px;
+                      display: flex; flex-direction: column; gap: 10px; }
+  .preview-control { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .preview-label { color: var(--muted); font-size: 11px; letter-spacing: 0.06em;
+                   text-transform: uppercase; width: 100%; }
+  .preview-controls button { background: none; border: 1px solid var(--indigo);
+                             color: var(--indigo); cursor: pointer; font: inherit;
+                             font-size: 13px; padding: 6px 10px; }
+  .preview-controls button i { color: inherit; font-size: 11px; opacity: 0.7;
+                               font-style: normal; margin-left: 5px; }
+  .preview-controls button.on { background: var(--indigo); color: var(--card); }
   /* A preview shows every side at once — decision 30. Nothing is masked here,
      because a mask in a static file is a mask he cannot open. */
   .hashigo-cloze-mask { display: none; }
@@ -172,7 +188,49 @@ const page = `<!doctype html>
   <br><br>
   Clozes are shown open here because a preview shows every side at once (decision 30).
 </div>
+
+<div class="preview-controls">
+  <div class="preview-control">
+    <span class="preview-label">theme</span>
+    <button type="button" data-theme-set="light">light</button>
+    <button type="button" data-theme-set="dark">dark</button>
+  </div>
+  <div class="preview-control">
+    <span class="preview-label">Japanese face</span>
+    <button type="button" data-face="&quot;Zen Maru Gothic&quot;">Zen Maru <i>app default</i></button>
+    <button type="button" data-face="&quot;Zen Kaku Gothic New&quot;">Zen Kaku</button>
+    <button type="button" data-face="system-ui">your system font <i>what you saw</i></button>
+  </div>
+</div>
 ${blocks.join("\n")}
+<script>
+  // THE POINT OF THIS PAGE, and it is a decision-32 question rather than a toy:
+  // the brief that settled the visual direction is SILENT on the Japanese face,
+  // and CLAUDE.md records it as still his — "1,725 distinct kanji are 100% of
+  // what is studied". He has never seen them side by side over real cards.
+  const root = document.documentElement;
+  const mark = (group, chosen) => {
+    for (const b of document.querySelectorAll(group)) b.classList.remove("on");
+    chosen.classList.add("on");
+  };
+  for (const button of document.querySelectorAll("[data-theme-set]")) {
+    button.addEventListener("click", () => {
+      root.setAttribute("data-theme", button.dataset.themeSet);
+      mark("[data-theme-set]", button);
+    });
+  }
+  for (const button of document.querySelectorAll("[data-face]")) {
+    button.addEventListener("click", () => {
+      // Overriding the TOKEN, not the rule, so every place the app uses
+      // --jp-display follows — which is what makes this a fair comparison.
+      root.style.setProperty("--jp-display", button.dataset.face);
+      mark("[data-face]", button);
+    });
+  }
+  document.querySelector('[data-theme-set="' + (root.getAttribute("data-theme") || "light") + '"]')
+    ?.classList.add("on");
+  document.querySelector("[data-face]")?.classList.add("on");
+</script>
 </body>
 </html>
 `;
@@ -180,6 +238,22 @@ ${blocks.join("\n")}
 writeFileSync(OUT, page, "utf8");
 console.log(`${rendered} card(s) -> ${OUT}`);
 db.close();
+
+/**
+ * One face, embedded.
+ *
+ * `@font-face` with a RELATIVE url is silently inert in a file:// snapshot — no
+ * error, no fallback warning, the text simply renders in whatever the system
+ * offers for those codepoints. That is not a hypothetical: the first version of
+ * this preview linked `app/style.css` relatively, the whole stylesheet failed to
+ * load, and Zach read the result as the app's own design being worse than a page
+ * that had no design at all. Embedding costs ~2 MB and removes the entire class.
+ */
+function fontFace(family: string, path: string): string {
+  const base64 = readFileSync(path).toString("base64");
+  return `@font-face { font-family: "${family}"; font-weight: 400 700; font-display: block;
+  src: url(data:font/woff2;base64,${base64}) format("woff2"); }`;
+}
 
 function escape(value: string): string {
   return value
