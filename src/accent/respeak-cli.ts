@@ -11,7 +11,7 @@
  * audio are about to change voice; the shape of that should be readable before
  * a single call is billed.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 import {
   defaultStoreDatabase,
@@ -21,8 +21,15 @@ import {
 } from "../blobs/index.js";
 import type { Db } from "../db/index.js";
 import { arg, flag } from "../cli/args.js";
-import { NotKanaError, VOICE } from "./speech.js";
-import { adoptVoice, moveRefs, respeakPlan, respeakWord, type RespeakReport } from "./respeak.js";
+import { NotKanaError, synthesise, VOICE } from "./speech.js";
+import {
+  adoptVoice,
+  collisions,
+  moveRefs,
+  respeakPlan,
+  respeakWord,
+  type RespeakReport,
+} from "./respeak.js";
 
 /**
  * The key, from `.env`, read here rather than taken from the environment.
@@ -74,30 +81,73 @@ export async function respeakCommand(db: Db): Promise<number> {
   console.log(`    ${characters.toLocaleString()} characters · about $${((characters * 16) / 1e6).toFixed(2)} at Neural2 rates`);
   console.log(`    voice: ${arg("voice", VOICE)}`);
 
+  // SAID BEFORE THE MONEY, NOT AFTER. The audio is a function of (reading,
+  // accent), so homophones are byte-identical and only one of each group can
+  // hold a row — `blobs.hash` is a PRIMARY KEY. The first full run learned this
+  // the expensive way: 3,850 clips made, zero failures reported, 161 cards mute.
+  const clashes = collisions(plan);
+  const silenced = [...clashes.values()].reduce((n, ws) => n + ws.length - 1, 0);
+  if (silenced > 0) {
+    console.log(
+      `\n  ${silenced} words in ${clashes.size} groups synthesise to IDENTICAL bytes —`,
+    );
+    console.log("  same reading, same accent, therefore one sha256 and one row.");
+    console.log("  The rest of each group would go SILENT:");
+    for (const [key, words] of [...clashes.entries()].slice(0, 5)) {
+      console.log(`    ${key.padEnd(14)} ${words.join(" ")}`);
+    }
+  }
+
   if (flag("dry")) {
     console.log("\n  --dry: nothing synthesised, nothing written, no voice adopted.");
     for (const word of plain.slice(0, 10)) console.log(`    plain: ${word.text}`);
     return 0;
   }
 
-  // `--only 医療` — one word, which is what he asked for first: *"i need a way
-  // to discard/delete the old one and regenerate easily"*. It never adopts the
-  // voice, so the card keeps asking for its Nanami clip and the new one sits
-  // beside it until a whole run switches over. That makes it a safe way to LISTEN
-  // to a regenerated word before committing the corpus to it.
+  // ─── `--only 医療` IS A PREVIEW, AND IT CANNOT HONESTLY BE MORE THAN THAT ───
+  //
+  // He asked for *"a way to discard/delete the old one and regenerate easily"*,
+  // meaning one card. The voice lives on the FIELD, not the card, so a single
+  // card cannot be switched: it keeps asking for its Nanami clip whatever else
+  // exists. An earlier version of this wrote the blob and moved the reference
+  // anyway, which changed nothing audible and left the refcounts lying — the
+  // Nanami clip still in use at refcount 0, one `sweepUnreferenced` away from
+  // being deleted out from under the card.
+  //
+  // So this writes a FILE and touches no row. Listen to it, compare it with what
+  // the card plays today, and decide about the corpus with your ears.
   const only = arg("only", "");
   if (only !== "") {
-    const wanted = plan.filter((w) => w.text === only);
-    if (wanted.length === 0) {
+    const wanted = plan.find((w) => w.text === only);
+    if (wanted === undefined) {
       console.error(`\n  no head word "${only}" on 単語 or 言葉.`);
       return 2;
     }
-    const store = openStore(arg("db"));
-    const one: RespeakReport = {
-      made: 0, cached: 0, failed: 0, annotated: 0, plain: 0, refsMoved: 0, failures: [],
-    };
-    console.log(`\n  --only ${only}: the voice is NOT adopted, so nothing else changes.`);
-    return await runAll(db, wanted, store, one, false);
+    const out = arg("out", `build/respeak-${only}.mp3`);
+    const bytes = await synthesise(wanted.text, wanted.request, {
+      apiKey: apiKey(),
+      voice: arg("voice", VOICE),
+    });
+    writeFileSync(out, bytes);
+    const how =
+      wanted.request === null
+        ? "plain (no derived accent)"
+        : `^${wanted.request.reading} accent ${wanted.request.accent}`;
+    console.log(`\n  --only ${only}: ${how}`);
+    console.log(`  ${bytes.length} bytes -> ${out}`);
+    console.log("  NOTHING in the database changed. The card still plays its Nanami clip.");
+    return 0;
+  }
+
+  // A WHOLE RUN IS REFUSED WHILE ANY GROUP WOULD BE SILENCED. `--only` is
+  // unaffected (it adopts no voice, so nothing can go quiet), and `--force`
+  // exists for the day the schema can hold many identities per payload.
+  if (silenced > 0 && !flag("force")) {
+    console.error(
+      `\n  refusing: a whole run would silence ${silenced} words. ` +
+        `Use --only <word> for one, or --force once the schema can hold them.`,
+    );
+    return 1;
   }
 
   const limit = Number(arg("limit", String(plan.length)));

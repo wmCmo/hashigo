@@ -157,6 +157,27 @@ export function respeakPlan(db: Db): RespeakWord[] {
   return [...words.values()];
 }
 
+/**
+ * Words that would be synthesised to the SAME bytes as another word.
+ *
+ * Predictable before a single call is made: the audio is a function of
+ * (reading, accent), so two words sharing both share a sha256 — and
+ * `blobs.hash` is a PRIMARY KEY. See `respeakWord` for what that costs.
+ *
+ * Reported by `--dry` on purpose. The first full run found this the expensive
+ * way: $0.15 spent, 3,850 clips made, 0 failures reported, and 161 cards silent.
+ */
+export function collisions(plan: readonly RespeakWord[]): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const word of plan) {
+    if (word.request === null) continue;
+    const key = `${word.request.reading}/${word.request.accent}`;
+    groups.set(key, [...(groups.get(key) ?? []), word.text]);
+  }
+  for (const [key, words] of groups) if (words.length < 2) groups.delete(key);
+  return groups;
+}
+
 export interface RespeakOptions {
   readonly apiKey: string;
   readonly store: BlobStore;
@@ -213,6 +234,34 @@ export async function respeakWord(
   // costs a few KB until the next store audit. Interrupting 3,852 calls is
   // likely enough that the failure mode has to be the harmless one.
   const address = sha256Hex(bytes);
+
+  // ─── HOMOPHONES COLLIDE, AND THE SCHEMA CANNOT HOLD THEM ───────────────────
+  //
+  // `blobs.hash` is a PRIMARY KEY, so one payload carries ONE generation
+  // identity — and `putBlobRecord` is `INSERT OR IGNORE`, so a second identity
+  // for the same bytes is dropped without a word.
+  //
+  // Azure never hit this: it synthesised from the KANJI, so 仮定 and 家庭 were
+  // different inputs and different audio. The kanji trap (see `speech.ts`)
+  // forces synthesis from the READING, and `カテー` at accent 0 is one sound
+  // however it is spelt. Measured on this corpus: 142 groups, 161 words that
+  // would lose their row — 仮定/課程/家庭/過程, 合う/会う/遭う, 高価/硬貨/効果.
+  //
+  // A dropped row is a SILENT CARD, because `lookupGeneration` keys on
+  // `source_text` and finds nothing. That is exactly what happened on the first
+  // full run: 3,850 clips reported made, 0 failures, and 161 cards mute. So this
+  // refuses rather than reporting a success it did not achieve.
+  const clash = db
+    .prepare(`SELECT source_text FROM blobs WHERE hash = ?`)
+    .get(address) as { source_text: string | null } | undefined;
+  if (clash !== undefined && clash.source_text !== word.text) {
+    throw new Error(
+      `identical audio to "${clash.source_text}" — same reading and accent, so ` +
+        `the same bytes. \`blobs.hash\` is a PRIMARY KEY, so this word cannot get ` +
+        `its own row and its cards would go silent.`,
+    );
+  }
+
   options.store.write(address, bytes);
   const { hash } = putBlobRecord(db, {
     hash: address,
