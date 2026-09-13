@@ -776,3 +776,66 @@ describe("every position: fixed rule has an answer for the rail", () => {
     expect(/:root \{[\s\S]*?--rail-w:\s*0px;/.exec(css)).not.toBeNull();
   });
 });
+
+/**
+ * ─── THE DRAWING CANVAS MAY NOT CARRY A BORDER OR PADDING ───────────────────
+ *
+ * Not a style rule — a correctness one, and it has already cost a real defect.
+ *
+ * `attachDraw` sizes the backing store from `getBoundingClientRect()` and
+ * `pointOf` offsets every point from `rect.left/top`. Both are the BORDER box; a
+ * canvas draws into its CONTENT box. With this file's global
+ * `box-sizing: border-box`, a 1px border made the two disagree — measured live on
+ * a real 漢字 card, rect 498x400 against a content box of 496x398 — so every
+ * stroke was scaled by 498/496 and displaced one CSS pixel up and left of the
+ * finger, drifting about 2px by the bottom of the canvas.
+ *
+ * `draw.ts`'s header names the fix ("give the canvas no border and no padding,
+ * draw the frame on a wrapper instead") and `outline` supplies it without a
+ * wrapper, because an outline participates in no layout at all.
+ *
+ * This reads the STYLESHEET rather than trusting that comment, because the border
+ * was added later by someone who had no reason to know any of the above.
+ */
+describe("the drawing canvas is measured, so its box must not lie", () => {
+  /**
+   * The PROPERTY NAMES a rule declares.
+   *
+   * Names rather than a regex over the text, deliberately: the first version of
+   * this built a `new RegExp` from a template literal, the backslashes did not
+   * survive being written to disk, and the test passed with the very border it
+   * exists to forbid. A guard that cannot fail is worse than no guard, so this
+   * splits on `;` and compares strings, which has nothing to escape.
+   */
+  function properties(selector: string): string[] {
+    const at = css.indexOf(`\n${selector} {`);
+    expect(at, `${selector} has no rule in app/style.css`).toBeGreaterThan(-1);
+    const open = css.indexOf("{", at);
+    return css
+      .slice(open + 1, css.indexOf("}", open))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split(";")
+      .map((declaration) => declaration.split(":")[0]?.trim().toLowerCase() ?? "")
+      .filter((name) => name !== "");
+  }
+
+  it("declares no border and no padding — both move the box it is measured by", () => {
+    const declared = properties(".hashigo-draw");
+    // Every longhand and shorthand that adds to the box. `outline` is absent
+    // from this list on purpose: it is the one frame that costs no space.
+    const forbidden = declared.filter(
+      (name) => name === "border" || name.startsWith("border-") || name === "padding" || name.startsWith("padding-"),
+    );
+    expect(
+      forbidden,
+      `.hashigo-draw declares ${forbidden.join(", ")}. That makes ` +
+        "getBoundingClientRect (the border box, which attachDraw measures and " +
+        "pointOf offsets from) disagree with the canvas's own drawing surface " +
+        "(the content box), so strokes land off the finger. Use outline.",
+    ).toEqual([]);
+  });
+
+  it("still HAS a frame — the repair was not simply deleting the border", () => {
+    expect(properties(".hashigo-draw")).toContain("outline");
+  });
+});

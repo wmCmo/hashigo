@@ -1796,14 +1796,35 @@ body.sidebar-open .sidebar-scrim {
 
 /* ── the drawing surface (his #10) ── */
 
+/* OUTLINE, NOT BORDER, AND IT IS NOT A STYLE PREFERENCE — it is what makes the
+   strokes land under his finger.
+
+   `attachDraw` measures `getBoundingClientRect()` to size the backing store, and
+   `pointOf` offsets every point from `rect.left/top`. Both are the BORDER box. A
+   canvas's drawing surface fills its CONTENT box. With the global
+   `box-sizing: border-box` at the top of this file and a 1px border, measured
+   live on a real 漢字 card:
+
+       rect (border box)   498 x 400     <- measured, and offset from
+       content box         496 x 398     <- actually drawn into
+
+   So every stroke was scaled by 498/496 and 400/398 AND displaced one CSS pixel
+   up and left of the finger — about 2px of drift by the bottom of a 400px canvas.
+   `draw.ts`'s own header predicted this and said the fix: give the canvas no
+   border and no padding, draw the frame elsewhere.
+
+   `outline` is that "elsewhere" without needing a wrapper element: it paints the
+   same hairline and participates in no layout, so the two boxes stay identical.
+   It sits 1px outside the canvas, which the card's own 16px padding absorbs. */
 .hashigo-draw {
   background: var(--sunk);
-  border: 1px solid var(--line-soft);
   display: block;
   /* `attachDraw` sets touch-action itself — without it the first finger movement
      is read as a scroll and the stroke never arrives, which is exactly what "i
      tried but it didn't work" looks like on a phone. */
   max-width: 100%;
+  outline: 1px solid var(--line-soft);
+  outline-offset: 0;
   width: 100%;
 }
 
