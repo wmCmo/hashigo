@@ -107,6 +107,14 @@ export interface DrawSurface {
   ): void;
   setPointerCapture(pointerId: number): void;
   releasePointerCapture(pointerId: number): void;
+  /**
+   * Do we still hold this pointer? The only way to ask whether the stroke we
+   * think is live actually still is — see `onDown`'s takeover.
+   *
+   * Optional so the test fake and the memory DOM need not grow a method to keep
+   * compiling; absent is read as "cannot tell", which takes the safe branch.
+   */
+  hasPointerCapture?(pointerId: number): boolean;
 }
 
 // ─── the authored options ────────────────────────────────────────────────────
@@ -310,9 +318,60 @@ export function attachDraw(
     }
   }
 
+  /**
+   * Is the stroke we believe is live actually still live?
+   *
+   * ─── THE BUG THIS ANSWERS, AND WHY IT WAS DESKTOP-ONLY ──────────────────────
+   *
+   * Zach, 2026-09-13: *"why is `<draw/>` working on my pc but not on my mobile?
+   * the canvas is there but when i draw nothing comes up at all..."*
+   *
+   * `onDown` used to refuse outright while `activePointer !== null`, and `onUp`
+   * only cleared it for a MATCHING `pointerId`. So a stroke whose `pointerup`
+   * never arrives leaves `activePointer` set for ever, and every later
+   * `pointerdown` is rejected by that guard — the canvas is dead for the rest of
+   * the card, silently, with the ink from the half-stroke still on screen.
+   * Reproduced in the pane under Android emulation: one unterminated stroke and
+   * `data-strokes` never moves again.
+   *
+   * **A mouse almost always delivers its `pointerup`; a finger routinely does
+   * not.** Android takes the gesture away for an edge swipe, the notification
+   * shade, a task switch — and the events that would have closed the stroke go
+   * with it. That is the whole asymmetry between his laptop and his phone.
+   *
+   * Pointer capture is the honest test: we claim it on `pointerdown`, so if we no
+   * longer hold it, that pointer is gone whatever we were told. Absent method
+   * reads as "cannot tell", which takes the takeover branch — losing a
+   * simultaneous second-device stroke is a far smaller fault than a dead canvas.
+   */
+  function strokeIsStale(): boolean {
+    if (activePointer === null) return false;
+    try {
+      return surface.hasPointerCapture?.(activePointer) !== true;
+    } catch {
+      return true;
+    }
+  }
+
   const onDown = (event: DrawPointerEvent): void => {
-    // A second finger during a stroke is a palm or a pinch, never a brush.
-    if (activePointer !== null || event.isPrimary === false) return;
+    // A second finger during a stroke is a palm or a pinch, never a brush — and
+    // `isPrimary` is what rejects it, per pointer type, on its own.
+    if (event.isPrimary === false) return;
+    if (activePointer !== null) {
+      // A genuine second device mid-stroke (pen while a finger is down): leave
+      // the live stroke alone. Otherwise the old pointer is gone — COMMIT what
+      // it drew and take over. Committing rather than dropping matters: the ink
+      // is already on screen, and `repaint()` rebuilds from `strokes`, so
+      // dropping it would make the next undo/clear/resize erase strokes he drew
+      // and watched appear.
+      if (!strokeIsStale()) return;
+      if (current !== null) {
+        strokes.push({ pointerType: currentType, points: current });
+        current = null;
+        countStrokes();
+      }
+      activePointer = null;
+    }
     event.preventDefault();
     activePointer = event.pointerId;
     currentType = event.pointerType;
@@ -331,12 +390,32 @@ export function attachDraw(
   };
 
   const onUp = (event: DrawPointerEvent): void => {
-    if (current === null || event.pointerId !== activePointer) return;
-    strokes.push({ pointerType: currentType, points: current });
-    current = null;
+    if (event.pointerId !== activePointer) return;
+    // CLEARED EVEN IF THERE IS NO STROKE. The old guard returned early when
+    // `current` was null and left `activePointer` set, which is the same dead
+    // canvas by a shorter route.
+    if (current !== null) {
+      strokes.push({ pointerType: currentType, points: current });
+      current = null;
+      countStrokes();
+    }
     activePointer = null;
     capture(false, event.pointerId);
-    countStrokes();
+  };
+
+  /**
+   * The browser took the pointer away — a system gesture, a task switch.
+   *
+   * This is the event that SHOULD arrive when a stroke is cut short, and the
+   * reason it is bound separately from `pointerup` is that it must not depend on
+   * anything else arriving afterwards. `onDown`'s takeover is the backstop for
+   * when even this does not fire; this closes the stroke immediately so the next
+   * one starts clean, which is the difference between "it hiccuped once" and
+   * "the canvas stopped working".
+   */
+  const onLostCapture = (event: DrawPointerEvent): void => {
+    if (event.pointerId !== activePointer) return;
+    onUp(event);
   };
 
   // `{ passive: false }` explicitly: a passive listener may not call
@@ -346,6 +425,7 @@ export function attachDraw(
     ["pointermove", onMove],
     ["pointerup", onUp],
     ["pointercancel", onUp],
+    ["lostpointercapture", onLostCapture],
   ];
   for (const [type, listener] of listeners) {
     surface.addEventListener(type, listener, { passive: false });

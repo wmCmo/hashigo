@@ -662,10 +662,24 @@ class FakeCanvas implements DrawSurface {
   removeEventListener(type: string, fn: (event: DrawPointerEvent) => void): void {
     this.listeners.set(type, (this.listeners.get(type) ?? []).filter((entry) => entry.fn !== fn));
   }
+  /** Pointers we currently hold, so `hasPointerCapture` can answer honestly. */
+  readonly holding = new Set<number>();
   setPointerCapture(pointerId: number): void {
     this.captured.push(pointerId);
+    this.holding.add(pointerId);
+  }
+  hasPointerCapture(pointerId: number): boolean {
+    return this.holding.has(pointerId);
+  }
+  /**
+   * What Android does when it takes a gesture away: the capture is gone and no
+   * event says so. `attachDraw` has to survive exactly this — see its `onDown`.
+   */
+  loseCapture(pointerId: number): void {
+    this.holding.delete(pointerId);
   }
   releasePointerCapture(pointerId: number): void {
+    this.holding.delete(pointerId);
     this.released.push(pointerId);
   }
   fire(type: string, event: DrawPointerEvent): void {
@@ -725,6 +739,10 @@ describe("the canvas accepts a stroke from a finger", () => {
     const canvas = new FakeCanvas();
     attachDraw(null, canvas, { attributes: { height: "400px" } });
     expect([...canvas.listeners.keys()].sort()).toEqual([
+      // `lostpointercapture` is not decoration: it is the event that fires when
+      // Android takes the gesture away mid-stroke, and without it the stroke is
+      // never closed. See the dead-canvas regression below.
+      "lostpointercapture",
       "pointercancel",
       "pointerdown",
       "pointermove",
@@ -826,6 +844,76 @@ describe("the canvas accepts a stroke from a finger", () => {
     // Palm, or the second finger of a pinch: not primary, and a different id.
     canvas.fire("pointerdown", pointer(200, 200, { pointerId: 9, isPrimary: false }));
     canvas.fire("pointermove", pointer(210, 210, { pointerId: 9, isPrimary: false }));
+    canvas.fire("pointermove", pointer(20, 20));
+    canvas.fire("pointerup", pointer(20, 20));
+    expect(handle.strokes).toHaveLength(1);
+    expect(handle.strokes[0]!.points).toEqual([{ x: 10, y: 10 }, { x: 20, y: 20 }]);
+  });
+
+  /**
+   * ─── THE DEAD CANVAS: "working on my pc but not on my mobile" ──────────────
+   *
+   * Zach, 2026-09-13: *"why is `<draw/>` working on my pc but not on my mobile?
+   * the canvas is there but when i draw nothing comes up at all..."*
+   *
+   * `onDown` refused while `activePointer !== null`, and only a MATCHING
+   * `pointerup` cleared it. So one stroke whose end never arrives left the guard
+   * latched and every later stroke was rejected — for the rest of the card,
+   * silently, with the half-stroke's ink still on screen.
+   *
+   * **A mouse almost always delivers its `pointerup`; a finger routinely does
+   * not** — Android takes the gesture for an edge swipe, the notification shade,
+   * a task switch. That asymmetry is the whole of "works on PC, not on mobile",
+   * and it is why this is asserted in both arms: the stroke must recover, AND a
+   * genuine simultaneous second device must still be ignored.
+   */
+  it("RECOVERS from a stroke whose pointerup never arrives — his 2026-09-13 report", () => {
+    const canvas = new FakeCanvas({ left: 0, top: 0, width: 300, height: 400 });
+    const handle = attachDraw(null, canvas, { devicePixelRatio: 1 });
+
+    canvas.fire("pointerdown", pointer(10, 10));
+    canvas.fire("pointermove", pointer(40, 40));
+    // Android takes the gesture. No pointerup, no pointercancel — the capture is
+    // simply gone, which is the one thing we can still observe.
+    canvas.loseCapture(7);   // `pointer()` defaults to id 7
+
+    // A fresh touch has to draw. This is the assertion that was failing on his
+    // phone: before the fix, `strokes` stayed at the abandoned stroke for ever.
+    canvas.fire("pointerdown", pointer(100, 100));
+    canvas.fire("pointermove", pointer(140, 140));
+    canvas.fire("pointerup", pointer(140, 140));
+
+    expect(handle.drawing).toBe(false);
+    expect(handle.strokes).toHaveLength(2);
+    // The abandoned stroke is COMMITTED, not dropped: its ink is already on
+    // screen and `repaint()` rebuilds from `strokes`, so dropping it would make
+    // the next undo/clear/resize erase something he drew and watched appear.
+    expect(handle.strokes[0]!.points).toEqual([{ x: 10, y: 10 }, { x: 40, y: 40 }]);
+    expect(handle.strokes[1]!.points).toEqual([{ x: 100, y: 100 }, { x: 140, y: 140 }]);
+  });
+
+  it("closes the stroke on lostpointercapture, without waiting for the next touch", () => {
+    const canvas = new FakeCanvas({ left: 0, top: 0, width: 300, height: 400 });
+    const handle = attachDraw(null, canvas, { devicePixelRatio: 1 });
+    canvas.fire("pointerdown", pointer(10, 10));
+    canvas.fire("pointermove", pointer(30, 30));
+    expect(handle.drawing).toBe(true);
+
+    canvas.fire("lostpointercapture", pointer(30, 30));
+    // Closed immediately — the difference between "it hiccuped once" and "the
+    // canvas stopped working".
+    expect(handle.drawing).toBe(false);
+    expect(handle.strokes).toHaveLength(1);
+    expect(canvas.attributes.get(DRAW_DATA.strokes)).toBe("1");
+  });
+
+  it("still ignores a SECOND DEVICE while a stroke is genuinely live", () => {
+    const canvas = new FakeCanvas({ left: 0, top: 0, width: 300, height: 400 });
+    const handle = attachDraw(null, canvas, { devicePixelRatio: 1 });
+    canvas.fire("pointerdown", pointer(10, 10));
+    // A pen is `isPrimary` within its OWN pointer type, so `isPrimary` alone does
+    // not reject it — the capture check is what keeps the finger's stroke.
+    canvas.fire("pointerdown", pointer(200, 200, { pointerId: 4, pointerType: "pen" }));
     canvas.fire("pointermove", pointer(20, 20));
     canvas.fire("pointerup", pointer(20, 20));
     expect(handle.strokes).toHaveLength(1);
