@@ -401,8 +401,81 @@ function makeDrawable(result: { widgets: readonly { element: HTMLElement; name: 
       bar.appendChild(button);
     }
     widget.element.insertAdjacentElement("afterend", bar);
+    if (DRAW_DEBUG) instrumentDraw(widget.element, bar);
   }
   return handles;
+}
+
+/**
+ * `?drawdebug` — the same readout `app/public/draw-test.html` prints, but on the
+ * REAL card rather than on a bare page of its own.
+ *
+ * ─── WHY THE APP NEEDS ITS OWN, WHEN A TEST PAGE ALREADY EXISTS ─────────────
+ *
+ * That page did its job: on his Samsung Internet, a canvas WITHOUT
+ * `touch-action: none` had every stroke cancelled — `pointerdown 2,
+ * pointercancel 2`, with `touchmove` still flowing at 70 while `pointermove`
+ * stopped at 17 — and the two boxes that set it drew perfectly (ink 3,788 and
+ * 38,142). So the mechanism is understood and `attachDraw` already sets exactly
+ * that rule.
+ *
+ * Which means the fault is something the app does and the bare page does not,
+ * and no amount of reading has found it. This prints the three facts that would
+ * separate the remaining candidates, from the real screen:
+ *
+ *   * the COMPUTED `touch-action` — is the rule actually in force there?
+ *   * the geometry — rect, backing store, ratio
+ *   * live event counts, `pointercancel` among them — is the stroke being
+ *     taken away, or never arriving at all?
+ *
+ * **The listeners are passive and only count.** A diagnostic that can change the
+ * thing it measures is worse than none — and `preventDefault` from here would
+ * mask the very cancel we are looking for.
+ *
+ * Opt-in by query string so it costs a normal review nothing, and left in the
+ * codebase afterwards: this is the second defect in this widget that could only
+ * be seen on his handset, and there will be a third.
+ */
+const DRAW_DEBUG = new URLSearchParams(location.search).has("drawdebug");
+
+function instrumentDraw(canvas: HTMLCanvasElement, bar: HTMLElement): void {
+  const readout = document.createElement("pre");
+  readout.className = "draw-debug";
+  bar.insertAdjacentElement("afterend", readout);
+
+  const counts: Record<string, number> = Object.create(null) as Record<string, number>;
+  const paint = (): void => {
+    const rect = canvas.getBoundingClientRect();
+    const seen = Object.keys(counts)
+      .map((type) => `${type} ${counts[type] ?? 0}`)
+      .join("  ");
+    readout.textContent =
+      `touch-action  ${getComputedStyle(canvas).touchAction}\n` +
+      `css           ${Math.round(rect.width)} x ${Math.round(rect.height)}\n` +
+      `backing       ${canvas.width} x ${canvas.height}   dpr ${devicePixelRatio}\n` +
+      `strokes       ${canvas.getAttribute("data-strokes") ?? "?"}\n` +
+      `events        ${seen === "" ? "none yet — draw on the canvas" : seen}`;
+  };
+
+  for (const type of [
+    "pointerdown",
+    "pointermove",
+    "pointerup",
+    "pointercancel",
+    "lostpointercapture",
+    "touchstart",
+    "touchmove",
+  ]) {
+    canvas.addEventListener(
+      type,
+      () => {
+        counts[type] = (counts[type] ?? 0) + 1;
+        paint();
+      },
+      { passive: true },
+    );
+  }
+  paint();
 }
 
 /**

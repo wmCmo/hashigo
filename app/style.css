@@ -3045,3 +3045,15 @@ input[data-answer="incorrect"] {
   opacity: 0.85;
   padding: 0 0.1em;
 }
+
+/* `?drawdebug`'s readout — see `instrumentDraw`. Opt-in, so it costs a normal
+   review nothing; it exists because this widget has now had two defects that
+   were only visible on his handset. */
+.draw-debug {
+  background: var(--sunk);
+  color: var(--muted);
+  font: 11px/1.5 var(--mono);
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+}
