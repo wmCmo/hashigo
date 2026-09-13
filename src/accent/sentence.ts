@@ -246,3 +246,80 @@ export function parseAnnotation(value: string): Phrase[] {
 export function flatten(phrases: readonly Phrase[]): Mora[] {
   return phrases.flatMap((phrase) => [...phrase.morae]);
 }
+
+/**
+ * ─── READING OVERRIDES: WHERE THE ANALYSER READS THE WRONG WORD ─────────────
+ *
+ * Zach, 2026-09-13, reading his own preview: *"wait... how is 至れり尽くせり read
+ * actually...?"* — and he was right to stop. The annotation said
+ * いたれり**ことごとく**せり. The correct reading is いたれりつくせり.
+ *
+ * **THIS IS A WORSE CLASS OF ERROR THAN A WRONG ACCENT**, and it is the reason
+ * this table exists at all. A wrong accent teaches the wrong pitch on a word he
+ * knows; a wrong reading teaches the wrong word. Decision 8 — *"a wrong accent
+ * drilled is worse than no accent"* — applies with more force, not less.
+ *
+ * ─── WHY AN OVERRIDE LIST AND NOT A CROSS-CHECK GATE ───────────────────────
+ *
+ * The obvious move was decision 8's own method: run UniDic over the same
+ * sentences and show marks only where the two analysers agree. **Measured, and
+ * it is the wrong tool here.** Over the 3,684 sentences without digits they
+ * disagree on **20.8%** — but the disagreements are dominated by legitimate
+ * variants where OpenJTalk is the MORE context-aware of the two:
+ *
+ *     40  明日   unidic アス     (openjtalk アシタ — both correct)
+ *     36  日本   unidic ニッポン  (openjtalk ニホン — both correct)
+ *     13  行っ   unidic オコナッ  (openjtalk イッ — openjtalk is right here)
+ *
+ * Gating on agreement would discard a fifth of the corpus to fix a handful of
+ * cards. And the handful really is a handful: 至れり尽くせり appears in **one**
+ * sentence of 3,712, 正時 in **one**.
+ *
+ * So this is the same shape as the 33 hand-entered OJAD adjudications and the 13
+ * `読み` rows — a short list of known-wrong cases, adjudicated by a person,
+ * beating the derivation. It is expected to grow slowly and by hand.
+ *
+ * ─── THE SUBSTITUTION IS KANA, AND IT ONLY TOUCHES THE ANALYSER'S INPUT ────
+ *
+ * Replacing 至れり尽くせり with いたれりつくせり BEFORE analysis fixes both the
+ * reading and the accent phrasing, because OpenJTalk reads kana as written:
+ *
+ *     as authored    …サービスモイタレリコトゴトクセリデ…
+ *     with override  …サービスモイタレリツクセリデ…
+ *
+ * **The card is untouched.** The sentence on screen comes from the `例文` field
+ * and still shows its kanji; only the reading line below it changes. That is the
+ * same trick decision 10 already uses for head words, where *"an explicit 読み
+ * beats the head word as generator input"*.
+ *
+ * **WHAT AN OVERRIDE DOES NOT FIX: the accent PHRASING.** 至れり尽くせり comes
+ * out as three phrases with three drops — `いた*れり|つ*く_|せり*で` — because the
+ * analyser does not know the idiom whichever way it is spelled (tested: kana
+ * throughout and kanji-plus-kana give byte-identical output). So the override
+ * repairs the worse error and leaves the lesser one: the WORD is now right, and
+ * its contour is a guess. That is the correct order to fix them in — a wrong
+ * reading teaches the wrong word — but it is not a complete repair and should
+ * not be described as one.
+ */
+export const READING_OVERRIDES: ReadonlyMap<string, string> = new Map([
+  // 尽くせり alone reads ツクセリ; the trailing で re-splits it into 尽く
+  // (ことごとく) + せり. A one-character context flip, reproducible.
+  ["至れり尽くせり", "いたれりつくせり"],
+  // 正時 alone reads マサトキ. 毎正時 is まいしょうじ.
+  ["毎正時", "まいしょうじ"],
+]);
+
+/**
+ * Apply the overrides to a sentence on its way to the analyser.
+ *
+ * LONGEST FIRST, so a table that later holds both 尽くせり and 至れり尽くせり
+ * cannot have the shorter one eat the longer one's prefix and leave a fragment.
+ */
+export function applyReadingOverrides(sentence: string): string {
+  let text = sentence;
+  const phrases = [...READING_OVERRIDES.keys()].sort((a, b) => b.length - a.length);
+  for (const phrase of phrases) {
+    text = text.split(phrase).join(READING_OVERRIDES.get(phrase) ?? phrase);
+  }
+  return text;
+}

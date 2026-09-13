@@ -33,7 +33,7 @@ import {
   resolveDescriptorText,
   storeTextResolver,
 } from "../generate/index.js";
-import { cleanSentence, MARKS_FIELD, parseAnnotation } from "./sentence.js";
+import { applyReadingOverrides, cleanSentence, MARKS_FIELD, parseAnnotation } from "./sentence.js";
 
 export { MARKS_FIELD } from "./sentence.js";
 
@@ -58,6 +58,8 @@ export interface ExtractReport {
   readonly ungenerated: number;
   /** Generations whose Japanese could not be isolated — see `cleanSentence`. */
   readonly refused: number;
+  /** Sentences a hand-entered reading override rewrote. See `READING_OVERRIDES`. */
+  readonly overridden: number;
 }
 
 /**
@@ -83,6 +85,7 @@ export function extractSentences(db: Db): ExtractReport {
   const clean: SentenceRow[] = [];
   let ungenerated = 0;
   let refused = 0;
+  let overridden = 0;
 
   for (const { cardId } of cards) {
     const card = loadCard(db, cardId);
@@ -107,14 +110,21 @@ export function extractSentences(db: Db): ExtractReport {
       ungenerated += 1;
       continue;
     }
-    const sentence = cleanSentence(generated);
-    if (sentence === null) {
+    const cleaned = cleanSentence(generated);
+    if (cleaned === null) {
       refused += 1;
       continue;
     }
+    // OVERRIDES APPLIED HERE AND NOWHERE ELSE, so the string written to the
+    // analyser's input file and the string `loadMarks` looks the annotation up
+    // by are the SAME string. Applying them on only one side would key every
+    // overridden sentence under a text no card reports, and those cards would
+    // silently end up with no annotation at all.
+    const sentence = applyReadingOverrides(cleaned);
+    if (sentence !== cleaned) overridden += 1;
     clean.push({ cardId, sentence });
   }
-  return { cards: cards.length, clean, ungenerated, refused };
+  return { cards: cards.length, clean, ungenerated, refused, overridden };
 }
 
 /** One line of `tools/accent_sentence.py`'s output. */

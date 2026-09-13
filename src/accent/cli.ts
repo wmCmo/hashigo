@@ -204,6 +204,7 @@ async function main(): Promise<number> {
       console.log(`${report.cards} card(s) with an 例文 field -> ${report.clean.length} sentence(s)`);
       console.log(`  ${distinct.length} distinct -> ${arg("out")}`);
       console.log(`  ${report.ungenerated} with no generation in the store`);
+      console.log(`  ${report.overridden} rewritten by a reading override`);
       console.log(`  ${report.refused} refused: no Japanese, or latin woven in — see cleanSentence`);
       return 0;
     }

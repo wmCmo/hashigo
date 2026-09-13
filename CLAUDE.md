@@ -512,10 +512,18 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     hand wins.** **The brief's stack assumption is WRONG and changes nothing** — it guesses
     Next.js on Vercel; `app/` is vanilla TS on Vite, local-first, and the work reaches
     `app/style.css`, `app/index.html` and some new assets, nothing else.
-    **TWO THINGS ARE STILL HIS, and decision 31's own line puts them there:** the Japanese
+    **TWO THINGS WERE STILL HIS, and decision 31's own line put them there:** the Japanese
     typeface (the brief is SILENT on it, and specifies a Latin-only stack — but 1,725
     distinct kanji are 100% of what is studied), and dark mode (the brief calls it open and
     says do not ship a guess; the app it replaces is dark and he reviews on his phone).
+    **THE TYPEFACE IS SETTLED, 2026-09-13: `Zen Kaku Gothic New`.** He picked it over Zen
+    Maru and over his system font, seeing all three on real cards — and the way the
+    question finally got asked is the lesson. A preview of mine wrapped cards in the wrong
+    class, so `--jp-display` never applied and the Japanese fell through to Windows' own
+    font; he read that as *"why does this html look better than our actual app...? im not
+    kidding, it actually looks good"*. A real signal wearing a bug's clothes: Zen Maru was
+    the thing he did not like. `--jp-display` now leads with Zen Kaku, so the round/flat
+    split between display and UI is gone.
     Both rendered side by side in `app/specimen.html` and `app/specimen-review.html`.
     **Two palette cells need a rule, measured:** `--muted` on `--paper-sunk` is 4.21:1,
     below AA for small text; `--vermilion` on `--paper` is 3.47:1, large-text-only — fine

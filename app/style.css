@@ -155,12 +155,32 @@
 
   /* ── type ──
      Fraunces is the WORDMARK and the display face and never sets a Japanese
-     glyph, which is why its subset is Latin-only. `--jp-display` leans round to
-     agree with the mark's round line caps; `--jp-ui` is flat because a rounded
-     gothic goes blobby on an 11px 型 label. Zach's call, 2026-09-12. */
+     glyph, which is why its subset is Latin-only. `--jp-display` used to lean
+     round to agree with the mark's round line caps; `--jp-ui` is flat because a
+     rounded gothic goes blobby on an 11px 型 label. Zach's call, 2026-09-12.
+
+     ── ZEN KAKU WINS, 2026-09-13, AND THIS WAS THE LAST OPEN CELL OF THE BRIEF ──
+     Decision 32 recorded the Japanese face as still HIS: the design brief is
+     silent on it and specifies a Latin-only stack, while *"1,725 distinct kanji
+     are 100% of what is studied"*. It stayed open because he had never seen the
+     candidates over real cards.
+
+     He saw them, and the way he got there is worth keeping. A preview page of
+     mine wrapped cards in the wrong class, so `--jp-display` never applied and
+     the Japanese fell through to the system font. He read the result as the APP
+     looking worse than a page with no design — *"why does this html look better
+     than our actual app...? … im not kidding, it actually looks good"*. Which
+     was a real signal wearing a bug's clothes: Zen Maru was the thing he did not
+     like. Given the three side by side (`scripts/ojad-preview.ts`), he picked
+     **Zen Kaku Gothic New** over both Zen Maru and his system font.
+
+     So the round/flat split is gone and `--jp-display` is now `--jp` at display
+     size. Zen Maru stays in the stack as a fallback rather than being deleted —
+     the face is already downloaded and self-hosted, and removing it is a
+     bundle-size decision rather than a taste one. */
   --display: "Fraunces VF", Georgia, serif;
   --sans: "Avenir Next", Avenir, "Nunito Sans", "Segoe UI", system-ui, sans-serif;
-  --jp-display: "Zen Maru Gothic", "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN",
+  --jp-display: "Zen Kaku Gothic New", "Zen Maru Gothic", "Hiragino Kaku Gothic ProN",
     "Yu Gothic", Meiryo, sans-serif;
   --jp: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Yu Gothic UI",
     Meiryo, sans-serif;
