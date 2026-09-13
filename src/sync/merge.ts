@@ -163,6 +163,10 @@ export interface MergeReport {
   readonly flagsTaken: number;
   /** Cards where local was newer or equal, so nothing moved. */
   readonly flagsKept: number;
+  /** Template bodies the remote won, by clock. */
+  readonly templatesTaken: number;
+  /** Template bodies this device kept, because its own were newer. */
+  readonly templatesKept: number;
   /** Cards in the payload that this device does not have. */
   readonly flagsOrphaned: number;
   /** Decks whose archive flag the remote won, by clock. */
@@ -173,6 +177,43 @@ const SELECT_CARD_FLAGS = `
 SELECT id AS card_id, archived, pinned, updated_at
   FROM cards
  ORDER BY id`;
+
+/**
+ * ─── TEMPLATE BODIES NEED A CLOCK, AND NOT HAVING ONE COST HIM A DAY ─────────
+ *
+ * `applyLocalArchive` writes every template in the payload WHOLESALE, which is
+ * right for a restore and wrong for a merge: `syncNow` merges each peer in turn,
+ * so with no clock **the last peer in the mailbox wins** — not the newest.
+ *
+ * Zach, 2026-09-13: *"but i still can't see ojad field...? both on desktop and
+ * mobile"*. His phone had the `ojad` field on all 4 templates and all 3,718
+ * annotations, and template bodies with no `<ojad>` in them. Reproduced exactly
+ * in the browser pane: the mailbox held
+ *
+ *     dev-1665859d9737       merged 1st   pre-ojad bodies
+ *     dev-d1f56f1ef26b       merged 2nd   pre-ojad bodies
+ *     dev-ojad-2026-09-13    merged 3rd   WITH <ojad>
+ *     dev-phonetest          merged 4th   pre-ojad bodies   <- reverted it
+ *
+ * A stale test payload from 2026-09-12, alphabetically last, undid the change
+ * every time. The FIELD survived because fields and values are upserted per row
+ * and a payload without them deletes nothing; only the bodies, which are
+ * replaced whole, were lost.
+ *
+ * So this is the same rule decision 33 already gives `archived`/`pinned`: LWW on
+ * the row's own `updated_at`. An incoming template with NO clock — an older
+ * peer — never wins, because "I cannot say when this was written" is not a
+ * reason to overwrite something that can.
+ */
+const SELECT_TEMPLATE_CLOCKS = `
+SELECT id, name, content, updated_at
+  FROM templates
+ ORDER BY id`;
+
+const RESTORE_TEMPLATE = `
+UPDATE templates
+   SET name = ?, content = ?, updated_at = ?
+ WHERE id = ?`;
 
 const SELECT_TRACK_CLOCKS = `
 SELECT t.card_id AS card_id, t.kind AS kind, t.last_reviewed_at AS last_reviewed_at,
@@ -278,6 +319,18 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
       schedulerState: r["scheduler_state"] === null ? null : String(r["scheduler_state"]),
     });
   }
+  const localTemplates = new Map<
+    string,
+    { name: string; content: string; updatedAt: string | null }
+  >();
+  for (const r of db.prepare(SELECT_TEMPLATE_CLOCKS).all() as Record<string, unknown>[]) {
+    localTemplates.set(String(r["id"]), {
+      name: String(r["name"]),
+      content: String(r["content"]),
+      updatedAt: r["updated_at"] === null ? null : String(r["updated_at"]),
+    });
+  }
+
   const localFlags = new Map<string, string>();
   for (const r of db.prepare(SELECT_CARD_FLAGS).all() as Record<string, unknown>[]) {
     localFlags.set(String(r["card_id"]), String(r["updated_at"]));
@@ -285,6 +338,27 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
 
   // ── the union and the upserts, reused wholesale ───────────────────────────
   const applied = applyLocalArchive(db, remote.archive);
+
+  // ── rule: a template body is LAST WRITE WINS, by its own clock ────────────
+  //
+  // The apply has already written the remote's body over the local one. Put the
+  // local one back whenever it is newer, or whenever the remote cannot say.
+  let templatesTaken = 0;
+  let templatesKept = 0;
+  const restoreTemplate = db.prepare(RESTORE_TEMPLATE);
+  for (const incoming of remote.archive.templates ?? []) {
+    const local = localTemplates.get(incoming.id);
+    if (local === undefined) continue; // the apply reported it orphaned
+    if (incoming.updatedAt !== undefined && isNewer(incoming.updatedAt, local.updatedAt)) {
+      // The apply already wrote the body; write the REMOTE'S clock with it, so
+      // this device does not then claim to be the author on the next sync.
+      restoreTemplate.run(incoming.name, incoming.content, incoming.updatedAt, incoming.id);
+      templatesTaken += 1;
+      continue;
+    }
+    restoreTemplate.run(local.name, local.content, local.updatedAt, incoming.id);
+    templatesKept += 1;
+  }
 
   // ── rule: scheduler state follows the LAST REVIEW, not the last write ─────
   let trackStateTaken = 0;
@@ -369,5 +443,7 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
     flagsKept,
     flagsOrphaned,
     deckFlagsTaken,
+    templatesTaken,
+    templatesKept,
   };
 }

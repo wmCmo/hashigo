@@ -1500,7 +1500,28 @@ function syncMerge(request: SyncMergeRequest): void {
       n: number;
     }
   ).n;
-  const report = mergeSync(db, request.payload as never);
+  // ─── ONE TRANSACTION, AND ITS ABSENCE COST HIM A DAY ───────────────────────
+  //
+  // `applyLocalArchive`'s own header says it: *"The caller owns the
+  // transaction."* `src/backup/cli.ts` opens one and says why — *"a foreign-key
+  // surprise must not leave a half restore"* — and this, the OTHER caller, never
+  // did. Two consequences, and both were observed rather than reasoned about:
+  //
+  //   * **A half merge.** Zach, 2026-09-13: *"but i still can't see ojad
+  //     field...? both on desktop and mobile"*. His phone's own payload showed
+  //     the `ojad` FIELD on 4 templates and all 3,718 VALUES applied, and the
+  //     template BODIES not applied — one merge, partly done, left standing.
+  //     With no transaction each statement autocommits, so an interrupted merge
+  //     keeps whatever it had already written.
+  //   * **The speed that interrupts it.** A payload is now 7,566 field values,
+  //     7,716 card flags and 244 card-state rows; four peers is ~30,000 upserts,
+  //     each its own implicit transaction and its own OPFS flush. Measured in
+  //     the browser pane: a single sync ran over SEVEN MINUTES and had still not
+  //     pushed. On a phone that is a tab the system is free to suspend, which is
+  //     how the half merge above happens in the first place.
+  //
+  // So the fix is the same line for both faults.
+  const report = db.transaction(() => mergeSync(db, request.payload as never))();
   const after = (
     db.prepare("SELECT count(*) AS n FROM reviews WHERE source = 'local'").get() as {
       n: number;

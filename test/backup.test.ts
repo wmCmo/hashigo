@@ -259,8 +259,16 @@ describe("the local archive", () => {
         .prepare("UPDATE templates SET content = ?, name = ? WHERE id = 'tpl'")
         .run("<<読み>>\n---\n<<単語>>", "単語v2");
       const a = exportLocalArchive(source, AT);
+      // `updatedAt` came with the template CLOCK — see `mergeSync`, where a
+      // stale peer's body must not beat a newer one. A restore ignores it; it is
+      // carried so a MERGE can tell whose body is newer.
       expect(a.templates).toEqual([
-        { id: "tpl", name: "単語v2", content: "<<読み>>\n---\n<<単語>>" },
+        {
+          id: "tpl",
+          name: "単語v2",
+          content: "<<読み>>\n---\n<<単語>>",
+          updatedAt: expect.any(String) as unknown as string,
+        },
       ]);
 
       const report = applyLocalArchive(target, a);

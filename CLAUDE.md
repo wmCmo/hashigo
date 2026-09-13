@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 43 files, 1114 passed, 1 skipped (the FSRS refit, gated). ~95 s.
+npm test                # 43 files, 1117 passed, 1 skipped (the FSRS refit, gated). ~95 s.
                         # EXITS 0 ON A PASSING RUN as of 2026-08-26. It is a wrapper
                         # (`scripts/test.mjs`) that reads the SUMMARY, which is
                         # STRICTER than the exit code, not looser: the run must have

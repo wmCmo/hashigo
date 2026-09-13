@@ -217,6 +217,19 @@ export interface ArchivedTemplate {
   readonly id: string;
   readonly name: string;
   readonly content: string;
+  /**
+   * `templates.updated_at`, so a MERGE can tell whose body is newer.
+   *
+   * OPTIONAL, and it has to be: archives written before this existed are still
+   * good archives, and `ARCHIVE_VERSION` is bumped "only for a change no reader
+   * could otherwise survive". A reader survives this one — see `mergeSync`,
+   * which reads absent as "unknown clock" and then declines to overwrite a local
+   * body rather than clobbering it.
+   *
+   * A RESTORE ignores this. There the archive is the only truth and wholesale is
+   * correct; it is only when two live devices disagree that a clock is needed.
+   */
+  readonly updatedAt?: string;
 }
 
 export interface ArchivedFieldValue {
@@ -344,7 +357,7 @@ const SELECT_FIELDS = `
 SELECT template_id, id, name, type, source_field_id, options, pos, local
   FROM template_fields ORDER BY template_id, pos, id`;
 
-const SELECT_TEMPLATES = `SELECT id, name, content FROM templates ORDER BY id`;
+const SELECT_TEMPLATES = `SELECT id, name, content, updated_at FROM templates ORDER BY id`;
 
 const SELECT_LOCAL_CARDS = `
 SELECT id, deck_id, template_id, name, content, reverse, voice, archived, pinned
@@ -467,6 +480,9 @@ export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive 
       id: String(r["id"]),
       name: String(r["name"]),
       content: String(r["content"]),
+      ...(r["updated_at"] === null || r["updated_at"] === undefined
+        ? {}
+        : { updatedAt: String(r["updated_at"]) }),
     }),
   );
 
@@ -643,10 +659,23 @@ INSERT OR IGNORE INTO card_tracks
    last_reviewed_at, scheduler, scheduler_state)
 VALUES (?, ?, 0, 0, NULL, NULL, 0, 0, NULL, NULL, NULL)`;
 
+/**
+ * The archived CLOCK is preserved when the archive carries one.
+ *
+ * It used to stamp `now` unconditionally, which broke two things at once. A
+ * restore stopped round-tripping — export, apply, export again was no longer
+ * byte-identical, and `test/backup.test.ts` says that property out loud. And it
+ * made the template clock meaningless the moment it was used: after any merge
+ * every device would believe its own body was the newest, whoever had actually
+ * written it, so the LWW rule in `src/sync/merge.ts` would decide by accident.
+ *
+ * `COALESCE` keeps the old behaviour for an archive written before the clock
+ * existed, where `now` is the only answer available.
+ */
 const UPDATE_TEMPLATE = `
 UPDATE templates
    SET name = ?, content = ?,
-       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       updated_at = COALESCE(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
  WHERE id = ?`;
 
 const UPSERT_VALUE = `
@@ -739,7 +768,7 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
       templatesOrphaned += 1;
       continue;
     }
-    updateTemplate.run(t.name, t.content, t.id);
+    updateTemplate.run(t.name, t.content, t.updatedAt ?? null, t.id);
     templatesApplied += 1;
   }
 

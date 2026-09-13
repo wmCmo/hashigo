@@ -346,3 +346,94 @@ describe("a deck archive crosses too, not just its cards", () => {
     phone.db.close();
   });
 });
+
+/**
+ * ─── A STALE PEER MUST NOT REVERT A TEMPLATE BODY ───────────────────────────
+ *
+ * Zach, 2026-09-13: *"but i still can't see ojad field...? both on desktop and
+ * mobile"*. His phone had the `ojad` FIELD on all four templates and all 3,718
+ * annotations, and template bodies with no `<ojad>` in them.
+ *
+ * `applyLocalArchive` writes every template WHOLESALE — right for a restore,
+ * where the archive is the only truth, and wrong for a merge. `syncNow` merges
+ * each peer in turn, so with no clock **the last peer in the mailbox wins, not
+ * the newest**. Reproduced in the browser pane: a test payload from 2026-09-12
+ * sat alphabetically last in the mailbox and undid the change on every sync.
+ *
+ * The FIELD survived because fields and values are upserted per row and a
+ * payload that lacks them deletes nothing. Only the bodies, replaced whole, were
+ * lost — which is why the symptom was "the data is there and nothing renders".
+ */
+describe("a template body merges by clock, not by peer order", () => {
+  function withTemplate(db: Db, content: string, updatedAt: string): void {
+    db.prepare(
+      "INSERT INTO templates (id, name, content, updated_at) VALUES ('t', '単語', ?, ?) " +
+        "ON CONFLICT (id) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at",
+    ).run(content, updatedAt);
+  }
+  const bodyOf = (db: Db): string =>
+    (db.prepare("SELECT content FROM templates WHERE id = 't'").get() as { content: string })
+      .content;
+
+  it("KEEPS the newer local body when a stale peer carries an older one", () => {
+    const local = device().db;
+    const stale = device().db;
+    try {
+      // The stale peer is the 2026-09-12 payload; this device has today's.
+      withTemplate(stale, "><< 例文 >>", "2026-09-12T09:00:00.000Z");
+      withTemplate(local, "><< 例文 >>\n><ojad></ojad>", "2026-09-13T18:00:00.000Z");
+
+      const report = mergeSync(local, exportSync(stale, NOW));
+      expect(bodyOf(local)).toContain("<ojad>");
+      expect(report.templatesKept).toBe(1);
+      expect(report.templatesTaken).toBe(0);
+    } finally {
+      local.close();
+      stale.close();
+    }
+  });
+
+  it("TAKES the remote body when the remote is newer — the change still travels", () => {
+    const local = device().db;
+    const remote = device().db;
+    try {
+      withTemplate(local, "><< 例文 >>", "2026-09-12T09:00:00.000Z");
+      withTemplate(remote, "><< 例文 >>\n><ojad></ojad>", "2026-09-13T18:00:00.000Z");
+
+      const report = mergeSync(local, exportSync(remote, NOW));
+      expect(bodyOf(local)).toContain("<ojad>");
+      expect(report.templatesTaken).toBe(1);
+    } finally {
+      local.close();
+      remote.close();
+    }
+  });
+
+  it("a peer with NO clock never wins — 'I cannot say when' is not a reason", () => {
+    const local = device().db;
+    const remote = device().db;
+    try {
+      withTemplate(local, "><< 例文 >>\n><ojad></ojad>", "2026-09-13T18:00:00.000Z");
+      withTemplate(remote, "><< 例文 >>", "2026-09-12T09:00:00.000Z");
+      const payload = exportSync(remote, NOW);
+      // An older build: it carried bodies but no `updated_at` for them.
+      const older = {
+        ...payload,
+        archive: {
+          ...payload.archive,
+          templates: (payload.archive.templates ?? []).map(({ id, name, content }) => ({
+            id,
+            name,
+            content,
+          })),
+        },
+      };
+      const report = mergeSync(local, older as never);
+      expect(bodyOf(local)).toContain("<ojad>");
+      expect(report.templatesKept).toBe(1);
+    } finally {
+      local.close();
+      remote.close();
+    }
+  });
+});
