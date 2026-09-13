@@ -1043,9 +1043,16 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   flex: 0 0 auto;
 }
 
-/* `remembered` stays on the RIGHT: over 103,110 corpus reviews retention is
-   96.24%, so ~96 of every 100 taps are that button and it belongs under the
-   thumb that is already there. */
+/* `forgot` KEEPS THE LEFT EDGE, which is the half of the mistap fix that lives
+   here. `next` is last in the DOM now (see index.html for why), so when it goes
+   the two grades grow rightward from a left edge that has not moved — the button
+   his thumb is aimed at is the one that was already under it.
+
+   `remembered` is no longer the rightmost control mid-walk, and that is a real
+   cost: over 103,110 corpus reviews retention is 96.24%, so ~96 of every 100
+   taps are that button and the far edge is the easiest place for a right thumb
+   to reach. It loses that edge only while the walk is running, and it is the
+   control that INHERITS the edge the instant the walk ends. */
 .grades {
   display: flex;
   flex: 1;

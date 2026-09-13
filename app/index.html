@@ -222,7 +222,23 @@
                 aria-label="play your recording">your take<span class="kbd-inline"> ⇧m</span></button>
       </div>
 
+      <!-- THE STEPPER GOES LAST, AND THAT IS A MISTAP FIX. Zach, 2026-09-13:
+           *"when i click next next next, when it ended, it becomes forgot and
+           you would misclick it"*. `next` used to lead the row, so the moment
+           the walk ran out the button vanished and `forgot` slid left into the
+           spot his thumb was already tapping — a lapse written on a card he had
+           just remembered. Ordering it `forgot · remembered · next` puts the
+           vanishing control at the END, where the thing that grows into its
+           place is `remembered`: still a mistap, but the one the corpus says is
+           usually right anyway (96.24% retention over 103,110 reviews), and
+           `undo` is one button away in the row above. -->
       <div id="bar" class="bar">
+        <div id="grades" class="grades">
+          <button id="forgot" class="no" type="button">forgot<span class="kbd">f</span></button>
+          <button id="remembered" class="ok" type="button">
+            remembered<span class="kbd">j</span>
+          </button>
+        </div>
         <!-- The word is its own span because the reveal is a WALK now, not a
              switch: it reads `reveal`, then `next · 3`, `next · 2`, `next · 1`,
              then the button goes. A stepper that does not say how far it has to
@@ -230,12 +246,6 @@
         <button id="reveal" class="reveal-zone" type="button">
           <span id="revealword">reveal</span><span class="kbd">space</span>
         </button>
-        <div id="grades" class="grades">
-          <button id="forgot" class="no" type="button">forgot<span class="kbd">f</span></button>
-          <button id="remembered" class="ok" type="button">
-            remembered<span class="kbd">j</span>
-          </button>
-        </div>
       </div>
       </div>
     </section>
