@@ -637,3 +637,131 @@ describe("answerAt — grading out of order", () => {
     db.close();
   });
 });
+
+/**
+ * ─── THE DAY'S TALLY SURVIVES A RELOAD ───────────────────────────────────────
+ *
+ * Zach graded 転出 on his phone, reloaded, saw `0/715` where it had said `1/716`,
+ * and reasonably concluded the review had not landed. It had — the plan was one
+ * shorter BECAUSE it landed — but the numerator was session-scoped and a reload
+ * destroys the session.
+ *
+ * These pin the repair as a FRACTION, not as two independent numbers: the point
+ * is that rebuilding the session at the same instant reproduces what was on
+ * screen before it, which is the only property he can actually see.
+ */
+describe("the day's tally, not the session's", () => {
+  it("a rebuilt session shows the SAME fraction — the reload he reported", () => {
+    const { db } = fixture(4, 0);
+    try {
+      const before = buildSession(db, { now: AT, newLimit: 0 });
+      expect(before.progress()).toMatchObject({ answeredToday: 0, plannedToday: 4 });
+
+      before.answer(true, { at: AT });
+      const onScreen = before.progress();
+      expect(onScreen).toMatchObject({ answeredToday: 1, plannedToday: 4 });
+      // The OLD numbers, kept here so the regression is legible: this is what a
+      // reload used to turn into `0/3`.
+      expect(onScreen.answered).toBe(1);
+      expect(onScreen.planned).toBe(4);
+
+      // The reload. A fresh plan at the same instant — one card shorter, because
+      // the graded track is no longer due.
+      const after = buildSession(db, { now: AT, newLimit: 0 });
+      expect(after.progress().planned).toBe(3);
+      expect(after.progress().answered).toBe(0);
+      expect(`${after.progress().answeredToday}/${after.progress().plannedToday}`).toBe(
+        `${onScreen.answeredToday}/${onScreen.plannedToday}`,
+      );
+    } finally {
+      db.close();
+    }
+  });
+
+  it("counts grades made EARLIER today, including ones this device did not make", () => {
+    const { db, dueIds } = fixture(3, 0);
+    try {
+      // Stands in for a sync pull: a review dated today that no session here wrote.
+      db.prepare(
+        `INSERT INTO reviews (track_id, reviewed_at, tz_offset_minutes, time_unknown,
+                              elapsed_days, scheduled_days, remembered, source)
+         VALUES (?, ?, 540, 0, 5, 5, 1, 'local')`,
+      ).run(dueIds[0], "2026-08-22T08:15:00+09:00");
+
+      expect(buildSession(db, { now: AT, newLimit: 0 }).progress().answeredToday).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("ignores yesterday, and reads the date in the row's OWN offset", () => {
+    const { db, dueIds } = fixture(3, 0);
+    try {
+      const rows = [
+        ["2026-08-21T23:59:00+09:00", 0], // yesterday
+        ["2026-08-23T00:01:00+09:00", 0], // tomorrow
+        ["2026-08-22T23:00:00-05:00", 1], // still the 22nd where it was written
+      ] as const;
+      for (const [at] of rows) {
+        db.prepare(
+          `INSERT INTO reviews (track_id, reviewed_at, tz_offset_minutes, time_unknown,
+                                elapsed_days, scheduled_days, remembered, source)
+           VALUES (?, ?, 540, 0, 5, 5, 1, 'local')`,
+        ).run(dueIds[0], at);
+      }
+      const wanted = rows.reduce((n, [, counts]) => n + counts, 0);
+      expect(buildSession(db, { now: AT, newLimit: 0 }).progress().answeredToday).toBe(wanted);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("a re-ask moves NEITHER number — the bar cannot go backwards on a forget", () => {
+    const { db } = fixture(3, 0);
+    try {
+      const s = buildSession(db, { now: AT, newLimit: 0 });
+      s.answer(false, { at: AT }); // writes a review AND queues the re-ask
+      const afterForget = s.progress();
+      expect(afterForget).toMatchObject({ answeredToday: 1, plannedToday: 3, reasksQueued: 1 });
+
+      s.answer(true, { at: AT });
+      s.answer(true, { at: AT });
+      // Now the re-ask itself. Decision 13: it writes no row.
+      expect(s.current()?.reask).toBe(true);
+      const beforeReask = s.progress().answeredToday;
+      s.answer(true, { at: AT });
+      expect(s.progress().answeredToday).toBe(beforeReask);
+      expect(s.progress().plannedToday).toBe(3);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("undo puts the fraction back exactly", () => {
+    const { db } = fixture(3, 0);
+    try {
+      const s = buildSession(db, { now: AT, newLimit: 0 });
+      const before = s.progress();
+      const result = s.answerAt(0, true, { at: AT });
+      if ("refused" in result) throw new Error("expected a grade");
+      expect(s.progress()).toMatchObject({ answeredToday: 1, plannedToday: 3 });
+      s.unanswer(result);
+      expect(s.progress().answeredToday).toBe(before.answeredToday);
+      expect(s.progress().plannedToday).toBe(before.plannedToday);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("a skip shrinks the day rather than filling it — the card has left", () => {
+    const { db } = fixture(3, 0);
+    try {
+      const s = buildSession(db, { now: AT, newLimit: 0 });
+      expect(s.progress().plannedToday).toBe(3);
+      s.skipCurrent();
+      expect(s.progress()).toMatchObject({ answeredToday: 0, plannedToday: 2 });
+    } finally {
+      db.close();
+    }
+  });
+});

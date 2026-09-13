@@ -566,16 +566,21 @@ function releaseCard(): void {
 async function showCardAt(): Promise<void> {
   const reply = await ask<"next">({ kind: "next", offset: peekOffset });
   maxLookBehind = reply.progress.answered;
+  // THE DAY, NOT THE SESSION. `answered/planned` reset to `0/715` the moment he
+  // reloaded, and he read that as a review that had not landed. `answeredToday` is
+  // read from `reviews`, so a reload changes nothing it says — see `SessionProgress`
+  // for why `plannedToday` is the denominator that holds the fraction steady across
+  // one. Re-asks stay out of both and keep their `+2`.
   progressLabel.textContent =
-    `${reply.progress.answered}/${reply.progress.planned}` +
+    `${reply.progress.answeredToday}/${reply.progress.plannedToday}` +
     (reply.progress.reasksRemaining > 0 ? ` +${reply.progress.reasksRemaining}` : "");
 
-  // His request 4. The denominator is `planned` and NOT `planned + reasks`: a
+  // His request 4. The denominator is today's workload and NOT that plus reasks: a
   // decision-13 re-ask is a card he already answered, so counting it would make
   // the bar go BACKWARDS every time he forgets one. Re-asks are shown as the
   // `+2` beside the count instead, where a growing number reads correctly.
-  const planned = Math.max(reply.progress.planned, 1);
-  const done = Math.min(reply.progress.answered, planned);
+  const planned = Math.max(reply.progress.plannedToday, 1);
+  const done = Math.min(reply.progress.answeredToday, planned);
   progressFill.style.width = `${((100 * done) / planned).toFixed(2)}%`;
   progressBar.setAttribute("aria-valuenow", String(done));
   progressBar.setAttribute("aria-valuemax", String(planned));
@@ -593,8 +598,12 @@ async function showCardAt(): Promise<void> {
     releaseCard();
     reviewView.hidden = true;
     doneView.hidden = false;
+    // Today, for the same reason the counter above is: finishing the plan in two
+    // sittings should say what the day came to, not what the last sitting did.
+    // `shown again` stays per-session — a re-ask is a thing that happened in this
+    // sitting and writes no row, so there is no day-scoped version of it to read.
     doneText.textContent =
-      `${reply.progress.answered} answered · ${reply.progress.reasksQueued} shown again`;
+      `${reply.progress.answeredToday} answered · ${reply.progress.reasksQueued} shown again`;
     // One rung, once, when the plan is cleared. Not awaited: the done screen is
     // already correct and the climb is feedback, not a step in the flow.
     void climb.step();

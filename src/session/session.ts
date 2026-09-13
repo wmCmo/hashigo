@@ -95,6 +95,7 @@
 import {
   dueTracks,
   gradeTrack,
+  localDate,
   newTracks,
   nowInHostOffset,
   snapshotTrack,
@@ -207,6 +208,42 @@ export interface SessionProgress {
   /** Fresh items plus pending re-asks. */
   readonly remaining: number;
   readonly done: boolean;
+
+  /**
+   * ─── THE DAY'S TALLY, WHICH IS WHAT THE SCREEN ACTUALLY WANTS ──────────────
+   *
+   * `answered` counts this SESSION, and a session is destroyed by a refresh. Zach
+   * graded one card on his phone, reloaded, and read `0/715` as a lost review:
+   * *"it should still be 1/716 for today right?"* Nothing was lost — the plan had
+   * shrunk by exactly the card he graded, which is the proof it landed — but a
+   * number that resets cannot say so, and he had to be told.
+   *
+   * `answeredToday` is read from `reviews`, so it survives a reload, and it counts
+   * grades made ANYWHERE today: a sync pull brings the phone's morning into the
+   * laptop's afternoon, which is the honest reading of "today" for someone who
+   * reviews on two devices (his stated workflow).
+   *
+   * **`plannedToday` is the denominator that makes it stable across that reload.**
+   * It is `answeredToday` plus the fresh items still ahead — today's whole
+   * workload, not this session's slice. Before the refresh: 1 answered, 715 ahead
+   * = 1/716. After it, with a plan of 715 and a cursor at zero: 1 answered, 715
+   * ahead = **1/716**, the same fraction. The session boundary stops being visible,
+   * which is the point.
+   *
+   * **Re-asks stay out of both**, for the reason the old denominator kept them out:
+   * a decision-13 re-ask writes no review row, so counting it would make the bar go
+   * backwards every time he forgets one. They are reported beside the count.
+   *
+   * A skip moves `answered` without writing a review, so it shrinks `plannedToday`
+   * by one rather than filling it — correct, since the card has left the day.
+   *
+   * "Today" is the local date of the session's `now`, FIXED at build. A session
+   * carried past midnight keeps counting the day it was planned for; a tally that
+   * reset at 00:00 mid-review would look exactly like the bug this replaces.
+   */
+  readonly answeredToday: number;
+  /** `answeredToday` plus the fresh items still ahead. Today's whole workload. */
+  readonly plannedToday: number;
 }
 
 export class SessionCompleteError extends Error {
@@ -297,10 +334,13 @@ export class ReviewSession {
   private readonly plan: SessionItem[];
   private readonly reasks: SessionItem[] = [];
   private cursor = 0;
+  /** `2026-09-13` — the local date the plan was built for. See `answeredToday`. */
+  private readonly today: string;
 
-  constructor(db: SqliteHandle, plan: readonly SessionItem[]) {
+  constructor(db: SqliteHandle, plan: readonly SessionItem[], today: string) {
     this.db = db;
     this.plan = [...plan];
+    this.today = today;
   }
 
   /**
@@ -512,12 +552,36 @@ export class ReviewSession {
     return true;
   }
 
+  /**
+   * Reviews written today, counted from the table rather than from the cursor.
+   *
+   * **The `>=` is what keeps this off the hot path's conscience.** `reviews_when`
+   * indexes `reviewed_at`, and an RFC 3339 string sorts lexically by its date
+   * prefix, so the seek lands on the first row of today and scans a handful — not
+   * the 103,110 a bare `substr(...) = ?` would walk on every card render. The
+   * `substr` is still there and is the one that decides: it compares the date AS
+   * WRITTEN, in the row's own offset, which is `localDate`'s meaning of the word
+   * and the reason a trip abroad cannot silently move the tally.
+   */
+  private countAnsweredToday(): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM reviews
+          WHERE reviewed_at >= ? AND substr(reviewed_at, 1, 10) = ?`,
+      )
+      .get(this.today, this.today) as { n: number } | undefined;
+    return row?.n ?? 0;
+  }
+
   progress(): SessionProgress {
     const answeredFresh = Math.min(this.cursor, this.plan.length);
     const reasksShown = Math.max(0, this.cursor - this.plan.length);
+    const answeredToday = this.countAnsweredToday();
     return {
       planned: this.plan.length,
       answered: answeredFresh,
+      answeredToday,
+      plannedToday: answeredToday + (this.plan.length - answeredFresh),
       dueCount: this.plan.filter((i) => i.origin === "due").length,
       newCount: this.plan.filter((i) => i.origin === "new").length,
       reasksQueued: this.reasks.length,
@@ -571,5 +635,5 @@ export function buildSession(db: SqliteHandle, options: SessionOptions = {}): Re
     options.interleave ?? stored.interleave,
     options.spreadOver ?? EXPECTED_SESSION_CARDS,
   );
-  return new ReviewSession(db, plan);
+  return new ReviewSession(db, plan, localDate(now));
 }
