@@ -39,7 +39,21 @@
 import { openDatabase } from "../src/db/index.js";
 import { arg, flag } from "../src/cli/args.js";
 
-/** Field name -> what it becomes. Both templates that carry a sentence. */
+/**
+ * SCOPED BY TEMPLATE, NOT BY FIELD NAME — Zach's call, 2026-09-13.
+ *
+ * The first version keyed on the field (`例文` / `Example`) and so reached four
+ * templates: 単語, 言葉, New Vocab and Polysemy. He asked for the reading line on
+ * the accent drill and nowhere else, and the field name cannot express that —
+ * 言葉 calls its sentence `Example`, exactly as New Vocab does.
+ *
+ * These two are also the templates decision 29 scopes `identify` to: the ones
+ * declaring an `accent` field. New Vocab's 1,203 cards show the head word
+ * unmasked beside its clip, which is a different exercise.
+ */
+const TEMPLATES = ["単語", "言葉"] as const;
+
+/** The field the sentence lives in, within those templates. */
 const SENTENCE_FIELDS = ["例文", "Example"] as const;
 
 /**
@@ -67,6 +81,7 @@ try {
   let changed = 0;
   let already = 0;
   let absent = 0;
+  let removed = 0;
   const update = db.prepare(
     `UPDATE templates
         SET content = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
@@ -74,6 +89,21 @@ try {
   );
 
   for (const template of templates) {
+    if (!TEMPLATES.includes(template.name as (typeof TEMPLATES)[number])) {
+      // NOT SILENT. A template that USED to carry the line has to be cleaned up,
+      // and saying so is how that gets noticed rather than left behind — this
+      // script ran once with a wider scope, so there is real work here.
+      if (template.content.includes("<ojad>")) {
+        const cleaned = template.content
+          .split("\n")
+          .filter((line) => !line.includes("<ojad>"))
+          .join("\n");
+        if (flag("apply")) update.run(cleaned, template.id);
+        removed += 1;
+        console.log(`  ${template.name.padEnd(12)} REMOVED — out of scope`);
+      }
+      continue;
+    }
     const field = SENTENCE_FIELDS.find((name) =>
       references(name).some((reference) => template.content.includes(reference)),
     );
@@ -109,7 +139,8 @@ try {
 
   console.log(
     `\n${flag("apply") ? "applied" : "would apply"}: ${changed} template(s)` +
-      ` · ${already} already · ${absent} with no usable reference`,
+      ` · ${already} already · ${absent} with no usable reference` +
+      ` · ${removed} removed as out of scope`,
   );
   if (!flag("apply")) console.log("  nothing written — pass --apply");
 } finally {

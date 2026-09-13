@@ -588,14 +588,15 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
         // `fieldValues` below, which is the point: `card_field_values` is not
         // foreign-keyed to `template_fields`, so deleting a field hides its text
         // and never destroys it.
-        // WAS 46. Decision 43 declares `ojad` on the four templates that carry
-        // an example sentence.
-        localFields: 50,
+        // WAS 46, then 50. Decision 43 declared `ojad` on the four templates
+        // with an example sentence; Zach scoped it to 単語 and 言葉 alone on
+        // 2026-09-13, which is the accent drill and where he asked for it.
+        localFields: 48,
         localCards: 0,
         templates: 10,
-        // WAS 3,848. +3,718 `ojad` annotations — one per card whose example
-        // sentence the analyser could read. See decision 43.
-        fieldValues: 7_566,
+        // WAS 3,848. +3,710 `ojad` annotations — one per card whose example
+        // sentence the analyser could read, on 単語 and 言葉. See decision 43.
+        fieldValues: 7_558,
         settings: 4,
         // The 244 individually archived cards. They LOOK like something the export
         // rebuilds and they are not: `UPSERT_CARD` writes `archived` from Mochi, and

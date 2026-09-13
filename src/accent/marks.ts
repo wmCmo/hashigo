@@ -41,8 +41,10 @@ export { MARKS_FIELD } from "./sentence.js";
 const SENTENCE_CARDS_SQL = `
 SELECT c.id AS cardId
   FROM cards c
+  JOIN templates t ON t.id = c.template_id
   JOIN template_fields f ON f.template_id = c.template_id
  WHERE f.type = 'ai' AND f.name IN ('例文', 'Example')
+   AND t.name IN ('単語', '言葉')
    AND c.archived = 0
  ORDER BY c.id`;
 
@@ -201,7 +203,7 @@ export function declareField(db: Db): number {
     .prepare(
       `SELECT DISTINCT t.id AS id FROM templates t
          JOIN template_fields f ON f.template_id = t.id
-        WHERE f.name IN ('例文', 'Example')`,
+        WHERE f.name IN ('例文', 'Example') AND t.name IN ('単語', '言葉')`,
     )
     .all() as { id: string }[];
   const declare = db.prepare(
