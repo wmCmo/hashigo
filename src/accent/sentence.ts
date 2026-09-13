@@ -307,6 +307,31 @@ export const READING_OVERRIDES: ReadonlyMap<string, string> = new Map([
   ["至れり尽くせり", "いたれりつくせり"],
   // 正時 alone reads マサトキ. 毎正時 is まいしょうじ.
   ["毎正時", "まいしょうじ"],
+
+  // ─── 2026-09-13: THE KEYS ARE LONGER THAN THE WORD, ON PURPOSE ────────────
+  //
+  // A furigana audit turned up ~15 words OpenJTalk reads wrong IN ISOLATION,
+  // and Zach asked for all of them. Checked in his actual sentences first, and
+  // the premise mostly does not hold: given context the analyser is usually
+  // right, and a blanket override would have BROKEN correct readings.
+  //
+  //     種   種類 シュルイ · 人種 ジンシュ · 接種 セッシュ   all correct
+  //     値   値段 ネダン · 価値 カチ                        all correct
+  //
+  // `種 -> たね` would have produced たね類, 人たね, 接たね. Two more (一様, 大勢)
+  // were an artifact of the audit's own long-vowel folding — `イチヨー` and
+  // `オーゼー` ARE いちよう and おおぜい.
+  //
+  // **怒り is the case that decided the shape of this table.** Four sentences
+  // read オコリ where いかり is right — and `彼女の怒りっぷり` reads オコリップリ,
+  // which is CORRECT. A key of `怒り` would have broken it. So a key carries
+  // enough of its neighbourhood to be unambiguous, and `applyReadingOverrides`
+  // sorts longest-first so a longer key always wins over a shorter one.
+  ["怒りは", "いかりは"],
+  ["怒りに任せて", "いかりに任せて"],
+  // 否 alone is ヒ; か否か is かいなか, and the string is specific enough to be
+  // its own key.
+  ["か否か", "かいなか"],
 ]);
 
 /**
