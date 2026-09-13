@@ -28,6 +28,19 @@ export {
 } from "./key.js";
 
 export {
+  ENDPOINT,
+  NotKanaError,
+  VOICE,
+  isKana,
+  speechSsml,
+  splitMoras,
+  synthesise,
+  yomigana,
+  type SpeechRequest,
+  type SynthesiseOptions,
+} from "./speech.js";
+
+export {
   OJAD_ADJUDICATIONS,
   OJAD_AMBIGUOUS,
   applyOjadAdjudications,

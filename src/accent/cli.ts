@@ -5,6 +5,9 @@
  *   load  --db D --in  F        JSONL from tools/accent_derive.py -> accents
  *   write --db D [--dry-run]    the resolved 型 label -> card_field_values
  *   show  --db D <word>...      what the resolved accent is, and on what basis
+ *   respeak --db D [--dry] [--limit N] [--store DIR]
+ *                               re-synthesise every head word on 単語 + 言葉 with
+ *                               its accent notation, then adopt the new voice
  *
  * The three-step shape exists because the analyser is Python-only and the text
  * transform must not be. `words` is the seam: TypeScript decides what string an
@@ -16,7 +19,8 @@ import { openDatabase } from "../db/index.js";
 import { accentKey, readingLooksUnanalysed } from "./key.js";
 import { applyOjadAdjudications } from "./ojad.js";
 import { accentFor, loadAccents, materialiseAccents, type AccentRow } from "./store.js";
-import { arg } from "../cli/args.js";
+import { arg, flag } from "../cli/args.js";
+import { respeakCommand } from "./respeak-cli.js";
 
 /**
  * The head words, by the SAME basis as the distribution table in
@@ -52,14 +56,18 @@ interface DerivedLine {
 }
 
 
-function main(): number {
+async function main(): Promise<number> {
   const command = process.argv[2];
   if (command === undefined || command.startsWith("--")) {
-    console.error("usage: cli.ts <words|load|ojad|write|show|queue> --db <file> ...");
+    console.error("usage: cli.ts <words|load|ojad|write|show|queue|respeak> --db <file> ...");
     return 2;
   }
   const db = openDatabase(arg("db"), {
-      readOnly: command === "words" || command === "show" || command === "queue",
+      readOnly:
+        command === "words" ||
+        command === "show" ||
+        command === "queue" ||
+        (command === "respeak" && flag("dry")),
     });
   try {
     if (command === "words") {
@@ -71,6 +79,10 @@ function main(): number {
       writeFileSync(arg("out"), keys.join("\n") + "\n", "utf8");
       console.log(`${rows.length} values -> ${keys.length} distinct keys -> ${arg("out")}`);
       return 0;
+    }
+
+    if (command === "respeak") {
+      return await respeakCommand(db);
     }
 
     if (command === "load") {
@@ -181,4 +193,4 @@ function main(): number {
   }
 }
 
-process.exitCode = main();
+process.exitCode = await main();
