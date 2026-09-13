@@ -105,6 +105,7 @@ import {
   visiblePositions,
   type BoundarySide,
 } from "./review-boundary.js";
+import { revealScroll } from "./review-scroll.js";
 import { revealSteps, type RevealStep } from "./review-steps.js";
 import {
   readTheme,
@@ -993,17 +994,27 @@ function reveal(): void {
   if (card === null) return;
 
   const step = steps[stepIndex];
+  let arrived: HTMLElement | null = null;
   if (step !== undefined) {
     stepIndex += 1;
-    runStep(card, step);
+    arrived = runStep(card, step);
   }
   settleReveal(card);
+  if (arrived !== null) followReveal(arrived);
 }
 
-/** Perform one step: put the side on screen if this is its first, unmask, sound. */
-function runStep(card: MountedCard<HTMLElement>, step: RevealStep): void {
+/**
+ * Perform one step: put the side on screen if this is its first, unmask, sound.
+ *
+ * Returns WHAT ARRIVED, for `followReveal` to bring into view. A step that puts a
+ * side on screen returns the SIDE — the whole thing is new, so its top edge is
+ * what he wants to find. A step that unmasks one cloze on a side already up
+ * returns the CLOZE: the side has been read, and the answer that just appeared in
+ * the middle of it is the only part that moved.
+ */
+function runStep(card: MountedCard<HTMLElement>, step: RevealStep): HTMLElement | null {
   const side = card.loop.side(step.position);
-  if (side === null) return;
+  if (side === null) return null;
   if (step.show) {
     side.element.hidden = false;
     // `loop.enter`, NOT `card.enter` — the mount's entry is the one that asks
@@ -1016,6 +1027,58 @@ function runStep(card: MountedCard<HTMLElement>, step: RevealStep): void {
   // `revealed` on a side means every cloze on it is shown, which is when its clip
   // sounds — so this is exactly "the clip he just heard".
   if (side.revealed && side.audio.length > 0) drill = side;
+  return step.show ? side.element : (mount?.element ?? side.element);
+}
+
+/**
+ * FOLLOW THE WALK DOWN THE PAGE — Zach, 2026-09-14.
+ *
+ * *"when review card, clicking next should scrolling the card down because it
+ * overflows vertically"*. `./review-scroll.ts` owns the rule and the reasoning;
+ * this is the measuring, which is the half that can only be done here.
+ *
+ * TWO THINGS MUST BE MEASURED RATHER THAN CONSTANTS, and both have moved before:
+ * the header is sticky and carries the progress bar on its bottom edge, and
+ * `--footer-h` exists precisely because the footer's height is whatever its font
+ * and its labels make it (see `measureFooter`). A hand-tuned pair of offsets is
+ * the defect that variable was introduced to fix.
+ *
+ * **THE HEADER'S HEIGHT, NOT ITS RECT** — measured, on a 漢字 card, and the
+ * difference was 74 pixels. `getBoundingClientRect().bottom` is where the header
+ * is SITTING, and at the top of the page it is sitting 74px down because the
+ * storage-eviction banner is above it in flow. That banner scrolls away; the
+ * header is `position: sticky`, so the instant the page moves it pins to 0 and
+ * its bottom becomes its own height. Measuring where it is rather than where it
+ * is about to be made the band 74px shorter than the one he ends up reading,
+ * which pushed a `<draw>` side into the "taller than the window" arm and
+ * top-aligned it 12px short of clearing the footer. The banner is in normal
+ * flow, so nothing of the card is ever under it — using the height costs the
+ * unscrolled case nothing.
+ *
+ * AFTER THE FRAME, NOT IN IT. Unmasking swaps a fixed-width mask for the answer
+ * and the last step unhides whole sides, so measuring synchronously measures the
+ * layout the press replaced — the rect would be the OLD one and the scroll would
+ * land short by exactly the amount the answer grew.
+ */
+function followReveal(target: HTMLElement): void {
+  requestAnimationFrame(() => {
+    const header = document.querySelector<HTMLElement>(".review header");
+    const rect = target.getBoundingClientRect();
+    const by = revealScroll({
+      top: header === null ? 0 : header.offsetHeight,
+      bottom: window.innerHeight - footer.offsetHeight,
+      elementTop: rect.top,
+      elementBottom: rect.bottom,
+      // One line of body text. Enough that the revealed edge does not sit flush
+      // against the reveal button, which reads as clipped rather than as complete.
+      gap: 16,
+    });
+    if (by === 0) return;
+    window.scrollBy({
+      top: by,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  });
 }
 
 /**
@@ -4414,6 +4477,14 @@ async function openDashboard(): Promise<void> {
         // Retention as the bar's TONE, not a second bar. Two bars per day on a
         // 375px screen is four pixels each.
         good: day.reviews === 0 ? null : day.remembered / day.reviews,
+        // The readout is where retention becomes a NUMBER. The tone says "this
+        // day was below 0.85" and cannot say by how much; a quiet day says so in
+        // words rather than showing "0 reviews · —% remembered".
+        detail:
+          day.reviews === 0
+            ? `${day.date} · nothing reviewed`
+            : `${day.date} · ${day.reviews.toLocaleString()} reviews · ` +
+              `${pct(day.remembered / day.reviews)} remembered`,
       })),
     ),
   );
@@ -4422,7 +4493,12 @@ async function openDashboard(): Promise<void> {
   body.appendChild(glanceHead("scheduled, next 14 days"));
   body.appendChild(
     glanceBars(
-      g.forecast.map((day) => ({ label: day.date.slice(5), value: day.due, good: null })),
+      g.forecast.map((day) => ({
+        label: day.date.slice(5),
+        value: day.due,
+        good: null,
+        detail: `${day.date} · ${day.due.toLocaleString()} due`,
+      })),
     ),
   );
 
@@ -4503,23 +4579,74 @@ function glanceTiles(rows: readonly (readonly [string, string, string])[]): HTML
   return grid;
 }
 
+/** One column of a glance chart. `detail` is the sentence the readout says. */
+interface GlanceColumn {
+  readonly label: string;
+  readonly value: number;
+  readonly good: number | null;
+  /** What this bar MEANS, in words. The only place its number is legible. */
+  readonly detail: string;
+}
+
 /**
  * A bar row in CSS, with no chart library and no canvas.
  *
  * SPEC problem #1 is battery: this is the same reason the standalone dashboard
  * ships zero JavaScript. A `<div>` with a percentage height computes once at layout
  * and never again.
+ *
+ * ─── THE NUMBER HAS TO BE REACHABLE BY THUMB — Zach, 2026-09-14 ─────────────
+ *
+ * *"on mobile dashboard, there are bar charts, i want to see numbers when i press
+ * them or hold"*. The figure was on `title` and nowhere else, which is a HOVER
+ * affordance — the sole-carrier case decision 19 forbids, on the one screen with
+ * no keycaps to excuse it. And it was worse than "hard to reach" on his handset:
+ * the tick labels under the bars are `display: none` below 520px (two weeks of
+ * dates do not fit 375px), so a bar on a phone carried **no number and no date at
+ * all**. Fourteen anonymous rectangles.
+ *
+ * So every column is a real button and the chart carries a readout line above it.
+ * **`pointerdown`, not `click`** — that is what makes "or hold" work with no timer
+ * and no long-press gesture to learn: the readout fills the instant the finger
+ * lands and stays until the next press, so holding and releasing both show it.
+ * `click` is bound as well, for the keyboard, and is idempotent with it.
+ *
+ * The readout starts on the LAST column rather than empty. An empty line is a
+ * band of blank space that has to be discovered before it explains anything, and
+ * the most recent day — today's work, or tomorrow's load — is the one worth
+ * reading unprompted.
  */
-function glanceBars(
-  days: readonly { label: string; value: number; good: number | null }[],
-): HTMLElement {
+function glanceBars(days: readonly GlanceColumn[]): HTMLElement {
   const chart = document.createElement("div");
-  chart.className = "glance-bars";
+  chart.className = "glance-chart";
+  // `output` with `aria-live`: a bar is a picture, and this line is the only form
+  // of it a screen reader can read at all.
+  const readout = document.createElement("output");
+  readout.className = "glance-read";
+  readout.setAttribute("aria-live", "polite");
+  const bars = document.createElement("div");
+  bars.className = "glance-bars";
+  chart.append(readout, bars);
+
   const peak = Math.max(1, ...days.map((day) => day.value));
-  for (const day of days) {
-    const column = document.createElement("div");
+  const columns: HTMLButtonElement[] = [];
+  const pick = (at: number): void => {
+    columns.forEach((column, index) => {
+      column.classList.toggle("is-picked", index === at);
+      column.setAttribute("aria-pressed", index === at ? "true" : "false");
+    });
+    readout.textContent = days[at]?.detail ?? "";
+  };
+
+  days.forEach((day, index) => {
+    const column = document.createElement("button");
+    column.type = "button";
     column.className = "glance-col";
-    column.title = `${day.label}: ${day.value}`;
+    // Kept for a pointer that has one, and repeated as the accessible name so the
+    // button is not announced as an empty control.
+    column.title = day.detail;
+    column.setAttribute("aria-label", day.detail);
+    column.setAttribute("aria-pressed", "false");
     const bar = document.createElement("i");
     bar.className = "glance-bar";
     // A zero-review day still gets a hairline, so a GAP reads as a gap rather
@@ -4530,8 +4657,13 @@ function glanceBars(
     label.className = "glance-tick";
     label.textContent = day.label;
     column.append(bar, label);
-    chart.appendChild(column);
-  }
+    column.addEventListener("pointerdown", () => pick(index));
+    column.addEventListener("click", () => pick(index));
+    columns.push(column);
+    bars.appendChild(column);
+  });
+
+  if (days.length > 0) pick(days.length - 1);
   return chart;
 }
 

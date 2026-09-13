@@ -2556,14 +2556,56 @@ input[data-answer="incorrect"] {
   height: 110px;
 }
 
+/* THE READOUT — Zach, 2026-09-14: *"i want to see numbers when i press them or
+   hold"*. It is one line, ALWAYS filled (main.ts starts it on the last column),
+   so the chart never changes height when a bar is pressed. A row that appears on
+   first touch would shove the bars themselves down by their own line height,
+   under the finger that was aiming at one.
+
+   `min-height` in `em` rather than a fixed px: it has to hold one line of THIS
+   font at whatever size the browser is set to. */
+.glance-read {
+  color: var(--ink);
+  display: block;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 8px;
+  min-height: 1.5em;
+}
+
+/* A column is a BUTTON now, so it needs the whole native button undone — the
+   reset at the top of this file zeroes margin and padding and nothing else.
+   `touch-action: manipulation` kills the 300ms tap delay and, with
+   `user-select: none`, stops a HOLD turning into a text selection or a
+   long-press menu over the chart, which is the gesture he named. */
 .glance-col {
   align-items: flex-end;
+  -webkit-appearance: none;
+  appearance: none;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
   display: flex;
   flex: 1;
   flex-direction: column;
+  font: inherit;
   height: 100%;
   justify-content: flex-end;
   min-width: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+/* Which bar the readout is talking about. A RECESSED GROUND behind the column,
+   the same marker `.palette-row.on` uses, and it is the only channel left:
+   the bar's own colour already carries retention (`.is-low`), so tinting the bar
+   would make the red day and the pressed day the same picture — and an indigo
+   rule under an indigo bar is invisible, since `--accent` IS `--indigo`.
+   Recession is also the brief's own model of depth. */
+.glance-col.is-picked {
+  background: var(--sunk);
 }
 
 .glance-bar {

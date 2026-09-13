@@ -8,6 +8,7 @@ import {
   visiblePositions,
   type BoundarySide,
 } from "../app/review-boundary.js";
+import { revealScroll, type RevealViewport } from "../app/review-scroll.js";
 import { revealSteps, type StepSide } from "../app/review-steps.js";
 import { audioIsStale } from "../app/seed-freshness.js";
 import {
@@ -669,5 +670,69 @@ describe("theme", () => {
       expect(readTheme(raw), `readTheme(${String(raw)})`).toBe("system");
     }
     expect(readTheme("dark")).toBe("dark");
+  });
+});
+
+/**
+ * A 375x812 phone with this app's real chrome on it: the sticky header ends at
+ * y=97 (its own height plus the progress bar), and the fixed footer is 150px
+ * tall, so the last readable row is y=662. Those two numbers are measured from
+ * `--footer-h` and the header's own rect at runtime; here they only have to be
+ * plausible, because the rule is about the arithmetic between them.
+ */
+const phone = (elementTop: number, elementBottom: number, gap = 16): RevealViewport => ({
+  top: 97,
+  bottom: 662,
+  elementTop,
+  elementBottom,
+  gap,
+});
+
+describe("following the reveal down the page", () => {
+  it("moves just far enough to clear the footer, not to the top of the window", () => {
+    // He is COMPARING: on a Reading=true card the reading he just produced is on
+    // the side above the one that arrived. Top-aligning the new side throws the
+    // thing being compared against off screen, so the rule is minimum movement.
+    // A 120px side sitting 40px below the fold needs 40 + the 16px gap.
+    expect(revealScroll(phone(600, 720))).toBe(74);
+  });
+
+  it("leaves the page alone when the revealed thing is already readable", () => {
+    // A press that scrolls a visible answer is worse than one that scrolls
+    // nothing: the text he is reading moves under his eye for no reason.
+    expect(revealScroll(phone(300, 420))).toBe(0);
+    // Flush against the gap on both edges is still "already readable".
+    expect(revealScroll(phone(113, 646))).toBe(0);
+  });
+
+  it("NEVER scrolls up, whatever the geometry says", () => {
+    // A reveal only ever adds BELOW. Scrolling up is the page yanking him
+    // backwards away from the thing he just asked to see, so the direction is
+    // not a caller's choice — every upward case returns 0 rather than a
+    // negative number.
+    expect(revealScroll(phone(-400, -200))).toBe(0);
+    expect(revealScroll(phone(-50, 300))).toBe(0);
+    expect(revealScroll(phone(20, 90))).toBe(0);
+  });
+
+  it("top-aligns a side taller than the visible box, because clearing it cannot work", () => {
+    // 基本情報's forward prompts run to 170 characters and 意味 sides carry lists.
+    // Bottom-clearing a 900px side would scroll past its beginning — the one part
+    // he has not read. The visible box is 565px; this side is 900.
+    expect(revealScroll(phone(200, 1100))).toBe(87); // 200 - 97 - 16
+    // And even then, not upwards: a tall side already under the header stays put.
+    expect(revealScroll(phone(100, 1000))).toBe(0);
+  });
+
+  it("does nothing when there is no room to scroll into", () => {
+    // A landscape phone with the keyboard up. Any movement here is a guess, and
+    // a guess that moves the card is worse than one that does not.
+    expect(revealScroll({ top: 300, bottom: 320, elementTop: 900, elementBottom: 1000, gap: 16 }))
+      .toBe(0);
+  });
+
+  it("returns whole pixels, so a smooth scroll has an integer to land on", () => {
+    expect(revealScroll(phone(700.4, 800.6))).toBe(155);
+    expect(Number.isInteger(revealScroll(phone(700.4, 800.6)))).toBe(true);
   });
 });
