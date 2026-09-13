@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 42 files, 1091 passed, 1 skipped (the FSRS refit, gated). ~95 s.
+npm test                # 43 files, 1107 passed, 1 skipped (the FSRS refit, gated). ~95 s.
                         # EXITS 0 ON A PASSING RUN as of 2026-08-26. It is a wrapper
                         # (`scripts/test.mjs`) that reads the SUMMARY, which is
                         # STRICTER than the exit code, not looser: the run must have
@@ -755,6 +755,32 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     layout invariant is the other half and finishes the same day's mistap fix:
     two equal halves, **left is always `forgot`, right is always proceed**
     (`next`, then `remembered`). See `DECISIONS.md` 42.
+
+43. **THE EXAMPLE SENTENCE CARRIES ITS OWN PITCH ACCENT, PER MORA — `<ojad>`.**
+    Zach, 2026-09-13: *"do you think it's possible that we can add field type
+    called OJAD? … the head of the accent is some color … and the 平板 would have
+    no color, and other color for the devoiced"*. **NOT a field type** —
+    `template_fields.type` is a CHECK constraint and decision 41 made a schema
+    bump expensive the same day. It is an ELEMENT (`ELEMENTS` in
+    `src/template/ast.ts`, the parser's allowlist) filled from a `local = 1`
+    `plain` field, which is the `型` pattern: zero schema change. `pinyin` had
+    already proved a generator needs no `blobs.kind`.
+    **DEVOICING WAS FREE** — OpenJTalk writes a devoiced vowel as an UPPERCASE
+    phoneme in the labels `tools/accent.py` has parsed since stage 6
+    (`sh i m a sh I t a`). **平板 IS `accent == morae`, NOT 0, and the first cut
+    reproduced CLAUDE.md's own "2,065 phantom 尾高" trap at sentence scale**:
+    marking the last mora painted 21.1% of morae, the correct rule 13.9%.
+    The mirror of decision 27 is the payoff — in a sentence the particle is
+    inside the accent phrase, so 平板 and 尾高 separate, and this shows him what
+    the isolated word physically cannot.
+    **Measured: 3,711 of 3,712 sentences annotated, 86,627 morae, 13.8% heads,
+    5.7% devoiced.** `--vermilion` fails as a body-text mark in light (3.99:1)
+    and is darkened to `#b33717`; blue is disqualified because it already means
+    "touch this"; the two marks are ISOLUMINANT (1.04:1) so devoiced carries a
+    ring as well, which is OJAD's own notation. `<ojad></ojad>` is EMPTY and
+    follows the sentence — wrapping the field turned four tests red, because
+    `例文` is an `ai` field and the wrapper displaced its speech mount.
+    See `DECISIONS.md` 43.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

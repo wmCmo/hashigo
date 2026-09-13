@@ -91,6 +91,8 @@ import {
 } from "../render/audio.js";
 import { renderSides, type RenderResult } from "../render/index.js";
 import { furiganaSupport } from "../render/ruby.js";
+import { accentMarkSupport } from "../render/accent-marks.js";
+import { MARKS_FIELD } from "../accent/sentence.js";
 import { fillTextSlots, textSlots, type TextSlot } from "./text.js";
 import type { RenderDocument, RenderElement } from "../render/dom.js";
 import { shadowingLoop, type ShadowingLoop, type ShadowingSide } from "../render/reveal.js";
@@ -335,10 +337,21 @@ export function mountPrepared<E extends RenderElement>(
    * something the fill step could have done on its own.
    */
   const furigana = furiganaSupport<E>();
+  // `<ojad>` — stage 12's per-mora accent marks over the example sentence. It
+  // CHAINS onto furigana rather than replacing it: both override `element`, and
+  // a 単語 card has one of each on it. See `src/render/accent-marks.ts`.
+  const furiganaElement = furigana.renderers.element;
+  const marks = accentMarkSupport<E>(
+    furiganaElement === undefined ? {} : { fallback: furiganaElement },
+  );
   const result = renderSides(prepared.sides, {
     document: options.document,
-    renderers: furigana.renderers,
+    renderers: marks.renderers,
   });
+  // Filled straight away, unlike furigana: the annotation is a stored field on
+  // the card that is already in hand, not a generation that has to be looked up.
+  const annotation = prepared.loaded.values.get(MARKS_FIELD.id) ?? "";
+  if (annotation !== "") marks.annotateAll(annotation);
 
   // The empty text generators, collected but NOT filled — the page has no
   // database. See ./text.ts for why this is a second step and what it fixes.

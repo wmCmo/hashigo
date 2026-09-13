@@ -580,10 +580,14 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
         // `fieldValues` below, which is the point: `card_field_values` is not
         // foreign-keyed to `template_fields`, so deleting a field hides its text
         // and never destroys it.
-        localFields: 46,
+        // WAS 46. Decision 43 declares `ojad` on the four templates that carry
+        // an example sentence.
+        localFields: 50,
         localCards: 0,
         templates: 10,
-        fieldValues: 3_848,
+        // WAS 3,848. +3,718 `ojad` annotations — one per card whose example
+        // sentence the analyser could read. See decision 43.
+        fieldValues: 7_566,
         settings: 4,
         // The 244 individually archived cards. They LOOK like something the export
         // rebuilds and they are not: `UPSERT_CARD` writes `archived` from Mochi, and
@@ -597,7 +601,11 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
       // eslint-disable-next-line no-console
       console.log(`local archive over the real corpus: ${bytes} bytes JSON`);
       // Still three orders of magnitude under the 74 MB database it protects.
-      expect(bytes).toBeLessThan(400_000);
+      // WAS 400,000. The sentence annotations are the bulk of the archive now —
+      // a 30-mora reading is ~90 bytes and there are 3,718 of them. Still three
+      // orders of magnitude under the 74 MB database, which is the property that
+      // matters: an export he can take in a second, at any time.
+      expect(bytes).toBeLessThan(1_200_000);
       expect(verifyLocalArchive(a)).toBeUndefined();
     } finally {
       db.close();

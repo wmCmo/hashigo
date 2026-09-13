@@ -1544,6 +1544,139 @@ right**: it holds his verbatim reasoning and this quotes it.
    "restoring symmetry" and taking `forgot` down with it — which WOULD be the
    2026-09-07 defect.
 
+43. **THE EXAMPLE SENTENCE CARRIES ITS OWN PITCH ACCENT, PER MORA — `<ojad>`.**
+   Zach, 2026-09-13: *"do you think it's possible that we can add field type
+   called OJAD? … we will feed in the example sentence, which will get turned
+   into all ひらがな, and for each hiragana, if it's accented … then 開 would be
+   in our red, and if it's devoiced like しま~し~た, then し would be blue, or
+   gray … so that while reading the example sentence i can see hear how it's
+   pronounced and confirm by looking at the field"*.
+
+   **IT IS NOT A FIELD TYPE, AND THAT IS THE ONLY PART OF HIS REQUEST THAT
+   CHANGED.** `template_fields.type` is a CHECK constraint, so adding `'ojad'`
+   is a schema bump — and decision 41, recorded the SAME DAY, made those
+   expensive: the final import has happened, so `rm` + re-import is no longer a
+   lossless reset. The escape was already in the codebase and documented:
+   `nodes.ts` says of a generator that has existed since stage 4, *"`pinyin` has
+   no row in `BLOB_KINDS` and therefore no request; it still renders its base
+   text."* A generator element needs a renderer and nothing else. So `<ojad>` is
+   an ELEMENT (one line in `ELEMENTS`, the parser's allowlist, not the schema)
+   filled from a `local = 1` field of type `plain` — the `型` pattern, which the
+   schema's own comment says was chosen in stage 1 to avoid *"a migration over
+   7,716 cards"*. Zero schema change.
+
+   ─── WHAT THE ANALYSER GIVES, INCLUDING ONE THING NOBODY HAD NOTICED ───────
+
+   **DEVOICING IS FREE.** OpenJTalk writes a devoiced vowel as an UPPERCASE
+   phoneme, in the same full-context labels `tools/accent.py` has been parsing
+   for accent since stage 6:
+
+       しました   sh i m a sh I t a      the second し
+       学生です   g a k U s e e d e s U  both く and す
+
+   So the second half of his request cost one `isupper()`. No new tool, no new
+   model, no extra call.
+
+   **SENTENCE ACCENT PHRASES WORK, on the boundary rule already validated.** A
+   mora is keyed by `(i3, f5, a2)` — breath group, accent phrase, mora position
+   — so phonemes group into morae by their own label and nobody counts kana.
+   `に引き換え`, the case that breaks the naive "a2 reset to 1" test, comes out
+   correctly as (1,1)(4,4).
+
+   ─── 平板 IS `accent == morae`, AND THIS TRAP HAS NOW BITTEN TWICE ─────────
+
+   `CLAUDE.md` has recorded since stage 6 that *"the naive `if accent > 0` rule
+   fires on 100% of his bare words and would drill 2,065 phantom 尾高"*. The
+   first cut of this feature reproduced it exactly, at sentence scale, and it
+   looked entirely plausible on screen:
+
+       鼻が (3, 3)  accent on the LAST mora -> 平板, no drop, NO MARK
+       花が (3, 2)  accent strictly inside  -> 尾高, drops after な
+       私は (4, 4)  -> 平板
+
+   ZERO phrases in real sentences report `accent = 0`, so marking the last mora
+   painted **21.1%** of all morae — every flat phrase red. The correct rule gives
+   **13.9%**. The probe particle that solves this for bare words cannot be used
+   here, because a sentence already has a following word.
+
+   **The upside is the mirror of decision 27 and is the reason this is worth
+   having.** 平板 and 尾高 are physically indistinguishable inside a bare word,
+   which is why `型` is their sole carrier on 2,148 cards. In a SENTENCE the
+   particle is already inside the accent phrase, so the two separate — 花が marks
+   な, 鼻が marks nothing. **This field shows him something the word audio
+   physically cannot.**
+
+   ─── MEASURED OVER THE REAL CORPUS ────────────────────────────────────────
+
+       3,740 cards with an 例文 field -> 3,719 sentences, 3,712 distinct
+          11  no generation in the store
+          10  refused: no Japanese, or latin woven in
+       3,711 / 3,712 annotated (99.97%)
+         1   refused — 彼は青いＹシャツを着ています。 (fullwidth latin)
+       86,627 morae · 13.8% accent heads · 5.7% devoiced
+
+   **An earlier figure in this session said ~10% of 例文 were dirty. That was
+   measured over `blobs` and was wrong for this purpose** — it counted stale
+   generations no live card references. Through `fieldGenerationRequest` +
+   `resolveDescriptorText`, which is how the SCREEN resolves the field (decision
+   7), it is 10 of 3,719. The same correction killed a `LIKE` join over
+   `source_text` that reported 17,499 sentences for ~5,700 cards, because the
+   prompt embeds the head word and a short word is a substring of many prompts.
+
+   ─── COLOUR: RED FAILS AS AUTHORED, AND BLUE IS TAKEN ─────────────────────
+
+   He asked *"blue, or gray? which one is easier to understand?"*
+
+   `--vermilion` is **3.99:1** on `--card` in light — a LARGE-TEXT colour, and an
+   example sentence is body text. Walked down at the same hue to `#b33717`:
+   5.79 / 5.03 / 4.58 on card, paper and sunk. Dark keeps `#f05a2e`, which
+   already clears AA on all three. Same fix and same reason as decision 32
+   darkening `--muted`.
+
+   **Blue is disqualified by meaning, not contrast.** `--indigo` is this app's
+   word for *you can touch this* — links, buttons, the cloze underline, the
+   wordmark, the `remembered` fill. A blue kana inside a sentence reads as a
+   link. **Gray also matches the fact**: devoicing is a REDUCTION, and `--muted`
+   means de-emphasised everywhere else here. 6.01:1 light, 6.03:1 dark.
+
+   **A RING AS WELL AS THE COLOUR, because the two marks are ISOLUMINANT.**
+   `#b33717` against `#636059` is **1.04:1** in light and 1.27:1 in dark — the
+   trap decision 33 hit with `--good`/`--danger`, where the sync dot had to
+   differ in SHAPE as well as hue. Red-against-neutral is an easier
+   discrimination than that green-against-red was, so this is belt and braces
+   rather than a rescue — and a ring is OJAD's own devoicing mark, so it costs
+   him no new convention.
+
+   ─── `<ojad></ojad>` IS EMPTY, AND THE FIRST DESIGN WAS WRONG ─────────────
+
+   It wrapped the field — `<ojad><< 例文 >></ojad>` — so the element could read
+   the sentence as its own base. **Four tests went red at once.** `例文` is an
+   `ai` field, so by render time `expandGeneratorFields` has rewritten the
+   reference into an `<ai>` element: the children are a nested generator rather
+   than text, the wrapper matched nothing, and it displaced the speech mount that
+   reads the same field. `test/cards.test.ts`'s corpus mount census caught it,
+   which is the census it exists for.
+
+   So the element is empty and sits on its own line under the sentence, carrying
+   the sentence's blockquote marker. The sentence renders exactly as it always
+   has. That is also closer to what he asked for — *"confirm by looking at the
+   field"*, beside, never instead.
+
+   ─── WHAT IT WILL NOT DO ──────────────────────────────────────────────────
+
+   **A refused or malformed annotation paints NOTHING** — decision 8, *"a wrong
+   accent drilled is worse than no accent"*, in its display form. `parseAnnotation`
+   is strict and runs on his phone, so the load path parses every value BEFORE
+   storing it; a card whose sentence the analyser refused simply has no reading
+   line, which is visibly different from one that came out flat.
+
+   **It is not cross-checked.** Head words have three sources and 57 still
+   disputed; there is no adjudication path for 3,712 sentences. The audio is an
+   independent engine, so a disagreement is visible to him — which is the same
+   error-detector argument §4 of `notes/pitch-accent-pipeline.md` makes for the
+   `型` label. The F0-versus-prediction sweep over his 4,359 sentence clips
+   remains the measurement that would put a number on it, and has not been run.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

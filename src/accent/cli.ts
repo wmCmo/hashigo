@@ -21,6 +21,7 @@ import { applyOjadAdjudications } from "./ojad.js";
 import { accentFor, loadAccents, materialiseAccents, type AccentRow } from "./store.js";
 import { arg, flag } from "../cli/args.js";
 import { respeakCommand } from "./respeak-cli.js";
+import { declareField, extractSentences, loadMarks, type AnnotatedLine } from "./marks.js";
 
 /**
  * The head words, by the SAME basis as the distribution table in
@@ -59,7 +60,9 @@ interface DerivedLine {
 async function main(): Promise<number> {
   const command = process.argv[2];
   if (command === undefined || command.startsWith("--")) {
-    console.error("usage: cli.ts <words|load|ojad|write|show|queue|respeak> --db <file> ...");
+    console.error(
+      "usage: cli.ts <words|load|ojad|write|show|queue|respeak|sentences|marks> --db <file> ...",
+    );
     return 2;
   }
   const db = openDatabase(arg("db"), {
@@ -67,6 +70,7 @@ async function main(): Promise<number> {
         command === "words" ||
         command === "show" ||
         command === "queue" ||
+        command === "sentences" ||
         (command === "respeak" && flag("dry")),
     });
   try {
@@ -183,6 +187,38 @@ async function main(): Promise<number> {
             (resolved.note === null ? "" : `  note: ${resolved.note}`),
         );
       }
+      return 0;
+    }
+
+    // ─── stage 12: the per-mora sentence annotation ─────────────────────────
+    //
+    // TWO commands and not one, because the analyser is Python and lives behind
+    // a file — the same three-step shape as `words` / accent_derive / `load`,
+    // for the same reason `src/accent/README.md` gives.
+    if (command === "sentences") {
+      const report = extractSentences(db);
+      // Deduped: the same sentence is one pronunciation however many cards
+      // carry it, and analysing it twice would cost time and prove nothing.
+      const distinct = [...new Set(report.clean.map((row) => row.sentence))].sort();
+      writeFileSync(arg("out"), distinct.join("\n") + "\n", "utf8");
+      console.log(`${report.cards} card(s) with an 例文 field -> ${report.clean.length} sentence(s)`);
+      console.log(`  ${distinct.length} distinct -> ${arg("out")}`);
+      console.log(`  ${report.ungenerated} with no generation in the store`);
+      console.log(`  ${report.refused} refused: no Japanese, or latin woven in — see cleanSentence`);
+      return 0;
+    }
+
+    if (command === "marks") {
+      const lines = readFileSync(arg("in"), "utf8")
+        .split("\n")
+        .filter((line) => line.trim() !== "")
+        .map((line) => JSON.parse(line) as AnnotatedLine);
+      const declared = declareField(db);
+      const report = loadMarks(db, lines, extractSentences(db).clean);
+      console.log(`  field declared on ${declared} template(s)`);
+      console.log(`  ${report.written} annotation(s) written · ${report.skipped} unchanged`);
+      console.log(`  ${report.malformed} malformed (refused by parseAnnotation, not stored)`);
+      console.log(`  ${report.unannotated} card(s) left with NO annotation — decision 8`);
       return 0;
     }
 

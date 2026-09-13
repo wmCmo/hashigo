@@ -75,6 +75,14 @@
   --indigo: #1b3b6f;
   --indigo-deep: #12294d;
   --vermilion: #e0451d;
+  /* THE ACCENT HEAD, AND IT IS NOT `--vermilion`. Decision 43. `--vermilion` is
+     3.99:1 on --card in light: a LARGE-TEXT colour, and an example sentence is
+     body text. Walked down in lightness at the same hue until it cleared 4.5:1
+     on every ground it can land on -- 5.79 on --card, 5.03 on --paper, 4.58 on
+     --paper-sunk. Same fix and same reason as decision 32 darkening --muted.
+     Dark mode keeps #f05a2e, which already clears AA on all three (4.74 / 5.24
+     / 5.57) -- the light theme was the only failing half. */
+  --accent-head: #b33717;
   --paper: #eceae5;
   --paper-sunk: #e3e0d9;
   --card: #fbfaf7;
@@ -191,6 +199,7 @@
     --indigo: #7fa4e1;
     --indigo-deep: #a8c4f0;
     --vermilion: #f05a2e;
+    --accent-head: #f05a2e;
     --paper: #1a1815;
     --paper-sunk: #121110;
     --card: #232120;
@@ -209,6 +218,7 @@
   --indigo: #7fa4e1;
   --indigo-deep: #a8c4f0;
   --vermilion: #f05a2e;
+  --accent-head: #f05a2e;
   --paper: #1a1815;
   --paper-sunk: #121110;
   --card: #232120;
@@ -2924,4 +2934,73 @@ input[data-answer="incorrect"] {
     left: calc(50% + var(--rail-w) / 2);
     max-width: calc(100% - var(--rail-w) - 32px);
   }
+}
+
+/* ── the OJAD reading: pitch accent and devoicing, per mora ──────────────────
+   Decision 43. Zach, 2026-09-13: *"the head of the accent is some color, and i
+   would know that it would fall, and the 平板 would have no color, and other
+   color for the devoiced"*. His own notation, chosen over a stepped 高低 line —
+   *"we don't need line, im used to the ojad notation"*.
+
+   THE SENTENCE STAYS; THE READING SITS UNDER IT. He reads the kanji and
+   *"confirm[s] by looking at the field"*, so this is beside, never instead. */
+.hashigo-ojad {
+  display: block;
+}
+
+.hashigo-ojad-reading {
+  color: var(--muted);
+  display: block;
+  /* Its own line and its own size: a reading is a gloss, not a second sentence.
+     Line height is generous because a marked mora sits against its neighbours
+     and needs the row to breathe when it wraps on a 375px screen. */
+  font-size: 0.92em;
+  line-height: 1.9;
+  margin-top: 6px;
+}
+
+/* Pending: the sentence rendered but no annotation arrived. NOTHING is shown —
+   decision 8, "a wrong accent drilled is worse than no accent", and an empty
+   reading line would otherwise read as "this sentence is entirely 平板". */
+.hashigo-ojad[data-state="pending"] .hashigo-ojad-reading,
+.hashigo-ojad[data-state="missing"] .hashigo-ojad-reading {
+  display: none;
+}
+
+/* An accent phrase break. A thin gap, not a bar: a bar mid-reading reads as
+   punctuation to parse, and the break is context rather than content. */
+.hashigo-ojad-gap {
+  display: inline-block;
+  width: 0.5em;
+}
+
+/* THE HEAD OF THE ACCENT: the pitch falls AFTER this mora. 13.9% of morae over
+   3,711 annotated sentences. A 平板 phrase carries no mark at all, which is the
+   signal — see `src/accent/sentence.ts` for why `accent == morae` is 平板 and
+   why marking it would have painted 21.1%. */
+.hashigo-mora-head {
+  color: var(--accent-head);
+  font-weight: 600;
+}
+
+/* DEVOICED: the vowel is whispered away. 5.7% of morae.
+   GRAY RATHER THAN BLUE, and he asked which. Blue is already this app's meaning
+   of "you can touch this" — links, buttons, the cloze underline, the wordmark —
+   so a blue kana inside a sentence reads as a link. Gray is also iconic:
+   devoicing is a REDUCTION, and `--muted` means de-emphasised everywhere else
+   here. 6.01:1 light and 6.03:1 dark on --card, both AA for body text.
+
+   THE RING IS THE SECOND CHANNEL, and it is not decoration. `--accent-head`
+   against `--muted` is 1.04:1 in light and 1.27:1 in dark — ISOLUMINANT, the
+   trap decision 33 hit with --good/--danger, where the sync dot had to differ
+   in SHAPE as well as hue. Red-against-neutral is an easier discrimination than
+   that green-against-red was, but hue alone is one channel and this is a
+   drill he trusts. A ring is also OJAD's own devoicing mark, so it costs him no
+   new convention to learn. */
+.hashigo-mora-devoiced {
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  color: var(--muted);
+  opacity: 0.85;
+  padding: 0 0.1em;
 }

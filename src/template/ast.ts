@@ -127,6 +127,22 @@ export const ELEMENTS: Readonly<Record<string, ElementSpec>> = {
   furigana: { role: "generator", void: false, attributes: [], observed: 22 },
   image: { role: "generator", void: false, attributes: [], observed: 8 },
   pinyin: { role: "generator", void: false, attributes: [], observed: 0 },
+  /**
+   * `<ojad>` — OURS, and the first element in this list Mochi never had.
+   *
+   * Decision 43. It annotates an example sentence mora by mora, and it is a
+   * `generator` in the same sense `pinyin` is: `nodes.ts` notes that pinyin
+   * *"has no row in `BLOB_KINDS` and therefore no request; it still renders its
+   * base text"*. `<ojad>` is filled from a `local = 1` field instead, so it asks
+   * the blob store for nothing and costs no schema change — which matters,
+   * because decision 41 made a schema bump answer for the live review history.
+   *
+   * `observed: 0` is honest rather than a placeholder: it counts occurrences in
+   * the three Mochi exports, and this element cannot appear there. It enters
+   * templates through `scripts/ojad-template-apply.ts`, which is part of the
+   * documented rebuild sequence for exactly that reason.
+   */
+  ojad: { role: "generator", void: false, attributes: [], observed: 0 },
 
   // Widgets — interactive, childless.
   draw: {
