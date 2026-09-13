@@ -5265,6 +5265,18 @@ function openCardMenu(cardId: string, name: string): void {
     list.appendChild(button);
   };
 
+  // FIRST, because it is the only item here he reaches for mid-review and the
+  // only one that is not a flag. Decision 29's audit loop ends in an edit — the
+  // `型` label surfaces an accent he had wrong and he promotes the card to
+  // `Reading = true` — and until now that loop needed the `e` key, which his
+  // phone does not have. His standing rule is that every 操作 on the desktop
+  // exists on mobile as a real button; `e` was the last one that did not.
+  //
+  // `openEditorById` rather than `openEditorFor` with a card already in hand:
+  // that is the same call `e` makes, so the two cannot drift into different
+  // editors — see `openEditor`.
+  item("edit", "the fields, the template, the deck", () => void openEditorById(cardId));
+
   item(
     currentPinned ? "unpin" : "pin",
     currentPinned ? "stop keeping it near the top" : "keep it near the top of a search",
