@@ -372,6 +372,11 @@ export function attachDraw(
       }
       activePointer = null;
     }
+    // THE SECOND NET FOR THE ONE-PIXEL CANVAS. `ResizeObserver` is the primary
+    // repair and is absent in Node and in older engines; this needs one
+    // `getBoundingClientRect` per stroke START — not per move — and makes a
+    // backing store that disagrees with the box impossible to draw into.
+    remeasure();
     event.preventDefault();
     activePointer = event.pointerId;
     currentType = event.pointerType;
@@ -431,7 +436,74 @@ export function attachDraw(
     surface.addEventListener(type, listener, { passive: false });
   }
 
+  /**
+   * ─── THE ONE-PIXEL CANVAS: "i still can't see the line" ────────────────────
+   *
+   * Zach's `?drawdebug` readout from his own handset, 2026-09-13, after two
+   * fixes that were not this:
+   *
+   *     touch-action  none
+   *     css           319 x 400
+   *     backing       1 x 1     dpr 2.8125
+   *     strokes       22
+   *     events        pointerdown 22  pointermove 768  pointerup 22
+   *
+   * Every event arrived. `touch-action` was right. **22 complete strokes were
+   * recorded.** The widget was working the whole time and painting into a canvas
+   * one pixel across, because `resize()` ran ONCE — at attach, while the element
+   * had no laid-out box — and `Math.max(1, round(0 * ratio))` is 1.
+   *
+   * A measurement taken before layout is a measurement of nothing, and a widget
+   * that takes it once can never recover. So it is taken again whenever the box
+   * changes. That covers the case above, and two more that were already latent:
+   * ROTATION (a phone turned mid-card kept the old geometry and drew stretched —
+   * observed in the pane) and the desktop rail appearing at 1024px.
+   *
+   * `ResizeObserver` is read off `globalThis` and guarded, because
+   * `scripts/verify-dist.mjs` imports every emitted file under Node, where it
+   * does not exist. Absent, the `pointerdown` re-measure below still saves it.
+   */
+  let observer: { observe(target: unknown): void; disconnect(): void } | null = null;
+  const Observe = (
+    globalThis as {
+      ResizeObserver?: new (run: () => void) => { observe(target: unknown): void; disconnect(): void };
+    }
+  ).ResizeObserver;
+
+  /** The CSS box the current backing store was built for. */
+  let builtFor = { width: -1, height: -1 };
+
+  /**
+   * Re-measure only when the box actually moved.
+   *
+   * `resize()` writes `surface.width`/`height`, which is the BACKING STORE and
+   * not the CSS box, so this cannot feed itself — but a guard costs nothing and
+   * a resize loop on his phone would cost the battery that is problem #1.
+   */
+  function remeasure(): void {
+    const rect = surface.getBoundingClientRect();
+    // Still un-laid-out. Do NOT bake this in: that is the whole bug.
+    if (rect.width <= 0 || rect.height <= 0) return;
+    if (rect.width === builtFor.width && rect.height === builtFor.height) return;
+    builtFor = { width: rect.width, height: rect.height };
+    resize();
+  }
+
   resize();
+  builtFor = (() => {
+    const rect = surface.getBoundingClientRect();
+    // A zero rect is recorded as "never built", so the first real box counts.
+    return rect.width > 0 && rect.height > 0
+      ? { width: rect.width, height: rect.height }
+      : { width: -1, height: -1 };
+  })();
+
+  if (Observe !== undefined) {
+    observer = new Observe(() => {
+      remeasure();
+    });
+    observer.observe(surface);
+  }
   countStrokes();
 
   return {
@@ -457,6 +529,8 @@ export function attachDraw(
       countStrokes();
     },
     detach(): void {
+      observer?.disconnect();
+      observer = null;
       for (const [type, listener] of listeners) {
         surface.removeEventListener(type, listener, { passive: false });
       }

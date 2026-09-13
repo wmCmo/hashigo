@@ -920,6 +920,63 @@ describe("the canvas accepts a stroke from a finger", () => {
     expect(handle.strokes[0]!.points).toEqual([{ x: 10, y: 10 }, { x: 20, y: 20 }]);
   });
 
+  /**
+   * ─── THE ONE-PIXEL CANVAS, from his own handset ────────────────────────────
+   *
+   * `?drawdebug` on his phone, 2026-09-13, after two fixes that were not this:
+   *
+   *     touch-action  none
+   *     css           319 x 400
+   *     backing       1 x 1     dpr 2.8125
+   *     strokes       22
+   *     events        pointerdown 22  pointermove 768  pointerup 22
+   *
+   * Nothing was wrong with the input. `touch-action` was right, every event
+   * arrived, and TWENTY-TWO complete strokes were recorded. They were painted
+   * into a canvas one pixel across, because `resize()` measured the element
+   * before it had a laid-out box — `Math.max(1, round(0 * ratio))` is 1 — and
+   * then never ran again.
+   *
+   * A measurement taken before layout is a measurement of nothing. These pin
+   * that it is taken again, by either of the two routes.
+   */
+  it("RECOVERS from being attached before it has a box — his one-pixel canvas", () => {
+    const canvas = new FakeCanvas({ left: 0, top: 0, width: 0, height: 0 });
+    const handle = attachDraw(null, canvas, { devicePixelRatio: 3 });
+    // Attached while hidden: the degenerate backing store the bug baked in.
+    expect([canvas.width, canvas.height]).toEqual([1, 1]);
+
+    // The side is revealed, the element gets its box, and the next stroke must
+    // find a canvas it can actually paint into. No ResizeObserver exists in
+    // Node, so this is the `pointerdown` re-measure carrying it alone — which is
+    // exactly why that second net is there.
+    canvas.rect = { left: 0, top: 0, width: 319, height: 400 };
+    canvas.fire("pointerdown", pointer(10, 10));
+    expect([canvas.width, canvas.height]).toEqual([957, 1200]);
+    canvas.fire("pointermove", pointer(40, 40));
+    canvas.fire("pointerup", pointer(40, 40));
+    expect(handle.strokes).toHaveLength(1);
+  });
+
+  it("does not bake in a zero box, and does not re-measure when nothing moved", () => {
+    const canvas = new FakeCanvas({ left: 0, top: 0, width: 300, height: 400 });
+    const handle = attachDraw(null, canvas, { devicePixelRatio: 1 });
+    canvas.context.ops.length = 0;
+
+    // Same box: no setTransform, because a resize clears the backing store and
+    // replaying strokes for nothing would cost battery on every single stroke.
+    canvas.fire("pointerdown", pointer(10, 10));
+    canvas.fire("pointerup", pointer(10, 10));
+    expect(canvas.context.ops.filter((op) => op.startsWith("setTransform"))).toEqual([]);
+
+    // A rotation DOES move it, and the strokes have to survive the re-measure.
+    canvas.rect = { left: 0, top: 0, width: 400, height: 300 };
+    canvas.fire("pointerdown", pointer(20, 20));
+    expect([canvas.width, canvas.height]).toEqual([400, 300]);
+    canvas.fire("pointerup", pointer(20, 20));
+    expect(handle.strokes).toHaveLength(2);
+  });
+
   it("undoes, clears and survives a resize by replaying", () => {
     const canvas = new FakeCanvas({ left: 0, top: 0, width: 300, height: 400 });
     const changes: number[] = [];
