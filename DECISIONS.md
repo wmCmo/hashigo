@@ -1472,6 +1472,78 @@ right**: it holds his verbatim reasoning and this quotes it.
    under `build/`, which is gitignored. That is now the weakest link in the
    project and it is not the audio.
 
+42. **`remembered` WAITS FOR THE END OF THE WALK; `forgot` DOES NOT.**
+   Zach, 2026-09-13, one message after asking for the button reorder: *"you
+   don't know if you actually remember the card until you're at the last slide,
+   so maybe we don't even need remembered button when we still have next
+   button"*.
+
+   **THE ARGUMENT IS AN ASYMMETRY, AND IT IS SOUND.** The two grades are not
+   two halves of one question that unlocks at one moment. `forgot` is settled
+   by a SINGLE failure — the first cloze that contradicts him ends it, and no
+   later side can un-fail it. `remembered` is a CONJUNCTION over every side of
+   the card, and a conjunction is not settled until its last term is up.
+   Offering it mid-walk asks a question that has no answer yet.
+
+   **THIS AMENDS DECISION 34, WHICH SAID GRADING DOES NOT WAIT FOR THE END OF
+   THE WALK.** That clause stands for `forgot` and is withdrawn for
+   `remembered`. Decision 34's reasoning was not wrong about the danger it was
+   avoiding — it was avoiding the 2026-09-07 defect, *"it won't let me click
+   remember"*, where the grade buttons sat on screen looking pressable and did
+   nothing. **The repair here is the opposite shape, and that is why it is not
+   that defect returning:** the button is taken OFF SCREEN rather than left up
+   and inert, and `j` answers with what is missing (`3 more to see — space,
+   then j`) rather than with silence. Nothing on screen claims to be pressable
+   and refuses.
+
+   **The sentence this replaces was an agent's, not his, and was never
+   measured.** `app/style.css` carried *"he is allowed to answer before the
+   walk is finished and usually will"* and `app/review-keys.ts` carried *"he
+   knows whether he remembered the moment the reading appears"*. Both are
+   claims about HIS cognition, written by a session that could not observe it,
+   and he has now contradicted them directly. Nothing in the schema records at
+   which step a review was graded, so there is no data on either side — which
+   is itself the finding: the old rule was an assumption wearing the voice of a
+   decision.
+
+   **WHAT IT COSTS, MEASURED.** 961 tracks sampled every 13th from the
+   unarchived corpus, reduced exactly as `app/main.ts` reduces a mounted card
+   before calling `revealSteps`:
+
+       steps in the walk    0:1   1:1   2:165   3:263   4:482   5:47   6:1   8:1
+       >= 2 steps (so the rule bites)      959/961 = 99.8%
+       extra presses before a pass, mean        2.43
+       単語 n=522 median 4 · 漢字 n=235 median 2 · New Vocab n=92 median 3
+       言葉 n=54 median 3 · 基本情報 n=47 median 2 · 数字 n=7 median 2
+
+   So this is not a corner case: it reaches essentially every track, and on 単語
+   — the accent drill, the reason the project exists — it is a median of three
+   presses between the first reveal and a pass. **That cost is only real if he
+   was passing early**, which is the practice he has just said he does not
+   have. If he ever wants the shortcut back, 2.43 is the number it is worth.
+
+   **A one-step card never enters `revealing` at all** (`prompt` straight to
+   `revealed`), so it is untouched — 2 of 961.
+
+   **THE LAYOUT INVARIANT IS THE OTHER HALF, and it finishes the mistap fix
+   from earlier the same day.** With `remembered` absent mid-walk the row is two
+   equal halves in both states:
+
+       revealing    forgot | next
+       revealed     forgot | remembered
+
+   measured at the pane width as `forgot 12–483 | next 493–985` then `forgot
+   12–494 | remembered 504–985`. **The left half is always `forgot` and the
+   right half is always proceed**, so his thumb learns one map instead of
+   tracking a row that reshuffles under it. It also retires the old three-across
+   constraint that forced `next` to shrink to its text so `remembered` would not
+   wrap at 375px.
+
+   `f` mid-walk and `j` mid-walk are asserted TOGETHER in
+   `test/app-keys.test.ts`, because the failure mode is a later session
+   "restoring symmetry" and taking `forgot` down with it — which WOULD be the
+   2026-09-07 defect.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

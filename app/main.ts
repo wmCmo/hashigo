@@ -1784,6 +1784,11 @@ document.addEventListener("keydown", (event) => {
     case "gradeBlocked":
       say("looking ahead — press ← or Escape to get back to your card first");
       return;
+    // Decision 42. The count is the useful half: "not yet" with no number is the
+    // same unexplained nothing the `gradeBlocked` message exists to avoid.
+    case "gradeTooEarly":
+      say(`${steps.length - stepIndex} more to see — space, then j`);
+      return;
     case "gradeForgot":
       void grade(false);
       return;

@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 42 files, 1090 passed, 1 skipped (the FSRS refit, gated). ~95 s.
+npm test                # 42 files, 1091 passed, 1 skipped (the FSRS refit, gated). ~95 s.
                         # EXITS 0 ON A PASSING RUN as of 2026-08-26. It is a wrapper
                         # (`scripts/test.mjs`) that reads the SUMMARY, which is
                         # STRICTER than the exit code, not looser: the run must have
@@ -575,7 +575,11 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     every one ascending. **Grading does not wait for the end of the walk** —
     `revealed` turns true on the FIRST step and `moreToReveal` is a separate flag,
     because conflating them puts live-looking dead buttons on screen, which is the
-    2026-09-07 *"it won't let me click remember"* defect. **It is also what makes the
+    2026-09-07 *"it won't let me click remember"* defect. **AMENDED 2026-09-13 FOR
+    `remembered` ALONE — decision 42:** that grade now waits for the last step, on
+    his argument that it is not answerable before it. `forgot` is unchanged, and
+    the button is taken OFF SCREEN rather than left up and inert, which is what
+    keeps this from being the defect above. **It is also what makes the
     SECOND clip reachable at all**: the native `<audio>` is `display:none` in review
     and the round replay button was nailed at mount to "the first side with audio",
     so 単語's example-sentence clip could not be played by any gesture. The button
@@ -732,6 +736,25 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     PART of a migration rather than an escape from it. **It also makes the backup
     the weakest link in the project** — as of this date his history lives in two
     browsers' OPFS and three gitignored JSON files. See `DECISIONS.md` 41.
+
+42. **`remembered` WAITS FOR THE END OF THE WALK; `forgot` DOES NOT.** Zach,
+    2026-09-13: *"you don't know if you actually remember the card until you're
+    at the last slide, so maybe we don't even need remembered button when we
+    still have next button"*. The asymmetry is the argument: `forgot` is settled
+    by ONE failure, `remembered` is a conjunction over every side and is not
+    settled until the last is up. **This AMENDS decision 34's "grading does not
+    wait for the end of the walk" — for `j` alone.** It is NOT the 2026-09-07
+    *"it won't let me click remember"* defect returning: that was a live-looking
+    button that did nothing, and this takes the button OFF SCREEN and makes the
+    key SAY what is missing (`3 more to see — space, then j`). The two sentences
+    it replaces were agents' claims about his cognition, never measured, and
+    nothing in the schema records the step a grade was made at. **Cost, measured
+    over 961 sampled tracks: 99.8% have >= 2 steps so the rule reaches nearly
+    everything, mean 2.43 extra presses, 単語 median 4 steps** — real only if he
+    was passing early, which is the practice he says he does not have. The
+    layout invariant is the other half and finishes the same day's mistap fix:
+    two equal halves, **left is always `forgot`, right is always proceed**
+    (`next`, then `remembered`). See `DECISIONS.md` 42.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

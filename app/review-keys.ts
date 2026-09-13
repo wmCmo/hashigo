@@ -60,13 +60,21 @@ export interface KeyState {
    * SINCE ZACH'S STEPPED REVEAL (2026-09-12) THIS IS NOT THE OPPOSITE OF
    * `moreToReveal`, and conflating them re-creates a bug he has already hit once.
    * A reveal is a walk now — one cloze, then the next, then the next side — and
-   * this turns true on the FIRST step: he knows whether he remembered the moment
-   * the reading appears, so `f` and `j` must work from there. If this were "the
-   * walk is finished", the grade buttons would sit on screen looking pressable
-   * and do nothing, which is exactly what *"it won't let me click remember"* was.
+   * this turns true on the FIRST step, so `f` works from there. If this were "the
+   * walk is finished", `forgot` would sit on screen looking pressable and do
+   * nothing, which is exactly what *"it won't let me click remember"* was.
+   *
+   * **AMENDED 2026-09-13 for `j` ALONE — decision 42.** `remembered` now waits
+   * for the end of the walk, on his argument that it is not answerable before
+   * then. That is NOT the old bug returning: the old bug was a live-looking
+   * button that did nothing, and this takes the button OFF SCREEN and says why
+   * when the key is pressed. `forgot` is unchanged and still fires from step one.
    */
   readonly revealed: boolean;
-  /** Steps remain in the walk, so `space` has somewhere to go. */
+  /**
+   * Steps remain in the walk, so `space` has somewhere to go — and, since
+   * decision 42, so `j` does not yet grade. See the `j` branch below.
+   */
   readonly moreToReveal: boolean;
   /**
    * The card ASKED something on entry — decision 29's mode 2, or a widget card.
@@ -127,6 +135,8 @@ export type ReviewAction =
   | "playTake"
   /** A grade was pressed while looking ahead. Say so; write nothing. */
   | "gradeBlocked"
+  /** `j` before the walk finished. Say what is missing; write nothing. */
+  | "gradeTooEarly"
   /** Nothing, and the browser keeps the keystroke. */
   | null;
 
@@ -224,7 +234,20 @@ export function reviewAction(event: KeyEventShape, state: KeyState): ReviewActio
   // he presses a hundred times a day doing nothing without explanation reads as the
   // app being broken.
   if (key === "f") return state.peeking ? "gradeBlocked" : "gradeForgot";
-  if (key === "j") return state.peeking ? "gradeBlocked" : "gradeRemembered";
+  // `j` WAITS FOR THE WALK; `f` DOES NOT. Zach, 2026-09-13: *"you don't know if
+  // you actually remember the card until you're at the last slide"*. One failure
+  // settles `forgot`, so it stays live from the first step; `remembered` is a
+  // conjunction over every side and is not answerable until the last one is up,
+  // which is why the button is off screen there (`style.css`).
+  //
+  // It is SAID rather than dropped, for this file's standing reason: `j` is a key
+  // he presses a hundred times a day, and one that quietly does nothing reads as
+  // the app being broken — which is how *"it won't let me click remember"* felt.
+  // Here there is a real answer to give him, and it is one press away.
+  if (key === "j") {
+    if (state.peeking) return "gradeBlocked";
+    return state.moreToReveal ? "gradeTooEarly" : "gradeRemembered";
+  }
   if (key === "r") return "replay";
   return null;
 }

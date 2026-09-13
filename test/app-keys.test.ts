@@ -39,8 +39,42 @@ describe("reviewing a card", () => {
     expect(reviewAction(press("f"), state())).toBeNull();
     expect(reviewAction(press("j"), state())).toBeNull();
     expect(reviewAction(press("f"), state({ revealed: true }))).toBe("gradeForgot");
-    expect(reviewAction(press("j"), state({ revealed: true }))).toBe("gradeRemembered");
+    expect(reviewAction(press("j"), state({ revealed: true, moreToReveal: false }))).toBe(
+      "gradeRemembered",
+    );
     expect(reviewAction(press("r"), state({ revealed: true }))).toBe("replay");
+  });
+
+  /**
+   * DECISION 42 — THE TWO GRADES DO NOT UNLOCK TOGETHER.
+   *
+   * Zach, 2026-09-13: *"you don't know if you actually remember the card until
+   * you're at the last slide, so maybe we don't even need remembered button when
+   * we still have next button"*.
+   *
+   * `forgot` needs ONE failure, so it is settled the moment the first cloze
+   * contradicts him. `remembered` is a conjunction over every side and is not
+   * settled until the last one is up. Both arms are asserted together, because
+   * the failure mode is someone "restoring symmetry" here and taking `forgot`
+   * down with it — which WOULD be the 2026-09-07 defect coming back.
+   */
+  it("`f` fires from the first step; `j` waits for the last", () => {
+    const midWalk = state({ revealed: true, moreToReveal: true });
+    expect(reviewAction(press("f"), midWalk)).toBe("gradeForgot");
+    expect(reviewAction(press("j"), midWalk)).toBe("gradeTooEarly");
+
+    const walkDone = state({ revealed: true, moreToReveal: false });
+    expect(reviewAction(press("f"), walkDone)).toBe("gradeForgot");
+    expect(reviewAction(press("j"), walkDone)).toBe("gradeRemembered");
+
+    // SPACE still reaches the end from mid-walk, so "too early" is one press from
+    // being answerable. A refusal with no way forward is the thing to avoid.
+    expect(reviewAction(press(" "), midWalk)).toBe("reveal");
+
+    // Look-ahead still wins over both, in both halves of the walk: grading there
+    // moves a due date on a card he is not reading, which is worse than early.
+    expect(reviewAction(press("j"), state({ ...midWalk, peeking: true }))).toBe("gradeBlocked");
+    expect(reviewAction(press("j"), state({ ...walkDone, peeking: true }))).toBe("gradeBlocked");
   });
 
   /**
@@ -299,7 +333,9 @@ describe("loop, speed and recording (2026-09-12)", () => {
     // control reaches for one of these, this is where it gets caught.
     const fresh = state();
     expect(reviewAction(press("f"), state({ revealed: true }))).toBe("gradeForgot");
-    expect(reviewAction(press("j"), state({ revealed: true }))).toBe("gradeRemembered");
+    expect(reviewAction(press("j"), state({ revealed: true, moreToReveal: false }))).toBe(
+      "gradeRemembered",
+    );
     expect(reviewAction(press("a"), fresh)).toBe("archive");
     expect(reviewAction(press("d"), fresh)).toBe("delete");
     expect(reviewAction(press("e"), fresh)).toBe("edit");
