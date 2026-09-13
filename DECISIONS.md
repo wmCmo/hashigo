@@ -1438,6 +1438,40 @@ right**: it holds his verbatim reasoning and this quotes it.
    view (19); a Latin-only stack loaded from a Google Fonts `<link>` (the app
    self-hosts, and offline is the point); light-only; and grade keys `1`/`2`.
 
+41. **THE FINAL IMPORT HAS HAPPENED, AND THAT RETIRES A JUSTIFICATION.**
+   Zach, 2026-09-13, asked whether to bump the schema now or fold it into
+   decision 16's last Mochi import: *"what we have now is already the final
+   import, i won't import anymore (unless we genuinely lost everything here
+   ofc)"*.
+
+   Decision 16 always said "one final import, then never again". What was not
+   recorded is WHICH import, and every plan since has quietly assumed one more
+   was coming — including, on the day he said this, my own recommendation to
+   defer a schema change until it. **The 2026-09-08 import was it.**
+
+   **THE CONSEQUENCE IS NOT ABOUT IMPORTING.** `CLAUDE.md`'s "A schema bump means
+   RE-IMPORT, not migrate" rests on two clauses, and the second one just died:
+
+   > every database here rebuilds from `exports/` in about fifteen seconds
+   > **and the reviews still come from the export**
+
+   They no longer do. Hashigo's own grades — 56 on his current device, 43 on the
+   other, as of 2026-09-13 — exist in OPFS and in the sync mailbox and nowhere
+   else. `exports/` cannot reproduce them. So "rm the database and re-import" has
+   stopped being the free, lossless reset the architecture was built around, and
+   a schema change now has to answer for the live history BEFORE it runs.
+
+   **What still carries that history:** decision 17's backup and decision 33's
+   sync payloads, both of which stamp `archive.schemaVersion` (currently 9). They
+   are therefore part of any migration, not an escape from it — a restore across
+   a version bump needs its own answer.
+
+   **AND IT RAISES THE PRIORITY OF THE BACKUP.** Decision 17 called an export
+   "not day one, but required before he trusts the app". As of this date the only
+   copies of his Hashigo history are two browsers' OPFS and three JSON files
+   under `build/`, which is gitignored. That is now the weakest link in the
+   project and it is not the audio.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

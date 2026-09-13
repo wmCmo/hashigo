@@ -256,6 +256,20 @@ That is deliberate — every database here rebuilds from `exports/` in about
 fifteen seconds and the reviews still come from the export — but it means a
 schema change is a three-step chore, and skipping the third breaks a test:
 
+> [!warning] **THE SECOND HALF OF THAT JUSTIFICATION EXPIRED ON 2026-09-13.**
+> "The reviews still come from the export" was true while Mochi was the system of
+> record. Decision 16's final import has now happened and Zach will not import
+> again, so **a rebuild from `exports/` silently discards everything Hashigo has
+> graded since** — 56 reviews on his current device and 43 on the other, as of
+> that date, and growing daily.
+>
+> The three-step chore below is still correct for a DEVELOPMENT database. It is
+> no longer a safe universal answer, and a schema change now has to say what
+> happens to the live review history first: decision 17's backup
+> (`src/backup/cli.ts`) and decision 33's sync payloads are the only things that
+> carry it, and both are schema-versioned (`archive.schemaVersion`), so they are
+> part of the migration rather than a free escape from it.
+
 ```bash
 rm build/hashigo.db
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
@@ -356,6 +370,13 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
 15. **New cards are 10 TRACKS a day, chosen at RANDOM; forward and reverse are not paired.**
 16. **ONE final import from Mochi, then never again** — and the guard is BUILT
     (`0e04a10`): a re-import cannot revert a locally-graded track's schedule.
+    **IT HAS NOW HAPPENED. Zach, 2026-09-13: *"what we have now is already the
+    final import, i won't import anymore (unless we genuinely lost everything
+    here ofc)"*.** The 2026-09-08 import was it. `exports/` is a disaster-recovery
+    copy from here on, not a source that will be consulted again — which
+    **retires the justification for "a schema bump means RE-IMPORT"** (see that
+    section) and makes `build/hashigo.db` plus each device's OPFS the system of
+    record. Anything Hashigo accumulates from now on exists nowhere else.
 17. **A local export/backup is not day one, but is required before he trusts the app.**
 18. **The TTS key NEVER goes in the client** — proxied through the stage-11 Worker.
 19. **Links render PLAINLY, in place, on whatever side they are authored on.**
@@ -695,6 +716,22 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     set `drill` or appear in `card.loop.log` — and nothing sounds while the mic is
     open. Decision 29 is untouched structurally: re-measured, `play` inside
     `enter()` turns **25** tests red. See `DECISIONS.md` 40.
+
+41. **THE FINAL IMPORT HAS HAPPENED, AND THAT RETIRES A JUSTIFICATION.** Zach,
+    2026-09-13: *"what we have now is already the final import, i won't import
+    anymore (unless we genuinely lost everything here ofc)"*. Decision 16 always
+    said "one final import, then never again"; what was never recorded is WHICH,
+    and plans since have assumed one more was coming. **The 2026-09-08 import was
+    it.** The consequence is not about importing: "a schema bump means RE-IMPORT,
+    not migrate" rests on *"the reviews still come from the export"*, and they no
+    longer do — Hashigo's own grades (56 on his current device, 43 on the other)
+    exist in OPFS and the sync mailbox and nowhere else. So `rm` + re-import has
+    stopped being a lossless reset, and any schema change must answer for the
+    live history first. Decision 17's backup and decision 33's payloads are the
+    only things carrying it, and both stamp `archive.schemaVersion`, so they are
+    PART of a migration rather than an escape from it. **It also makes the backup
+    the weakest link in the project** — as of this date his history lives in two
+    browsers' OPFS and three gitignored JSON files. See `DECISIONS.md` 41.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
