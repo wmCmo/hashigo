@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>draw test — hashigo</title>
+<!--
+  A BISECT HARNESS FOR `<draw/>` ON HIS PHONE, at /draw-test.html on the same
+  origin as the app.
+
+  Zach, 2026-09-13, after two fixes that did not reach him: *"bro, i still can't
+  see the line, can we make a very simple <draw/> on say, another path of same
+  url? like strip out everything first and slowly add things back on another
+  path url / maybe it's my phone or something..."*
+
+  WHY IT IS PURE VANILLA IN `public/` AND NOT A VITE ENTRY. It is copied
+  verbatim into the build, so it has no bundle, no app CSS, no service-worker
+  precache entry and no dependency on anything the app does. If the app's own
+  canvas is broken by the app, this page still works — and that difference is
+  the measurement. A page that imported the app's modules could not tell us
+  which half is at fault, which is the entire question.
+
+  IT PRINTS RATHER THAN LOGS. There is no devtools on his handset, so every
+  answer has to be on screen and copyable. The report button at the bottom puts
+  the whole state on the clipboard.
+
+  THE LAYERS GO FROM "CAN THIS DEVICE PAINT AT ALL" UPWARDS, so the first one
+  that fails names the culprit:
+
+    1  paint with NO input      — canvas/GPU/colour. Nothing to do with events.
+    2  raw event log            — what his browser actually emits, verbatim.
+    3  pointer events, bare     — the simplest possible stroke.
+    4  + touch-action: none     — the rule the real widget relies on.
+    5  + devicePixelRatio       — the real geometry, where a dpr bug would show.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body {
+    background: #121110; color: #e8e4dc; margin: 0; padding: 14px 12px 40px;
+    font: 15px/1.55 system-ui, sans-serif; -webkit-text-size-adjust: 100%;
+  }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  .sub { color: #a49e94; font-size: 13px; margin: 0 0 18px; }
+  section { border: 1px solid #3a3733; margin: 0 0 18px; padding: 12px; }
+  h2 { font-size: 15px; margin: 0 0 2px; }
+  .why { color: #a49e94; font-size: 12.5px; margin: 0 0 10px; }
+  /* The canvases carry NO border and NO padding — a bordered canvas makes
+     getBoundingClientRect disagree with the drawing surface, which is a separate
+     bug already fixed in the app. The frame is an outline, which takes no space. */
+  canvas { background: #1f1d1b; display: block; outline: 1px solid #4a4642; width: 100%; }
+  .read {
+    background: #1a1816; color: #cfc9bf; font: 12px/1.5 ui-monospace, monospace;
+    margin-top: 8px; padding: 8px; white-space: pre-wrap; word-break: break-all;
+  }
+  .verdict { font-weight: 600; }
+  .ok { color: #7fd18c; }
+  .bad { color: #ff8a66; }
+  button {
+    background: none; border: 1px solid #7fa4e1; color: #7fa4e1;
+    font: inherit; font-size: 14px; margin: 8px 8px 0 0; padding: 10px 14px;
+  }
+  #log { height: 190px; overflow-y: auto; }
+  textarea { background: #1a1816; color: #cfc9bf; border: 1px solid #3a3733;
+             font: 11px/1.4 ui-monospace, monospace; height: 130px; padding: 8px; width: 100%; }
+</style>
+</head>
+<body>
+
+<h1>draw test</h1>
+<p class="sub">Work down the page. <b>The first box that fails is the answer.</b>
+Each one is independent — none of them uses the app's code or stylesheet.</p>
+
+<section id="env">
+  <h2>0 · this device</h2>
+  <p class="why">Facts about the phone, so nothing below has to be guessed at.</p>
+  <div class="read" id="envread">…</div>
+</section>
+
+<section>
+  <h2>1 · can this device paint a canvas at all?</h2>
+  <p class="why">Drawn on load. <b>No input, no events, no listeners.</b>
+     If you cannot see a red X and a blue square here, nothing below matters —
+     the problem is drawing, not touching.</p>
+  <canvas id="c1" height="160"></canvas>
+  <div class="read" id="r1">…</div>
+</section>
+
+<section>
+  <h2>2 · what does your finger actually send?</h2>
+  <p class="why">Drag inside the grey box. Every event it receives is listed
+     verbatim — pointer, touch and mouse alike. This is the one that tells us
+     whether your browser speaks Pointer Events at all.</p>
+  <canvas id="c2" height="150"></canvas>
+  <div class="read" id="log">drag in the box above…</div>
+  <button type="button" id="clearlog">clear the log</button>
+</section>
+
+<section>
+  <h2>3 · the simplest possible stroke</h2>
+  <p class="why">Pointer events, one path, no <code>touch-action</code>, no
+     pointer capture, no device-pixel-ratio. If the page scrolls instead of
+     drawing, that is the answer.</p>
+  <canvas id="c3" height="200"></canvas>
+  <div class="read" id="r3">…</div>
+</section>
+
+<section>
+  <h2>4 · the same, with touch-action: none</h2>
+  <p class="why">The one rule the real widget depends on. It tells the browser
+     the gesture is ours and must not become a scroll.</p>
+  <canvas id="c4" height="200" style="touch-action: none;"></canvas>
+  <div class="read" id="r4">…</div>
+</section>
+
+<section>
+  <h2>5 · the real geometry</h2>
+  <p class="why">Backing store sized to your device pixel ratio, with
+     <code>setTransform</code> — which is exactly what the app does. If 4 works
+     and this does not, the bug is the scaling.</p>
+  <canvas id="c5" height="200" style="touch-action: none;"></canvas>
+  <div class="read" id="r5">…</div>
+</section>
+
+<section>
+  <h2>send this back</h2>
+  <p class="why">Copy and paste it to me — it carries every number above.</p>
+  <button type="button" id="copy">copy the report</button>
+  <textarea id="report" readonly></textarea>
+</section>
+
+<script>
+(function () {
+  "use strict";
+
+  const lines = [];
+  function say(el, text, good) {
+    el.textContent = text;
+    el.className = "read " + (good === undefined ? "" : good ? "ok" : "bad");
+  }
+
+  // ── 0 · the device ───────────────────────────────────────────────────────
+  const env = {
+    ua: navigator.userAgent,
+    dpr: window.devicePixelRatio,
+    maxTouchPoints: navigator.maxTouchPoints,
+    pointerEvents: typeof window.PointerEvent === "function",
+    touchEvents: "ontouchstart" in window,
+    viewport: window.innerWidth + " x " + window.innerHeight,
+    screen: screen.width + " x " + screen.height,
+  };
+  say(document.getElementById("envread"), Object.entries(env)
+    .map(([k, v]) => k.padEnd(15) + " " + v).join("\n"));
+
+  /** Ink is the honest test: count pixels the canvas actually holds. */
+  function inkOf(canvas) {
+    try {
+      const d = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+      let n = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 0) n += 1;
+      return n;
+    } catch (cause) {
+      return "unreadable: " + cause;
+    }
+  }
+
+  /** Give a canvas a backing store. `scaled` adds the devicePixelRatio step. */
+  function size(canvas, scaled) {
+    const rect = canvas.getBoundingClientRect();
+    const ratio = scaled ? (window.devicePixelRatio || 1) : 1;
+    canvas.width = Math.max(1, Math.round(rect.width * ratio));
+    canvas.height = Math.max(1, Math.round(rect.height * ratio));
+    const ctx = canvas.getContext("2d");
+    if (ctx && scaled) ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    return { rect: rect, ratio: ratio, ctx: ctx };
+  }
+
+  // ── 1 · paint, with no input whatsoever ──────────────────────────────────
+  (function () {
+    const canvas = document.getElementById("c1");
+    const out = document.getElementById("r1");
+    const info = size(canvas, false);
+    if (!info.ctx) { say(out, "getContext('2d') returned null — this device cannot paint.", false); return; }
+    const ctx = info.ctx;
+    ctx.strokeStyle = "#ff4444";
+    ctx.lineWidth = 6;
+    ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(20, 20); ctx.lineTo(canvas.width - 20, canvas.height - 20);
+    ctx.moveTo(canvas.width - 20, 20); ctx.lineTo(20, canvas.height - 20); ctx.stroke();
+    ctx.fillStyle = "#7fa4e1";
+    ctx.fillRect(canvas.width / 2 - 25, canvas.height / 2 - 25, 50, 50);
+    const ink = inkOf(canvas);
+    say(out,
+      "backing " + canvas.width + " x " + canvas.height +
+      "\ncss     " + Math.round(info.rect.width) + " x " + Math.round(info.rect.height) +
+      "\nink     " + ink + " painted pixels" +
+      "\n\n" + (typeof ink === "number" && ink > 0
+        ? "The canvas HAS the drawing. If you see nothing, it is the display."
+        : "The canvas is EMPTY — this device did not paint at all."),
+      typeof ink === "number" && ink > 0);
+    lines.push("1 static paint: ink=" + ink + " backing=" + canvas.width + "x" + canvas.height);
+  })();
+
+  // ── 2 · the raw event log ────────────────────────────────────────────────
+  (function () {
+    const canvas = document.getElementById("c2");
+    const log = document.getElementById("log");
+    size(canvas, false);
+    const seen = Object.create(null);
+    const recent = [];
+    // EVERY family, because "no pointer events" and "pointer events that are
+    // immediately cancelled" look identical from inside the app.
+    const types = [
+      "pointerdown", "pointermove", "pointerup", "pointercancel", "lostpointercapture",
+      "touchstart", "touchmove", "touchend", "touchcancel",
+      "mousedown", "mousemove", "mouseup", "click",
+    ];
+    function note(event) {
+      seen[event.type] = (seen[event.type] || 0) + 1;
+      // Moves are the noisy ones; keep the shape, not every sample.
+      if (event.type.endsWith("move") && seen[event.type] % 8 !== 1) { paint(); return; }
+      const bits = [event.type];
+      if ("pointerId" in event) {
+        bits.push("id=" + event.pointerId, "type=" + event.pointerType,
+                  "primary=" + event.isPrimary, "btns=" + event.buttons);
+      }
+      if (event.touches) bits.push("touches=" + event.touches.length);
+      recent.unshift(bits.join(" "));
+      if (recent.length > 14) recent.pop();
+      paint();
+    }
+    function paint() {
+      log.textContent =
+        Object.keys(seen).map((k) => k + " x" + seen[k]).join("  ") +
+        "\n\n" + recent.join("\n");
+    }
+    for (const type of types) {
+      canvas.addEventListener(type, note, { passive: true });
+    }
+    document.getElementById("clearlog").addEventListener("click", function () {
+      for (const k of Object.keys(seen)) delete seen[k];
+      recent.length = 0;
+      log.textContent = "cleared — drag again";
+    });
+    window.__seen = seen;
+  })();
+
+  // ── 3, 4, 5 · progressively closer to the real thing ─────────────────────
+  function drawable(canvasId, readId, options) {
+    const canvas = document.getElementById(canvasId);
+    const out = document.getElementById(readId);
+    const info = size(canvas, options.scaled);
+    const ctx = info.ctx;
+    if (!ctx) { say(out, "no 2d context", false); return; }
+    ctx.strokeStyle = "#ff4444";
+    ctx.lineWidth = 5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    let drawing = false;
+    let id = null;
+    let strokes = 0;
+    let downs = 0;
+    let moves = 0;
+    const state = { downs: 0, moves: 0, strokes: 0 };
+
+    function at(event) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    }
+    function report(note) {
+      const ink = inkOf(canvas);
+      say(out,
+        "down " + downs + "  move " + moves + "  strokes " + strokes +
+        "\nink  " + ink + " painted pixels" +
+        "\ncss  " + Math.round(info.rect.width) + " x " + Math.round(info.rect.height) +
+        "  backing " + canvas.width + " x " + canvas.height + "  ratio " + info.ratio +
+        (note ? "\n\n" + note : ""),
+        typeof ink === "number" ? ink > 0 : false);
+      state.downs = downs; state.moves = moves; state.strokes = strokes; state.ink = ink;
+    }
+
+    canvas.addEventListener("pointerdown", function (event) {
+      downs += 1;
+      if (drawing) return;
+      if (event.isPrimary === false) { report("ignored: not the primary pointer"); return; }
+      event.preventDefault();
+      drawing = true;
+      id = event.pointerId;
+      if (options.capture) { try { canvas.setPointerCapture(event.pointerId); } catch (e) { /* gone */ } }
+      const p = at(event);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      report();
+    }, { passive: false });
+
+    canvas.addEventListener("pointermove", function (event) {
+      if (!drawing || event.pointerId !== id) return;
+      moves += 1;
+      event.preventDefault();
+      const p = at(event);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      if (moves % 4 === 0) report();
+    }, { passive: false });
+
+    function end(event) {
+      if (!drawing) return;
+      drawing = false;
+      id = null;
+      strokes += 1;
+      report(event.type === "pointercancel"
+        ? "THE BROWSER CANCELLED THE STROKE — it took the gesture for itself."
+        : "");
+    }
+    canvas.addEventListener("pointerup", end, { passive: false });
+    canvas.addEventListener("pointercancel", end, { passive: false });
+
+    report("draw here");
+    return state;
+  }
+
+  const s3 = drawable("c3", "r3", { scaled: false, capture: false });
+  const s4 = drawable("c4", "r4", { scaled: false, capture: false });
+  const s5 = drawable("c5", "r5", { scaled: true, capture: true });
+
+  // ── the report ───────────────────────────────────────────────────────────
+  const area = document.getElementById("report");
+  function build() {
+    return [
+      "hashigo draw test",
+      Object.entries(env).map(([k, v]) => k + ": " + v).join("\n"),
+      "",
+      lines.join("\n"),
+      "2 events seen: " + JSON.stringify(window.__seen),
+      "3 bare:        " + JSON.stringify(s3),
+      "4 touch-none:  " + JSON.stringify(s4),
+      "5 dpr+capture: " + JSON.stringify(s5),
+    ].join("\n");
+  }
+  document.getElementById("copy").addEventListener("click", function () {
+    area.value = build();
+    area.select();
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(area.value).then(
+        function () { document.getElementById("copy").textContent = "copied — paste it to me"; },
+        function () { document.getElementById("copy").textContent = "select the text below and copy"; });
+    }
+  });
+  area.value = build();
+})();
+</script>
+</body>
+</html>
