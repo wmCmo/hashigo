@@ -2330,6 +2330,18 @@ async function openPreview(cardId: string): Promise<void> {
 
   body.appendChild(mounted.result.root);
   layerHost.appendChild(root);
+  // THE ONLY WAY TO HEAR A CLIP HERE, as of 2026-09-14. A preview used to show
+  // the native `<audio controls>` instead, and it was inert: the renderer leaves
+  // media sourceless, and a press on the native play button of a sourceless
+  // element fires NEITHER `click` NOR `play` on the host, so nothing ever got the
+  // chance to attach the bytes. Measured on the card Zach reported it with — see
+  // the note in `style.css` beside `.layer .hashigo-cloze-answer`.
+  //
+  // Decision 30 says a clip stays one deliberate tap away in a preview. This is
+  // that tap, and it is the same control the review screen uses (decision 36),
+  // which is the other half: a play button that lives in a different place and
+  // works differently on two surfaces is worse than one derived once.
+  mountClipButtons(mounted);
   // A preview shows every side, so 漢字's canvas is on screen there too.
   makeDrawable(mounted.result as never);
   // Checkable in a preview as well, with no reveal to trigger: decision 30 says a

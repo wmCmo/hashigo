@@ -1382,25 +1382,39 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   line-height: 1.6;
 }
 
-/* THE TWO OVERRIDES THAT MAKE IT A PREVIEW RATHER THAN A REVIEW.
+/* THE OVERRIDE THAT MAKES IT A PREVIEW RATHER THAN A REVIEW: clozes are open and
+ * must not still be wearing the masked styling — the mask span is display:none
+ * once revealed, but the dashed accent underline on the answer would read as
+ * "still hidden".
  *
- * 1. Clozes are open and must not still be wearing the masked styling — the mask
- *    span is display:none once revealed, but the dashed accent underline on the
- *    answer would read as "still hidden".
- * 2. The native <audio> control is SHOWN. In review it is hidden because the
- *    renderer leaves media sourceless and a dead control is worse than none — but
- *    here there is no reveal to hang playback on, and decision 30 says a clip
- *    stays one deliberate tap away. The loop arms these, so a tap plays. */
+ * ─── THERE USED TO BE A SECOND ONE, AND IT SHIPPED A DEAD BUTTON ────────────
+ *
+ * A `.layer .hashigo-audio { display: block }` rule showed the native <audio>
+ * control here, on the reasoning that "there is no reveal to hang playback on,
+ * and the loop arms these, so a tap plays". **The last clause was false**, and
+ * Zach found it with a screenshot of a 基本情報 preview reading `0:00 / 0:00`:
+ * *"this card won't let me play audio..."*
+ *
+ * Measured in the pane on the very card he sent, before changing anything. A
+ * press at the native play button of a SOURCELESS `<audio controls>`:
+ *
+ *     click events on the host   0
+ *     play events on the host    0
+ *     src                        null      networkState 0   paused true
+ *
+ * Script-driven `element.play()` DOES fire `play` and does arm it — which is how
+ * the arming in `src/render/reveal.ts` was measured, and that file's own comment
+ * named the gap: *"NOT VERIFIED: a press on the native play button
+ * specifically"*. That was the load-bearing case, and it delivers nothing: with
+ * no source the engine never enters the play algorithm at all.
+ *
+ * So the native control stays hidden on EVERY surface, and a preview gets the
+ * same `.clip` buttons the review screen has (`mountClipButtons`) — which is
+ * decision 36's argument applying where it always did: sourceless so inert, a
+ * seek bar over a 1.63s median clip, play at the far LEFT of a full-width strip,
+ * and no way to show playing or missing. */
 .layer .hashigo-cloze-answer {
   color: var(--ink-bright);
-}
-
-.layer .hashigo-audio,
-.layer .hashigo-video {
-  display: block;
-  margin: 10px 0;
-  max-width: 100%;
-  width: 100%;
 }
 
 /* The review screen keeps scrolling underneath otherwise, which on a phone means

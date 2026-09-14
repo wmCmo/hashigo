@@ -694,12 +694,23 @@ export function shadowingLoop<E extends RenderElement>(
         //     element as `click` — 0 events, at 320 px and at 48 px wide. So
         //     `click` is the belt-and-braces listener, not the load-bearing one:
         //     it is kept for engines that do retarget and for a custom control a
-        //     stage-7 UI may lay over the element. NOT VERIFIED: a press on the
-        //     native play button specifically, which the zero-sized viewport of
-        //     the second browser could not be made to deliver.
+        //     stage-7 UI may lay over the element.
         //
-        // Either way the review UI's own show-answer control (`reveal()`) covers
-        // this trigger on its own; the native path is an extra.
+        // THE GAP THAT NOTE LEFT HAS NOW BEEN MEASURED, AND IT IS THE BAD CASE.
+        // It used to end "NOT VERIFIED: a press on the native play button
+        // specifically, which the zero-sized viewport of the second browser could
+        // not be made to deliver". Delivered 2026-09-14, on the card Zach reported
+        // a dead preview with: a press on the native play button of a sourceless
+        // `<audio controls>` fires **0 `click` and 0 `play`** on the host, leaves
+        // `src` null and `networkState` 0. With no source the engine never enters
+        // the play algorithm, so there is no event for this to hear.
+        //
+        // So NOTHING here is load-bearing for a user gesture, and no UI may rely
+        // on it: `app/` hides every native media control and puts its own button
+        // beside the clip on both surfaces (decision 36, `mountClipButtons`).
+        // What survives is the script path — `element.play()` DOES fire `play`,
+        // which is how a clip generated later starts without a second gesture —
+        // and that is worth keeping. It is an extra, not an affordance.
         target.addEventListener("click", onActivate);
         target.addEventListener("play", onActivate);
         unbinds.push(off);
