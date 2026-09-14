@@ -147,6 +147,14 @@
              comes from that module; style.css targets those names. -->
         <div id="cardhost" class="cardhost"></div>
         <div id="hint" class="hint"></div>
+        <!-- WHAT LINKS HERE — Zach, 2026-09-14. Empty and hidden until the walk
+             is over, and that is a CORRECTNESS rule rather than a layout
+             preference: 94% of links display the target's own name, so the cards
+             linking to 転 are 転出, 移転, 転職 — every one of them containing the
+             kanji. On a 漢字 card (draw it from memory) or a mode-2 単語 card
+             (the word masked, the clip the prompt), a backlink list standing at
+             the bottom of the page is the answer, printed. See `paintBacklinks`. -->
+        <div id="backlinks" class="backlinks-host" hidden></div>
         <!-- His #9's look-ahead. Visible rather than subtle, because the state it
              announces is one where a familiar keystroke would do the wrong thing
              to a card he cannot see. -->

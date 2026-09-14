@@ -28,6 +28,8 @@ export {
   type CardAudioOptions,
 } from "./audio.js";
 
+export { backlinksOf, type Backlink } from "./backlinks.js";
+
 export {
   cardContext,
   cardInputFor,

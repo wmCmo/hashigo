@@ -31,6 +31,7 @@
 
 import type { AudioAddress } from "../src/render/audio.js";
 import type { BlobPayload } from "../src/blobs/url.js";
+import type { Backlink } from "../src/cards/index.js";
 import type { PreparedCard } from "../src/review/index.js";
 import type { Glance } from "../src/dashboard/index.js";
 import type { SessionProgress } from "../src/session/index.js";
@@ -492,6 +493,36 @@ export interface PreviewMessage {
 }
 
 /**
+ * WHAT LINKS HERE — Zach, 2026-09-14: *"i need to know which cards are linked
+ * with this, so... list of back links?"*
+ *
+ * `card_links` is already indexed the right way round (`card_links_target`), so
+ * this is the cheap direction of a join the importer built for the other one.
+ *
+ * SEPARATE FROM THE CARD FETCH, deliberately. **4,823 of 7,716 cards (62.5%) have
+ * no backlinks at all**, and the review screen may not show these before the
+ * reveal finishes anyway (see `paintBacklinks`) — so riding along with every card
+ * mount would buy latency nobody spends. It is asked for once the answer is up,
+ * and once when a preview opens.
+ */
+export interface BacklinksRequest {
+  readonly kind: "backlinks";
+  readonly id: number;
+  readonly cardId: string;
+}
+
+export interface BacklinksMessage {
+  readonly kind: "backlinks";
+  readonly id: number;
+  /**
+   * Distinct SOURCE cards, by name. One card may link here twice — 876 pairs in
+   * the corpus do, a compound naming the same component in two fields — and a
+   * second identical row is a duplicate, not a second fact.
+   */
+  readonly cards: readonly Backlink[];
+}
+
+/**
  * His #11: *"where can i edit my template? there should be a modal for editing
  * template and fields"*.
  *
@@ -818,6 +849,7 @@ export type AppRequest =
   | SyncExportRequest
   | SyncMergeRequest
   | PreviewRequest
+  | BacklinksRequest
   | DecksRequest
   | BrowseRequest
   | CreateCardRequest
@@ -1009,6 +1041,7 @@ export type AppMessage =
   | BrowseMessage
   | SetFieldMessage
   | PreviewMessage
+  | BacklinksMessage
   | ResetMessage
   | LogMessage
   | FetchingMessage
@@ -1042,6 +1075,7 @@ export interface ReplyFor {
   readonly syncMerge: SyncMergeMessage;
   readonly reset: ResetMessage;
   readonly preview: PreviewMessage;
+  readonly backlinks: BacklinksMessage;
   readonly setField: SetFieldMessage;
   readonly glance: GlanceMessage;
   readonly dashboard: DashboardMessage;

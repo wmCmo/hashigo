@@ -614,6 +614,10 @@ function releaseCard(): void {
   steps = [];
   stepIndex = 0;
   cardHost.replaceChildren();
+  // Leaves with the card. A list left standing through the mount of the next one
+  // is a list of cards linking to the card BEFORE it — and the next card's
+  // prompt is exactly what it must not be sitting under.
+  clearBacklinks();
 }
 
 /**
@@ -1103,11 +1107,146 @@ function settleReveal(card: MountedCard<HTMLElement>): void {
     }
     for (const side of card.loop.sides) side.reveal("caller", { silent: true });
     setState("revealed");
+    // THE ONLY PLACE THIS IS CALLED, and that is the leak guard — see the block
+    // above `backlinkSection`. The answer is up, so the cards that name it are
+    // no longer a spoiler.
+    if (currentCardId !== null) paintBacklinks(currentCardId);
   } else {
     setState("revealing");
     revealWord.textContent = `next · ${steps.length - stepIndex}`;
   }
   paintReplay(drill === null ? "none" : replayState);
+}
+
+// ─── WHAT LINKS HERE — Zach, 2026-09-14 ─────────────────────────────────────
+//
+// *"i need to know which cards are linked with this, so... list of back links?
+// but ill let you decide where's the best place to put it — do we put it at the
+// bottom do we scroll it or do we open a modal again"*
+//
+// ─── AT THE BOTTOM, AND ONLY AFTER THE WALK. THE SECOND HALF IS NOT TASTE ────
+//
+// Forward links already render in place (decision 19). The backward direction is
+// new, and it cannot simply live at the foot of the card, because **a backlink
+// list is usually the answer**. 94% of links in this corpus display the target's
+// own name (`app/links.ts` measured it), so the cards pointing at 転 are 転出,
+// 移転, 転職 — each of them containing the kanji. Put that under a 漢字 card,
+// whose exercise is to draw the kanji from memory, or under a mode-2 単語 card,
+// whose exercise is to identify the word from its clip, and the page prints what
+// it is asking for. So the block is built when `settleReveal` reaches `revealed`
+// and at no earlier moment.
+//
+// Given that, the bottom of the card beats a modal. Decision 23's shape is one
+// scroll with the controls pinned, and this is something he glances at on card
+// after card — a layer would be a tap he pays every time, and it would cover the
+// answer he opened it from. In a PREVIEW there is no walk to wait for (decision
+// 30: fully revealed, by definition), so the same block goes in unconditionally.
+//
+// ─── SIX ROWS, THEN A BUTTON — MEASURED ─────────────────────────────────────
+//
+// Distinct source cards per target: p50 **2**, p90 **7**, max **45** (人; then
+// 手 and 物 at 41, 大 39, 出 38 — the heavy targets are all single kanji, which
+// is exactly where this is most worth reading). **91.4% of linked cards have six
+// or fewer**, so the cap is where the long tail starts rather than a round
+// number, and `show all` appears on 8.6% of them.
+//
+// **62.5% of the corpus (4,823 cards) has no backlinks at all.** Those get
+// nothing — no heading, no empty state, no reserved space. A line saying "no
+// cards link here" on two cards out of three is noise on every screen he owns.
+const BACKLINK_ROWS = 6;
+
+const backlinksHost = el("backlinks");
+/** The card `backlinksHost` currently speaks for. Null while it is empty. */
+let backlinksFor: string | null = null;
+
+/**
+ * The block itself, or null when there is nothing to say.
+ *
+ * Shared by the review screen and the preview, which is why it returns an element
+ * rather than writing to one: the two have different hosts and different moments,
+ * and everything else about them is identical.
+ */
+async function backlinkSection(cardId: string): Promise<HTMLElement | null> {
+  let reply: ReplyFor["backlinks"];
+  try {
+    reply = await ask<"backlinks">({ kind: "backlinks", cardId });
+  } catch {
+    // Swallowed on purpose. A list of related cards is a convenience, and a red
+    // banner across a card he is mid-way through grading is not worth one.
+    return null;
+  }
+  const cards = reply.cards;
+  if (cards.length === 0) return null;
+
+  const section = document.createElement("section");
+  section.className = "backlinks";
+  const head = document.createElement("h2");
+  head.className = "backlinks-head";
+  head.textContent = cards.length === 1 ? "1 card links here" : `${cards.length} cards link here`;
+  const list = document.createElement("div");
+  list.className = "backlinks-list";
+  section.append(head, list);
+
+  const paint = (limit: number): void => {
+    list.replaceChildren();
+    for (const card of cards.slice(0, limit)) {
+      const row = document.createElement("button");
+      row.type = "button";
+      // The same row the link picker uses, for the same reason: the deck path is
+      // how he tells 蟻-as-単語 from 蟻-as-言葉 apart.
+      row.className = "link-item";
+      const name = document.createElement("b");
+      name.textContent = card.name === "" ? card.cardId : card.name;
+      const deck = document.createElement("i");
+      // Archived sources — 264 of them — are shown and MARKED, never hidden. The
+      // rule browse already follows: a card he archived is still a card he wrote.
+      deck.textContent = card.archived ? `${card.deckPath} · archived` : card.deckPath;
+      row.append(name, deck);
+      // A preview, not the editor: decision 30's mode is exactly "what is this
+      // card", which is the question a backlink raises.
+      row.addEventListener("click", () => void openPreview(card.cardId));
+      list.appendChild(row);
+    }
+    if (cards.length > limit) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "backlinks-more";
+      more.textContent = `show all ${cards.length}`;
+      more.addEventListener("click", () => paint(cards.length));
+      list.appendChild(more);
+    }
+  };
+  paint(BACKLINK_ROWS);
+  return section;
+}
+
+/**
+ * Fill the review screen's block, once, for the card that has just been answered.
+ *
+ * `settleReveal` runs on every press AND on every tap of a cloze, so this has to
+ * be idempotent per card or the worker gets a question it has already answered
+ * and the list flickers as it is replaced by itself.
+ *
+ * The `backlinksFor` re-check after the await is the other half: he can arrow to
+ * the next card while the worker is still answering, and a list that arrives late
+ * would land under a card it has nothing to do with.
+ */
+function paintBacklinks(cardId: string): void {
+  if (backlinksFor === cardId) return;
+  backlinksFor = cardId;
+  void (async () => {
+    const section = await backlinkSection(cardId);
+    if (section === null || backlinksFor !== cardId) return;
+    backlinksHost.replaceChildren(section);
+    backlinksHost.hidden = false;
+  })();
+}
+
+/** Take the block off screen. Called with the card it belonged to. */
+function clearBacklinks(): void {
+  backlinksFor = null;
+  backlinksHost.replaceChildren();
+  backlinksHost.hidden = true;
 }
 
 /**
@@ -2210,6 +2349,19 @@ async function openPreview(cardId: string): Promise<void> {
   };
   layers.push(layer);
   paintLayerOps(layer, ops);
+
+  // UNCONDITIONAL HERE, because decision 30 already settled it: a preview is
+  // fully revealed by definition, so there is no answer left for a backlink list
+  // to give away. Appended after the layer is on the stack rather than awaited
+  // before it — the card should be on screen while the worker answers, and a
+  // preview that waited on a second round trip would open visibly slower than
+  // the one that shipped yesterday.
+  void (async () => {
+    const section = await backlinkSection(cardId);
+    // He can close a preview faster than the worker replies. `root.isConnected`
+    // is the honest test for that, and it costs nothing.
+    if (section !== null && root.isConnected) body.appendChild(section);
+  })();
 }
 
 /**

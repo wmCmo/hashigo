@@ -45,6 +45,7 @@ import {
   sqliteVersion,
   type BrowserDb,
 } from "../src/db/browser.js";
+import { backlinksOf } from "../src/cards/index.js";
 import { cardAudioResolver } from "../src/cards/index.js";
 import { directionForTrackKind } from "../src/cards/index.js";
 import { ACCENT_FIELD_TYPE, READING_FIELD, prepareCard } from "../src/review/index.js";
@@ -79,6 +80,7 @@ import type {
   DecksRequest,
   UngradeRequest,
   PreviewRequest,
+  BacklinksRequest,
   SetFieldRequest,
   TemplateChoice,
   TemplateDetail,
@@ -1470,6 +1472,23 @@ function preview(request: PreviewRequest): void {
   });
 }
 
+/**
+ * WHAT LINKS HERE — Zach, 2026-09-14.
+ *
+ * The rule, the SQL and the measurements are in `src/cards/backlinks.ts`, not
+ * here. This file holds no SQL of its own anywhere else and should not start now:
+ * a query in the worker is a query `test/` cannot reach, and every reason this
+ * one is shaped the way it is (the `DISTINCT`, the self-link, the inner join)
+ * is a claim about his corpus that wants measuring rather than asserting.
+ */
+function backlinks(request: BacklinksRequest): void {
+  post({
+    kind: "backlinks",
+    id: request.id,
+    cards: backlinksOf(requireCards(), request.cardId),
+  });
+}
+
 /** Decision 17's archive. Read-only; the page turns it into a file. */
 /**
  * Stage 11, the worker half. Two verbs, and neither knows about the network.
@@ -2142,6 +2161,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "preview":
           preview(request);
+          break;
+        case "backlinks":
+          backlinks(request);
           break;
         case "setField":
           setField(request);

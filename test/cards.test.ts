@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  backlinksOf,
   cardAudioResolver,
   cardContext,
   cardInputFor,
@@ -562,5 +563,167 @@ describe("the card input seam", () => {
     expect(resolveCard(input, loaded.template, { pendingGenerators: true }).sides.length).toBe(3);
     expect(orderSides([], "forward", null)).toEqual([]);
     db.close();
+  });
+});
+
+// ─── what links here (Zach, 2026-09-14) ──────────────────────────────────────
+
+/**
+ * `card_links`, read backwards. `src/cards/backlinks.ts` carries the reasoning;
+ * these are the claims it makes about his corpus, checked rather than asserted.
+ *
+ * Half one is a fixture, because the three exclusions — a duplicate pair, a
+ * self-link, a source card that is gone — are each ONE row in 8,744 and a corpus
+ * test would pass on a query that handled none of them.
+ */
+function linkFixture(): Db {
+  const db = openDatabase(MEMORY);
+  db.prepare("INSERT INTO decks (id, name) VALUES ('root', '日本語')").run();
+  db.prepare("INSERT INTO decks (id, parent_id, name) VALUES ('kid', 'root', '単語')").run();
+  db.prepare("INSERT INTO templates (id, name, content) VALUES ('t', '単語', '<<W>>')").run();
+  const card = db.prepare(
+    "INSERT INTO cards (id, deck_id, template_id, name, archived) VALUES (?, 'kid', 't', ?, ?)",
+  );
+  card.run("target", "人", 0);
+  card.run("src-a", "一人前", 1);
+  card.run("src-b", "けが人", 0);
+  card.run("src-c", "主人", 0);
+  const link = db.prepare(
+    "INSERT INTO card_links (from_card_id, to_card_id, display_text, field_id, ordinal) VALUES (?, ?, ?, ?, ?)",
+  );
+  link.run("src-a", "target", "人", "f1", 0);
+  // The SAME pair twice, in two different fields. 876 pairs in the corpus do this.
+  link.run("src-b", "target", "人", "f1", 0);
+  link.run("src-b", "target", "人", "f2", 0);
+  link.run("src-c", "target", "人", null, 0);
+  // A card linking to itself. Exactly one in the corpus.
+  link.run("target", "target", "人", null, 0);
+  return db;
+}
+
+describe("what links here", () => {
+  it("returns one row per SOURCE CARD, however many links that card holds", () => {
+    // 876 (source, target) pairs occur twice in the corpus — a compound naming
+    // the same component in two fields. 人 is 45 link rows and 37 cards.
+    const db = linkFixture();
+    const rows = backlinksOf(db, "target");
+    expect(rows.map((row) => row.cardId)).toEqual(["src-b", "src-a", "src-c"]);
+    db.close();
+  });
+
+  it("drops a self-link, and CANNOT be handed a dangling source", () => {
+    // Two different facts, and only the first is this query's doing. Exactly one
+    // card in the corpus links to itself, and "this card links here" says
+    // nothing — so the WHERE clause excludes it.
+    const db = linkFixture();
+    expect(backlinksOf(db, "target").map((row) => row.cardId)).not.toContain("target");
+    // The second is the SCHEMA's doing, and it is asymmetric. `to_card_id` has no
+    // foreign key on purpose (8 targets in the corpus point at decks that were
+    // never exported), but `from_card_id` is `REFERENCES cards ON DELETE CASCADE`
+    // — so a backlink from a card that does not exist is not a case to handle,
+    // it is a row SQLite refuses. Pinned here because the first draft of this
+    // file claimed the opposite and wrote a join to defend against it.
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO card_links (from_card_id, to_card_id, display_text, ordinal) VALUES ('ghost', 'target', '人', 9)",
+        )
+        .run(),
+    ).toThrow(/FOREIGN KEY/);
+    db.close();
+  });
+
+  it("SHOWS an archived source and marks it, rather than hiding it", () => {
+    // The rule search already follows: a card he archived is still a card he
+    // wrote, and 264 backlink sources in the corpus are archived.
+    const db = linkFixture();
+    const rows = backlinksOf(db, "target");
+    expect(rows.find((row) => row.cardId === "src-a")?.archived).toBe(true);
+    expect(rows.find((row) => row.cardId === "src-c")?.archived).toBe(false);
+    db.close();
+  });
+
+  it("carries the SOURCE card's name and deck path, not the link's display text", () => {
+    // 94% of links display the TARGET's name, so `display_text` here would print
+    // the card he is already looking at. The deck path is how he tells 蟻-as-単語
+    // from 蟻-as-言葉 apart.
+    const db = linkFixture();
+    const row = backlinksOf(db, "target").find((r) => r.cardId === "src-c");
+    expect(row?.name).toBe("主人");
+    expect(row?.deckPath).toBe("日本語/単語");
+    db.close();
+  });
+
+  it("answers a card nothing points at with an empty list, not a null", () => {
+    // 4,823 of 7,716 cards (62.5%) are in this case, so it is the common answer
+    // rather than an edge — and the screen shows NOTHING for it.
+    const db = linkFixture();
+    expect(backlinksOf(db, "src-a")).toEqual([]);
+    expect(backlinksOf(db, "no-such-card")).toEqual([]);
+    db.close();
+  });
+});
+
+describe.skipIf(!haveCorpus)("what links here, over the real collection", () => {
+  it("agrees with card_links row by row, and dedupes exactly where it should", () => {
+    const db = openDatabase(DB, { readOnly: true });
+    try {
+      // EVERY target, not a sample: the claim is about the query, and the cheap
+      // way to be wrong is on the rows a sample misses.
+      const targets = db
+        .prepare(
+          `SELECT l.to_card_id AS id, count(*) AS rows,
+                  count(DISTINCT l.from_card_id) AS sources
+             FROM card_links l JOIN cards c ON c.id = l.to_card_id
+            GROUP BY l.to_card_id`,
+        )
+        .all() as readonly { id: string; rows: number; sources: number }[];
+      expect(targets.length).toBeGreaterThan(2_800);
+
+      let deduped = 0;
+      let archived = 0;
+      let widest = { id: "", n: 0 };
+      for (const target of targets) {
+        const rows = backlinksOf(db, target.id);
+        // Distinct ids, always — that is what `DISTINCT` is for.
+        expect(new Set(rows.map((row) => row.cardId)).size).toBe(rows.length);
+        // Never more sources than link rows, and never a source counted twice.
+        expect(rows.length).toBeLessThanOrEqual(target.sources);
+        if (rows.length < target.rows) deduped += 1;
+        if (rows.length > widest.n) widest = { id: target.id, n: rows.length };
+        archived += rows.filter((row) => row.archived).length;
+        for (const row of rows) {
+          expect(row.cardId).not.toBe(target.id);
+          expect(row.deckPath).not.toBe("");
+        }
+      }
+      // The corpus figures quoted in `src/cards/backlinks.ts`. They move on the
+      // next import, and when they do this is the line that says so.
+      expect(deduped).toBeGreaterThan(0);
+      expect(archived).toBe(264);
+      expect(widest.n).toBe(37);
+    } finally {
+      db.close();
+    }
+  }, 120_000);
+
+  it("is fast enough to ask on the heaviest card in the corpus", () => {
+    // It is asked once per revealed card and once per preview, on a phone, from
+    // the worker that also owns the review session. 人 is the worst case.
+    const db = openDatabase(DB, { readOnly: true });
+    try {
+      const worst = db
+        .prepare(
+          `SELECT to_card_id AS id FROM card_links
+            GROUP BY to_card_id ORDER BY count(*) DESC LIMIT 1`,
+        )
+        .get() as { id: string };
+      const started = performance.now();
+      for (let i = 0; i < 100; i += 1) backlinksOf(db, worst.id);
+      const each = (performance.now() - started) / 100;
+      expect(each).toBeLessThan(20);
+    } finally {
+      db.close();
+    }
   });
 });
