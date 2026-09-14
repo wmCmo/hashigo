@@ -916,17 +916,16 @@ function paintReplay(state: "none" | "ready" | "missing"): void {
 }
 
 /**
- * The look-ahead banner, and the reason grading is locked while it is up.
+ * The look-ahead banner, and which half of it is gradable.
  *
- * `answer()` grades **the session's current item**, not whatever is on screen. So a
- * grade pressed while looking ahead would write a review, move a due date and burn
- * a card — against a DIFFERENT card from the one he is reading. That is silent
- * corruption of the study history, from one keystroke, and it is the whole reason
- * this state is visible rather than subtle: the buttons go dead, they say why, and
- * one press of the other arrow comes back.
+ * AHEAD grades normally. `answerAt` swaps the card he is reading into the cursor
+ * first, so the screen and `plan[cursor]` cannot disagree — that is what makes a
+ * live grade safe here, and the hazard it closes is the one the inline note below
+ * records. BEHIND does not grade: those cards are answered, and a second review
+ * row for one event is not a correction.
  *
- * Reveal stays live. Looking at the answer of a card he has not been asked yet is
- * exactly what he asked for, and it writes nothing.
+ * Reveal stays live in both directions. Looking at the answer of a card he has not
+ * been asked yet is exactly what he asked for, and it writes nothing.
  */
 function paintPeek(): void {
   const peeking = peekOffset !== 0;
