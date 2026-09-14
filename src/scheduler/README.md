@@ -43,8 +43,18 @@ without a fixture, a database or a clock — and the unit question that is easy 
 get wrong (see below) is visible in a signature rather than buried in SQL.
 `tracks.ts` and `queue.ts` are typed against `SqliteHandle`, not better-sqlite3's
 `Database`, because the review screen runs in the browser over OPFS. That is a
-type-level guarantee only — every test here runs on better-sqlite3, and no
-function in this directory has yet executed against sqlite-wasm.
+type-level guarantee only — **every test here runs on better-sqlite3, and nothing
+in this directory is exercised against sqlite-wasm by any test.**
+
+That sentence used to end "and no function in this directory has yet executed
+against sqlite-wasm", which stopped being true once `app/` shipped: he grades on
+his phone, `src/session` calls `gradeTrack`, and those reviews are in OPFS and
+nowhere else. So the SQL here DOES run under sqlite-wasm — in production, on the
+only copy of his recent history, with no test standing behind it.
+`test/browser-portable.test.ts` pins that these modules carry no `node:` import,
+which is necessary and not sufficient: it says the module can LOAD in a worker,
+not that its SQL behaves the same there. This is the widest remaining gap in the
+scheduler's coverage and it is stated here rather than implied.
 
 ## Five things worth knowing before changing anything here
 
