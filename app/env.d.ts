@@ -8,19 +8,15 @@
  * `vite/client` already declares `*?raw` as `string`, so there is deliberately no
  * second declaration here: adding one would shadow it and then drift from it.
  *
- * `__SCHEMA_VERSION_FROM_NODE__` is injected by `vite.app.config.ts` and consumed by
- * `src/db/browser.ts`.
- *
- * **The reason given here was stale and is corrected.** It used to say
- * `src/schema/index.ts` "reads `node:fs` at module load and therefore cannot be
- * imported in a browser". That WAS true and has not been since the DDL text moved to
- * `src/schema/sources.ts`; that file now opens with "THIS FILE HAS NO NODE IMPORTS,
- * AND MUST NOT ACQUIRE ANY" and `test/schema.test.ts` pins the absence.
- *
- * The injection still works and is left alone. What it no longer has is a reason —
- * importing `SCHEMA_VERSION` directly would now be browser-safe, so this is a
- * candidate for deletion rather than a constraint to design around.
+ * `__SCHEMA_VERSION_FROM_NODE__` IS GONE FROM THIS SLICE, and the note that used to
+ * stand here had already worked out why without finishing the job. It existed because
+ * `src/schema/index.ts` read the DDL off disk with `node:fs` at module scope and so
+ * could not be imported in a browser; the text moved to `src/schema/sources.ts` and
+ * that stopped being true. `src/db/browser.ts` imports the real `SCHEMA_VERSION`
+ * directly — the old note claimed the injected value was "consumed by
+ * `src/db/browser.ts`", which was not so — and nothing in `app/` ever read the global,
+ * so the declaration here and the `define` in `vite.app.config.ts` were a name with no
+ * reader. `spike/` still uses it through `vite.config.ts`; that one is untouched.
  */
-declare const __SCHEMA_VERSION_FROM_NODE__: number;
 
 export {};

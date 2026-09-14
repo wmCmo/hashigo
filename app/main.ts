@@ -2323,8 +2323,8 @@ document.addEventListener("keydown", (event) => {
  *
  * It moves `peekOffset` and re-renders the review view. It does NOT move the
  * session cursor, open a layer, or write anything — see `showCardAt` for why the
- * first version's preview layer was wrong twice over, and `paintPeek` for why
- * grading is locked while the offset is not zero.
+ * first version's preview layer was wrong twice over, and `paintPeek` for which
+ * half of a non-zero offset can still be graded (ahead yes, behind no).
  *
  * Repeatable in both directions, which is the half he reported: nothing here
  * swallows the keyboard, so the twentieth press works like the first.

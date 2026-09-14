@@ -99,22 +99,6 @@ const ASSETS: ReadonlyMap<string, string> = new Map([
   ["/hashigo-app.json", resolve(ASSET_DIR, "hashigo-app.json")],
 ]);
 
-/** `SCHEMA_VERSION` as `src/schema/index.ts` declares it. Parsed, not imported —
- *  that module reads `node:fs` at load time, so a browser cannot have it, and
- *  `src/db/browser.ts` therefore carries its own copy of the number. Injecting
- *  the real one turns a silent divergence into a failing page. */
-function schemaVersionFromNode(): number {
-  const source = readFileSync(resolve(root, "src/schema/index.ts"), "utf8");
-  const match = /export const SCHEMA_VERSION = (\d+)/.exec(source);
-  if (match?.[1] === undefined) {
-    throw new Error(
-      "vite.app.config.ts could not find `export const SCHEMA_VERSION = <n>` in " +
-        "src/schema/index.ts. Fix the parse rather than guessing the version.",
-    );
-  }
-  return Number(match[1]);
-}
-
 /**
  * Serve the two bootstrap databases straight off disk, in dev and in preview.
  *
@@ -405,9 +389,11 @@ export default defineConfig({
    */
   publicDir: "public",
   plugins: [serveAppDatabases(), syncMailbox(), generateOnDemand(), serviceWorkerPrecache()],
-  define: {
-    __SCHEMA_VERSION_FROM_NODE__: JSON.stringify(schemaVersionFromNode()),
-  },
+  // NO `define` HERE ANY MORE. It injected `__SCHEMA_VERSION_FROM_NODE__`, parsed out
+  // of `src/schema/index.ts` with a regex, for a reader that does not exist: nothing
+  // in `app/` ever named the global, and `src/db/browser.ts` imports the real
+  // `SCHEMA_VERSION` rather than a copy. `vite.config.ts` keeps it — `spike/` does
+  // read it, and compares all three versions on the page.
   optimizeDeps: {
     // `@sqlite.org/sqlite-wasm` locates its wasm with
     // `new URL("sqlite3.wasm", import.meta.url)`, and esbuild pre-bundling
