@@ -793,6 +793,7 @@ async function showCardAt(): Promise<void> {
     if (prompt.has(side.position)) side.element.classList.add("drill");
   }
   scaleSides(card);
+  markAccentLabel(card);
   mountClipButtons(card);
 
   cardHost.appendChild(card.result.root);
@@ -1569,6 +1570,72 @@ async function requestGeneration(
     say(`could not reach the laptop to generate: ${(cause as Error).message}`, true);
     button.disabled = false;
     button.textContent = was;
+  }
+}
+
+/**
+ * `型` IS A LABEL, AND IT HAD STOPPED LOOKING LIKE ONE.
+ *
+ * Zach, 2026-09-14, over a 疑念 card: *"it looks like 平板 itself now became the
+ * vocab, dont you think it looks confusing?"* He is right, and measured on the
+ * review screen it was worse than a matter of taste — the head word was the DIM
+ * one:
+ *
+ *     ruby.hashigo-furigana   40px   --muted        the word
+ *     .hashigo-cloze-answer   40px   --ink-bright   the accent label
+ *
+ * Half of that is fixed in the stylesheet (`.hashigo-furigana` takes `inherit`
+ * now). This is the other half: with both at full ink, a two-character label at
+ * 40px beside a two-character word at 40px is still two words, and on a
+ * `Reading = false` card there are THREE such lines — `Reference`, the head word,
+ * and `型`. Nothing on the screen says which one is being learned.
+ *
+ * ─── WHY THIS MATCHES TEXT INSTEAD OF READING PROVENANCE ────────────────────
+ *
+ * There is none to read. `src/template/resolve.ts` substitutes a plain field to
+ * TEXT before the parse — its own header says so, and so does CLAUDE.md: *"a
+ * resolved plain field is substituted to TEXT before the render and nothing
+ * downstream knows `平板` came from `型`."* Two proper fixes exist and both were
+ * weighed:
+ *
+ *   · wrap it in the template, the way `<ojad>` is (`<accent><< 型 >></accent>`
+ *     plus an `ELEMENTS` entry). This is the RIGHT one and decision 20's own
+ *     words ask for it — *"it should render conditionally from my template"*.
+ *     It is also a template migration that has to reach two devices by sync, for
+ *     a cosmetic fix, while he is out of the house on the phone it would fix.
+ *   · wrap it in the resolver, keyed on the `accent` FIELD TYPE. Rejected on
+ *     inspection: `value()` is the ONE place every interpolation path shares,
+ *     *"the body, a cloze, and a generator's prompt input"* — so markup there
+ *     would land inside a generation prompt and break decision 7.
+ *
+ * So this matches the card's own stored value, by field TYPE rather than by the
+ * id `local-accent`, against the innermost element whose whole text is that
+ * value. The failure mode is benign and that is what makes it acceptable: a miss
+ * leaves the label rendering exactly as it does today, never somewhere wrong.
+ * The four values are `平板` / `頭高` / `中高(n)` / `尾高`, so an element whose
+ * entire text is one of them and is not the accent label is not a case this
+ * corpus has.
+ *
+ * **Decision 27 is why this shrinks the label rather than hiding it.** `型` is
+ * the SOLE carrier of 平板-vs-尾高 on 2,148 of 3,830 labelled cards — the
+ * distinction is inaudible in an isolated word and undrawable without a
+ * particle. It is not a caption a layout may drop. A label treatment makes it
+ * read as the annotation it is; it stays legible at a floor of 15px.
+ */
+function markAccentLabel(card: MountedCard<HTMLElement>): void {
+  const field = card.loaded.template?.fields.find((f) => f.type === "accent");
+  if (field === undefined) return;
+  const value = (card.loaded.values.get(field.id) ?? "").trim();
+  if (value === "") return;
+  for (const side of card.result.sides) {
+    for (const element of side.element.querySelectorAll<HTMLElement>("*")) {
+      if ((element.textContent ?? "").trim() !== value) continue;
+      // INNERMOST ONLY. A cloze answer and the paragraph holding it both match,
+      // and styling the paragraph would shrink whatever else shares the line.
+      if (element.querySelector("*") !== null) continue;
+      element.classList.add("accent-label");
+      element.setAttribute("title", `${field.name} — the accent pattern`);
+    }
   }
 }
 

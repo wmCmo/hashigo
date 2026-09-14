@@ -676,6 +676,46 @@ body {
   line-height: 1.45;
 }
 
+/* ── `型` reads as a LABEL, not as a second head word ────────────────────────
+ *
+ * Zach, 2026-09-14: *"it looks like 平板 itself now became the vocab, dont you
+ * think it looks confusing?"* On a `Reading = false` card side 2 carries THREE
+ * lines at the display size — `Reference`, the head word, and `型` — and nothing
+ * said which one is the word being learned.
+ *
+ * `main.ts`'s `markAccentLabel` puts this class on, matching the card's own
+ * `accent`-typed field value; its comment carries why that is a text match and
+ * what the two structurally-proper alternatives cost.
+ *
+ * SMALLER, WIDER, QUIETER — a caption, and it must stay a legible one. Decision
+ * 27: `型` is the SOLE carrier of 平板-vs-尾高 on 2,148 cards, inaudible in an
+ * isolated word and undrawable without a particle. So the size has a FLOOR in
+ * px rather than being a pure `em` ratio: at 0.42em of a 26px side this would be
+ * 11px on his phone, which is where a load-bearing fact becomes a decoration.
+ * `--ink` rather than `--muted` for the same reason — it steps down from the head
+ * word without joining the captions. Measured on `--card`: **13.72:1 light,
+ * 12.64:1 dark**, against `--ink-bright`'s 15.12 and `--muted`'s 6.03. So the
+ * step away from the head word is real and the label is nowhere near the
+ * caption band, which is the whole point of not using `--muted` here.
+ *
+ * The tracking is what makes two kanji read as a term rather than as a word:
+ * 平板 set loose is a label, 平板 set tight is vocabulary. */
+/* SCOPED to a side, and that is not decoration: `.hashigo-cloze-answer` sets
+   `--ink-bright` and sits LATER in this file, so at equal specificity it won and
+   the label came out at full brightness. Measured before noticing — the size was
+   right and the colour was not. One extra class is the smallest fix that does not
+   depend on where in the file this rule happens to live. */
+.hashigo-side .accent-label {
+  color: var(--ink);
+  display: inline-block;
+  font-family: var(--jp), sans-serif;
+  font-size: max(15px, 0.42em);
+  letter-spacing: 0.18em;
+  /* Optical: the tracking adds a trailing space that pushes it off its left
+     edge relative to the word above. */
+  margin-right: -0.18em;
+}
+
 /* Furigana. Was the accent yellow; it is the READING, which is secondary
    information on a card whose head word is the point — so it takes the primary
    colour rather than an accent of its own. The ratio follows the size it sits
@@ -1033,8 +1073,33 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   cursor: not-allowed;
 }
 
+/* Generator output is SUPPORTING material — the example sentence, the English
+   translation, the emoji line. Grey is right for all of those. */
 .hashigo-generator {
   color: var(--muted);
+}
+
+/* EXCEPT FURIGANA, WHICH IS NOT SUPPORTING MATERIAL — IT IS THE HEAD WORD.
+ *
+ * Zach, 2026-09-14, over a 疑念 card: *"it looks like 平板 itself now became the
+ * vocab, dont you think it looks confusing?"* He read the accent label as the
+ * word, and measured on the review screen at real size the reason is not subtle:
+ *
+ *     ruby.hashigo-furigana   40px   rgb(164,158,148)   --muted
+ *     .hashigo-cloze-answer   40px   rgb(251,248,242)   --ink-bright
+ *
+ * Same size, and the WORD was the dim one. `{{<furigana><< 単語 >></furigana>}}`
+ * wraps the head word in a generator, so the rule above caught it — the specific
+ * selector beat `.hashigo-cloze-answer` on the ancestor — and every 単語 card in
+ * the corpus has been rendering its own head word in the caption grey since
+ * decision 37 wired furigana in.
+ *
+ * `inherit` rather than a token: inside a revealed cloze that is `--ink-bright`,
+ * on side 1 it is the side's own ink, and in a preview it is the layer's. The
+ * head word should be whatever the brightest text around it is, always. The
+ * READING keeps its own colour — `ruby rt` is indigo, two rules below. */
+.hashigo-furigana {
+  color: inherit;
 }
 
 /* ── the pinned controls ── */
