@@ -1677,6 +1677,62 @@ right**: it holds his verbatim reasoning and this quotes it.
    `型` label. The F0-versus-prediction sweep over his 4,359 sentence clips
    remains the measurement that would put a number on it, and has not been run.
 
+44. **`---` IS HIS, AND THE QUESTION BOUNDARY FOLLOWS IT — THE WIDGET EXCEPTION
+    IS WITHDRAWN.** Zach, 2026-09-14, on a 漢字 card showing its `<draw>` canvas
+    before he had pressed anything: *"so it doesn't follow the `---`??? because i
+    added that explicitly, i have my reasons."*
+
+    ─── WHAT THE RULE USED TO BE ─────────────────────────────────────────────
+
+    `promptPositions` took the question to be **"the first non-empty side, plus a
+    following side that carries a widget AND NOTHING ELSE"**. That reached 漢字 and
+    only 漢字 — `<<Kanji>>` / `<draw>` / `<<Reading>>` / `<<Meaning>>` — and the
+    stated reason was that the canvas *"has to be on screen while he draws the
+    kanji from memory"*.
+
+    **That reason was never his.** It arrived in the stage-9 shell commit
+    (`16afee6`, 2026-08-23), among the three findings that commit message records,
+    and it is in none of them. It was recorded in no decision, and it rested on an
+    agent's guess about what the exercise needs — the exact shape this index's own
+    warning was written about.
+
+    ─── WHY HE IS RIGHT, IN THE REPO'S OWN TERMS ─────────────────────────────
+
+    `---` is a side break he authored in `templates.content`, a column he edits
+    whenever he wants. A rule that decides an authored side is really part of the
+    previous one is **overruling the template from code**, which is the same class
+    of mistake as gating `型` in the resolver instead of in the body (decision 20)
+    — and CLAUDE.md's READ THE TEMPLATE section exists because agents have got
+    that wrong four times.
+
+    It also makes the fix his and cheap: if the canvas belongs beside the kanji,
+    that is **one deleted `---`**, and he does not need an agent to make it.
+
+    ─── THE COST, MEASURED ───────────────────────────────────────────────────
+
+    The canvas becomes step 1 of the walk on **1,662** 漢字 cards, so a kanji card
+    is three presses instead of two (canvas · 読み · 意味), and decision 42 means
+    `remembered` waits for the last of them.
+
+    **The extra press reveals no answer.** 漢字 declares no cloze and carries no
+    audio, so the step puts a blank canvas on screen and nothing else — the one
+    kind of step that cannot leak. Nothing about the drawing breaks either:
+    `src/render/draw.ts` was already written against the one-pixel canvas a hidden
+    mount produces, with `ResizeObserver` as the primary repair and `remeasure()`
+    on stroke start as the second net.
+
+    **One hint had to move with it.** `main.ts` picked *"answer on the card, then
+    reveal"* by asking whether a widget was on a PROMPT side. Keyed that way the
+    line vanishes from 漢字 the moment the canvas moves behind a press — on the
+    1,662 cards whose whole exercise is to answer on the card. It now asks whether
+    the CARD has a surface at all, which is 数字's `<input>` and 漢字's `<draw>`.
+
+    **What did NOT change is the reason the rule is positional.** Reverse tracks
+    permute side order, and "every side up to the first that hides or sounds
+    something" printed the answer above the question on the first card of the first
+    real session. The boundary is still the first VISIBLE side, still measured in
+    display positions, and `test/app-logic.test.ts` still pins that regression.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

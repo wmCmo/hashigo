@@ -33,15 +33,16 @@
  * as many words ("sides are presented in sequence: revealing side 3's cloze while
  * side 2 is on screen leaks the answer to side 2"). Two phases, two taps:
  *
- *     PROMPT     the first non-empty side, plus any widget-only side after it
+ *     PROMPT     the first non-empty side
  *     REVEALED   every remaining side, and exactly ONE clip
  *
- * ─── THE BOUNDARY RULE, AND THE ONE THAT WAS WRONG ──────────────────────────
+ * ─── THE BOUNDARY RULE, AND THE TWO THAT WERE WRONG ─────────────────────────
  *
- * **The prompt is the FIRST non-empty side.** That is it, plus one exception:
- * a following side whose only content is a WIDGET comes with it, because 漢字 is
- * `<<Kanji>>` / `<draw>` / `<<Reading>>` / `<<Meaning>>` and the canvas has to be
- * on screen while he is drawing from memory.
+ * **The prompt is the FIRST non-empty side.** That is the whole rule. It carried a
+ * widget exception until 2026-09-14 — 漢字's `<draw>` side came up with the kanji —
+ * and that exception was an agent's, never his: he had authored a `---` there on
+ * purpose. `./review-boundary.ts` has the quote and the reasoning; the short version
+ * is that a `---` is a side break he wrote, and code does not get to overrule it.
  *
  * A first version instead took "every side up to the first one that hides or
  * sounds something", and **running the app killed it in one card.** The first card
@@ -586,12 +587,9 @@ function visibleSides(result: RenderResult<HTMLElement>): number[] {
   return visiblePositions(boundarySides(result));
 }
 
-/** The question: the first non-empty side, plus a following widget-only side. */
+/** The question: the first non-empty side. The template's `---` ends it. */
 function promptPositions(card: MountedCard<HTMLElement>): number[] {
-  return promptBoundary(
-    boundarySides(card.result),
-    card.result.widgets.map((widget) => widget.side),
-  );
+  return promptBoundary(boundarySides(card.result));
 }
 
 function boundarySides(result: RenderResult<HTMLElement>): BoundarySide[] {
@@ -862,9 +860,13 @@ async function showCardAt(): Promise<void> {
   // The question sounded, so THAT is what "play it again" means until a step
   // sounds something else.
   if (prompted !== undefined) drill = prompted.side;
-  const typing = card.result.widgets.some((widget) => prompt.has(
-    card.result.sides.find((side) => side.index === widget.side)?.position ?? -1,
-  ));
+  // "Answer ON THE CARD" — the two templates that give him somewhere to answer are
+  // 数字 (`<input>`, on the prompt side) and 漢字 (`<draw>`, one press away since the
+  // boundary stopped overruling his `---`). This asks whether the CARD has a surface,
+  // not whether it is on screen yet: keying it on the prompt made the hint vanish
+  // from 漢字 the moment the canvas moved behind a press, on 1,662 cards whose whole
+  // exercise is to draw the answer.
+  const typing = card.result.widgets.length > 0;
   hintLine.textContent = asked
     ? "listen, name the word, then reveal"
     : card.mode.mode === "identify"

@@ -8,14 +8,33 @@
  * the sentence *"time constraints make it impossible to do everything"* into the
  * question, printing the answer above it.
  *
- * The rule that replaced it is deliberately dumb: **the first non-empty side, plus a
- * following side that carries a widget AND NOTHING ELSE.** It is positional because
- * reverse tracks permute the order, so anything cleverer is reasoning about a layout
- * that the permutation has already moved.
+ * The rule that replaced it is deliberately dumb: **the first non-empty side, and
+ * nothing else.** It is positional because reverse tracks permute the order, so
+ * anything cleverer is reasoning about a layout that the permutation has already
+ * moved.
  *
- * The widget exception is 漢字, and only 漢字 today: `<draw>` sits on its own side and
- * has to be on screen while he draws the kanji from memory. A side that carries a
- * widget *and* text is an answer side — that is what "and nothing else" is for.
+ * ─── IT CARRIED AN EXCEPTION UNTIL 2026-09-14, AND THE EXCEPTION WAS MINE ───
+ *
+ * The rule used to extend over "a following side that carries a widget AND NOTHING
+ * ELSE" — which was 漢字 and only 漢字, so that `<draw>` was on screen while he drew
+ * the kanji from memory. That reasoning sounds right and was never his. It arrived
+ * in the stage-9 shell commit (`16afee6`), was recorded in no decision, and rested
+ * on an agent's guess about what the canvas needs.
+ *
+ * **Zach, 2026-09-14, on seeing side 2 up before he had pressed anything:** *"so it
+ * doesn't follow the `---`??? because i added that explicitly, i have my reasons."*
+ *
+ * He is right, and the principle is the one this repo already states four times over:
+ * READ THE TEMPLATE. `---` is a side break he authored. A rule that decides a side is
+ * really part of the previous one is overruling the template from code — the same
+ * class of mistake as gating `型` in the resolver instead of in the body (decision 20),
+ * and this file is not where that gets decided. If the canvas should share a side with
+ * the kanji, that is one deleted `---` in `templates.content` and it is his to delete.
+ *
+ * The canvas costs one press now, and costs nothing else: it is a widget-only side, so
+ * the step that shows it reveals no answer. `src/render/draw.ts` already survives being
+ * mounted hidden — `ResizeObserver` is the primary repair and `remeasure()` on stroke
+ * start is the second net, both written for the one-pixel canvas this produces.
  *
  * WHY THIS FILE EXISTS, RATHER THAN THE SAME CODE INSIDE `main.ts`. It lived there,
  * in a 1,987-line module with no tests, and `test/` cannot reach `app/main.ts`: the
@@ -62,37 +81,19 @@ export function visiblePositions(sides: readonly BoundarySide[]): number[] {
 }
 
 /**
- * The question. `widgetSideIndexes` are AUTHORED side indexes (`index`, not
- * `position`) because that is how the renderer reports a widget's home.
+ * The question: the first visible side, and the template's own `---` ends it.
  *
- * Returns display positions, in order, always starting with the first visible side.
+ * Returns display positions — a list of one, or an empty list for a card that
+ * renders nothing at all. It stays a list because every caller treats the prompt as
+ * a SET of positions, and because the shape is what would change if a template ever
+ * earned a two-side question; the rule for that would have to come from him.
+ *
  * An empty card yields an empty question rather than throwing — a card that renders
  * nothing is a data problem for the caller to report, not a crash here.
  */
-export function promptPositions(
-  sides: readonly BoundarySide[],
-  widgetSideIndexes: readonly number[],
-): number[] {
-  const shown = visiblePositions(sides);
-  const first = shown[0];
-  if (first === undefined) return [];
-
-  const prompt = [first];
-  // `-1` for a widget whose side is missing, so it can never match a real position.
-  // Preserved from the original deliberately: a widget pointing at a side that did
-  // not render must not silently extend the question.
-  const widgetPositions = new Set(
-    widgetSideIndexes.map((index) => sides.find((side) => side.index === index)?.position ?? -1),
-  );
-
-  for (const position of shown.slice(1)) {
-    if (!widgetPositions.has(position)) break;
-    const side = sides.find((entry) => entry.position === position);
-    // Widget AND nothing else. A side that also carries text is an answer side.
-    if (side === undefined || side.text.trim() !== "") break;
-    prompt.push(position);
-  }
-  return prompt;
+export function promptPositions(sides: readonly BoundarySide[]): number[] {
+  const first = visiblePositions(sides)[0];
+  return first === undefined ? [] : [first];
 }
 
 // ── how big the text on a side should be ──────────────────────────────────────

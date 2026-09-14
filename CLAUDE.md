@@ -789,6 +789,31 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     follows the sentence — wrapping the field turned four tests red, because
     `例文` is an `ai` field and the wrapper displaced its speech mount.
     See `DECISIONS.md` 43.
+44. **`---` IS HIS, AND THE QUESTION BOUNDARY FOLLOWS IT.** Zach, 2026-09-14, on a
+    漢字 card whose `<draw>` canvas was up before he pressed anything: *"so it
+    doesn't follow the `---`??? because i added that explicitly, i have my
+    reasons."* The boundary used to be "the first non-empty side, **plus a following
+    side that carries a widget AND NOTHING ELSE**" — which reached 漢字 and only
+    漢字, on the stated ground that the canvas must be on screen while he draws from
+    memory. **That ground was an agent's**: it arrived in the stage-9 shell commit
+    (`16afee6`), was recorded in no decision, and is in none of the three findings
+    that commit reports. `---` is a side break HE AUTHORED in `templates.content`,
+    so a rule that folds an authored side into the previous one is overruling the
+    template from code — the mistake READ THE TEMPLATE exists to stop, and the same
+    shape as gating `型` in the resolver rather than in the body (decision 20). It
+    also makes the alternative his and cheap: if the canvas belongs beside the
+    kanji, that is **one deleted `---`**. **The cost is one press on 1,662 cards**
+    (canvas · 読み · 意味), and **that press reveals no answer** — 漢字 has no cloze
+    and no audio, so the step shows a blank canvas and nothing else. Drawing is
+    unaffected: `src/render/draw.ts` was already written against the one-pixel
+    canvas a hidden mount produces (`ResizeObserver`, plus `remeasure()` on stroke
+    start). **One hint moved with it** — *"answer on the card"* asked whether a
+    widget sat on a PROMPT side, which would have deleted the line from 漢字 the
+    moment the canvas moved; it now asks whether the CARD has a surface (数字's
+    `<input>`, 漢字's `<draw>`). **Unchanged: why the rule is positional at all** —
+    reverse tracks permute side order, and the first version printed the answer
+    above the question on the first card of the first real session.
+    See `DECISIONS.md` 44.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

@@ -76,7 +76,7 @@ describe("the question boundary — which sides are the prompt", () => {
       side(2, 2, { text: "example sentence" }),
       side(3, 3, { text: "charity" }),
     ];
-    expect(promptPositions(sides, [])).toEqual([0]);
+    expect(promptPositions(sides)).toEqual([0]);
   });
 
   it("SKIPS an empty leading side, which is how a `Reading = false` 単語 starts at side 2", () => {
@@ -88,37 +88,36 @@ describe("the question boundary — which sides are the prompt", () => {
       side(2, 2, { text: "example sentence" }),
     ];
     expect(visiblePositions(sides)).toEqual([1, 2]);
-    expect(promptPositions(sides, [])).toEqual([1]);
+    expect(promptPositions(sides)).toEqual([1]);
   });
 
-  it("extends over a widget-ONLY side, which is 漢字's draw canvas", () => {
-    // `<draw>` has its own side and must be on screen while he draws from memory, so
-    // the question is side 1 AND side 2 here — the one case the rule is not just
-    // "the first side".
+  it("STOPS AT 漢字's `---`, even though the next side is only a canvas", () => {
+    // ─── THE EXCEPTION THIS REPLACED, AND WHY IT IS GONE ──────────────────────
+    //
+    // The rule used to extend over "a following side that carries a widget AND
+    // NOTHING ELSE", so that 漢字's `<draw>` came up beside the kanji. Zach saw it
+    // on 2026-09-14: *"so it doesn't follow the `---`??? because i added that
+    // explicitly, i have my reasons."*
+    //
+    // The exception was an agent's, introduced in `16afee6` and recorded in no
+    // decision. A `---` is a side break HE AUTHORED; code deciding a side is really
+    // part of the previous one is overruling the template, which is the mistake this
+    // repo names four times over. If the canvas belongs beside the kanji, the change
+    // is one deleted `---` in `templates.content`.
     const sides = [
       side(0, 0, { text: "慈" }),
-      side(1, 1, { text: "" }), // the canvas: a widget and no text
+      side(1, 1, { text: "" }), // the canvas, on its own authored side
       side(2, 2, { text: "じ" }),
     ];
-    expect(promptPositions(sides, [1])).toEqual([0, 1]);
+    expect(promptPositions(sides)).toEqual([0]);
   });
 
-  it("STOPS at a widget side that also carries text, because that is an answer side", () => {
-    const sides = [
-      side(0, 0, { text: "慈" }),
-      side(1, 1, { text: "じ — the answer, beside the widget" }),
-    ];
-    expect(promptPositions(sides, [1])).toEqual([0]);
-  });
-
-  it("does not extend past a NON-widget side even when the next one has a widget", () => {
-    // The run must be contiguous. A gap ends the question.
-    const sides = [
-      side(0, 0, { text: "a" }),
-      side(1, 1, { text: "b" }), // no widget: stop here
-      side(2, 2, { text: "" }), // widget, but unreachable
-    ];
-    expect(promptPositions(sides, [2])).toEqual([0]);
+  it("never extends over a later side, whatever is on it", () => {
+    // There is no shape of side 2 that joins the question any more. Empty, text,
+    // widget-and-text — the answer is the same one, which is the point.
+    for (const text of ["", "じ", "じ — the answer, beside the widget"]) {
+      expect(promptPositions([side(0, 0, { text: "慈" }), side(1, 1, { text })])).toEqual([0]);
+    }
   });
 
   it("IS POSITIONAL, NOT AUTHORED — the regression that printed the answer above the question", () => {
@@ -137,20 +136,14 @@ describe("the question boundary — which sides are the prompt", () => {
     ];
     // The question is the FIRST DISPLAYED side and stops there. Audio on a later side
     // is not a reason to include it — that is exactly the bug.
-    expect(promptPositions(sides, [])).toEqual([0]);
+    expect(promptPositions(sides)).toEqual([0]);
   });
 
   it("yields an empty question for a card that renders nothing, rather than throwing", () => {
-    expect(promptPositions([], [])).toEqual([]);
-    expect(promptPositions([side(0, 0, { empty: true })], [])).toEqual([]);
+    expect(promptPositions([])).toEqual([]);
+    expect(promptPositions([side(0, 0, { empty: true })])).toEqual([]);
   });
 
-  it("ignores a widget pointing at a side that did not render", () => {
-    // The `?? -1` in the implementation. A dangling widget must not extend the
-    // question over a side the reader cannot see.
-    const sides = [side(0, 0, { text: "a" }), side(1, 1, { text: "" })];
-    expect(promptPositions(sides, [99])).toEqual([0]);
-  });
 });
 
 // ── the deck tree ─────────────────────────────────────────────────────────────
@@ -329,6 +322,27 @@ describe("the reveal order", () => {
       { position: 1, cloze: 1, show: false },
       { position: 2, cloze: null, show: true },
       { position: 3, cloze: 0, show: true },
+    ]);
+  });
+
+  it("walks 漢字: the canvas, the reading, the meaning — three presses, since 2026-09-14", () => {
+    // `<<Kanji>>` / `<draw>` / `<<Reading>>` / `<<Meaning>>`, no clozes and no audio
+    // anywhere. The canvas used to come up WITH the kanji because the boundary rule
+    // carried a widget exception; his `---` says otherwise, so it is a step now.
+    //
+    // **The extra press reveals no answer.** It puts a blank canvas on screen, which
+    // is the one kind of step that cannot leak anything — so the cost of honouring
+    // the template here is one tap on 1,662 cards and nothing else.
+    const steps = revealSteps([
+      stepSide(0, 0, 0, true), // 漢字 — the question
+      stepSide(1, 0, 0), // the canvas
+      stepSide(2, 0, 0), // 読み
+      stepSide(3, 0, 0), // 意味
+    ]);
+    expect(steps).toEqual([
+      { position: 1, cloze: null, show: true },
+      { position: 2, cloze: null, show: true },
+      { position: 3, cloze: null, show: true },
     ]);
   });
 

@@ -264,11 +264,16 @@ answer word. The screen printed the answer above the question.
 > SPEC: "no scheduling toggle should ever destroy four years of history"). **That
 > changes what he is DRILLED on, so it is his call** (decision 31).
 
-So: **the question is the FIRST non-empty side**, plus a following side whose only
-content is a WIDGET (that is 漢字 and only 漢字: `<<Kanji>>` / `<draw>` /
-`<<Reading>>` / `<<Meaning>>`, and the canvas has to be on screen while he draws
-from memory). Whatever the template author put first is the question, in whichever
-order the direction asks for.
+So: **the question is the FIRST non-empty side.** Whatever the template author put
+first is the question, in whichever order the direction asks for.
+
+**It carried one exception until 2026-09-14 — a following side whose only content
+was a WIDGET, which was 漢字's `<draw>` and nothing else — and Zach withdrew it**:
+*"so it doesn't follow the `---`??? because i added that explicitly, i have my
+reasons."* The exception was introduced here in `16afee6` on an agent's reasoning
+about what the canvas needs, recorded in no decision; a `---` is a side break he
+authored, and code does not overrule the template. The canvas is step 1 of the walk
+now, which reveals nothing (漢字 has no cloze and no audio). Decision 44.
 
 ### 2. Exactly one clip per reveal, or 単語 plays two at once
 
