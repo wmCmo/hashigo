@@ -93,7 +93,10 @@ import { mountClimb } from "./climb.js";
 import { installOrigin, registerServiceWorker, watchForInstall } from "./install.js";
 import {
   initialStatus,
+  agoLabel,
   isStale,
+  lastPushedAt,
+  pushNow,
   sinceLabel,
   syncNow,
   type SyncStatus,
@@ -1675,6 +1678,8 @@ async function grade(remembered: boolean): Promise<void> {
           `${reply.openStatements} open / ${reply.cachedStatements} cached statements`,
         "good",
       );
+      // THE GRADE LEAVES THIS DEVICE ON ITS OWN NOW. See `schedulePush`.
+      schedulePush();
     }
     // HIS #13, and the action he named FIRST. A grade writes a `reviews` row and
     // advances the FSRS schedule, so until this existed it was the only thing in the
@@ -3291,7 +3296,15 @@ function paintSync(): void {
   syncDot.title = label;
   syncDot.setAttribute("aria-label", label);
   syncDotText.textContent = label;
-  syncDetail.textContent = label;
+  // THE DETAIL ROW SAYS BOTH CLOCKS, BECAUSE THEY ARE DIFFERENT FACTS and the
+  // difference is exactly what cost him a day. "synced" means this device pulled
+  // everyone and pushed; "sent" means only that its own grades are in the
+  // mailbox, which is the automatic half (`schedulePush`) and the half that
+  // protects work he cannot reconstruct. A device can be hours from its last
+  // full sync and still have every grade safely off it — that reads as a problem
+  // unless the row says so.
+  const sent = syncStatus.state === "syncing" ? null : agoLabel(lastPushedAt());
+  syncDetail.textContent = sent === null ? label : `${label} · grades sent ${sent}`;
 }
 
 const syncPorts = {
@@ -3350,6 +3363,90 @@ async function runSync(): Promise<void> {
     say(`sync failed — ${syncStatus.detail ?? ""}`, true);
   }
 }
+
+/**
+ * A GRADE LEAVES THIS DEVICE WITHOUT BEING ASKED TO — Zach, 2026-09-14.
+ *
+ * *"i already reviewed so many items on my phone today, but it's not reflected on
+ * any browser on my pc. we need to fix this. what happens with my ACID😭"*
+ *
+ * Nothing had gone wrong with the durability. Every grade was committed to the
+ * phone's OPFS and every merge rule in `src/sync/merge.ts` was correct — but
+ * `runSync` was reachable from TWO CLICK HANDLERS and nothing else, so a day of
+ * reviewing sat on one device with the newest mailbox payload **23 hours old**.
+ * A sync nobody presses is a sync that does not exist, and decision 33 shipped
+ * the transport without ever giving it a trigger.
+ *
+ * ─── PUSH, NOT SYNC, AND THAT IS THE WHOLE SAFETY ARGUMENT ──────────────────
+ *
+ * `pushNow` sends and merges nothing. A full `syncNow` pulls every peer first,
+ * and the merge is ~8 seconds in the worker that also owns the session — 8
+ * seconds of frozen review screen, and a merge that can change what is due
+ * under his thumb mid-card. Automating that would trade one silent failure for a
+ * louder one. Automating the PUSH protects exactly the thing he cannot
+ * reconstruct and touches nothing else, on this device or any other.
+ *
+ * ─── DEBOUNCED OFF HIS OWN GRADING, NEVER A TIMER ───────────────────────────
+ *
+ * SPEC problem #1 is battery — *"no polling, no sockets"* — so there is no
+ * interval here. The clock starts when he grades and is pushed forward by the
+ * next grade, so a steady session sends once every `PUSH_AFTER_MS` of thinking
+ * time and once more when he stops. A device nobody is reviewing on sends
+ * nothing at all.
+ *
+ * ─── AND IT FAILS QUIETLY, WHICH IS DELIBERATE ──────────────────────────────
+ *
+ * Off the tailnet the PUT cannot land, and that is his NORMAL state on a train.
+ * A red banner every 30 seconds would train him to ignore the one that matters.
+ * The dot carries it instead — that is what the indicator is for — and the next
+ * grade schedules another attempt, so a session that starts offline still sends
+ * everything the moment he is home.
+ */
+const PUSH_AFTER_MS = 30_000;
+let pushTimer: number | undefined;
+let pushing = false;
+
+function schedulePush(): void {
+  if (pushTimer !== undefined) clearTimeout(pushTimer);
+  pushTimer = window.setTimeout(() => void pushGrades(), PUSH_AFTER_MS);
+}
+
+async function pushGrades(): Promise<void> {
+  pushTimer = undefined;
+  // Never on top of a full sync: that one pushes too, and the second PUT would
+  // race the first with an older export.
+  if (pushing || syncStatus.state === "syncing") return;
+  pushing = true;
+  try {
+    await pushNow(syncPorts);
+    paintSync();
+  } catch {
+    // Quiet on purpose — see the header. `paintSync` still reads the pushed
+    // clock, so the indicator tells the truth without interrupting a card.
+    paintSync();
+  } finally {
+    pushing = false;
+  }
+}
+
+/**
+ * The last thing before he closes the tab, and the only place a timer is short.
+ *
+ * `visibilitychange` to hidden is the strongest "he has stopped" signal a page
+ * gets, and on Android it is what fires when he switches apps or locks the
+ * screen — the exact moment a debounce that has not elapsed would be lost.
+ *
+ * NOT `keepalive: true`, which is the usual answer here and does not apply: its
+ * body cap is 64 KB and his payload is **1.5 MB**. So this is a best-effort
+ * push from a page that is still alive, and the debounce above is what makes it
+ * rarely have anything left to do.
+ */
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "hidden") return;
+  if (pushTimer === undefined) return;
+  clearTimeout(pushTimer);
+  void pushGrades();
+});
 
 syncDot.addEventListener("click", () => void runSync());
 el("synclink").addEventListener("click", () => {

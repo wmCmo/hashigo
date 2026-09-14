@@ -229,16 +229,30 @@ export async function syncNow(ports: SyncPorts): Promise<SyncOutcome> {
 
 /** "3 minutes ago" — the only form the indicator needs. */
 export function sinceLabel(at: string | null, now: Date = new Date()): string {
-  if (at === null) return "never synced";
+  const ago = agoLabel(at, now);
+  return ago === null ? "never synced" : `synced ${ago}`;
+}
+
+/**
+ * The same clock without the verb — "just now", "3m ago", "1d ago".
+ *
+ * `sinceLabel` hard-coded the word "synced" into every branch, so the push row
+ * came out as *"grades sent synced just now"*. Two phrasings, ONE arithmetic:
+ * a second copy of this is a second place for the thresholds to drift.
+ *
+ * Null means there is no such moment yet, which each caller words for itself —
+ * "never synced" is not the same sentence as "grades never sent".
+ */
+export function agoLabel(at: string | null, now: Date = new Date()): string | null {
+  if (at === null) return null;
   const ms = now.getTime() - new Date(at).getTime();
-  if (Number.isNaN(ms)) return "never synced";
+  if (Number.isNaN(ms)) return null;
   const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return "synced just now";
-  if (minutes < 60) return `synced ${minutes}m ago`;
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `synced ${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `synced ${days}d ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 /**
@@ -253,4 +267,81 @@ export function isStale(status: SyncStatus, now: Date = new Date()): boolean {
   if (status.lastSyncedAt === null) return true;
   const ms = now.getTime() - new Date(status.lastSyncedAt).getTime();
   return Number.isNaN(ms) || ms > 24 * 60 * 60 * 1000;
+}
+
+/**
+ * PUSH ONLY — this device's payload into the mailbox, no pull, no merge.
+ *
+ * ─── WHY THIS EXISTS, 2026-09-14 ────────────────────────────────────────────
+ *
+ * Zach: *"i already reviewed so many items on my phone today, but it's not
+ * reflected on any browser on my pc. we need to fix this. what happens with my
+ * ACID😭"*
+ *
+ * Nothing was lost and nothing was broken — `syncNow` had simply never been
+ * called. Sync was reachable from exactly two click handlers (the header dot and
+ * the sidebar row) and from nothing else, so a day of reviewing on the phone sat
+ * in the phone's OPFS with the newest mailbox payload **23 hours old**. Every
+ * merge rule in `src/sync/merge.ts` was correct and irrelevant: no payload, no
+ * merge.
+ *
+ * ─── WHY A PUSH IS ITS OWN VERB ─────────────────────────────────────────────
+ *
+ * `syncNow` pulls every peer and MERGES before it pushes, and the merge is the
+ * expensive half — it was seven minutes before it got a transaction and is ~8
+ * seconds now. That is fine for a button he pressed and wrong for something that
+ * fires while he is mid-card: the worker owns the session, so a merge is 8
+ * seconds of a frozen review screen, and a merge can change what is due
+ * underneath him.
+ *
+ * A push cannot. It reads, serialises and PUTs; it changes nothing locally and
+ * nothing on any other device until that device chooses to pull. So the
+ * automatic half of sync is the half that is safe to automate, and the half that
+ * protects the thing he cannot reconstruct.
+ *
+ * ─── AND WHY IT IS NOT A TIMER ──────────────────────────────────────────────
+ *
+ * SPEC problem #1 is battery: *"no polling, no sockets, precomputed renders"*.
+ * This is called from a DEBOUNCE on his own grading (`main.ts`), so a device
+ * nobody is reviewing on sends nothing at all. An idle phone in his pocket does
+ * no work.
+ */
+export async function pushNow(ports: SyncPorts): Promise<number> {
+  const self = deviceId();
+  const mine = await ports.exportPayload();
+  const put = await fetch(`/sync/${self}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: mine.json,
+  });
+  if (!put.ok) throw new Error(`the mailbox refused this device's payload (${put.status})`);
+  writeLastPushed(new Date().toISOString());
+  return mine.bytes;
+}
+
+/**
+ * WHEN THIS DEVICE'S WORK LAST LEFT IT — a different fact from `lastSyncedAt`.
+ *
+ * `lastSyncedAt` means "this device pulled everyone and pushed", which is what
+ * the dot has always claimed. A push-only run must not write that: it would
+ * report a merge that did not happen, and the honest reading of the indicator is
+ * the one thing standing between him and the silent failure he has now hit
+ * twice. So it is its own key, and the dot says "sent" rather than "synced".
+ */
+const PUSHED_KEY = "hashigo.sync.pushed";
+
+function writeLastPushed(at: string): void {
+  try {
+    localStorage.setItem(PUSHED_KEY, at);
+  } catch {
+    /* private window, or storage off — the push still happened */
+  }
+}
+
+export function lastPushedAt(): string | null {
+  try {
+    return localStorage.getItem(PUSHED_KEY);
+  } catch {
+    return null;
+  }
 }

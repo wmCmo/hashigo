@@ -13,7 +13,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { isStale, sinceLabel, syncNow, type SyncPorts } from "../app/sync-client.js";
+import { agoLabel, isStale, sinceLabel, syncNow, type SyncPorts } from "../app/sync-client.js";
 
 const NOW = new Date("2026-09-12T12:00:00.000Z");
 
@@ -193,5 +193,40 @@ describe("a mailbox that answers with a page", () => {
     });
     vi.stubGlobal("fetch", async () => ({ ok: false, status: 503, text: async () => "" }));
     await expect(syncNow(ports(() => undefined))).rejects.toThrow(/answered 503/);
+  });
+});
+
+/**
+ * The two clocks say different things, and conflating them is what let a day of
+ * grading look fine — Zach, 2026-09-14.
+ */
+describe("the sent clock is not the synced clock", () => {
+  const NOW = new Date("2026-09-14T12:00:00.000Z");
+
+  it("words the same instant two ways, from one arithmetic", () => {
+    const at = "2026-09-14T11:58:00.000Z";
+    expect(agoLabel(at, NOW)).toBe("2m ago");
+    expect(sinceLabel(at, NOW)).toBe("synced 2m ago");
+  });
+
+  it("never lets the push row read `grades sent synced just now`", () => {
+    // The literal defect: `sinceLabel` bakes the verb into every branch, so the
+    // row built from it said "grades sent synced just now".
+    for (const at of [
+      "2026-09-14T11:59:59.000Z",
+      "2026-09-14T11:30:00.000Z",
+      "2026-09-14T02:00:00.000Z",
+      "2026-09-10T12:00:00.000Z",
+    ]) {
+      expect(agoLabel(at, NOW)).not.toContain("synced");
+    }
+  });
+
+  it("says nothing rather than lying when there is no such moment", () => {
+    // Null is not "just now". A device that has never pushed must not report a
+    // push, which is the whole failure this row exists to make visible.
+    expect(agoLabel(null, NOW)).toBeNull();
+    expect(agoLabel("not a date", NOW)).toBeNull();
+    expect(sinceLabel(null, NOW)).toBe("never synced");
   });
 });
