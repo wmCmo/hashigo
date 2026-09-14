@@ -1518,13 +1518,41 @@ async function requestGeneration(
         options: slot.options,
       }),
     });
-    const body = (await response.json()) as { text?: string; error?: string };
+    // THE STATUS BEFORE THE BODY, AND THIS COST A ROUND TRIP.
+    //
+    // The first version called `response.json()` first. Zach's phone then hit a
+    // server with no `/generate/` handler, got Vite's 404 with an EMPTY body, and
+    // the parse threw — so the screen said *"could not reach the laptop to
+    // generate: Unexpected end of JSON input"*, which names neither the status
+    // nor the cause. A diagnostic that turns a 404 into a JSON error is worse
+    // than none: it sent him looking at the network when the answer was a stale
+    // server process.
+    //
+    // `vite preview` is why that case is REAL rather than theoretical. It reads
+    // `build/app-dist` from disk per request, so `npm run app:build` updates the
+    // client half of this feature in a running server — but the config, and so
+    // the middleware, is loaded once at startup. The button can therefore exist
+    // on a server that has never heard of the endpoint, and 404 is exactly what
+    // that looks like.
+    const raw = await response.text();
+    let body: { text?: string; error?: string } = {};
+    try {
+      body = raw === "" ? {} : (JSON.parse(raw) as typeof body);
+    } catch {
+      /* not ours — the status is the story, see below */
+    }
     if (!response.ok || typeof body.text !== "string" || body.text === "") {
       // THE COMMON FAILURE IS NOT AN ERROR, IT IS BEING AWAY FROM THE LAPTOP,
       // and the message has to say so — otherwise a phone on mobile data reads
       // as a broken app rather than as a feature that needs the tailnet, which
       // is the same availability the sync dot already has.
-      say(body.error ?? `the laptop said ${response.status}`, true);
+      const reason =
+        body.error ??
+        (response.status === 404 || response.status === 405
+          ? "this server has no /generate/ — it started before the endpoint existed. " +
+            "On the laptop: npx kill-port 4274, then npm run phone"
+          : `the laptop said ${response.status} ${response.statusText}`);
+      say(reason, true);
       button.disabled = false;
       button.textContent = was;
       return;

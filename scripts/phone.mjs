@@ -161,6 +161,11 @@ if (occupied) {
       `  newest build. An old process serving a new screen is how you get\n` +
       `  "sync failed — Unexpected token '<'": no /sync/ route, so the page\n` +
       `  came back instead of JSON.\n\n` +
+      `  IT HAS NOW HAPPENED TWICE. 2026-09-14, the same shape with a POST:\n` +
+      `  the generate button rendered from a fresh build, and /generate/ 404'd\n` +
+      `  with an EMPTY body from a process started before that route existed.\n` +
+      `  A GET gets the SPA fallback, a POST gets an empty 404 — one class,\n` +
+      `  two faces, and every middleware route added from now on inherits it.\n\n` +
       `  Stop it, then run this again:\n` +
       `    npx kill-port ${PORT}`,
   );
