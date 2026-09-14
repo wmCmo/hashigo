@@ -36,9 +36,9 @@ import { queueCounts } from "../src/scheduler/queue.js";
  * Stage 2 acceptance. The dashboard is the IMPORTER's acceptance test, so this
  * file has two jobs and the second one is the one that matters.
  *
- * 1. THE ORACLE, all time: 103,110 reviews split 58,937 / 43,083, 96.24%
- *    retention, 1,317 active days, 636.1 hours over 92,089 timed reviews,
- *    median 10 s, mean 24.9 s.
+ * 1. THE ORACLE, all time: 103,110 reviews split 59,514 / 43,596, 96.24%
+ *    retention, 1,333 active days, 641.2 hours over 93,124 timed reviews,
+ *    median 10 s, mean 24.8 s.
  *
  * 2. MOCHI'S OWN FIGURES for calendar 2026. Two of them must match EXACTLY —
  *    211 active days and a retention that rounds to 95% — which is what proves
@@ -459,7 +459,7 @@ describe.skipIf(!HAVE_EXPORTS)("stage 2 dashboard over the real corpus", () => {
     expect(scheduled.every((b) => b.basis === "scheduled")).toBe(true);
 
     // The `unknown` rows are where the two definitions differ most: a track's
-    // first review has no elapsed gap (9,026 of them), while a review whose
+    // first review has no elapsed gap (9,085 of them), while a review whose
     // predecessor carried no plan has no scheduled interval (17,960).
     expect(elapsed[0]?.label).toBe("unknown");
     expect(elapsed[0]?.reviews).toBe(9_085);

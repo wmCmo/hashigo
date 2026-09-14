@@ -20,7 +20,7 @@
  * — audio fires on the cloze reveal, NEVER on side entry, and nothing here
  * touches it.
  *
- * THE ONE THING TO KNOW BEFORE READING THE CODE. 9,026 of the 13,392 imported
+ * THE ONE THING TO KNOW BEFORE READING THE CODE. 9,085 of the 13,393 imported
  * tracks have `scheduler = 'mochi'` and no state, because Mochi never exported
  * stability or difficulty. The first local grade of a track replays its whole
  * review log through FSRS-6 to recover them, then applies the grade — so

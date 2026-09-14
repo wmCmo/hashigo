@@ -23,7 +23,7 @@ import { loadExport, walkCards, walkDecks } from "../src/import/transit.js";
  * Stage 1 acceptance for the review-history import — the one part of the corpus
  * that cannot be regenerated. The synthetic blocks pin each rule the real export
  * taught us; the last block replays all three real exports and asserts the
- * oracle: 102,020 reviews, 58,937 forward, 43,083 reverse, 96.24% retention.
+ * oracle: 103,110 reviews, 59,514 forward, 43,596 reverse, 96.24% retention.
  */
 
 let db: Db;
@@ -574,7 +574,7 @@ const HAVE_EXPORTS = EXPORT_DIRS.every((dir) => existsSync(join(dir, "data.json"
 
 describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
   it(
-    "imports exactly 102,020 reviews, 58,937 forward + 43,083 reverse, at 96.24% retention",
+    "imports exactly 103,110 reviews, 59,514 forward + 43,596 reverse, at 96.24% retention",
     () => {
       // The shared reader owns Transit decoding and the deduped walk (its own
       // traps, its own tests). This file owns only what happens to the reviews

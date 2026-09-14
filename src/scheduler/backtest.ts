@@ -31,7 +31,7 @@
  *
  * 2. A TRACK'S FIRST REVIEW IS NOT SCORED. It is the review that creates the
  *    memory, not one that tests it; there is no prior state and no elapsed time.
- *    9,026 of 102,020 reviews are firsts, leaving 92,994 with a predecessor.
+ *    9,085 of 103,110 reviews are firsts, leaving 94,025 with a predecessor.
  *
  * 3. SAME-DAY REVIEWS ARE NOT SCORED BY DEFAULT. Every timestamp in the corpus
  *    is date-only (SPEC "Review timestamps — the one that cannot wait"), so a
@@ -420,7 +420,7 @@ export function auc(predicted: readonly number[], outcomes: readonly number[]): 
  * `WHEN elapsed_days <= 365 THEN '180-365d' ELSE '> 365d'`. It used to be
  * written as the half-open `[low, 366)`, which agrees with the view on every
  * integral gap and disagrees on a fractional one; every elapsed gap in this
- * corpus is integral (measured: 0 of 92,994 are not, because every imported
+ * corpus is integral (measured: 0 of 94,025 are not, because every imported
  * timestamp is date-only), so adopting the view's rule moves nothing here and
  * makes the two tables provably the same partition rather than accidentally
  * the same one.

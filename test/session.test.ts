@@ -291,7 +291,7 @@ function fixture(dueCount: number, newCount: number): { db: Db; dueIds: number[]
       )
       .get(card) as { id: number };
     // One history row, so the lazy FSRS seed has something to replay — the
-    // realistic case for this corpus, where 9,026 tracks arrive state-less.
+    // realistic case for this corpus, where 9,085 tracks arrive state-less.
     const reviewedAt = "2026-08-01T09:00:00+09:00";
     const dueAt = dueInstant(reviewedAt, 5);
     db.prepare(

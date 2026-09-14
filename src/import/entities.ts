@@ -37,7 +37,10 @@
  *     non-empty `reverse-reviews` array while inheritance resolves to `off`
  *     (their root deck's `review-reverse?` is null, not true). SPEC: "any card
  *     with a non-empty reverse-reviews array must resolve to on, or 43,083
- *     review records lose their track." Those six are forced to `on`; the other
+ *     review records lose their track." (Quoted as written; that count is the
+ *     pre-2026-09-08 corpus and the figure today is 43,596. The rule is what is
+ *     being cited, and it does not move with the count.) Those six are forced
+ *     to `on`; the other
  *     3,772 keep `inherit` and reverse by deck inheritance, which is the
  *     behaviour SPEC wants preserved.
  */

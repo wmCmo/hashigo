@@ -64,7 +64,7 @@
  *   * Invent timestamps. Decks, templates and fields carry none in the export,
  *     so their `created_at`/`updated_at` come from the column defaults; cards
  *     carry both and keep them.
- *   * Assign review times. Every one of the 102,020 imported reviews is
+ *   * Assign review times. Every one of the 103,110 imported reviews is
  *     date-only and lands with `time_unknown = 1`. See `reviews.ts`.
  */
 

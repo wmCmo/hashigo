@@ -27,7 +27,7 @@ import { TARGET_RETENTION } from "../src/scheduler/policy.js";
 
 /**
  * Stage 1 acceptance. Each block below pins one schema half that SPEC.html says
- * must land now or become a migration over 7,716 cards and 102,020 reviews.
+ * must land now or become a migration over 7,716 cards and 103,110 reviews.
  *
  * The load-bearing one is "finds Japanese by a mid-string substring": it is the
  * proof that the FTS5 tokeniser choice is right, and it fails on SQLite's
@@ -778,7 +778,7 @@ describe("grades are binary", () => {
   it("has no grade column anywhere, in any table or view", () => {
     // Binary remembered/forgot is a DESIGN DECISION, not a limitation of the
     // imported data: Anki's four-button Again/Hard/Good/Easy was considered and
-    // rejected. A `grade` column that is NULL on all 102,020 rows and on every
+    // rejected. A `grade` column that is NULL on all 103,110 rows and on every
     // future row advertises support that does not exist, so it is not here.
     const objects = (
       db

@@ -47,7 +47,7 @@
  *   1. The card database stays ~70 MB. It is the file stage 11 sync moves and the
  *      one a reimport rebuilds in 15 s; welding 625 MB of mp3 to it makes every
  *      operation on the cards pay for the audio.
- *   2. Blast radius. A corrupt payload page cannot take 102,020 reviews with it,
+ *   2. Blast radius. A corrupt payload page cannot take 103,110 reviews with it,
  *      and `blobs.db` is the one file that is *always* rebuildable — every row in
  *      it is regenerable from provenance or re-importable from the export.
  *   3. It changes nothing about the architecture. `blobs` rows (address, mime,

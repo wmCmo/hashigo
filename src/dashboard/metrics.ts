@@ -347,7 +347,8 @@ first_seen AS (
   SELECT card_id, min(local_date) AS first_date FROM scoped GROUP BY card_id
 ),
 -- Grouped, never correlated: as a per-row subquery this cost 12.9 s over the
--- full corpus (102,020 rows x 5,674 first-seen dates) against 0.4 s here.
+-- full corpus (measured 2026-08, at 102,020 rows x 5,674 first-seen dates)
+-- against 0.4 s here. A timing, so it keeps the corpus it was taken on.
 new_per_month AS (
   SELECT substr(first_date, 1, 7) AS month, count(*) AS new_cards
     FROM first_seen

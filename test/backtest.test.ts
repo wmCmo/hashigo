@@ -828,7 +828,7 @@ describeCorpus("the 103,110-review backtest", () => {
       expect(folded.get(bucket.label)?.lapses, `lapses in ${bucket.label}`).toBe(bucket.lapses);
     }
 
-    // Nothing lost either way: 94,025 scored + 9,026 first reviews = 103,110.
+    // Nothing lost either way: 94,025 scored + 9,085 first reviews = 103,110.
     const replayTotal = result.forgetting.reduce((sum, row) => sum + row.reviews, 0);
     const sqlTotal = sql.reduce((sum, b) => sum + b.reviews, 0);
     expect(replayTotal).toBe(94_025);

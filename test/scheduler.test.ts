@@ -109,7 +109,7 @@ describe("instants and the local day", () => {
   });
 
   it("reads the local date off the string, because that is what an offset means", () => {
-    // 15:00Z is midnight JST the NEXT day — the exact shape all 102,020 imported
+    // 15:00Z is midnight JST the NEXT day — the exact shape all 103,110 imported
     // reviews carry.
     expect(localDate("2026-08-21T15:00:00Z")).toBe("2026-08-21");
     expect(localDate(formatInstant(Date.parse("2026-08-21T15:00:00Z"), 540))).toBe("2026-08-22");
@@ -1150,7 +1150,7 @@ describeCorpus("the real collection", () => {
     expect(retentions).toEqual([{ r: TARGET_RETENTION }]);
 
     // And the queue is answerable end to end: take the most overdue card,
-    // grade it, and the interval invariant still holds over 102,021 reviews.
+    // grade it, and the interval invariant still holds over 103,111 reviews.
     const [first] = dueTracks(db, { now: "2026-08-22T09:00:00+09:00", limit: 1 });
     expect(first).toBeDefined();
     const graded = gradeTrack(db, {

@@ -27,7 +27,7 @@ TRAPS (each of these cost real time to find)
   * walk_cards must dedupe. Cards live under decks[].cards[] AND a deck node can
     itself expose a top-level cards[]; a naive recursive walk counts every nested
     card exactly twice. Symptom: totals are exactly 2x correct.
-  * Review timestamps are date-only. Every one of the 102,020 reviews in the
+  * Review timestamps are date-only. Every one of the 103,110 reviews in the
     reference corpus carries 15:00:00Z == midnight JST. There is no genuine
     time-of-day data. Do not present imported times as real.
   * `content` is "" on templated cards; the real text lives in fields[].value.

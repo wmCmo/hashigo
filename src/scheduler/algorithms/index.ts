@@ -9,7 +9,7 @@
  * WHAT THE CORPUS CAN AND CANNOT TELL A CANDIDATE. Three properties of the
  * imported history shape every algorithm in this directory:
  *
- *   * `reviews.grade` is NULL on all 102,020 rows. Mochi recorded only
+ *   * `reviews.grade` is NULL on all 103,110 rows. Mochi recorded only
  *     `remembered?`, so the 1-4 Again/Hard/Good/Easy scale does not exist here.
  *     Every candidate is fed the documented binary mapping: remembered -> Good
  *     (3), forgotten -> Again (1). Nothing in the corpus can identify a

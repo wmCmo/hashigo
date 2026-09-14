@@ -12,8 +12,8 @@
  *
  * FOUR THINGS IT DOES THAT ARE NOT OBVIOUS FROM THE CALL SITE.
  *
- * 1. IT SEEDS FROM HISTORY, LAZILY, AND ONLY ONCE PER TRACK. 9,026 of the
- *    13,392 imported tracks carry `scheduler = 'mochi'` and
+ * 1. IT SEEDS FROM HISTORY, LAZILY, AND ONLY ONCE PER TRACK. 9,085 of the
+ *    13,393 imported tracks carry `scheduler = 'mochi'` and
  *    `scheduler_state = NULL` — Mochi never exported stability or difficulty,
  *    and there is nothing to convert. So the first local grade of a track
  *    replays its whole review log through FSRS-6 first (`seedMemory`), and only
@@ -590,7 +590,7 @@ UPDATE card_tracks
  *
  * DELIBERATELY DOES NOT TOUCH `due_at`. Seeding is a statement about what FSRS
  * believes; rescheduling is a statement about when he should see the card, and
- * doing both at once would move 9,026 due dates in one commit with no way to
+ * doing both at once would move 9,085 due dates in one commit with no way to
  * tell which change caused what. The lazy path in `gradeTrack` makes this
  * optional — it exists for measuring the seeded state in bulk (what the fitted
  * model thinks his collection's stability distribution is) rather than as a

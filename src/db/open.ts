@@ -96,9 +96,19 @@ export function schemaVersion(db: Db): number {
  * Create every table, index, trigger and view, then stamp the version. Applies
  * nothing when the database is already at `SCHEMA_VERSION`.
  *
- * Stage 1 ships version 1, so there is no migration path yet — an intermediate
- * version can only mean a database written by code newer or stranger than this,
- * and refusing is better than half-migrating 102,020 reviews.
+ * There is no migration path, at any version — the schema is at `SCHEMA_VERSION`
+ * (9 today, and this sentence deliberately does not restate it) and a database at
+ * any other version can only have been written by code newer or stranger than
+ * this. Refusing is better than half-migrating a review history.
+ *
+ * **THE ESCAPE HATCH BEHIND THAT REFUSAL CLOSED ON 2026-09-13 — decision 41.**
+ * Refusing was cheap while "a schema bump means RE-IMPORT" was lossless: every
+ * row came from `exports/` and a rebuild cost fifteen seconds. The final import
+ * has now happened, so a rebuild keeps the 103,110 imported reviews and DISCARDS
+ * every grade Hashigo has made since. Refusing is still right — this function
+ * must not half-migrate — but the caller can no longer answer a refusal with
+ * `rm`. `src/backup` and `src/sync` are what carry the local history across a
+ * bump, and both stamp `archive.schemaVersion` for exactly that reason.
  */
 export function applySchema(db: Db): void {
   const current = schemaVersion(db);

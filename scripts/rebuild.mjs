@@ -369,9 +369,10 @@ for (const n of notes) {
 console.log("═".repeat(64));
 if (notes.some((n) => n.actual !== n.expected)) {
   console.log(
-    "rebuild: figures marked ! differ from the reference. That is EXPECTED after\n" +
-      "         decision 16's final import — but if no import happened, find out why.\n" +
-      "         Every figure quoted in CLAUDE.md and NEXT.md is from the old export.",
+    "rebuild: figures marked ! differ from the reference. The reference is the\n" +
+      "         2026-08-26 export; decision 16's final import (2026-09-08) landed\n" +
+      "         after it, so cards 7,716 and reviews 103,110 are the current pair\n" +
+      "         and a ! on reviews alone is expected. Anything else, find out why.",
   );
 }
 console.log("rebuild: done — all invariants hold.");

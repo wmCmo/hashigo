@@ -222,7 +222,7 @@ export const SETTING_KEYS = {
 /**
  * Hashigo records `remembered` and nothing else. Anki's four-button
  * Again/Hard/Good/Easy was considered and rejected, so there is no `grade`
- * column in `reviews` and never will be — a column that is NULL on all 102,020
+ * column in `reviews` and never will be — a column that is NULL on all 103,110
  * rows and on every future row advertises support that does not exist.
  *
  * The upside is worth stating rather than treating this as a data limitation:

@@ -23,7 +23,7 @@
  *     taken abroad and then quietly misjudge a day's worth of cards.
  *
  * The cost of that is a scan of `card_tracks` instead of a seek on
- * `card_tracks_due`. MEASURED against the real 74 MB database, 13,392 tracks,
+ * `card_tracks_due`. MEASURED against the real 74 MB database, 13,393 tracks,
  * median of seven runs each — the reason this is a footnote and not a problem:
  *
  *     queueCounts               9.2 ms      one scan, five counts
@@ -38,8 +38,8 @@
  * what `reviewForecast` would use if 3.6 ms ever mattered.
  *
  * NEW IS `due_at IS NULL AND reps = 0`, which is SPEC's rule ("derives `new?`
- * from an empty track rather than storing it") and describes 4,366 of the 13,392
- * imported tracks — 3,980 once archived cards are excluded — cards he has added
+ * from an empty track rather than storing it") and describes 4,308 of the 13,393
+ * imported tracks — 3,907 once archived cards are excluded — cards he has added
  * in Mochi and not yet studied.
  * They are returned SEPARATELY from due cards, deliberately: how many new cards
  * a session should introduce, and whether they come first or mixed in, changes

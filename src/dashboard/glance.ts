@@ -41,7 +41,7 @@
  * as an offset-bearing ISO string (`2026-08-18T00:00:00+09:00`), so its first ten
  * characters are already the local calendar date — no `datetime()` round trip, and
  * `reviewed_at` is indexed (`reviews_when`) so a range on it is a seek rather than
- * a scan. Checked against `review_log`'s own expression across all 102,020 rows:
+ * a scan. Checked against `review_log`'s own expression across all 103,110 rows:
  * **0 disagreements**, and `test/glance.test.ts` pins that. It holds because the
  * importer keeps `tz_offset_minutes` equal to the offset in the string; if that
  * invariant ever breaks the test fails rather than the number quietly drifting.

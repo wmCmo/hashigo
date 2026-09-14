@@ -33,8 +33,8 @@ import {
  * Stage 1 acceptance for the decoder and the structural mapping.
  *
  * The oracle is the real corpus, and the numbers asserted below are the ones in
- * CLAUDE.md and SPEC.html: 7,716 cards, 11 template rows (10 distinct), 102,020
- * reviews split 58,937 / 43,083. The unit tests above them exist to pin the
+ * CLAUDE.md: 7,716 cards, 11 template rows (10 distinct), 103,110 reviews split
+ * 59,514 / 43,596 — the 2026-09-08 final import. The unit tests above them pin the
  * behaviour that the corpus exercises only once or twice — the "~`" escape, the
  * two instant encodings — where a regression would be silent.
  */

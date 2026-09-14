@@ -90,10 +90,18 @@
  * orphan and skipped, exactly as one whose template is gone; inventing a deck on
  * restore would put his cards somewhere he did not choose.
  *
- * Everything else — decks, templates, tags, links and the 102,020 imported reviews
+ * Everything else — decks, templates, tags, links and the 103,110 IMPORTED reviews
  * — rebuilds from `exports/` in about fifteen seconds, and the blobs are content-addressed and
  * re-fetchable. Backing them up would turn a ~330 KB archive into 690 MB and make
  * the one-tap export something he would not tap.
+ *
+ * **READ "IMPORTED" STRICTLY — decision 41 narrowed what that word covers.** The
+ * 2026-09-08 import was the last one, so `exports/` regenerates the history up to
+ * that date and NOTHING after it. Every review Hashigo has graded since exists in
+ * this archive, in decision 33's sync payloads, and in the device's OPFS, and
+ * nowhere else. The scope above is unchanged and still correct — local reviews were
+ * always archived — but the sentence used to read as "reviews are regenerable", and
+ * that is now true only of the imported ones.
  *
  * A file-level copy was the other option and is worse for the case that matters: a
  * binary SQLite file is only restorable into the schema version it came from, and

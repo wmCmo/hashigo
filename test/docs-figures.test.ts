@@ -235,7 +235,167 @@ describe("claims inside code comments", () => {
     }
     expect(bad, `code cites decisions that do not exist: ${bad.join(" · ")}`).toEqual([]);
   });
+
+  /**
+   * A SUPERSEDED CORPUS FIGURE IS A CLAIM ABOUT NOW, UNLESS IT SAYS OTHERWISE.
+   *
+   * This file's own header declined to check corpus-derived figures, on the reasoning
+   * that they "do not drift" and are "already pinned by the suites that measure them".
+   * **Both halves of that were wrong, and the cost was measured 2026-09-14: the
+   * 2026-09-08 re-import moved the totals and left 16 comments stating the old ones as
+   * present fact** — including three that sat next to an assertion of the new one.
+   * `test/glance.test.ts` said "102,020 reviews" on the line directly above
+   * `expect(g.allTime.reviews).toBe(103_110)`, and `test/reviews.test.ts` printed a
+   * test NAME claiming 102,020 for a body asserting 103,110. The suites pinned the
+   * numbers and nothing pinned the sentences about them.
+   *
+   * They do not drift CONTINUOUSLY, which is what made the reasoning plausible. They
+   * step, rarely, and every mention goes stale in one commit — the worst shape for a
+   * figure that nobody re-greps.
+   *
+   * **A historical mention is legitimate**, and naming them individually is the only
+   * thing that works. "The page went on reporting 102,020 reviews from the August
+   * seed" is exactly right. The first version of this gate tried to RECOGNISE such a
+   * sentence — a date, or a phrase like "used to", anywhere in the same block — and it
+   * had NO TEETH, measured by injection: reverting `src/scheduler/day.ts` to the old
+   * figure left the suite green, because that block quotes the example instant
+   * `2026-08-23T00:00:00+09:00` and the date pattern matched it. This codebase is full
+   * of example dates, so any pattern loose enough to clear the honest sites clears
+   * most of the dishonest ones too. An exemption table cannot be tripped by accident.
+   *
+   * Only COMMENTS are scanned. A superseded figure in code is either an assertion,
+   * which its own suite owns, or a deliberate reference constant.
+   *
+   * **THE GENERAL VERSION WAS TRIED AND MEASURED AND IS NOT VIABLE.** "Every
+   * comma-formatted figure in a test file's comments also appears in that file's
+   * code" would have caught every one of today's finds without a hand-maintained
+   * list — and over the 45 test files it reports 134 of 207 figures as misses, a
+   * 65% false-positive rate. Almost all of them are honest: a comment saying the
+   * corpus holds 8,690 wiki-links inside a file that asserts something else about
+   * them is not a stale figure. A list that has to be appended to is the weaker
+   * mechanism and it is the one that can be trusted to go off for a reason.
+   */
+  it("no comment states a superseded corpus figure as a present fact", () => {
+    // Pairs of [superseded, current]. Append when the corpus steps again; never
+    // delete a row, or the check silently stops covering that figure.
+    const SUPERSEDED: readonly (readonly [string, string])[] = [
+      ["102,020", "103,110"],
+      ["102,021", "103,111"], // the total plus the one a test grades
+      ["58,937", "59,514"],
+      ["43,083", "43,596"],
+      ["92,994", "94,025"],
+      ["9,026", "9,085"],
+      ["13,392", "13,393"],
+    ];
+    // The comments that state an old figure ON PURPOSE. Keyed on a phrase from the
+    // block rather than a line number, so an edit above it cannot silently move the
+    // exemption onto a different comment. Every entry says why.
+    const HISTORICAL: readonly { file: string; contains: string; why: string }[] = [
+      {
+        file: "src/dashboard/render.ts",
+        contains: "THIS TILE USED TO CONTRADICT",
+        why: "narrates the defect: the two artefacts bucketed the same reviews and disagreed",
+      },
+      {
+        file: "src/import/entities.ts",
+        contains: "review records lose their track",
+        why: "a verbatim SPEC quote; the current figure is stated beside it",
+      },
+      {
+        file: "app/db.worker.ts",
+        contains: "went on reporting",
+        why: "the bug: the page served the August seed's total after the re-import",
+      },
+      {
+        file: "test/roundtrip.test.ts",
+        contains: "UNCHANGED ACROSS THE RE-IMPORT",
+        why: "compares the old rate with the new one; both figures are the point",
+      },
+      {
+        file: "scripts/app-bootstrap.ts",
+        contains: "THE SEED MANIFEST",
+        why: "same bug as db.worker.ts, from the writing side",
+      },
+      {
+        file: "test/docs-figures.test.ts",
+        contains: "A SUPERSEDED CORPUS FIGURE IS A CLAIM ABOUT NOW",
+        why: "this gate's own header quotes what it caught",
+      },
+      {
+        file: "test/docs-figures.test.ts",
+        contains: "THE SAME CHECKS, OVER CODE COMMENTS",
+        why: "a dated 2026-08-26 survey of the prose surface",
+      },
+    ];
+
+    const exempt = (file: string, text: string): boolean =>
+      HISTORICAL.some((e) => e.file === file && text.includes(e.contains));
+
+    const stale: string[] = [];
+    const used = new Set<string>();
+    for (const file of codeFiles()) {
+      for (const block of commentBlocks(readFileSync(join(ROOT, file), "utf8"))) {
+        for (const e of HISTORICAL) {
+          if (e.file === file && block.text.includes(e.contains)) used.add(e.contains);
+        }
+        if (exempt(file, block.text)) continue;
+        for (const [old, now] of SUPERSEDED) {
+          if (block.text.includes(old)) {
+            stale.push(`${file}:${block.line} says ${old} (current: ${now})`);
+          }
+        }
+      }
+    }
+    expect(
+      stale,
+      `comments state superseded corpus figures as present fact — update the figure, ` +
+        `or add an exemption saying why the old one belongs there:\n  ${stale.join("\n  ")}`,
+    ).toEqual([]);
+
+    // An exemption that matches nothing is a licence nobody is using, and it would
+    // keep a future stale figure quiet if the phrase ever drifted back into a file.
+    const dead = HISTORICAL.filter((e) => !used.has(e.contains)).map((e) => `${e.file}: "${e.contains}"`);
+    expect(dead, `exemptions that match no comment — delete them:\n  ${dead.join("\n  ")}`).toEqual(
+      [],
+    );
+  });
 });
+
+/**
+ * Contiguous runs of comment lines, with the line the run starts on.
+ *
+ * A BLOCK rather than a line, because the marker that makes a figure historical is
+ * usually a sentence or two above it — `db.worker.ts` dates its bug narrative in the
+ * opening line and quotes the old total nine lines down.
+ */
+function commentBlocks(text: string): { line: number; text: string }[] {
+  const out: { line: number; text: string }[] = [];
+  const lines = text.split(/\r?\n/);
+  let inBlock = false;
+  let cur: { line: number; parts: string[] } | null = null;
+  for (const [i, raw] of lines.entries()) {
+    const t = raw.trim();
+    let content: string | null = null;
+    if (inBlock) {
+      content = t.replace(/^\*+\s?/, "").replace(/\*\/.*$/, "");
+      if (t.includes("*/")) inBlock = false;
+    } else if (t.startsWith("//")) {
+      content = t.slice(2);
+    } else if (t.startsWith("/*")) {
+      content = t.replace(/^\/\*+\s?/, "").replace(/\*\/.*$/, "");
+      if (!t.includes("*/")) inBlock = true;
+    }
+    if (content === null) {
+      if (cur !== null) out.push({ line: cur.line, text: cur.parts.join(" ") });
+      cur = null;
+      continue;
+    }
+    cur ??= { line: i + 1, parts: [] };
+    cur.parts.push(content);
+  }
+  if (cur !== null) out.push({ line: cur.line, text: cur.parts.join(" ") });
+  return out;
+}
 
 /**
  * A HEADING THAT COUNTS ITS OWN LIST IS A CLAIM, AND IT DESYNCS SILENTLY.

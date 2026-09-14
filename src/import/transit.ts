@@ -4,7 +4,7 @@
  * A `.mochi` file is a ZIP holding `data.json` (Transit-encoded JSON) plus flat
  * media files. This is a port of `tools/mochi.py`, which is the reference
  * implementation and whose docstring documents the format traps. Everything
- * below was checked against the three real exports (7,716 cards, 102,020
+ * below was checked against the three real exports (7,716 cards, 103,110
  * reviews); see `test/transit.test.ts`.
  *
  * THE ENCODING (verbose Transit-JSON — no cache codes appear in these exports,

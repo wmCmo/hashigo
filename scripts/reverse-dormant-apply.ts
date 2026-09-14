@@ -10,7 +10,7 @@
  * ─── WHAT IT IS UNDOING, AND WHY THAT IS NOT A BUG IN THE IMPORTER ──────────
  *
  * SPEC's do-not-orphan rule: any card with a non-empty `reverse-reviews` array must
- * resolve `reverse = on`, or 43,083 reverse reviews are orphaned. Right at that
+ * resolve `reverse = on`, or 43,596 reverse reviews are orphaned. Right at that
  * scale, and `src/import/entities.ts` implements it by writing `cards.reverse = 'on'`
  * onto the card.
  *

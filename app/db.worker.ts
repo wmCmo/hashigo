@@ -2124,7 +2124,7 @@ function renumber(db: BrowserDb, templateId: string, order: readonly string[]): 
  *
  * ─── WHY THIS IS NOT STREAMED, PAGED, OR CACHED ─────────────────────────────
  *
- * It is one pass over 102,020 reviews and it produces a document with no script in
+ * It is one pass over 103,110 reviews and it produces a document with no script in
  * it, so there is nothing to stream INTO and nothing to update afterwards. The
  * elapsed time comes back with it rather than being guessed at: if it turns out to
  * cost more than a card mount on his handset, that is a measurement to act on, not

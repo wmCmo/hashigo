@@ -4,7 +4,7 @@
  * THE QUEUE IS DAY-GRAINED, AND THAT IS NOT AN APPROXIMATION. Three facts in
  * this project already agree on it, and this module is where they meet:
  *
- *   * Every one of the 102,020 imported reviews carries a date and no time
+ *   * Every one of the 103,110 imported reviews carries a date and no time
  *     (SPEC "Review timestamps"), so the FSRS-6 fit that ships — see
  *     `SCHEDULER_PARAMETERS` — was fitted on elapsed times measured in WHOLE
  *     DAYS. Feeding production a fractional gap would feed the model a unit it
@@ -19,7 +19,7 @@
  * WHAT MIDNIGHT ACTUALLY BUYS, stated carefully because my first version of this
  * comment overclaimed and the fault injection said so. It is the CANONICAL FORM,
  * not the protection. A card graded at 23:40 with a one-day interval gets
- * `2026-08-23T00:00:00+09:00`, byte-identical in shape to the 9,026 due dates
+ * `2026-08-23T00:00:00+09:00`, byte-identical in shape to the 9,085 due dates
  * the importer wrote from Mochi, so nothing downstream can tell an imported
  * track from a locally graded one.
  *

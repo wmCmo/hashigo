@@ -390,7 +390,7 @@ const C =
 //      phone has no hover, which is decision 19's own argument.
 //   4. Contrast. A's side labels were 2.21:1 and its deck/meta 3.61:1; both now
 //      clear AA on #111214 (5.77:1 and 6.44:1, measured).
-// `remembered` stays on the RIGHT: over 102,020 corpus reviews retention is
+// `remembered` stays on the RIGHT: over 103,110 corpus reviews retention is
 // 96.24%, so ~96 of every 100 taps are that button, and it belongs under the
 // thumb that is already there.
 const A2 =

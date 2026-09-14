@@ -1,7 +1,7 @@
 /**
  * Stage 1 — review history onto review tracks.
  *
- * This is the most irreplaceable data in the project: 102,020 graded reviews
+ * This is the most irreplaceable data in the project: 103,110 graded reviews
  * over four years, which cannot be regenerated and which SPEC.html leans on for
  * the scheduler backtest, the dashboard and the retention analysis. Everything
  * here is written to lose nothing.
@@ -55,7 +55,7 @@
  *     is 15:00:00Z. See the timestamp rule below.
  *
  * THE TIMESTAMP RULE (SPEC "Review timestamps — the one that cannot wait").
- * All 102,020 review dates carry 15:00:00Z, exactly midnight JST, because Mochi
+ * All 103,110 review dates carry 15:00:00Z, exactly midnight JST, because Mochi
  * truncates to the date. There is not one genuine time-of-day value in four
  * years of history and it is unrecoverable. So every imported row gets
  * time_unknown = 1. Midnight is written into reviewed_at because the local DATE
@@ -494,7 +494,7 @@ export function planCardTracks(
 
     // Sorted by timestamp so the preceding-interval chain and reps/lapses are
     // chronological even if an export were not. Every array in the reference
-    // corpus already is (0 negative gaps across 92,994 consecutive pairs), and
+    // corpus already is (0 negative gaps across 94,025 consecutive pairs), and
     // the sort is stable, so the import_key below still names the ORIGINAL
     // array position and re-importing stays idempotent.
     const indexed = records.map((record, index) => ({ record, index }));
