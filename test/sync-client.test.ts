@@ -13,7 +13,14 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { agoLabel, isStale, sinceLabel, syncNow, type SyncPorts } from "../app/sync-client.js";
+import {
+  agoLabel,
+  isStale,
+  peersNewerThan,
+  sinceLabel,
+  syncNow,
+  type SyncPorts,
+} from "../app/sync-client.js";
 
 const NOW = new Date("2026-09-12T12:00:00.000Z");
 
@@ -228,5 +235,102 @@ describe("the sent clock is not the synced clock", () => {
     expect(agoLabel(null, NOW)).toBeNull();
     expect(agoLabel("not a date", NOW)).toBeNull();
     expect(sinceLabel(null, NOW)).toBe("never synced");
+  });
+});
+
+/**
+ * A GREEN DOT MUST NOT MEAN "UP TO DATE" WHEN IT ONLY MEANS "MY LAST PULL WORKED".
+ *
+ * Zach, 2026-09-14, mid-session on the laptop: *"it looks like i already did it
+ * in the morning on my phone, same with 4-5 cards before this, but the light is
+ * green... which means it's synced...?"*
+ *
+ * It was green, it was honest, and it was the wrong thing to believe. The
+ * automatic half of sync is `pushNow`, which never pulls — deliberately, because
+ * a merge mid-card freezes the screen for ~8 seconds and can move what is due
+ * underneath him. So `lastSyncedAt` records the last PULL and then stands still
+ * while a peer drops newer work into the mailbox a minute later.
+ *
+ * Reproduced from his own mailbox that evening: the phone's payload carried 36
+ * reviews for the day, the laptop had merged none of them, and he re-answered
+ * four cards the phone had already done at 08:42. Nothing was lost — reviews
+ * UNION — but he did the work twice and the dot said he would not have to.
+ *
+ * `peersNewerThan` is a LISTING, not a merge: no payload bodies, nothing applied.
+ * That is what makes it cheap enough to ask on load and after every push, which
+ * is what closes the window the pull's manualness opens.
+ */
+describe("knowing a peer is ahead", () => {
+  const SYNCED = "2026-09-14T12:00:00.000Z";
+
+  function mailbox(peers: Record<string, string>): void {
+    const store = new Map<string, string>([["hashigo.sync.deviceId", "dev-selftest01"]]);
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string): string | null => store.get(k) ?? null,
+      setItem: (k: string, v: string): void => void store.set(k, v),
+    });
+    vi.stubGlobal("fetch", async (url: string) => {
+      if (url !== "/sync/") return { ok: false, status: 404, text: async () => "" };
+      return json({
+        peers: Object.entries(peers).map(([deviceId, updatedAt]) => ({
+          deviceId,
+          bytes: 1,
+          updatedAt,
+        })),
+      });
+    });
+  }
+
+  it("counts a peer that pushed AFTER this device last merged", async () => {
+    mailbox({ "dev-phone": "2026-09-14T12:40:00.000Z" });
+    expect(await peersNewerThan(SYNCED)).toBe(1);
+  });
+
+  it("ignores a peer whose payload this device has already merged", async () => {
+    mailbox({ "dev-phone": "2026-09-14T11:00:00.000Z" });
+    expect(await peersNewerThan(SYNCED)).toBe(0);
+  });
+
+  it("never counts THIS device — its own push is not news", async () => {
+    // The push that fires on his own grading rewrites this device's own slot and
+    // makes it the newest file in the mailbox, every time. Counting it would put
+    // the dot permanently in `behind` thirty seconds after every card.
+    mailbox({ "dev-selftest01": "2026-09-14T23:00:00.000Z" });
+    expect(await peersNewerThan(SYNCED)).toBe(0);
+  });
+
+  it("treats every peer as newer when this device has NEVER synced", async () => {
+    mailbox({ "dev-phone": "2026-09-01T00:00:00.000Z", "dev-other": "2026-09-02T00:00:00.000Z" });
+    expect(await peersNewerThan(null)).toBe(2);
+  });
+
+  it("counts each ahead peer, because the label says how many", async () => {
+    mailbox({
+      "dev-phone": "2026-09-14T12:40:00.000Z",
+      "dev-other": "2026-09-14T12:50:00.000Z",
+      "dev-old": "2026-09-13T00:00:00.000Z",
+      "dev-selftest01": "2026-09-14T23:00:00.000Z",
+    });
+    expect(await peersNewerThan(SYNCED)).toBe(2);
+  });
+
+  it("propagates a mailbox failure rather than reporting 0 peers ahead", async () => {
+    // Offline must not read as "you are up to date" HERE. The caller swallows it
+    // and keeps the status it had; silently answering 0 would paint the dot green
+    // on a device that simply could not ask, which is the original defect again.
+    mailbox({});
+    vi.stubGlobal("fetch", async () => ({ ok: false, status: 503, text: async () => "" }));
+    await expect(peersNewerThan(SYNCED)).rejects.toThrow();
+  });
+
+  it("makes `behind` count as needing attention, without waiting a day", async () => {
+    // `isStale` gates the sidebar's own nudge. `behind` is sharper than the
+    // day-old threshold: the grades are in the mailbox NOW.
+    expect(
+      isStale({ state: "behind", lastSyncedAt: SYNCED, detail: null, peers: 1 }, new Date(SYNCED)),
+    ).toBe(true);
+    expect(
+      isStale({ state: "ok", lastSyncedAt: SYNCED, detail: null, peers: 0 }, new Date(SYNCED)),
+    ).toBe(false);
   });
 });

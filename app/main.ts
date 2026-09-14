@@ -96,6 +96,7 @@ import {
   agoLabel,
   isStale,
   lastPushedAt,
+  peersNewerThan,
   pushNow,
   sinceLabel,
   syncNow,
@@ -3285,7 +3286,12 @@ function paintSync(): void {
       ? "syncing…"
       : syncStatus.state === "failed"
         ? `sync failed — ${syncStatus.detail ?? "unknown"}`
-        : sinceLabel(syncStatus.lastSyncedAt);
+        : syncStatus.state === "behind"
+          ? // NAMES THE CONSEQUENCE, not the state. "behind" is jargon; "you will
+            // be asked cards you have already answered" is the thing he noticed
+            // on his own, one card at a time, before the dot said anything.
+            `${syncStatus.peers} device(s) have newer grades — sync, or you will be re-asked cards`
+          : sinceLabel(syncStatus.lastSyncedAt);
   // "stale" is not a state the client returns — it is `ok` that has aged past a
   // day, and the dot shows it hollow because at that point his two devices hold
   // grades neither has seen.
@@ -3418,6 +3424,12 @@ async function pushGrades(): Promise<void> {
   pushing = true;
   try {
     await pushNow(syncPorts);
+    // WE ARE ALREADY TALKING TO THE MAILBOX, so ask the one question the push
+    // cannot answer: has anyone else left newer work in it? A listing, not a
+    // merge — no payload bodies, nothing applied, nothing on screen moves. This
+    // is what turns "synced 38m ago" from true-but-useless into a dot that knows
+    // it is out of date.
+    await refreshBehind();
     paintSync();
   } catch {
     // Quiet on purpose — see the header. `paintSync` still reads the pushed
@@ -3425,6 +3437,32 @@ async function pushGrades(): Promise<void> {
     paintSync();
   } finally {
     pushing = false;
+  }
+}
+
+/**
+ * Ask the mailbox whether a peer is ahead of this device's last MERGE.
+ *
+ * Never throws and never downgrades a real status: offline is the normal state
+ * of a local-first app, and a listing that could not be fetched is not evidence
+ * that anything is wrong. It can only move `ok` to `behind`, or `behind` back to
+ * `ok` once he has actually synced.
+ */
+async function refreshBehind(): Promise<void> {
+  if (syncStatus.state === "syncing" || syncStatus.state === "failed") return;
+  try {
+    const newer = await peersNewerThan(syncStatus.lastSyncedAt);
+    if (newer > 0) {
+      syncStatus = { ...syncStatus, state: "behind", peers: newer };
+    } else if (syncStatus.state === "behind") {
+      syncStatus = {
+        ...syncStatus,
+        state: syncStatus.lastSyncedAt === null ? "never" : "ok",
+        peers: 0,
+      };
+    }
+  } catch {
+    /* offline, or no mailbox on this server — say nothing */
   }
 }
 
@@ -3453,6 +3491,12 @@ el("synclink").addEventListener("click", () => {
   void runSync();
 });
 paintSync();
+// ON LOAD, BEFORE HE STARTS REVIEWING — the case that cost him the duplicates.
+// He opens the laptop hours after the phone last pushed; nothing has been graded
+// here yet, so no push has fired and nothing else would ask. A listing is cheap
+// enough to spend on every load, and this is the moment the answer is worth
+// most: the alternative is finding out one already-answered card at a time.
+void refreshBehind().then(paintSync);
 
 // ─── his #3: Ctrl+K ─────────────────────────────────────────────────────────
 

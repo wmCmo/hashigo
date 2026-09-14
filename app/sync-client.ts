@@ -27,7 +27,7 @@
 const DEVICE_KEY = "hashigo.sync.deviceId";
 const LAST_KEY = "hashigo.sync.lastSyncedAt";
 
-export type SyncState = "never" | "syncing" | "ok" | "failed" | "offline";
+export type SyncState = "never" | "syncing" | "ok" | "failed" | "offline" | "behind";
 
 export interface SyncStatus {
   readonly state: SyncState;
@@ -227,6 +227,51 @@ export async function syncNow(ports: SyncPorts): Promise<SyncOutcome> {
   };
 }
 
+/**
+ * HAS A PEER PUSHED SINCE THIS DEVICE LAST MERGED? — Zach, 2026-09-14.
+ *
+ * *"right now im reviewing this card and it looks like i already did it in the
+ * morning on my phone … but the light is green… which means it's synced…?"*
+ *
+ * It was green and it was honest and it was still the wrong thing to believe.
+ * `lastSyncedAt` means "my last PULL succeeded", and the automatic half of sync
+ * is `pushNow`, which deliberately never pulls (a merge mid-card freezes the
+ * review screen for ~8 seconds and can move what is due underneath him). So a
+ * device goes on saying "synced 38m ago" for ever while a peer drops newer work
+ * into the mailbox a minute later. Measured on his own mailbox that evening: the
+ * phone's payload carried 36 reviews for the day and the laptop had merged none
+ * of them, so he re-reviewed four cards the phone had already answered.
+ *
+ * Nothing was lost — reviews UNION, and both grades are real — but he did the
+ * work twice and the indicator told him he would not have to.
+ *
+ * **The listing already carries the answer.** `GET /sync/` returns every peer's
+ * `updatedAt` and no payload bodies, so this is a directory read, not a merge: it
+ * can be asked on load and after a push without any of the cost that made the
+ * pull manual in the first place. This does not sync anything. It only decides
+ * whether the dot is allowed to claim that he is up to date.
+ *
+ * A failure here is NOT a sync failure and must not be shown as one — being
+ * offline is the normal state of a local-first app. The caller keeps its status.
+ */
+export async function peersNewerThan(lastSyncedAt: string | null): Promise<number> {
+  const self = deviceId();
+  const { peers } = (await mailboxJson("/sync/")) as { peers: PeerRow[] };
+  const since = lastSyncedAt === null ? null : new Date(lastSyncedAt).getTime();
+  let newer = 0;
+  for (const peer of peers) {
+    if (peer.deviceId === self) continue;
+    // Never synced: any peer at all is newer than nothing.
+    if (since === null || Number.isNaN(since)) {
+      newer += 1;
+      continue;
+    }
+    const at = new Date(peer.updatedAt).getTime();
+    if (!Number.isNaN(at) && at > since) newer += 1;
+  }
+  return newer;
+}
+
 /** "3 minutes ago" — the only form the indicator needs. */
 export function sinceLabel(at: string | null, now: Date = new Date()): string {
   const ago = agoLabel(at, now);
@@ -263,7 +308,12 @@ export function agoLabel(at: string | null, now: Date = new Date()): string | nu
  * whose grades are not anywhere else yet.
  */
 export function isStale(status: SyncStatus, now: Date = new Date()): boolean {
-  if (status.state === "failed" || status.state === "never") return true;
+  // `behind` is the sharpest case and does not wait for the day threshold: a
+  // peer's grades are sitting in the mailbox RIGHT NOW and this device is about
+  // to re-ask him cards it has already been told the answer to.
+  if (status.state === "failed" || status.state === "never" || status.state === "behind") {
+    return true;
+  }
   if (status.lastSyncedAt === null) return true;
   const ms = now.getTime() - new Date(status.lastSyncedAt).getTime();
   return Number.isNaN(ms) || ms > 24 * 60 * 60 * 1000;

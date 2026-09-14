@@ -3031,6 +3031,18 @@ input[data-answer="incorrect"] {
   border-color: var(--danger);
 }
 
+/* A PEER HAS NEWER GRADES AND THIS DEVICE HAS NOT MERGED THEM. Filled, like
+   `ok`, because this device is not broken and has nothing to retry — but SQUARE,
+   because `--good` and `--vermilion` cannot be told apart by hue alone at 9px and
+   decision 33 already settled that the dot differs by shape. Hollow was taken by
+   `stale`, and this is not that: `stale` is "nobody has heard from anyone",
+   this is "the answer is sitting in the mailbox right now". */
+.syncdot[data-state="behind"] i {
+  background: var(--vermilion);
+  border-color: var(--vermilion);
+  border-radius: 1px;
+}
+
 /* In flight. `prefers-reduced-motion` gets a static half-tone rather than a
    spin — the same rule the climb follows. */
 .syncdot[data-state="syncing"] i {
