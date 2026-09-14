@@ -933,6 +933,50 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
  * SQUARE, hairline, no fill — the brief's button, at the size of a line of text
  * rather than a control bar. It is deliberately quieter than `.replay`: that one
  * is the primary gesture and earns its circle; this is a precision tap. */
+/* ── generate what Mochi never generated ────────────────────────────────────
+ *
+ * Zach, 2026-09-14, on a 疑念 card with no emoji line: *"i need way to regenerate
+ * on the fly when something is missing, maybe some ui?"*. Measured: 799 of 3,859
+ * cards (20.7%) are missing that line, because Mochi generated lazily on render
+ * and he never reached side 4 on those cards.
+ *
+ * DASHED, NOT SOLID, and quieter than anything else on the card. It stands in a
+ * hole in the content — so it has to read as "something is absent here" rather
+ * than as a control competing with the card's own text. The dash is the same
+ * vocabulary as `.reveal-zone`'s outline: a thing that is not filled in yet.
+ *
+ * It is NOT `--vermilion`. Decision 32 allows one vermilion per screen and it is
+ * the mark's top rung; a missing emoji line is not an error, it is a gap. */
+.regen {
+  background: none;
+  border: 1px dashed var(--edge);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  /* Thumb-sized: it can be the only thing on its line, and it sits at the bottom
+     of a card where his hand already is. `.clip` is 34px because it lives INSIDE
+     running text and a taller box would push the lines apart; this does not. */
+  min-height: 40px;
+  padding: 0 12px;
+}
+
+.regen:active {
+  background: var(--sunk);
+}
+
+.regen[disabled] {
+  cursor: default;
+  opacity: 0.6;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .regen:hover {
+    border-color: var(--indigo);
+    color: var(--indigo);
+  }
+}
+
 /* The hairline — `--played` is written by `mountClipButtons` from `timeupdate`.
    Absolutely positioned, so it costs no layout and cannot move the line of text
    the button sits in. `main.ts` carries the reasoning for why this is a rule and

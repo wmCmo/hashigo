@@ -1391,6 +1391,7 @@ async function fillGeneratedText(card: MountedCard<HTMLElement>): Promise<void> 
       })),
     });
     card.fillText(reply.texts);
+    offerMissingGenerations(card, reply.texts);
     // RE-SCALE, AND THIS IS NOT OPTIONAL. `sideScale` measures rendered text, and
     // an `ai` slot is EMPTY at render time by contract — so 単語's example-sentence
     // side measures as a two-character stub, lands in `display`, and then the
@@ -1399,6 +1400,147 @@ async function fillGeneratedText(card: MountedCard<HTMLElement>): Promise<void> 
     if (card === mounted) scaleSides(card);
   } catch {
     /* see the header: pending is the old behaviour, not a new failure */
+  }
+}
+
+// ─── FILL WHAT MOCHI NEVER GENERATED — Zach, 2026-09-14 ─────────────────────
+//
+// *"im now at 疑念 card — i dont see emojis. i need way to regenerate on the fly
+// when something is missing. maybe some ui?"*
+//
+// ─── IT IS NOT RARE, AND IT IS NOT A BUG IN THE IMPORT ──────────────────────
+//
+// Measured over the two templates that carry the line
+// (`{{<ai>Describe a word << 単語 >> using emojis only</ai>}}`):
+//
+//     単語   726 of 3,468 missing   20.9%
+//     言葉    73 of   391 missing   18.7%
+//     ------------------------------------
+//            799 of 3,859           20.7%
+//
+// One card in five. The example sentence, by contrast, is missing on 18 of 3,870
+// (0.5%) — so this is specifically the emoji line, and the reason is that Mochi
+// generated LAZILY, on render. A card whose side 4 he never reached in Mochi
+// never had its emoji made. Generating on demand is therefore not a new idea
+// bolted on: it is the behaviour he already had, moved to a button he can see.
+//
+// ─── WHY A BUTTON AND NOT A SILENT AUTO-FILL ────────────────────────────────
+//
+// It spends his API credit and it is not idempotent — an LLM asked twice for
+// emoji for 疑念 returns two different answers. Filling silently on mount would
+// bill 799 cards over a few weeks of review without ever asking, and would make
+// the card change under him on a re-review. So: he asks, once, and the answer is
+// stored (twice — see `requestGeneration`).
+//
+// `fillTextSlots` already leaves an unresolved slot at `data-state="pending"`
+// rather than emptying it, precisely because "nothing was generated" and "this
+// generated an empty string" are different facts. That attribute is the hook.
+const GENERATE_ENDPOINT = "/generate/";
+
+/** Kinds the laptop will generate. Audio is deferred — `vite.generate.ts` says why. */
+const GENERATABLE: ReadonlySet<string> = new Set(["ai", "translate"]);
+
+/**
+ * Put a `generate` control in every slot that came back empty.
+ *
+ * Takes the REPLY rather than re-reading the DOM: `texts[i] === null` is the
+ * worker saying "the store has nothing for this", which is the fact worth acting
+ * on. Reading `data-state` back would also catch a slot that resolved to an empty
+ * string, and that is a different thing to offer to fix.
+ */
+function offerMissingGenerations(
+  card: MountedCard<HTMLElement>,
+  texts: readonly (string | null)[],
+): void {
+  card.textSlots.forEach((slot, index) => {
+    if (texts[index] !== null) return;
+    if (!GENERATABLE.has(slot.kind)) return;
+    const target = card.result.generations.find(
+      (mount) => mount.request?.text === slot.text && mount.request?.kind === slot.kind,
+    );
+    const output = target?.output;
+    if (output === undefined || output === null) return;
+    // Already offered — `fillGeneratedText` runs once per mount, but a preview of
+    // the same card opens its own and this keeps the two from stacking.
+    if (output.querySelector(".regen") !== null) return;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "regen";
+    // Just "generate". `slot.name` is the RENDERER's element name — `ai`,
+    // `translate` — so "generate ai" is the internals leaking into the card. The
+    // button stands in the hole its content belongs in, which is the only label
+    // it needs; the prompt goes on `title` for a pointer that has one.
+    button.textContent = "generate";
+    button.title = slot.text;
+    button.addEventListener("click", () => {
+      void requestGeneration(card, slot, button);
+    });
+    output.appendChild(button);
+  });
+}
+
+/**
+ * Ask the laptop for one generation, then put it everywhere it belongs.
+ *
+ * ─── TWO WRITES, AND THE ONE THAT SURVIVES IS ON THE LAPTOP ─────────────────
+ *
+ * The endpoint writes it into `build/hashigo.db` before replying. That is not an
+ * optimisation, it is the whole reason this is a server round trip rather than a
+ * `fetch` to Anthropic from here:
+ *
+ *   · decision 33's sync payload carries reviews, tracks and flags, NOT blobs —
+ *     Zach deferred blob delivery himself — so a generation made on the phone
+ *     would never reach the laptop;
+ *   · `app-bootstrap` rebuilds each device's seed FROM `build/hashigo.db`, so
+ *     anything living only in OPFS is gone at the next rebuild.
+ *
+ * The `storeGeneration` message is the second write: this device's own copy, so
+ * the card stays filled until the rebuild hands it back properly.
+ */
+async function requestGeneration(
+  card: MountedCard<HTMLElement>,
+  slot: MountedCard<HTMLElement>["textSlots"][number],
+  button: HTMLButtonElement,
+): Promise<void> {
+  button.disabled = true;
+  const was = button.textContent;
+  button.textContent = "generating…";
+  try {
+    const response = await fetch(GENERATE_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: slot.kind,
+        text: slot.text,
+        lang: slot.lang,
+        voice: slot.voice,
+        options: slot.options,
+      }),
+    });
+    const body = (await response.json()) as { text?: string; error?: string };
+    if (!response.ok || typeof body.text !== "string" || body.text === "") {
+      // THE COMMON FAILURE IS NOT AN ERROR, IT IS BEING AWAY FROM THE LAPTOP,
+      // and the message has to say so — otherwise a phone on mobile data reads
+      // as a broken app rather than as a feature that needs the tailnet, which
+      // is the same availability the sync dot already has.
+      say(body.error ?? `the laptop said ${response.status}`, true);
+      button.disabled = false;
+      button.textContent = was;
+      return;
+    }
+    // Cache it here too. A failure to cache is logged by the worker and does not
+    // stop the text reaching the card — he asked for it, he should see it.
+    await ask<"storeGeneration">({ kind: "storeGeneration", slot, text: body.text }).catch(
+      () => undefined,
+    );
+    button.remove();
+    card.fillText(card.textSlots.map((s) => (s === slot ? body.text! : null)));
+    if (card === mounted) scaleSides(card);
+  } catch (cause) {
+    say(`could not reach the laptop to generate: ${(cause as Error).message}`, true);
+    button.disabled = false;
+    button.textContent = was;
   }
 }
 

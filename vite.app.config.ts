@@ -36,6 +36,8 @@ import { fileURLToPath } from "node:url";
 
 import { defineConfig, type Plugin } from "vite";
 
+import { generateOnDemand } from "./vite.generate.js";
+
 const root = dirname(fileURLToPath(import.meta.url));
 
 /** Tunnel hostnames Zach reviews from. NEVER `allowedHosts: true` — that is
@@ -402,7 +404,7 @@ export default defineConfig({
    *   icons/*.png            referenced by that JSON, by absolute path
    */
   publicDir: "public",
-  plugins: [serveAppDatabases(), syncMailbox(), serviceWorkerPrecache()],
+  plugins: [serveAppDatabases(), syncMailbox(), generateOnDemand(), serviceWorkerPrecache()],
   define: {
     __SCHEMA_VERSION_FROM_NODE__: JSON.stringify(schemaVersionFromNode()),
   },

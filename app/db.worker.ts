@@ -35,7 +35,7 @@
 import { SqliteBlobStore } from "../src/blobs/sqlite.js";
 import { exportLocalArchive } from "../src/backup/index.js";
 import { exportSync, mergeSync } from "../src/sync/index.js";
-import { resolveDescriptorText } from "../src/generate/index.js";
+import { resolveDescriptorText, storeDescriptorText } from "../src/generate/index.js";
 import {
   databaseFilesInOpfs,
   importDatabaseBrowser,
@@ -81,6 +81,7 @@ import type {
   UngradeRequest,
   PreviewRequest,
   BacklinksRequest,
+  StoreGenerationRequest,
   SetFieldRequest,
   TemplateChoice,
   TemplateDetail,
@@ -1579,6 +1580,41 @@ function generatedText(request: GeneratedTextRequest): void {
   post({ kind: "generatedText", id: request.id, texts });
 }
 
+/**
+ * CACHE A GENERATION THE LAPTOP JUST MADE — Zach, 2026-09-14.
+ *
+ * `vite.generate.ts` owns the API key and has already written this into
+ * `build/hashigo.db`, which is the copy that survives a seed rebuild. This is the
+ * device's own copy, so the card is still filled the next time he opens it.
+ *
+ * IT NEVER GENERATES AND NEVER FETCHES. It is handed finished text and files it
+ * under the identity `resolveDescriptorText` will look it up by —
+ * `storeDescriptorText` derives that identity itself rather than taking one, so
+ * the round trip is closed by construction. A non-text kind throws there; this
+ * reports the throw as `hash: null` rather than failing the request, because a
+ * cache that could not write is not a reason to lose the text already on screen.
+ */
+function storeGeneration(request: StoreGenerationRequest): void {
+  const db = requireCards();
+  let hash: string | null = null;
+  try {
+    hash = storeDescriptorText(
+      db,
+      {
+        kind: request.slot.kind as never,
+        text: request.slot.text,
+        lang: request.slot.lang,
+        voice: request.slot.voice,
+        options: request.slot.options,
+      },
+      request.text,
+    );
+  } catch (cause) {
+    log(`could not cache the generation: ${(cause as Error).message}`, "bad");
+  }
+  post({ kind: "storeGeneration", id: request.id, hash });
+}
+
 function backup(request: BackupRequest): void {
   const db = requireCards();
   const archive = exportLocalArchive(db, new Date().toISOString());
@@ -2164,6 +2200,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "backlinks":
           backlinks(request);
+          break;
+        case "storeGeneration":
+          storeGeneration(request);
           break;
         case "setField":
           setField(request);

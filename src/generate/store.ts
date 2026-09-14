@@ -35,6 +35,7 @@ import {
   generationKey,
   lookupGeneration,
 } from "../blobs/generation.js";
+import { sha256Hex } from "../blobs/sha256.js";
 import type { BlobKind } from "../schema/index.js";
 import type { FieldGenerationRequest } from "./fields.js";
 
@@ -208,4 +209,87 @@ export function resolveDescriptorText(
   options: ResolveOptions = {},
 ): string | null {
   return storeTextResolver(db, options)({ ...descriptor, fieldId: "", fieldName: "" });
+}
+
+/**
+ * THE WRITE SIDE OF `resolveDescriptorText`, and the first one in this module.
+ *
+ * Zach, 2026-09-14, on a 疑念 card with no emoji line: *"i need way to regenerate
+ * on the fly when something is missing, maybe some ui?"*
+ *
+ * Everything above this point reads. Generation itself has always been a Node
+ * script (`scripts/generate-examples.ts`) run over `build/hashigo.db` — which is
+ * fine for a batch and useless for the card in front of him. This is the one
+ * function both surfaces need: given the descriptor the RENDERER computed and the
+ * text an LLM returned, file it where the resolver will find it.
+ *
+ * ─── THE IDENTITY IS COMPUTED, NEVER PASSED IN ──────────────────────────────
+ *
+ * `generationIdentity` normalises the source text, drops `lang`/`voice` out of
+ * the options bag and canonicalises what is left. Storing anything else files
+ * the blob under a key nothing looks up — measured once already, in
+ * `scripts/generate-examples.ts`: writing `options: "{}"` instead of the field's
+ * own subset put all 67 sentences at `other-voice` rather than `exact`. They
+ * rendered, under a near-miss. Passing the identity in as an argument would let
+ * a caller make that mistake again; deriving it here makes the round trip
+ * `resolve → store → resolve` closed by construction.
+ *
+ * ─── IDEMPOTENT, AND `refcount` STARTS AT 1 ─────────────────────────────────
+ *
+ * Decision 4: blobs are content-addressed, so the same text stores at the same
+ * hash and a second call is `DO NOTHING`. The refcount is 1 rather than 0
+ * because a blob at 0 is what `sweepUnreferenced` collects — and the thing
+ * referencing this one is a rendered generator MOUNT, which has no row in
+ * `blob_refs` to point at it (that table keys on a field, and 575 of these are
+ * inline `<ai>` elements in a template body). A count of 1 with no ref row is
+ * the honest encoding of "something holds this and it is not in the schema".
+ *
+ * Returns the content address it stored under, which is also the hash a caller
+ * can hand to `blobs.hash` to confirm the round trip.
+ */
+export function storeDescriptorText(
+  db: SqliteHandle,
+  descriptor: {
+    readonly kind: BlobKind;
+    readonly text: string;
+    readonly lang: string | null;
+    readonly voice: string | null;
+    readonly options: Readonly<Record<string, string>>;
+  },
+  generated: string,
+): string {
+  if (!TEXT_KINDS.has(descriptor.kind)) {
+    throw new Error(`${descriptor.kind} is not a text generation — nothing here may write audio`);
+  }
+  const identity = generationIdentity({
+    kind: descriptor.kind,
+    text: descriptor.text,
+    voice: descriptor.voice,
+    lang: descriptor.lang,
+    options: descriptor.options,
+  });
+  const bytes = new TextEncoder().encode(generated);
+  if (bytes.length === 0) {
+    // `lookupGeneration` excludes `byte_size > 0` to keep Mochi's 10 zero-byte
+    // failures from becoming permanent cache hits. Writing one here would create
+    // a row that can never be read and can never be replaced.
+    throw new Error("refusing to store an empty generation");
+  }
+  const hash = sha256Hex(bytes);
+  db.prepare(
+    `INSERT INTO blobs (hash, kind, mime, byte_size, source_text, voice, lang, options,
+                        bytes, refcount)
+     VALUES (?, ?, 'text/plain; charset=utf-8', ?, ?, ?, ?, ?, ?, 1)
+     ON CONFLICT (hash) DO NOTHING`,
+  ).run(
+    hash,
+    identity.kind,
+    bytes.length,
+    identity.sourceText,
+    identity.voice,
+    identity.lang,
+    identity.options,
+    bytes,
+  );
+  return hash;
 }

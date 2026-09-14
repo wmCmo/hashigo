@@ -19,6 +19,7 @@ import { existsSync } from "node:fs";
 import { openDatabase } from "../src/db/index.js";
 import { MEMORY } from "../src/db/index.js";
 import { resolveGenerationAsync } from "../src/import/blobs.js";
+import { resolveDescriptorText, storeDescriptorText } from "../src/generate/index.js";
 import {
   setCardVoice,
   setDeckVoice,
@@ -676,5 +677,116 @@ describe("resolveGenerationAsync — an HTTP call could not be passed to the syn
     } finally {
       db.close();
     }
+  });
+});
+
+// ─── generating what Mochi never generated (Zach, 2026-09-14) ────────────────
+
+/**
+ * `storeDescriptorText` — the write side, and the only one in `src/generate`.
+ *
+ * The claim worth pinning is CLOSURE: whatever the renderer computed as a
+ * descriptor, storing under it must make `resolveDescriptorText` find it with the
+ * same descriptor. That round trip is the entire contract, and it is exactly what
+ * `scripts/generate-examples.ts` once got wrong — it passed an options bag of
+ * `{}` instead of the field's own subset and filed all 67 sentences under a
+ * near-miss, where they resolved as `other-voice` rather than `exact`.
+ */
+const DESCRIPTOR = {
+  kind: "ai" as const,
+  text: "Describe a word 疑念 using emojis only",
+  lang: null,
+  voice: null,
+  options: {} as Readonly<Record<string, string>>,
+};
+
+describe("storing a generation made on demand", () => {
+  it("closes the round trip: what it stores, the resolver finds", () => {
+    const db = openDatabase(MEMORY);
+    expect(resolveDescriptorText(db, DESCRIPTOR)).toBeNull();
+    storeDescriptorText(db, DESCRIPTOR, "🤔❓💭🚫🤝");
+    expect(resolveDescriptorText(db, DESCRIPTOR)).toBe("🤔❓💭🚫🤝");
+    db.close();
+  });
+
+  it("derives the identity rather than trusting the caller's option bag", () => {
+    // `generationIdentity` normalises the text and strips lang/voice OUT of the
+    // options. A caller that passed those through would file the blob under a key
+    // the resolver never builds — which is the bug that put 67 sentences at
+    // `other-voice`. Storing with them present and resolving with them present
+    // must still be an EXACT hit, because both go through the same derivation.
+    const db = openDatabase(MEMORY);
+    const noisy = { ...DESCRIPTOR, options: { lang: "ja", voice: "x", "ai-task": "custom" } };
+    storeDescriptorText(db, noisy, "🧐");
+    expect(resolveDescriptorText(db, noisy)).toBe("🧐");
+    // And the row it wrote carries the canonical subset, not what was handed in.
+    const row = db
+      .prepare("SELECT options FROM blobs WHERE kind = 'ai'")
+      .get() as { options: string };
+    expect(row.options).toBe('{"ai-task":"custom"}');
+    db.close();
+  });
+
+  it("is idempotent — the same text is the same blob, decision 4", () => {
+    const db = openDatabase(MEMORY);
+    const first = storeDescriptorText(db, DESCRIPTOR, "🤔❓");
+    const again = storeDescriptorText(db, DESCRIPTOR, "🤔❓");
+    expect(again).toBe(first);
+    const { n } = db.prepare("SELECT count(*) AS n FROM blobs").get() as { n: number };
+    expect(n).toBe(1);
+    db.close();
+  });
+
+  it("leaves refcount at 1, because nothing in the schema can point at an inline generator", () => {
+    // 575 of these are `{{<ai>…</ai>}}` in a TEMPLATE BODY. `blob_refs` keys on a
+    // field, so there is no row to hold this down — and a blob at refcount 0 is
+    // what `sweepUnreferenced` collects.
+    const db = openDatabase(MEMORY);
+    storeDescriptorText(db, DESCRIPTOR, "🤔");
+    const row = db.prepare("SELECT refcount, byte_size FROM blobs").get() as {
+      refcount: number;
+      byte_size: number;
+    };
+    expect(row.refcount).toBe(1);
+    expect(row.byte_size).toBeGreaterThan(0);
+    db.close();
+  });
+
+  it("REFUSES a speech kind — nothing here may write audio", () => {
+    // Decision 18 (the TTS key never reaches a client) and the deferral repeated
+    // to five agents. The endpoint refuses earlier so nothing is billed; this is
+    // the second gate, and it is the one a future caller will meet.
+    const db = openDatabase(MEMORY);
+    expect(() => storeDescriptorText(db, { ...DESCRIPTOR, kind: "speech" }, "nope")).toThrow(
+      /not a text generation/,
+    );
+    expect(db.prepare("SELECT count(*) AS n FROM blobs").get()).toEqual({ n: 0 });
+    db.close();
+  });
+
+  it("REFUSES an empty generation, which would be a permanent unreadable hit", () => {
+    // `lookupGeneration` filters `byte_size > 0` to keep Mochi's 10 zero-byte
+    // failures from becoming cache hits. A zero-byte row written here could never
+    // be read AND could never be replaced, because the hash would be taken.
+    const db = openDatabase(MEMORY);
+    expect(() => storeDescriptorText(db, DESCRIPTOR, "")).toThrow(/empty generation/);
+    db.close();
+  });
+
+  it("stores text the review screen reads back through the SAME path it renders with", () => {
+    // Not a second resolver: `resolveDescriptorText` is what `db.worker.ts`'s
+    // `generatedText` calls for every slot on every card, so a hit here is a hit
+    // on screen.
+    const db = openDatabase(MEMORY);
+    storeDescriptorText(db, DESCRIPTOR, "🤔❓💭🚫🤝");
+    const asTheWorkerAsks = resolveDescriptorText(db, {
+      kind: "ai",
+      text: "Describe a word 疑念 using emojis only",
+      lang: null,
+      voice: null,
+      options: {},
+    });
+    expect(asTheWorkerAsks).toBe("🤔❓💭🚫🤝");
+    db.close();
   });
 });

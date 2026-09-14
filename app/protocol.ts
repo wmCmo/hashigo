@@ -753,6 +753,41 @@ export interface GeneratedTextMessage {
   readonly texts: readonly (string | null)[];
 }
 
+/**
+ * CACHE ONE GENERATION THE SERVER JUST MADE — Zach, 2026-09-14.
+ *
+ * The laptop's `/generate/` endpoint owns the API key and writes the result into
+ * `build/hashigo.db` (see `vite.generate.ts` for why that write is the one that
+ * matters). This is the SECOND write: the same text into this device's own OPFS,
+ * so the card is still right the next time he opens it rather than only for as
+ * long as this mount lives.
+ *
+ * It carries no card id and no field id. A generation is addressed by its
+ * identity — kind, source text, voice, lang, options — and that is deliberately
+ * all this says, because it is exactly what `resolveDescriptorText` will look it
+ * up by. A cache keyed on anything the resolver does not consult is a cache that
+ * misses.
+ */
+export interface StoreGenerationRequest {
+  readonly kind: "storeGeneration";
+  readonly id: number;
+  readonly slot: {
+    readonly kind: string;
+    readonly text: string;
+    readonly lang: string | null;
+    readonly voice: string | null;
+    readonly options: Readonly<Record<string, string>>;
+  };
+  readonly text: string;
+}
+
+export interface StoreGenerationMessage {
+  readonly kind: "storeGeneration";
+  readonly id: number;
+  /** The content address it landed at. Null when the worker declined to store it. */
+  readonly hash: string | null;
+}
+
 /** Decision 17's archive, as JSON text, for the page to hand to a download. */
 export interface BackupRequest {
   readonly kind: "backup";
@@ -850,6 +885,7 @@ export type AppRequest =
   | SyncMergeRequest
   | PreviewRequest
   | BacklinksRequest
+  | StoreGenerationRequest
   | DecksRequest
   | BrowseRequest
   | CreateCardRequest
@@ -1042,6 +1078,7 @@ export type AppMessage =
   | SetFieldMessage
   | PreviewMessage
   | BacklinksMessage
+  | StoreGenerationMessage
   | ResetMessage
   | LogMessage
   | FetchingMessage
@@ -1076,6 +1113,7 @@ export interface ReplyFor {
   readonly reset: ResetMessage;
   readonly preview: PreviewMessage;
   readonly backlinks: BacklinksMessage;
+  readonly storeGeneration: StoreGenerationMessage;
   readonly setField: SetFieldMessage;
   readonly glance: GlanceMessage;
   readonly dashboard: DashboardMessage;

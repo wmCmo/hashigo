@@ -49,6 +49,7 @@ export {
   resolveDescriptorText,
   resolveFieldGeneration,
   resolveFieldGenerations,
+  storeDescriptorText,
   storeTextResolver,
   type GenerationDiagnostics,
   type GenerationMatch,
