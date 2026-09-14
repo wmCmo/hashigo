@@ -12,7 +12,7 @@
  * had to solve them for a different reason:
  *
  *   1. **Device-stable identity.** `reviews.id` and `card_tracks.id` are local
- *      INTEGER PRIMARY KEYs — two devices both hand out 102,021 to different
+ *      INTEGER PRIMARY KEYs — two devices both hand out 103,111 to different
  *      rows, so neither can be a merge key. `src/backup/archive.ts` keys every
  *      row on `(card_id, kind)`, which is UNIQUE and is the same on both devices
  *      because `cards.id` is Mochi's id or a locally-created TEXT one.
@@ -250,7 +250,7 @@ interface LocalTrack {
   readonly schedulerState: string | null;
 }
 
-const trackKey = (cardId: string, kind: string): string => `${cardId} ${kind}`;
+const trackKey = (cardId: string, kind: string): string => `${cardId}\u0000${kind}`;
 
 /**
  * Later of two nullable instants, as strings.
