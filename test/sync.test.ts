@@ -11,6 +11,8 @@
  * symmetric is a merge that needs a "primary" device, which is the thing sync
  * exists to remove.
  */
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
@@ -435,5 +437,159 @@ describe("a template body merges by clock, not by peer order", () => {
       local.close();
       remote.close();
     }
+  });
+});
+
+// ─── the clock the merge rules stand on (Zach, 2026-09-14) ───────────────────
+
+/**
+ * *"if i edit the template on my phone, like changing stroke color to white,
+ * would it get synced?"*
+ *
+ * The answer was NO, and the reason was not in the merge — it was that nothing
+ * ever moved the clock the merge reads.
+ *
+ * `templates.updated_at` and `cards.updated_at` are DEFAULTs on INSERT. There is
+ * no `AFTER UPDATE` trigger maintaining either (`schema.sql` has fourteen
+ * triggers and every one is FTS or blob refcounts), so a row written at import
+ * time keeps its import clock for ever. `app/db.worker.ts` then edited bodies and
+ * flags with bare `SET content = ?` / `SET archived = 1`.
+ *
+ * Both LWW rules below are STRICT — `isNewer` is `a > b` — so two devices whose
+ * clocks are both the import timestamp compare EQUAL, and equal means "keep
+ * mine". The peer's edit is dropped, silently, and the report counts it as
+ * `templatesKept` / `flagsKept` as though a decision had been made.
+ *
+ * That is decision 33's own failure case arriving from the other direction, and
+ * the same shape as the bug Zach reported before it — *"i archived 数字 on my
+ * phone twice before realising the desktop had never heard about it"*.
+ */
+describe("the clock every LWW rule stands on", () => {
+  const EQUAL = "2026-09-08T00:00:00.000Z";
+
+  it("LOSES a template edit when both clocks are the import timestamp", () => {
+    // The bug, pinned as behaviour so the fix below has something to be the fix
+    // OF. Two devices imported together; the phone edited the body and did not
+    // touch the clock.
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      const put = (db: Db, content: string): void => {
+        db.prepare(
+          "INSERT INTO templates (id, name, content, updated_at) VALUES ('t', '漢字', ?, ?)",
+        ).run(content, EQUAL);
+      };
+      put(laptop, '<draw height="400px"/>');
+      // What a bare `UPDATE templates SET content = ?` does: body moves, clock
+      // does not.
+      put(phone, '<draw height="400px" brushColor="#ffffff"/>');
+
+      const report = mergeSync(laptop, exportSync(phone, NOW));
+      expect(report.templatesKept).toBe(1);
+      expect(report.templatesTaken).toBe(0);
+      expect(
+        (laptop.prepare("SELECT content FROM templates WHERE id = 't'").get() as {
+          content: string;
+        }).content,
+      ).not.toContain("brushColor");
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+
+  it("CARRIES the same edit once the clock moves with the body", () => {
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      laptop
+        .prepare("INSERT INTO templates (id, name, content, updated_at) VALUES ('t', '漢字', ?, ?)")
+        .run('<draw height="400px"/>', EQUAL);
+      phone
+        .prepare("INSERT INTO templates (id, name, content, updated_at) VALUES ('t', '漢字', ?, ?)")
+        .run('<draw height="400px" brushColor="#ffffff"/>', EQUAL);
+      // The fix, in the shape `templateOp` now writes it.
+      phone
+        .prepare(
+          "UPDATE templates SET content = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = 't'",
+        )
+        .run('<draw height="400px" brushColor="#ffffff"/>');
+
+      const report = mergeSync(laptop, exportSync(phone, NOW));
+      expect(report.templatesTaken).toBe(1);
+      expect(
+        (laptop.prepare("SELECT content FROM templates WHERE id = 't'").get() as {
+          content: string;
+        }).content,
+      ).toContain("brushColor");
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+
+  it("loses and then carries a card ARCHIVE by exactly the same mechanism", () => {
+    // Not a second bug — the same one. Worth its own test because this is the
+    // one he has already been bitten by, on 数字.
+    const stale = device().db;
+    const fresh = device().db;
+    try {
+      for (const db of [stale, fresh]) {
+        db.prepare("UPDATE cards SET updated_at = ? WHERE id = 'c0'").run(EQUAL);
+      }
+      stale.prepare("UPDATE cards SET archived = 1 WHERE id = 'c0'").run();
+      expect(mergeSync(device().db, exportSync(stale, NOW)).flagsKept).toBeGreaterThan(0);
+
+      fresh
+        .prepare(
+          "UPDATE cards SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = 'c0'",
+        )
+        .run();
+      const laptop = device().db;
+      laptop.prepare("UPDATE cards SET updated_at = ? WHERE id = 'c0'").run(EQUAL);
+      mergeSync(laptop, exportSync(fresh, NOW));
+      expect(flagsOf(laptop, "c0").archived).toBe(1);
+      laptop.close();
+    } finally {
+      stale.close();
+      fresh.close();
+    }
+  });
+});
+
+/**
+ * THE GUARD, and it reads the SOURCE rather than the behaviour.
+ *
+ * `app/db.worker.ts` cannot be imported here — the root `tsconfig.json` excludes
+ * `app/` on purpose — and the bug was not in any rule, it was in a statement
+ * somebody wrote without a clock. So this walks the statements.
+ *
+ * It has teeth in the direction that matters: a NEW mutation added later, to a
+ * table whose rows are merged by clock, fails here until it carries one. Both
+ * previous instances of this defect (数字's archive, the `<ojad>` templates) were
+ * written exactly that way — by adding a statement, not by changing a rule.
+ */
+describe("every synced mutation moves its row's clock", () => {
+  it("no UPDATE of cards or templates in the worker omits updated_at", () => {
+    const source = readFileSync(
+      new URL("../app/db.worker.ts", import.meta.url),
+      "utf8",
+    );
+    const offenders: string[] = [];
+    // Statement text up to the closing quote. Both tables are merged by clock:
+    // `cards.updated_at` carries archived/pinned, `templates.updated_at` carries
+    // the body and the name.
+    for (const match of source.matchAll(/"UPDATE (cards|templates) SET [^"]*"/g)) {
+      if (!match[0].includes("updated_at")) offenders.push(match[0]);
+    }
+    expect(
+      offenders,
+      "these rows are merged LAST-WRITE-WINS on updated_at, and `isNewer` is " +
+        "strict — a mutation that leaves the clock alone is an edit the peer " +
+        "silently discards. Add `updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`.",
+    ).toEqual([]);
+    // The scan must actually be finding statements, or an empty list means
+    // nothing. Both tables are mutated by the card and template editors.
+    expect(source.match(/"UPDATE (cards|templates) SET [^"]*"/g)?.length ?? 0).toBeGreaterThan(5);
   });
 });

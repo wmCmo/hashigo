@@ -722,12 +722,12 @@ function cardOp(request: CardOpRequest): void {
 
   switch (request.op) {
     case "archive":
-      db.prepare("UPDATE cards SET archived = 1 WHERE id = ?").run(card.id);
+      db.prepare("UPDATE cards SET archived = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(card.id);
       undo = { op: "unarchive", cardId: card.id };
       describe = `archived ${name}`;
       break;
     case "unarchive":
-      db.prepare("UPDATE cards SET archived = 0 WHERE id = ?").run(card.id);
+      db.prepare("UPDATE cards SET archived = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(card.id);
       undo = { op: "archive", cardId: card.id };
       describe = `unarchived ${name}`;
       break;
@@ -739,12 +739,12 @@ function cardOp(request: CardOpRequest): void {
     // It touches NO schedule and writes no review, which is why it is safe to hang
     // on a bare keystroke in review.
     case "pin":
-      db.prepare("UPDATE cards SET pinned = 1 WHERE id = ?").run(card.id);
+      db.prepare("UPDATE cards SET pinned = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(card.id);
       undo = { op: "unpin", cardId: card.id };
       describe = `pinned ${name}`;
       break;
     case "unpin":
-      db.prepare("UPDATE cards SET pinned = 0 WHERE id = ?").run(card.id);
+      db.prepare("UPDATE cards SET pinned = 0, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(card.id);
       undo = { op: "pin", cardId: card.id };
       describe = `unpinned ${name}`;
       break;
@@ -787,7 +787,7 @@ function cardOp(request: CardOpRequest): void {
       for (const fieldId of before) if (after.has(fieldId)) kept += 1;
       const hidden = before.size - kept;
 
-      db.prepare("UPDATE cards SET template_id = ? WHERE id = ?").run(to, card.id);
+      db.prepare("UPDATE cards SET template_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(to, card.id);
       const toName =
         to === null
           ? "no template"
@@ -1929,7 +1929,7 @@ function templateOp(request: TemplateOpRequest): void {
     case "rename": {
       const name = (request.name ?? "").trim();
       if (name === "") throw new Error("a template needs a name");
-      db.prepare("UPDATE templates SET name = ? WHERE id = ?").run(name, before.id);
+      db.prepare("UPDATE templates SET name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(name, before.id);
       describe = `renamed template ${before.name} to ${name}`;
       undo = { op: "rename", templateId: before.id, name: before.name };
       break;
@@ -1943,7 +1943,7 @@ function templateOp(request: TemplateOpRequest): void {
       // as a validation that happened. What the editor shows instead is which field
       // names the new body references and which of them do not exist, which is the
       // question a body edit can actually get wrong.
-      db.prepare("UPDATE templates SET content = ? WHERE id = ?").run(content, before.id);
+      db.prepare("UPDATE templates SET content = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(content, before.id);
       describe = `edited ${before.name}'s body (${before.cards.toLocaleString()} cards render it)`;
       undo = { op: "body", templateId: before.id, content: before.content };
       break;
@@ -2001,7 +2001,7 @@ function templateOp(request: TemplateOpRequest): void {
         db.prepare(
           "UPDATE template_fields SET name = ? WHERE template_id = ? AND id = ?",
         ).run(name, before.id, target.id);
-        db.prepare("UPDATE templates SET content = ? WHERE id = ?").run(rewritten.body, before.id);
+        db.prepare("UPDATE templates SET content = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(rewritten.body, before.id);
         for (const entry of rewritten.options) {
           db.prepare(
             "UPDATE template_fields SET options = ? WHERE template_id = ? AND id = ?",
