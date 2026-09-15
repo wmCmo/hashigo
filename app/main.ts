@@ -1742,12 +1742,38 @@ async function requestGeneration(
  *     would land inside a generation prompt and break decision 7.
  *
  * So this matches the card's own stored value, by field TYPE rather than by the
- * id `local-accent`, against the innermost element whose whole text is that
- * value. The failure mode is benign and that is what makes it acceptable: a miss
- * leaves the label rendering exactly as it does today, never somewhere wrong.
- * The four values are `平板` / `頭高` / `中高(n)` / `尾高`, so an element whose
- * entire text is one of them and is not the accent label is not a case this
- * corpus has.
+ * id `local-accent`. The failure mode is benign and that is what makes it
+ * acceptable: a miss leaves the label rendering exactly as it does today, never
+ * somewhere wrong. The four values are `平板` / `頭高` / `中高(n)` / `尾高`, so
+ * something whose entire text is one of them and is not the accent label is not
+ * a case this corpus has.
+ *
+ * ─── IT HAS TO MATCH A TEXT NODE, NOT ONLY AN ELEMENT — 2026-09-15 ─────────
+ *
+ * The first version searched ELEMENTS only, and Zach found what that misses:
+ * *"i think the reading -> cards still treat the 平板 as something that doesn't
+ * look like label?"* — over a 発言 card where it was still full-size white text
+ * beside the head word.
+ *
+ * The two card modes put `型` in structurally different places, and only one of
+ * them has an element to find (decision 20 — `<<#Reading>>` clozes it, and
+ * `<<^Reading>>` leaves it plain):
+ *
+ *     mode 1, Reading = true    {{<< 型 >>}}   -> `.hashigo-cloze-answer`, an
+ *                                                ELEMENT whose whole text is 平板
+ *     mode 2, Reading not true  << 型 >>       -> a BARE TEXT NODE inside the
+ *                                                <p> that also holds both clozes
+ *                                                and the speech mount
+ *
+ * So the fix shipped on 2026-09-14 worked on the card it was tested with — a
+ * mode-1 card — and did nothing at all for the **3,177** mode-2 cards, which are
+ * the ones where decision 29 makes `型` the DISCOVERY SIGNAL he promotes cards
+ * from. The wrong half was covered.
+ *
+ * A bare text node cannot carry a class, so it is wrapped in a `<span>`. That is
+ * a DOM edit rather than a render change on purpose: `<accent>` as a real
+ * template element is still the right answer and still needs a migration that
+ * reaches two devices.
  *
  * **Decision 27 is why this shrinks the label rather than hiding it.** `型` is
  * the SOLE carrier of 平板-vs-尾高 on 2,148 of 3,830 labelled cards — the
@@ -1760,6 +1786,7 @@ function markAccentLabel(card: MountedCard<HTMLElement>): void {
   if (field === undefined) return;
   const value = (card.loaded.values.get(field.id) ?? "").trim();
   if (value === "") return;
+  const title = `${field.name} — the accent pattern`;
   for (const side of card.result.sides) {
     for (const element of side.element.querySelectorAll<HTMLElement>("*")) {
       if ((element.textContent ?? "").trim() !== value) continue;
@@ -1767,7 +1794,28 @@ function markAccentLabel(card: MountedCard<HTMLElement>): void {
       // and styling the paragraph would shrink whatever else shares the line.
       if (element.querySelector("*") !== null) continue;
       element.classList.add("accent-label");
-      element.setAttribute("title", `${field.name} — the accent pattern`);
+      element.setAttribute("title", title);
+    }
+    // THE MODE-2 SHAPE: a bare text node with no element of its own. Collected
+    // first and replaced after, because replacing while walking a live
+    // TreeWalker is how a walk starts skipping nodes.
+    const walker = document.createTreeWalker(side.element, NodeFilter.SHOW_TEXT);
+    const bare: Text[] = [];
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      if ((node.textContent ?? "").trim() !== value) continue;
+      // Already inside something marked above: leave it alone rather than
+      // nesting a second span inside the element that is already the label.
+      if ((node.parentElement?.classList.contains("accent-label") ?? false)) continue;
+      bare.push(node as Text);
+    }
+    for (const node of bare) {
+      const span = document.createElement("span");
+      span.className = "accent-label";
+      span.setAttribute("title", title);
+      // The node's own text, not `value` — it carries the surrounding
+      // whitespace the layout already accounts for.
+      span.textContent = node.textContent;
+      node.parentNode?.replaceChild(span, node);
     }
   }
 }
@@ -2718,6 +2766,10 @@ async function openPreview(cardId: string): Promise<void> {
   void fillGeneratedText(mounted);
   for (const side of mounted.result.sides) side.element.hidden = side.empty;
   for (const side of mounted.loop.sides) side.reveal("caller", { silent: true });
+  // The label treatment belongs here too. A preview is where he LOOKS at a card
+  // (decision 30), so `型` reading as a second head word is the same complaint on
+  // this surface as on the review screen.
+  markAccentLabel(mounted);
 
   body.appendChild(mounted.result.root);
   layerHost.appendChild(root);

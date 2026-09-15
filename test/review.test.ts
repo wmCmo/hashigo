@@ -193,11 +193,17 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       console.log(
         `reveal over 40 単語 cards: ${revealedCards} cards played · ${played} play() calls`,
       );
-      // 40 of 40 and 79 calls, not 39/39: with `resolveGenerated` on, most cards
+      // 40 of 40 and 80 calls, not 39/39: with `resolveGenerated` on, most cards
       // carry a SECOND clip (the 例文 sentence audio) and revealing both sides
       // plays both. The one card that previously had nothing playable now does.
+      //
+      // **79 -> 80 on 2026-09-15, and the corpus moved rather than the code.**
+      // `scripts/fill-generations.ts` synthesised the 785 clips Mochi never made,
+      // so one card in this sample of 40 gained its second clip. A figure
+      // measured over the real corpus moves when the corpus does; what must not
+      // move is `bytesSeen === played` below, which is about the controller.
       expect(revealedCards).toBe(40);
-      expect(played).toBe(79);
+      expect(played).toBe(80);
       // Every play had a source assigned first — the controller never calls
       // `play()` on a bare element, which in Chromium returns a promise that
       // neither resolves nor rejects.
@@ -743,16 +749,23 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       expect(masked).toBe(391);
       expect(silent).toEqual(["0Weo2702"]);
 
-      // ── AND THE 14 THE SHELL HAS TO HANDLE ──
-      // 377 of the 391 questions actually made a sound. The other 14 asked into a
+      // ── AND THE ONE THE SHELL STILL HAS TO HANDLE ──
+      // 390 of the 391 questions actually make a sound. The remainder asks into a
       // clip the store cannot produce, and on an IDENTIFY card that is worse than
       // it is on a produce card: silence there is not a missing extra, it is the
       // question itself going missing, leaving a masked word, a `型` label and
       // nothing to identify. Pinned so the shell's fallback has a number to aim
       // at, and so this cannot drift unnoticed.
-      expect(played).toBe(377);
-      expect(prompts - played).toBe(14);
-      expect(outcomes.get("playing")).toBe(377);
+      //
+      // **377 -> 390 on 2026-09-15, and this is the fix landing rather than a
+      // regression.** This assertion existed to count cards that ask a question
+      // into silence; `scripts/fill-generations.ts` synthesised the clips Mochi
+      // had never generated, so **13 of the 14 now sound**. The fallback still
+      // has to exist — one card remains, and a store can always be short of a
+      // payload — but the number it aims at is an order of magnitude smaller.
+      expect(played).toBe(390);
+      expect(prompts - played).toBe(1);
+      expect(outcomes.get("playing")).toBe(390);
     } finally {
       close();
     }
