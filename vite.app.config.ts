@@ -89,11 +89,12 @@ const HOSTS = [...ALLOWED_HOSTS, ...localTunnelHosts()];
 /** `--out` of `scripts/app-bootstrap.ts`. */
 const ASSET_DIR = resolve(root, "build/app");
 
-/** URL → file. Exactly these two; nothing else on disk is reachable this way. */
+/** URL → file. Exactly these four; nothing else on disk is reachable this way. */
 const ASSETS: ReadonlyMap<string, string> = new Map([
   ["/hashigo-app.db", resolve(ASSET_DIR, "hashigo-app.db")],
+  ["/hashigo-app-gen.db", resolve(ASSET_DIR, "hashigo-app-gen.db")],
   ["/hashigo-app-blobs.db", resolve(ASSET_DIR, "hashigo-app-blobs.db")],
-  // The seed manifest: a few hundred bytes naming what the two files above hold,
+  // The seed manifest: a few hundred bytes naming what the three files above hold,
   // so a browser that already has a database can tell whether it is the CURRENT
   // one without downloading 73 MB to find out. See `app/db.worker.ts`.
   ["/hashigo-app.json", resolve(ASSET_DIR, "hashigo-app.json")],

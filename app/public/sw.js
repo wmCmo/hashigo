@@ -15,9 +15,9 @@
  *
  * ─── WHAT IT MUST NEVER CACHE, AND WHY THAT IS NOT A DETAIL ─────────────────
  *
- * `/hashigo-app.db` is ~73 MB and `/hashigo-app-blobs.db` is ~224 MB. They are
- * fetched ONCE, into OPFS, and never read over the network again. A Cache
- * Storage copy would:
+ * `/hashigo-app.db` is ~73 MB, `/hashigo-app-blobs.db` up to ~640 MB, and
+ * `/hashigo-app-gen.db` ~9 MB. All three are fetched ONCE, into OPFS, and never
+ * read over the network again. A Cache Storage copy would:
  *
  *   · sit in the SAME origin quota as OPFS, so the app would hold ~600 MB to
  *     use ~300 MB — on a phone, that is the difference between fitting and
@@ -31,7 +31,12 @@
  * whether the server has a newer seed. A cached copy makes a stale database
  * look current, which is the one lie this app cannot afford.
  *
- * So all three are passed straight through, untouched.
+ * So all four are passed straight through, untouched.
+ *
+ * **`/hashigo-app-gen.db` was added on 2026-09-16 and `test/pwa.test.ts` is what
+ * demanded it** — that test reads the served list out of `vite.app.config.ts`,
+ * so a new seed file is red here until this set names it. Nine megabytes is
+ * small enough to have been shrugged at and duplicated for ever.
  *
  * ─── NETWORK-FIRST, NOT CACHE-FIRST ─────────────────────────────────────────
  *
@@ -61,7 +66,12 @@ const VERSION = self.__HASHIGO_VERSION__ ?? "hashigo-shell-dev";
 const PRECACHE = self.__HASHIGO_PRECACHE__ ?? ["/"];
 
 /** Fetched straight from the network, never stored. See the header. */
-const NEVER_CACHE = new Set(["/hashigo-app.db", "/hashigo-app-blobs.db", "/hashigo-app.json"]);
+const NEVER_CACHE = new Set([
+  "/hashigo-app.db",
+  "/hashigo-app-gen.db",
+  "/hashigo-app-blobs.db",
+  "/hashigo-app.json",
+]);
 
 /*
  * `/sync/` IS STATE, NOT A SHELL ASSET, AND CACHING IT IS ACTIVELY WRONG.

@@ -118,10 +118,12 @@ import type {
  */
 const CARD_DB = "/hashigo.db";
 const STORE_DB = "/hashigo-blobs.db";
+const GEN_DB = "/hashigo-gen.db";
 
 /** Served by `vite.app.config.ts` middleware from `build/app/`. */
 const CARD_URL = "/hashigo-app.db";
 const STORE_URL = "/hashigo-app-blobs.db";
+const GEN_URL = "/hashigo-app-gen.db";
 /** A few hundred bytes describing the two above. See `seedManifest`. */
 const SEED_URL = "/hashigo-app.json";
 
@@ -274,6 +276,13 @@ interface SeedManifest {
    * a manifest written before 2026-09-12, which is why every use is optional.
    */
   readonly storeCreated?: string;
+  /**
+   * `gen_meta.created` of the TEXT GENERATION file the server is serving. Absent
+   * on a manifest written before 2026-09-16, which is why every use is optional
+   * — an older seed must keep working rather than re-fetching on every boot.
+   */
+  readonly genCreated?: string;
+  readonly generations?: number;
 }
 
 /**
@@ -306,6 +315,92 @@ async function seedManifest(): Promise<SeedManifest | null> {
     return typeof parsed.seedReviews === "number" ? (parsed as SeedManifest) : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Copy the text generations from file 3 into `blobs`.
+ *
+ * Returns how many rows were new. See the call site for why a write into the
+ * card database is safe here and what keeps it that way.
+ */
+async function applyGenerations(fetched: boolean): Promise<number> {
+  const db = cards;
+  if (db === null) return 0;
+  if (!(await databaseFilesInOpfs()).includes(GEN_DB)) return 0;
+  const gen = await openDatabaseBrowser({ filename: GEN_DB, applySchema: false });
+  try {
+    const total = Number(
+      (gen.prepare("SELECT count(*) AS n FROM generations").get() as { n: number }).n,
+    );
+    if (total === 0) return 0;
+    // A boot that did not re-fetch has already applied these; asking for the
+    // count is cheaper than 28,676 conflicting inserts.
+    if (!fetched) {
+      const have = Number(
+        (
+          db
+            .prepare(
+              `SELECT count(*) AS n FROM blobs
+                WHERE kind IN ('ai', 'translate', 'furigana', 'dictionary')`,
+            )
+            .get() as { n: number }
+        ).n,
+      );
+      if (have >= total) return 0;
+    }
+    const rows = gen
+      .prepare(
+        `SELECT hash, kind, mime, byte_size, source_text, voice, lang, options, bytes, refcount
+           FROM generations`,
+      )
+      .all() as Record<string, unknown>[];
+    const insert = db.prepare(
+      `INSERT INTO blobs
+         (hash, kind, mime, byte_size, source_text, voice, lang, options, bytes, refcount)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (hash) DO NOTHING`,
+    );
+    // Counted around the transaction rather than per row: `BrowserDb` exposes no
+    // `changes()`, and one COUNT either side is cheaper than 28,676 calls anyway.
+    const countText = (): number =>
+      Number(
+        (
+          db
+            .prepare(
+              `SELECT count(*) AS n FROM blobs
+                WHERE kind IN ('ai', 'translate', 'furigana', 'dictionary')`,
+            )
+            .get() as { n: number }
+        ).n,
+      );
+    const before = countText();
+    db.exec("BEGIN");
+    try {
+      for (const row of rows) {
+        insert.run(
+          row["hash"],
+          row["kind"],
+          row["mime"],
+          row["byte_size"],
+          row["source_text"],
+          row["voice"],
+          row["lang"],
+          row["options"],
+          row["bytes"],
+          row["refcount"],
+        );
+      }
+      db.exec("COMMIT");
+    } catch (cause) {
+      db.exec("ROLLBACK");
+      throw cause;
+    }
+    const added = countText() - before;
+    if (added > 0) log(`  ${added.toLocaleString()} text generations taken in`, "good");
+    return added;
+  } finally {
+    gen.close();
   }
 }
 
@@ -408,15 +503,77 @@ async function open(request: OpenRequest): Promise<void> {
     }
   }
 
-  const imported =
-    (await ensureFile(CARD_DB, CARD_URL, reimport, { index: 1, of: 2 })) +
-    (await ensureFile(STORE_DB, STORE_URL, refetchStore, { index: 2, of: 2 }));
+  // ── and are the TEXT GENERATIONS still what the server is serving? ──
+  //
+  // ─── THE THIRD FILE, AND THE BUG THAT EARNED IT — 2026-09-16 ──────────────
+  //
+  // Zach filled 1,631 emoji, translations and furigana on 2026-09-15, rebuilt the
+  // seed, and got none of them. A text generation is a `blobs` row in the CARD
+  // database; the card database is re-fetched only when `seedReviews` differs;
+  // filling a generation moves `seedReviews` by exactly zero. So `ensureFile`
+  // said "already in OPFS — not re-fetching", in green, for ever.
+  //
+  // That is the audio bug of 2026-09-12 one layer up, and it would have been
+  // just as silent. **Re-fetching the card database is not the repair** — it is
+  // 74 MB and holds his grades, and the branch above refuses it outright while
+  // any local review exists, correctly. The content he was missing is 1.60 MiB.
+  //
+  // So it ships as its own file on the AUDIO's terms: content-addressed,
+  // read-only, no grade or card in it, therefore free to replace. Same staleness
+  // rule, same reason a COUNT would be wrong — he fills generations on the device
+  // from the card button, so a local count stops matching the server's and never
+  // recovers.
+  let refetchGen = request.reimport;
+  const genWasPresent = present.includes(GEN_DB);
+  if (genWasPresent && !refetchGen && manifest !== null) {
+    const serving = manifest.genCreated ?? "";
+    const held = await openDatabaseBrowser({ filename: GEN_DB, applySchema: false });
+    const heldCreated =
+      (
+        held.prepare("SELECT value FROM gen_meta WHERE key = 'created'").get() as
+          | { value: string }
+          | undefined
+      )?.value ?? "";
+    held.close();
+    if (audioIsStale(serving, heldCreated)) {
+      refetchGen = true;
+      log(
+        `  the text generations here were built ${heldCreated || "(unknown)"} and the ` +
+          `server is serving ${serving} — re-fetching them`,
+        "step",
+      );
+    }
+  }
 
-  // `applySchema: false` on both: these arrive fully formed. An empty pool plus a
+  const imported =
+    (await ensureFile(CARD_DB, CARD_URL, reimport, { index: 1, of: 3 })) +
+    (await ensureFile(GEN_DB, GEN_URL, refetchGen, { index: 2, of: 3 })) +
+    (await ensureFile(STORE_DB, STORE_URL, refetchStore, { index: 3, of: 3 }));
+
+  // `applySchema: false` on all: these arrive fully formed. An empty pool plus a
   // failed fetch must NOT quietly create a blank database and call it success.
   cards ??= await openDatabaseBrowser({ filename: CARD_DB, applySchema: false });
   payloads ??= await openDatabaseBrowser({ filename: STORE_DB, applySchema: false });
   store ??= new SqliteBlobStore(payloads, { create: false });
+
+  // ── FILE 3 INTO THE CARD DATABASE ───────────────────────────────────────
+  //
+  // The generations have to END UP in `blobs`, because that is where
+  // `resolveDescriptorText` looks and changing the read path would mean teaching
+  // every resolver about a second handle. So this is a write into the card
+  // database — the one file that holds his grades — and the safety is in how
+  // narrow it is:
+  //
+  //   · `INSERT ... ON CONFLICT (hash) DO NOTHING` and NOTHING ELSE. No UPDATE,
+  //     no DELETE, no other table touched. A generation he made on the device is
+  //     left exactly as it is; an identical one is a no-op by content address.
+  //   · `reviews`, `card_tracks` and `cards` are never named in this statement,
+  //     so no path here can move a grade or a due date.
+  //   · idempotent, so a boot that half-finished simply finishes.
+  //
+  // It runs on the boot that FETCHED the file. `hasGenerations` is asked first so
+  // an unchanged file costs one count rather than 28,676 no-op inserts.
+  await applyGenerations(refetchGen);
 
   const cardCount = Number(
     (cards.prepare("SELECT count(*) AS n FROM cards").get() as { n: number }).n,

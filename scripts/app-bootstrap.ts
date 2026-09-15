@@ -1,13 +1,13 @@
 /**
- * The two files `app/` fetches on first run.
+ * The three files `app/` fetches on first run.
  *
  *   npx vite-node scripts/app-bootstrap.ts
  *     [--db build/hashigo.db] [--store build/hashigo.db.blobs.db]
  *     [--out build/app] [--speech-bytes 209715200]
  *
- * Writes `build/app/hashigo-app.db` (the cards) and
- * `build/app/hashigo-app-blobs.db` (a BOUNDED subset of the audio), which
- * `vite.app.config.ts` serves as `/hashigo-app.db` and `/hashigo-app-blobs.db`.
+ * Writes `build/app/hashigo-app.db` (the cards), `build/app/hashigo-app-gen.db`
+ * (every text generation, ~9 MB) and `build/app/hashigo-app-blobs.db` (a BOUNDED
+ * subset of the audio), which `vite.app.config.ts` serves under those names.
  *
  * ─── WHY THIS IS NOT `spike/make-bootstrap.mjs` OR `make-viewer-db.ts` ──────
  *
@@ -79,9 +79,21 @@
  * answer here" — so a missing clip there is not a missing extra, it is the card
  * asking nothing at all. 89 of 90 数字 cards were in that state.
  *
- * **Every TEXT generation rides along for free** and is not counted here: ai,
- * translate, furigana and dictionary outputs are stored INLINE in the card
- * database's `blobs.bytes`, so they arrive with file 1.
+ * ─── TEXT GENERATIONS USED TO "RIDE ALONG FOR FREE". THEY DID NOT ──────────
+ *
+ * This header said so until 2026-09-16: ai, translate, furigana and dictionary
+ * outputs are stored INLINE in the card database's `blobs.bytes`, "so they
+ * arrive with file 1". True of the FILE and false of the DEVICE, which is the
+ * distinction that matters.
+ *
+ * File 1 is only re-fetched when `seedReviews` differs, and filling a generation
+ * moves that number by exactly zero — so 1,631 generations filled on 2026-09-15
+ * could not reach his phone by any rebuild. Identical in shape to the audio bug
+ * of 2026-09-12, which is the one this script's own `storeCreated` exists for.
+ *
+ * They now ship as file 3 on the audio's terms: content-addressed, read-only, no
+ * grade or card in it, therefore free to replace — and **1.60 MiB of content for
+ * all 28,676 of them** (~9 MB as a SQLite file, against 627 MiB of audio).
  *
  * Payloads are RE-HASHED on the way in, so the browser plays bytes that provably
  * still match the address the card database refers to.
@@ -138,6 +150,9 @@ const speechBudget = Number(flag("speech-bytes", String(200 * 1024 * 1024)));
 
 const cardOut = resolve(outDir, "hashigo-app.db");
 const storeOut = resolve(outDir, "hashigo-app-blobs.db");
+const genOut = resolve(outDir, "hashigo-app-gen.db");
+let genRows = 0;
+let genBytes = 0;
 
 /** Header bytes 18 and 19: 1 = rollback journal, 2 = WAL. */
 function journalMode(file: string): { write: number; read: number } {
@@ -359,6 +374,88 @@ try {
   for (const [, list] of byCard) if (list.some((hash) => shipped.has(hash))) reachable += 1;
   const total = byCard.size;
 
+  // ── THE TEXT GENERATIONS, AS THEIR OWN FILE ─────────────────────────────
+  //
+  // Zach, 2026-09-16, after a rebuild that delivered new audio and none of the
+  // new text: *"do i have to run npx vite-node scripts/app-bootstrap.ts --
+  // --speech-bytes 650000000"*. He did, for the audio — and it could never have
+  // brought him the 1,631 emoji, translations and furigana filled the night
+  // before, for the SAME reason the audio needed its own check in the first
+  // place:
+  //
+  //   · a text generation is a `blobs` row in the CARD database;
+  //   · the card database is only re-fetched when `seedReviews` differs;
+  //   · filling 1,631 generations moves `seedReviews` by exactly zero.
+  //
+  // So `ensureFile` says "already in OPFS — not re-fetching", in green, for ever.
+  // That is the 2026-09-12 audio bug one layer up, and it would have been silent
+  // in the same way.
+  //
+  // **Re-fetching the card database is not the answer and must not become it.**
+  // It is 74 MB and it holds his grades; the worker refuses that outright while
+  // any local review exists, which is correct. But the CONTENT he is missing is
+  // **1.60 MiB for all 28,676 text generations in the corpus** — ai 1.14,
+  // translate 0.39, furigana 0.06 — against 627 MiB of audio. So it ships as its
+  // own file, on the audio's terms rather than the card database's: content
+  // addressed, read-only, no grade or card in it, therefore free to replace.
+  //
+  // `bytes` is carried INLINE here, which is why this is small at all: the text
+  // kinds are the ones `readBlob` finds in the row itself (measured in
+  // `src/cards/audio.ts` — ai/translate/furigana/dictionary are 100% inline,
+  // speech 0%). Nothing in this file needs the payload store.
+  {
+    const genDb = new Database(genOut);
+    genDb.exec("PRAGMA journal_mode = DELETE");
+    genDb.exec(`
+      DROP TABLE IF EXISTS generations;
+      DROP TABLE IF EXISTS gen_meta;
+      CREATE TABLE generations (
+        hash        TEXT PRIMARY KEY,
+        kind        TEXT NOT NULL,
+        mime        TEXT NOT NULL,
+        byte_size   INTEGER NOT NULL,
+        source_text TEXT,
+        voice       TEXT,
+        lang        TEXT,
+        options     TEXT NOT NULL,
+        bytes       BLOB NOT NULL,
+        refcount    INTEGER NOT NULL
+      );
+      CREATE TABLE gen_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    `);
+    const insert = genDb.prepare(
+      `INSERT INTO generations
+         (hash, kind, mime, byte_size, source_text, voice, lang, options, bytes, refcount)
+       VALUES (@hash, @kind, @mime, @byte_size, @source_text, @voice, @lang, @options, @bytes, @refcount)`,
+    );
+    const rows = cardDb
+      .prepare(
+        `SELECT hash, kind, mime, byte_size, source_text, voice, lang, options, bytes, refcount
+           FROM blobs
+          WHERE kind IN ('ai', 'translate', 'furigana', 'dictionary')
+            AND bytes IS NOT NULL AND byte_size > 0`,
+      )
+      .all() as Record<string, unknown>[];
+    genDb.transaction(() => {
+      for (const row of rows) insert.run(row);
+      // ITS OWN IDENTITY, the same shape as `blob_store_meta.created`. Written
+      // fresh on every bootstrap so it changes exactly when the file does — a
+      // COUNT would be wrong here for the same reason `seedReviews` is right
+      // there: he fills generations on the device from the card button, so a
+      // local count stops matching the server's and never recovers.
+      genDb
+        .prepare("INSERT INTO gen_meta (key, value) VALUES ('created', ?)")
+        .run(new Date().toISOString());
+    })();
+    // 28,676 small rows leave a lot of half-used pages — 9.2 MB on disk for
+    // 1.6 MiB of content before this. It is a phone download; the seconds here
+    // are free and the megabytes are not.
+    genDb.exec("VACUUM");
+    genDb.close();
+    genRows = rows.length;
+    genBytes = rows.reduce((n, row) => n + Number(row["byte_size"] ?? 0), 0);
+  }
+
   // ── THE SEED MANIFEST ───────────────────────────────────────────────────
   //
   // A tiny sidecar naming what this bootstrap produced, so a browser that
@@ -412,6 +509,15 @@ try {
          * string — `count(*)` over `blob_payloads` would walk every overflow page
          * of a 560 MB file to answer the same question.
          */
+        generations: genRows,
+        /** The text file's own identity. Same argument as `storeCreated`. */
+        genCreated: String(
+          (
+            new Database(genOut, { readonly: true })
+              .prepare("SELECT value FROM gen_meta WHERE key = 'created'")
+              .get() as { value: string } | undefined
+          )?.value ?? "",
+        ),
         storeCreated: String(
           (
             new Database(storeOut, { readonly: true })
@@ -425,6 +531,13 @@ try {
     )}
 `,
     "utf8",
+  );
+
+  process.stdout.write(
+    `text    ${genOut}\n` +
+      `        ${statSync(genOut).size.toLocaleString()} bytes on disk · ` +
+      `${genRows.toLocaleString()} generations · ${genBytes.toLocaleString()} payload bytes\n` +
+      `        every ai / translate / furigana / dictionary row — no budget, it is 1.6 MiB\n`,
   );
 
   const mode = journalMode(storeOut);
