@@ -58,3 +58,15 @@ export {
 } from "./store.js";
 
 export { storeGeneratedSpeech, FILL_VOICE, type SpeechDescriptor } from "./speech.js";
+
+export {
+  generateText,
+  ollamaReachable,
+  stripThinking,
+  systemPrompt,
+  OLLAMA_HOST,
+  OLLAMA_MODEL,
+  type LlmDescriptor,
+  type LlmOptions,
+  type LlmProvider,
+} from "./llm.js";

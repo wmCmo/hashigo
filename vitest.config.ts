@@ -125,6 +125,20 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     root: ".",
+    // ─── A WORKTREE INSIDE THE REPO IS NOT PART OF THIS SUITE ────────────────
+    //
+    // The desktop app puts a spawned session's git worktree under
+    // `.claude/worktrees/<name>/`, which is a FULL second checkout — including
+    // its own `test/`. Vitest's default discovery walks into it, and on
+    // 2026-09-15 that turned one green run into "83 files, 1 FAILED": the suite
+    // doubled, and the copy failed on `exports/日本語/data.json`, which is
+    // gitignored and therefore exists only in the real working tree.
+    //
+    // The failure is worth naming because it looks like a code regression and is
+    // not one. It appears the moment a second session is started and disappears
+    // when that worktree is cleaned up, so it is intermittent in the way that
+    // wastes the most time.
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.claude/worktrees/**"],
     testTimeout: 120_000,
     // `test.maxWorkers` alone does NOT do it — measured: with only that key set,
     // the run still spent 297–363 s of test time inside ~70–87 s of wall clock,

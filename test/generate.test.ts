@@ -24,6 +24,10 @@ import { resolveAudioHash } from "../src/cards/index.js";
 import { resolveGenerationAsync } from "../src/import/blobs.js";
 import {
   FILL_VOICE,
+  generateText,
+  ollamaReachable,
+  stripThinking,
+  systemPrompt,
   resolveDescriptorText,
   storeDescriptorText,
   storeGeneratedSpeech,
@@ -895,5 +899,91 @@ describe("a clip this project synthesised", () => {
     });
     expect(other).toBeNull();
     db.close();
+  });
+});
+
+/**
+ * ─── WHICH MODEL, AND WHAT IT IS ACTUALLY ASKED ─────────────────────────────
+ *
+ * Zach, 2026-09-15: *"instead of a couple $, can we use ollama instead? i have
+ * qwen ready on my machine lol"*
+ *
+ * Two things got pinned here, and the second is a defect that shipped.
+ */
+describe("the text provider and its prompt", () => {
+  it("adds NOTHING for `ai` — Mochi's prompt is already the instruction", () => {
+    const prompt = systemPrompt({ kind: "ai", text: "Describe a word 疑念 using emojis only", options: {} });
+    // Decision 7: the user message is the identity's source_text. A second
+    // opinion about the task would be the renderer arguing with the corpus.
+    expect(prompt).not.toMatch(/translate/i);
+    expect(prompt).toContain("Reply with the requested content only");
+  });
+
+  it("TELLS a translate request to translate, which is the bug it shipped without", () => {
+    // ─── MEASURED THE DAY IT WAS FOUND, qwen3:8b, a real corpus sentence ───
+    //
+    //   sent as the endpoint sent it   努力してこそ、成功をつかむことができる。
+    //   came back                      努力してこそ、成功をつかむことができる。
+    //   with the instruction below     Only through effort can one grasp success.
+    //
+    // `vite.generate.ts` sent `descriptor.text` alone under one generic system
+    // prompt. Right for `ai`, where the text IS the instruction; for translate
+    // the text is only a sentence and nothing said what to do with it. Never
+    // caught because the button was tested on emoji and translate is 129 of
+    // 2,446 gaps.
+    const prompt = systemPrompt({ kind: "translate", text: "努力してこそ", options: { from: "ja", to: "en" } });
+    expect(prompt).toMatch(/Translate/);
+    expect(prompt).toContain("text in ja");
+    expect(prompt).toContain("into en");
+  });
+
+  it("reads the language pair from options, never from the script", () => {
+    const prompt = systemPrompt({ kind: "translate", text: "hello", options: { from: "en", to: "ja" } });
+    expect(prompt).toContain("text in en");
+    expect(prompt).toContain("into ja");
+    // Absent options still produce a usable instruction rather than `undefined`.
+    const bare = systemPrompt({ kind: "translate", text: "x", options: {} });
+    expect(bare).toContain("text in ja");
+    expect(bare).not.toContain("undefined");
+  });
+
+  it("strips a thinking block, closed or not", () => {
+    // `think: false` is set on every Ollama request, but the flag is a REQUEST
+    // and the tag is a fact — another model or another daemon version can emit
+    // one anyway, and a card whose emoji line is a paragraph of deliberation is
+    // worse than an empty one.
+    expect(stripThinking("<think>hmm, 疑念 is doubt</think>🤔❓")).toBe("🤔❓");
+    expect(stripThinking("<THINK>x</THINK>  📖  ")).toBe("📖");
+    // TRUNCATED AT THE TOKEN LIMIT mid-thought. Taking everything after an
+    // unclosed tag is deliberate: half a monologue stored in a field is the
+    // worst of the three outcomes.
+    expect(stripThinking("<think>I should consider whether")).toBe("");
+    expect(stripThinking("📖💡✨")).toBe("📖💡✨");
+  });
+
+  it("says a daemon that is not there is not there, rather than throwing", async () => {
+    const refused = (): never => {
+      throw new Error("ECONNREFUSED");
+    };
+    await expect(ollamaReachable("http://127.0.0.1:1", refused as never)).resolves.toBe(false);
+    const ok = async (): Promise<{ ok: boolean }> => ({ ok: true });
+    await expect(ollamaReachable("http://127.0.0.1:11434", ok as never)).resolves.toBe(true);
+  });
+
+  it("sends the RAW text as the user message, and `think: false`", async () => {
+    let seen: Record<string, unknown> = {};
+    const fake = async (_url: string, init: { body: string }): Promise<unknown> => {
+      seen = JSON.parse(init.body) as Record<string, unknown>;
+      return { ok: true, json: async () => ({ response: "<think>a</think>🐢🍃" }) };
+    };
+    const out = await generateText(
+      { kind: "ai", text: "Describe a word おっとり using emojis only", options: {} },
+      { provider: "ollama", model: "qwen3:8b", maxTokens: 256, fetch: fake as never },
+    );
+    expect(out).toBe("🐢🍃");
+    expect(seen["prompt"]).toBe("Describe a word おっとり using emojis only");
+    // Qwen3 is a thinking model and Ollama returns the reasoning without this.
+    expect(seen["think"]).toBe(false);
+    expect(seen["stream"]).toBe(false);
   });
 });

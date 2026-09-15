@@ -81,9 +81,14 @@ import { readBlob } from "./src/blobs/db.js";
 import { openDatabase } from "./src/db/index.js";
 import {
   FILL_VOICE,
+  generateText,
+  OLLAMA_HOST,
+  OLLAMA_MODEL,
+  ollamaReachable,
   resolveDescriptorText,
   storeDescriptorText,
   storeGeneratedSpeech,
+  type LlmProvider,
 } from "./src/generate/index.js";
 import type { BlobKind } from "./src/schema/index.js";
 
@@ -141,36 +146,16 @@ function parse(body: string): Descriptor | string {
 }
 
 /**
- * The prompt IS the generator's own text, unchanged.
+ * THE PROMPT IS THE GENERATOR'S OWN TEXT, AND THE INSTRUCTION IS NOT.
  *
  * Decision 7: a generator's input is the RENDERED text. `Describe a word 疑念
  * using emojis only` is what Mochi sent and what the identity is keyed on, so
- * anything prepended here would change the answer without changing the key —
- * a cache whose contents no longer match its label. The system prompt is the
- * only place to say "reply with the thing and nothing else", and it is outside
- * the identity because it is a property of THIS generator, not of the request.
+ * anything prepended to the user message would change the answer without
+ * changing the key — a cache whose contents no longer match its label. The
+ * system prompt is the only place to say what to do with it, and
+ * `src/generate/llm.ts` owns that, per kind. It also owns the reason
+ * `translate` needed one: without it the model echoed the Japanese back.
  */
-const SYSTEM =
-  "You are filling one field of a Japanese flashcard. " +
-  "Reply with the requested content only — no preamble, no quotes, no explanation, " +
-  "no trailing period unless the content is a sentence that needs one.";
-
-async function generate(descriptor: Descriptor, key: string, model: string): Promise<string> {
-  const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const client = new Anthropic({ apiKey: key });
-  const message = await client.messages.create({
-    model,
-    max_tokens: MAX_TOKENS,
-    system: SYSTEM,
-    messages: [{ role: "user", content: descriptor.text }],
-  });
-  return message.content
-    .map((block) => (block.type === "text" ? block.text : ""))
-    .join("")
-    .trim();
-}
-
-
 /**
  * ONE CLIP, AND THE SAME THREE ANSWERS THE TEXT PATH GIVES.
  *
@@ -301,13 +286,38 @@ export function generateOnDemand(): Plugin {
         if (existsSync(resolve(root, ".env")) && process.env["ANTHROPIC_API_KEY"] === undefined) {
           process.loadEnvFile(resolve(root, ".env"));
         }
+        // ─── WHICH PROVIDER, AND THEREFORE WHICH SECRET ───────────────────
+        //
         // ONE GUARD PER KIND, not one guard for both. A speech request refused
         // for a missing ANTHROPIC key would name the wrong secret, and the wrong
         // secret is the worst possible error message to read on a phone.
-        const key = process.env[parsed.kind === "speech" ? "GOOGLE_TTS_SECRET" : "ANTHROPIC_API_KEY"];
-        if (key === undefined || key === "") {
-          const name = parsed.kind === "speech" ? "GOOGLE_TTS_SECRET" : "ANTHROPIC_API_KEY";
-          send(503, { error: `no ${name} — put it in .env on the laptop` });
+        //
+        // **A text field prefers OLLAMA when the daemon answers**, because Zach
+        // has it running and it costs nothing (2026-09-15). That needs NO key —
+        // so the Anthropic guard must not fire for a request that was never
+        // going to be billed. `HASHIGO_LLM=anthropic` forces the other way.
+        // Whichever served it comes back in the response, because a provider
+        // that changes silently is a quality change nobody can trace.
+        const forced = process.env["HASHIGO_LLM"];
+        const host = process.env["OLLAMA_HOST"] ?? OLLAMA_HOST;
+        let provider: LlmProvider = "anthropic";
+        if (parsed.kind !== "speech") {
+          provider =
+            forced === "anthropic"
+              ? "anthropic"
+              : forced === "ollama" || (await ollamaReachable(host))
+                ? "ollama"
+                : "anthropic";
+        }
+        const needs =
+          parsed.kind === "speech"
+            ? "GOOGLE_TTS_SECRET"
+            : provider === "anthropic"
+              ? "ANTHROPIC_API_KEY"
+              : null;
+        const key = needs === null ? "" : process.env[needs];
+        if (needs !== null && (key === undefined || key === "")) {
+          send(503, { error: `no ${needs} — put it in .env on the laptop` });
           return;
         }
         if (!existsSync(CARD_DB)) {
@@ -329,13 +339,23 @@ export function generateOnDemand(): Plugin {
             send(200, { text: cached, cached: true });
             return;
           }
-          const text = await generate(parsed, key, process.env["HASHIGO_MODEL"] ?? "claude-opus-5");
+          const model =
+            provider === "ollama"
+              ? (process.env["HASHIGO_OLLAMA_MODEL"] ?? OLLAMA_MODEL)
+              : (process.env["HASHIGO_MODEL"] ?? "claude-opus-5");
+          const text = await generateText(parsed, {
+            provider,
+            apiKey: key,
+            model,
+            host,
+            maxTokens: MAX_TOKENS,
+          });
           if (text === "") {
-            send(502, { error: "the model returned nothing" });
+            send(502, { error: `${model} returned nothing` });
             return;
           }
           storeDescriptorText(db, parsed, text);
-          send(200, { text, cached: false });
+          send(200, { text, cached: false, provider, model });
         } catch (cause) {
           // The message, not the stack: this reaches a phone as a line of status
           // text, and an API error already says what went wrong in one sentence.
