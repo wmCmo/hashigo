@@ -18,9 +18,9 @@
  * tunnel pointed at `localhost:5274` gets ECONNREFUSED on ::1 — PowerShell falls
  * back to IPv4 and succeeds, **ngrok does not and returns 502**.
  *
- * The two databases are served by MIDDLEWARE from `build/app/` rather than out of
- * a `public/` directory: they are ~70 MB and ~32 MiB, and copying them into the
- * build output on every `vite build` costs seconds and gains nothing.
+ * The three databases are served by MIDDLEWARE from `build/app/` rather than out
+ * of a `public/` directory: they are ~74 MB, ~627 MB and ~9 MB, and copying them
+ * into the build output on every `vite build` costs seconds and gains nothing.
  */
 import {
   createReadStream,
@@ -101,7 +101,48 @@ const ASSETS: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
- * Serve the two bootstrap databases straight off disk, in dev and in preview.
+ * A SEED FILE THIS PROCESS HAS NEVER HEARD OF.
+ *
+ * ─── THE TRAP THIS CLOSES, WHICH HAS BITTEN THREE TIMES ────────────────────
+ *
+ * `ASSETS` is built once, when this config is loaded. The bundle is read from
+ * disk per request — so a running server happily serves a page that asks for a
+ * seed file added after the process started, and answers it with the SPA
+ * fallback: `index.html`, with a 200. Zach, 2026-09-16, on his phone:
+ *
+ *     /hashigo-app-gen.db returned 19114 bytes that are not a SQLite file
+ *     (header "<!doctype html>")
+ *
+ * Same shape as the 2026-09-13 sync mailbox and the 2026-09-15 `/generate/`
+ * refusal. The restart is a real answer and a bad one: it is only ever
+ * discovered from the phone, after the download has failed.
+ *
+ * ─── WHY THIS IS NOT THE `[root]` MISTAKE ──────────────────────────────────
+ *
+ * `server.fs.allow` is narrowed on purpose — with `[root]` the `/@fs/` route
+ * served `build/hashigo.db` (74 MB) and the 617.9 MiB blob store to anyone who
+ * could reach it. This is not that, and the difference is the whole pattern:
+ *
+ *   · the name must match `hashigo-app*.db` or `hashigo-app*.json` EXACTLY —
+ *     one segment, no slash, no dot-segment, so no traversal is expressible;
+ *   · it is resolved inside `ASSET_DIR` and the result must still start with
+ *     `ASSET_DIR`, checked after `resolve`, so a crafted name cannot escape;
+ *   · `build/app` holds nothing but bootstrap output. The card database, the
+ *     blob store and `.env` are not in it.
+ *
+ * So the reachable set is exactly what `scripts/app-bootstrap.ts` writes — which
+ * is what `ASSETS` already enumerates, minus the requirement to restart.
+ */
+export function seedFile(url: string): string | undefined {
+  const name = url.startsWith("/") ? url.slice(1) : url;
+  if (!/^hashigo-app[A-Za-z0-9-]*\.(db|json)$/.test(name)) return undefined;
+  const file = resolve(ASSET_DIR, name);
+  // Belt and braces: the pattern already forbids a separator, and this proves it.
+  return file.startsWith(ASSET_DIR) ? file : undefined;
+}
+
+/**
+ * Serve the bootstrap databases straight off disk, in dev and in preview.
  *
  * A missing file answers 404 **with the command that makes it**, because the
  * alternative is `fetch` failing inside a worker for no visible reason. And the
@@ -120,7 +161,7 @@ function serveAppDatabases(): Plugin {
     next: () => void,
   ): void => {
     const url = (request.url ?? "").split("?")[0] ?? "";
-    const file = ASSETS.get(url);
+    const file = ASSETS.get(url) ?? seedFile(url);
     if (file === undefined) {
       next();
       return;

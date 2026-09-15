@@ -14,8 +14,11 @@
  * fourth seeded file to `vite.app.config.ts`, this fails until `sw.js` knows.
  */
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
+
+import { seedFile } from "../vite.app.config.js";
 
 const read = (path: string): string =>
   readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -229,5 +232,61 @@ describe("the service worker never caches sync state", () => {
     expect(guardAt, "the mailbox guard is not in the fetch handler").toBeGreaterThan(-1);
     expect(respondAt).toBeGreaterThan(-1);
     expect(guardAt, "the mailbox guard runs after respondWith").toBeLessThan(respondAt);
+  });
+});
+
+/**
+ * ─── THE SEED ROUTE, AND WHY IT IS PATTERN-MATCHED RATHER THAN ENUMERATED ───
+ *
+ * `ASSETS` is built when the config LOADS. The bundle is read per request — so a
+ * running server serves a page asking for a seed file the process has never heard
+ * of, and answers it with the SPA fallback: `index.html`, 200. Zach, 2026-09-16,
+ * on his phone, after a rebuild added a third file:
+ *
+ *     /hashigo-app-gen.db returned 19114 bytes that are not a SQLite file
+ *     (header "<!doctype html>")
+ *
+ * `seedFile` removes the restart. It also widens what a URL can reach, which is
+ * the half that needs pinning — `server.fs.allow` is narrowed in this repo
+ * because `[root]` once exposed `build/hashigo.db` and the 617.9 MiB blob store
+ * to anyone who could reach the port.
+ */
+describe("the seed-file route", () => {
+  it("serves every bootstrap file, including one added after startup", () => {
+    for (const url of [
+      "/hashigo-app.db",
+      "/hashigo-app-gen.db",
+      "/hashigo-app-blobs.db",
+      "/hashigo-app.json",
+      // The point of the pattern: the next seed file needs no restart.
+      "/hashigo-app-future-thing.db",
+    ]) {
+      expect(seedFile(url), url).toBeTypeOf("string");
+    }
+  });
+
+  it("REFUSES anything that is not one plain name in that one directory", () => {
+    for (const url of [
+      "/hashigo.db", // the real card database, 74 MB, one directory up
+      "/.env", // the API keys
+      "/../hashigo.db",
+      "/hashigo-app/../../hashigo.db",
+      "/hashigo-app.db/../../../.env",
+      "/hashigo-app..%2F..%2Fhashigo.db",
+      "/hashigo-app-gen.db.bak",
+      "/hashigo-app-gen.txt",
+    ]) {
+      expect(seedFile(url), url).toBeUndefined();
+    }
+  });
+
+  it("never resolves outside the asset directory, whatever the name", () => {
+    // The pattern already forbids a separator; this asserts the second guard
+    // rather than trusting the first, because the cost of being wrong here is
+    // handing out his study history over a tunnel.
+    const dir = resolve(process.cwd(), "build/app");
+    for (const name of ["hashigo-app.db", "hashigo-app-gen.db", "hashigo-app-x.json"]) {
+      expect(seedFile(`/${name}`)?.startsWith(dir)).toBe(true);
+    }
   });
 });

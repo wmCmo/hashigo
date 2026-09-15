@@ -251,12 +251,29 @@ async function ensureFile(
   const bytes = await readWithProgress(response, url, plan);
   // The SQLite header is 16 bytes of magic; anything else here is an HTML error
   // page with a 200, which `importDb` reports as an unhelpful malformed-database.
+  //
+  // ─── AND THE CAUSE IS ALMOST ALWAYS THE SAME ONE ──────────────────────────
+  //
+  // A single-page app's fallback answers an unknown route with `index.html` and
+  // a 200, on purpose — so `response.ok` cannot catch this and the header is the
+  // first thing that can. **The route is unknown because the SERVER is older
+  // than the client**: `vite.app.config.ts` builds its asset map once at
+  // startup, while the bundle is read from disk per request. A new seed file is
+  // therefore reachable by a page served from the same process that has never
+  // heard of it.
+  //
+  // This has now cost Zach a round trip three times — the sync mailbox
+  // (2026-09-13), `/generate/` (2026-09-15) and `/hashigo-app-gen.db`
+  // (2026-09-16) — so the repair goes IN THE MESSAGE rather than in a comment he
+  // would have to be at a keyboard to read. `app/sync-client.ts` says the same
+  // sentence for the same reason.
   const magic = new TextDecoder("ascii").decode(bytes.subarray(0, 15));
   if (magic !== "SQLite format 3") {
     throw new Error(
       `${url} returned ${bytes.length} bytes that are not a SQLite file ` +
-        `(header ${JSON.stringify(magic)}). A dev server 200 with an HTML body ` +
-        `looks exactly like this.`,
+        `(header ${JSON.stringify(magic)}). That is this server's index.html: it ` +
+        `started before ${url} existed and answers unknown routes with the app. ` +
+        `On the laptop: npx kill-port 4274, then npm run phone`,
     );
   }
   const written = await importDatabaseBrowser(name, bytes);
