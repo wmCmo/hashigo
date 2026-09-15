@@ -67,6 +67,7 @@
 
 import { BlobUrlScope } from "../src/blobs/url.js";
 import { browserDocument, CLASS } from "../src/render/index.js";
+import { audioAddress } from "../src/render/audio.js";
 import { mountPrepared, type MountedCard, type PreparedCard } from "../src/review/index.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import {
@@ -723,6 +724,9 @@ async function showCardAt(): Promise<void> {
         button.setAttribute("data-clip", outcome.kind);
         button.disabled = outcome.kind === "missing" || outcome.kind === "unaddressable";
         if (button.disabled) button.title = `no clip on this device for ${outcome.mount.alt}`;
+        // AND OFFER TO MAKE IT. See `offerMissingClip` — a disabled button says
+        // the clip is not here; it cannot say that nothing ever made it.
+        if (outcome.kind === "missing") offerMissingClip(card, outcome.mount, button);
       }
       if (outcome.kind === "playing" || outcome.kind === "replayed") {
         // A clip that DID play clears a previous step's failure: the button
@@ -1484,6 +1488,130 @@ function offerMissingGenerations(
     });
     output.appendChild(button);
   });
+}
+
+/**
+ * OFFER TO SYNTHESISE THE CLIP THAT IS NOT THERE.
+ *
+ * Zach, 2026-09-15, on a 合理 card: *"it won't let me play the audio of the
+ * example sentence — do you think because it's missing? then we need a way to
+ * regenerate it, like the emoji section we did."*
+ *
+ * It was missing, and so are **785 of 10,420 mounts (7.5%) across 627 cards** —
+ * 576 example sentences and 209 head words, **178 of the head words on mode-2
+ * cards where decision 29 makes the clip the question**. A disabled `.clip`
+ * button already said "not on this device"; it could not say "nothing ever made
+ * this", and those are different problems with different answers.
+ *
+ * ─── WHY THE OUTCOME AND NOT THE SLOT ───────────────────────────────────────
+ *
+ * The emoji version walks `card.textSlots`, because an unfilled text generation
+ * is knowable before anything is played. A clip is not: `audioController` asks
+ * for bytes only from `play()` (that is the hard rule — decision 29 — and the
+ * reason a card merely on screen produces no payload message at all). So the
+ * first moment anyone can know a clip is absent is the failed play, and the
+ * offer has to be made from `onOutcome`.
+ *
+ * The consequence is worth stating: **the button appears after he presses play,
+ * not before.** That is not a compromise — a button offered before the attempt
+ * would mean resolving every clip on entry, which is precisely the thing the
+ * hard rule forbids.
+ */
+function offerMissingClip(
+  card: MountedCard<HTMLElement>,
+  mount: MountedCard<HTMLElement>["result"]["media"][number],
+  clipButton: HTMLButtonElement,
+): void {
+  const address = audioAddress(card.result, mount);
+  // An attachment cannot be synthesised — there is no generator input to speak,
+  // only a file Mochi lost. One such mount exists in the whole corpus.
+  if (address === null || address.origin !== "generator") return;
+  const request = address.request;
+  if (request.kind !== "speech" || request.text.trim() === "") return;
+  if (clipButton.nextElementSibling instanceof HTMLButtonElement &&
+      clipButton.nextElementSibling.classList.contains("regen")) return;
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "regen";
+  button.textContent = "generate audio";
+  button.title = request.text;
+  button.addEventListener("click", () => {
+    void requestClip(card, mount, request, button, clipButton);
+  });
+  clipButton.insertAdjacentElement("afterend", button);
+}
+
+/**
+ * Ask the laptop to speak one line, file it twice, and play it.
+ *
+ * The two writes are `requestGeneration`'s, for the same reasons: the endpoint
+ * has already put it in `build/hashigo.db` (which survives a seed rebuild and
+ * which decision 41 made the system of record), and this stores the device's own
+ * copy so the card is right now.
+ *
+ * **It plays afterwards, and that is a deliberate choice about the hard rule.**
+ * He pressed a button asking for this clip; playing it is the same gesture
+ * `replay()` serves, and `{ unmask: false }` is what `side.play` is given
+ * everywhere so a mode-2 card's answer stays behind its cloze.
+ */
+async function requestClip(
+  card: MountedCard<HTMLElement>,
+  mount: MountedCard<HTMLElement>["result"]["media"][number],
+  request: { text: string; lang: string | null; options: Readonly<Record<string, string>> },
+  button: HTMLButtonElement,
+  clipButton: HTMLButtonElement,
+): Promise<void> {
+  button.disabled = true;
+  const was = button.textContent;
+  button.textContent = "speaking…";
+  try {
+    const response = await fetch(GENERATE_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "speech", text: request.text, lang: request.lang, options: request.options }),
+    });
+    // The status before the body, for the reason `requestGeneration` records at
+    // length: an empty 404 parsed as JSON reaches him as "Unexpected end of JSON
+    // input", which names neither the status nor the cause.
+    const raw = await response.text();
+    let body: { audio?: string; error?: string } = {};
+    try {
+      body = raw === "" ? {} : (JSON.parse(raw) as typeof body);
+    } catch {
+      /* not ours — the status is the story */
+    }
+    if (!response.ok || typeof body.audio !== "string" || body.audio === "") {
+      say(
+        body.error ??
+          (response.status === 404 || response.status === 405
+            ? "this server has no /generate/ — it started before the endpoint existed. " +
+              "On the laptop: npx kill-port 4274, then npm run phone"
+            : `the laptop said ${response.status} ${response.statusText}`),
+        true,
+      );
+      button.disabled = false;
+      button.textContent = was;
+      return;
+    }
+    await ask<"storeClip">({
+      kind: "storeClip",
+      slot: { text: request.text, lang: request.lang, options: request.options },
+      audio: body.audio,
+    }).catch(() => undefined);
+    button.remove();
+    clipButton.disabled = false;
+    // Re-ask for the bytes, now that both stores have them.
+    // `ShadowingSide.play` takes the MOUNT, not a reason — it is the per-clip
+    // control decision 36 added, and `{ unmask: false }` is `prompt()`'s
+    // contract: a mode-2 card's answer stays behind its cloze.
+    const side = card.loop.sides.find((entry) => entry.index === mount.side);
+    side?.play(mount, { unmask: false });
+  } catch (cause) {
+    say(`could not reach the laptop to generate: ${(cause as Error).message}`, true);
+    button.disabled = false;
+    button.textContent = was;
+  }
 }
 
 /**
@@ -2563,6 +2691,25 @@ async function openPreview(cardId: string): Promise<void> {
     playback: currentPlayback,
     resolve: async (address) =>
       (await ask<"payload">({ kind: "payload", cardId: reply.card!.cardId, address })).payload,
+    // A PREVIEW HAD NO OUTCOME HANDLER AT ALL until 2026-09-15, so its `.clip`
+    // buttons could not say "playing", could not say "not on this device", and
+    // could not offer to make a clip that was never generated. A press on a
+    // missing one simply did nothing — which is the same dead-control complaint
+    // the native `<audio>` earned the day before. Decision 30 makes a preview the
+    // place he LOOKS at a card, so it is exactly where a gap should be visible.
+    onOutcome: (outcome) => {
+      const button = outcome.mount.element.nextElementSibling;
+      if (!(button instanceof HTMLButtonElement) || !button.classList.contains("clip")) return;
+      button.setAttribute("data-clip", outcome.kind);
+      button.disabled = outcome.kind === "missing" || outcome.kind === "unaddressable";
+      if (button.disabled) button.title = `no clip on this device for ${outcome.mount.alt}`;
+      // `mounted` is this preview's own card, not the module-level review card
+      // it shadows — and reading it from inside its own initialiser is safe for
+      // one reason worth naming: `onOutcome` fires only from `play()`, and the
+      // hard rule (decision 29) means nothing plays during a mount. If that ever
+      // stops being true this is a temporal-dead-zone throw, not a wrong card.
+      if (outcome.kind === "missing") offerMissingClip(mounted, outcome.mount, button);
+    },
   });
 
   // Every side visible, every cloze open, and SILENT — decision 30's whole shape

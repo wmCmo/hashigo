@@ -768,6 +768,33 @@ export interface GeneratedTextMessage {
  * up by. A cache keyed on anything the resolver does not consult is a cache that
  * misses.
  */
+/**
+ * FILE A CLIP THE LAPTOP JUST SYNTHESISED, into THIS device's own store.
+ *
+ * The sibling of `storeGeneration` and for the same reason — `vite.generate.ts`
+ * has already written it into `build/hashigo.db`, the copy that survives a seed
+ * rebuild; this is the device's copy so the card plays now.
+ *
+ * `audio` is base64 because a request crosses `postMessage` as structured clone
+ * and arrives here having already been base64 over HTTP. Decoding once, in the
+ * worker that owns both handles, keeps the bytes off the page entirely.
+ *
+ * The descriptor carries NO voice: `storeGeneratedSpeech` files everything under
+ * `FILL_VOICE`, because the row has to say who actually spoke. See
+ * `src/cards/audio.ts`.
+ */
+export interface StoreClipRequest {
+  readonly kind: "storeClip";
+  readonly id: number;
+  readonly slot: {
+    readonly text: string;
+    readonly lang: string | null;
+    readonly options: Readonly<Record<string, string>>;
+  };
+  /** base64 mp3. */
+  readonly audio: string;
+}
+
 export interface StoreGenerationRequest {
   readonly kind: "storeGeneration";
   readonly id: number;
@@ -779,6 +806,13 @@ export interface StoreGenerationRequest {
     readonly options: Readonly<Record<string, string>>;
   };
   readonly text: string;
+}
+
+export interface StoreClipMessage {
+  readonly kind: "storeClip";
+  readonly id: number;
+  /** The content address it landed at. Null when the worker declined to store it. */
+  readonly hash: string | null;
 }
 
 export interface StoreGenerationMessage {
@@ -886,6 +920,7 @@ export type AppRequest =
   | PreviewRequest
   | BacklinksRequest
   | StoreGenerationRequest
+  | StoreClipRequest
   | DecksRequest
   | BrowseRequest
   | CreateCardRequest
@@ -1079,6 +1114,7 @@ export type AppMessage =
   | PreviewMessage
   | BacklinksMessage
   | StoreGenerationMessage
+  | StoreClipMessage
   | ResetMessage
   | LogMessage
   | FetchingMessage
@@ -1114,6 +1150,7 @@ export interface ReplyFor {
   readonly preview: PreviewMessage;
   readonly backlinks: BacklinksMessage;
   readonly storeGeneration: StoreGenerationMessage;
+  readonly storeClip: StoreClipMessage;
   readonly setField: SetFieldMessage;
   readonly glance: GlanceMessage;
   readonly dashboard: DashboardMessage;

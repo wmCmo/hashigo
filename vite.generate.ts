@@ -4,7 +4,9 @@
  * Zach, 2026-09-14, on a 疑念 card whose emoji line was simply absent: *"i need
  * way to regenerate on the fly when something is missing, maybe some ui?"*
  *
- *     POST /generate/   {"kind","text","lang","voice","options"}  ->  {"text"}
+ *     POST /generate/   {"kind","text","lang","voice","options"}
+ *       text kinds  ->  {"text"}
+ *       speech      ->  {"hash","mime","audio"}   audio is base64 mp3
  *
  * ─── THIS IS SERVER CODE BECAUSE THE KEY MAY NOT LEAVE THE LAPTOP ───────────
  *
@@ -36,13 +38,35 @@
  * and stays right until the rebuild hands it back properly. One generation, two
  * writes, and the one that survives is on the laptop.
  *
+ * ─── SPEECH, ADDED 2026-09-15, AND WHAT THAT DOES AND DOES NOT OVERTURN ────
+ *
+ * Zach, on a 合理 card whose example sentence would not play: *"it won't let me
+ * play the audio of the example sentence — do you think because it's missing?
+ * then we need a way to regenerate it, like the emoji section we did."* It was
+ * missing. **785 of 10,420 mounts (7.5%) resolve to nothing**, on 627 cards, and
+ * 178 of those are mode-2 cards where decision 29 makes the clip the QUESTION.
+ *
+ * This header used to refuse `speech` outright, on the deferred-regeneration
+ * decision repeated to five agents. **That decision is about REGENERATING clips
+ * that exist** — swapping the voice on the corpus — and his reason for deferring
+ * it was *"i have to re import anyway"*, which decision 41 retired on 2026-09-13.
+ * Synthesising a clip that was never made is a different act, and he asked for it
+ * directly. `image` is still refused: nobody has asked.
+ *
+ * **The second secret is real and stays server-side.** `GOOGLE_TTS_SECRET` is
+ * read here exactly as `ANTHROPIC_API_KEY` is, in the Vite process, and reaches
+ * no response — which is decision 18 observed rather than bent: the rule is that
+ * the key never goes in the CLIENT, and a Node plugin is not the client.
+ *
+ * **The bytes come back in the response, and the text kinds do not do that.** A
+ * clip's payload lives in the separate store, so the device cannot reconstruct
+ * it from a descriptor the way it can re-derive text. Base64 costs 33% on a clip
+ * that is p50 4.08 s — tens of kilobytes, once, on a tap he made.
+ *
  * ─── WHAT IT REFUSES ────────────────────────────────────────────────────────
  *
- * `speech` and `image`. Audio regeneration is deferred by a decision repeated to
- * five agents (*"i will regenerate my audio after we finished the app"*) and
- * would need Google's key as well — a second secret for a job nobody asked for.
- * `storeDescriptorText` refuses a non-text kind on its own; this refuses earlier
- * so no request is ever billed.
+ * `image`, and any kind not in `ALLOWED`. `storeDescriptorText` refuses a
+ * non-text kind on its own; this refuses earlier so no request is ever billed.
  */
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -50,15 +74,24 @@ import { fileURLToPath } from "node:url";
 
 import type { Plugin } from "vite";
 
+import { synthesise } from "./src/accent/speech.js";
+import { defaultStoreDatabase, openBlobStoreDatabase } from "./src/blobs/index.js";
+import { generationIdentity, lookupGeneration } from "./src/blobs/generation.js";
+import { readBlob } from "./src/blobs/db.js";
 import { openDatabase } from "./src/db/index.js";
-import { resolveDescriptorText, storeDescriptorText } from "./src/generate/index.js";
+import {
+  FILL_VOICE,
+  resolveDescriptorText,
+  storeDescriptorText,
+  storeGeneratedSpeech,
+} from "./src/generate/index.js";
 import type { BlobKind } from "./src/schema/index.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const CARD_DB = resolve(root, "build/hashigo.db");
 
 /** Only these can be asked for. See "what it refuses". */
-const ALLOWED: ReadonlySet<string> = new Set(["ai", "translate"]);
+const ALLOWED: ReadonlySet<string> = new Set(["ai", "translate", "speech"]);
 
 /**
  * A prompt longer than this is not one of ours.
@@ -90,7 +123,7 @@ function parse(body: string): Descriptor | string {
   const kind = raw["kind"];
   const text = raw["text"];
   if (typeof kind !== "string" || !ALLOWED.has(kind)) {
-    return `kind must be one of ${[...ALLOWED].join(", ")} — audio is deferred, see decision 29`;
+    return `kind must be one of ${[...ALLOWED].join(", ")}`;
   }
   if (typeof text !== "string" || text.trim() === "") return "text is required";
   if (text.length > MAX_PROMPT) return `text over ${MAX_PROMPT} characters`;
@@ -135,6 +168,81 @@ async function generate(descriptor: Descriptor, key: string, model: string): Pro
     .map((block) => (block.type === "text" ? block.text : ""))
     .join("")
     .trim();
+}
+
+
+/**
+ * ONE CLIP, AND THE SAME THREE ANSWERS THE TEXT PATH GIVES.
+ *
+ * `cached` is not a nicety: a second tap, a second device, or the batch script
+ * meeting a card the phone already filled must cost nothing and must return the
+ * SAME bytes. The device needs them either way — its OPFS store has only what
+ * the last seed rebuild put there — so a hit still sends the payload.
+ *
+ * The lookup and the write both key on `FILL_VOICE`, never on the voice the card
+ * asked for. `src/cards/audio.ts` has the whole argument; the short version is
+ * that the row must say who actually spoke.
+ */
+async function speech(
+  db: ReturnType<typeof openDatabase>,
+  descriptor: Descriptor,
+  send: (status: number, body: unknown) => void,
+): Promise<void> {
+  const identity = generationIdentity({
+    kind: "speech",
+    text: descriptor.text,
+    voice: FILL_VOICE,
+    lang: descriptor.lang,
+    options: descriptor.options,
+  });
+  const storeFile = defaultStoreDatabase(CARD_DB);
+  if (!existsSync(storeFile)) {
+    send(503, { error: `no payload store at ${storeFile}` });
+    return;
+  }
+  const opened = openBlobStoreDatabase(storeFile, { mustExist: true, create: false });
+  try {
+    const hit = lookupGeneration(db, identity);
+    if (hit !== null) {
+      // `readBlob` THROWS on a row whose payload is gone rather than returning
+      // null, and 17 such rows already exist — Mochi lost the files and left the
+      // rows. Caught, not propagated: falling through and synthesising it again
+      // is strictly better than reporting a hit the caller cannot play.
+      try {
+        const bytes = readBlob(db, hit, opened.store);
+        send(200, {
+          hash: hit,
+          mime: "audio/mpeg",
+          audio: Buffer.from(bytes).toString("base64"),
+          cached: true,
+        });
+        return;
+      } catch {
+        /* fall through and make it */
+      }
+    }
+    const key = process.env["GOOGLE_TTS_SECRET"] as string;
+    // PLAIN TEXT, never SSML. `src/accent/speech.ts` settled this: a sentence has
+    // several accent phrases, the frontend has context and handles them, and the
+    // boundary heuristic was measured to fail SILENTLY on `に引き換え`. A head
+    // word reaching here is synthesised plain for the same reason a word with no
+    // derived accent is — no notation beats a guess (decision 8).
+    const bytes = await synthesise(descriptor.text, null, { apiKey: key, voice: FILL_VOICE });
+    const hash = storeGeneratedSpeech(
+      db,
+      opened.store,
+      { text: descriptor.text, lang: descriptor.lang, options: descriptor.options },
+      bytes,
+    );
+    send(200, {
+      hash,
+      mime: "audio/mpeg",
+      audio: Buffer.from(bytes).toString("base64"),
+      cached: false,
+    });
+  } finally {
+    opened.close();
+  }
 }
 
 export function generateOnDemand(): Plugin {
@@ -193,9 +301,13 @@ export function generateOnDemand(): Plugin {
         if (existsSync(resolve(root, ".env")) && process.env["ANTHROPIC_API_KEY"] === undefined) {
           process.loadEnvFile(resolve(root, ".env"));
         }
-        const key = process.env["ANTHROPIC_API_KEY"];
+        // ONE GUARD PER KIND, not one guard for both. A speech request refused
+        // for a missing ANTHROPIC key would name the wrong secret, and the wrong
+        // secret is the worst possible error message to read on a phone.
+        const key = process.env[parsed.kind === "speech" ? "GOOGLE_TTS_SECRET" : "ANTHROPIC_API_KEY"];
         if (key === undefined || key === "") {
-          send(503, { error: "no ANTHROPIC_API_KEY — put it in .env on the laptop" });
+          const name = parsed.kind === "speech" ? "GOOGLE_TTS_SECRET" : "ANTHROPIC_API_KEY";
+          send(503, { error: `no ${name} — put it in .env on the laptop` });
           return;
         }
         if (!existsSync(CARD_DB)) {
@@ -205,6 +317,10 @@ export function generateOnDemand(): Plugin {
 
         const db = openDatabase(CARD_DB, { applySchema: false });
         try {
+          if (parsed.kind === "speech") {
+            await speech(db, parsed, send);
+            return;
+          }
           // ALREADY THERE? A second device asking for the same missing field —
           // or a second tap — must not be a second bill, and must not return
           // DIFFERENT emoji for a card he has already seen filled.

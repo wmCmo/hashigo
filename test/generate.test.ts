@@ -17,9 +17,17 @@
 import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { openDatabase } from "../src/db/index.js";
-import { MEMORY } from "../src/db/index.js";
+import { MEMORY, type Db } from "../src/db/index.js";
+import { MemoryBlobStore, type BlobStore } from "../src/blobs/store.js";
+import { sha256Hex } from "../src/blobs/sha256.js";
+import { resolveAudioHash } from "../src/cards/index.js";
 import { resolveGenerationAsync } from "../src/import/blobs.js";
-import { resolveDescriptorText, storeDescriptorText } from "../src/generate/index.js";
+import {
+  FILL_VOICE,
+  resolveDescriptorText,
+  storeDescriptorText,
+  storeGeneratedSpeech,
+} from "../src/generate/index.js";
 import {
   setCardVoice,
   setDeckVoice,
@@ -787,6 +795,105 @@ describe("storing a generation made on demand", () => {
       options: {},
     });
     expect(asTheWorkerAsks).toBe("🤔❓💭🚫🤝");
+    db.close();
+  });
+});
+
+/**
+ * ─── FILLING A CLIP THAT WAS NEVER MADE ─────────────────────────────────────
+ *
+ * Zach, 2026-09-15, on a 合理 card: *"it won't let me play the audio of the
+ * example sentence — do you think because it's missing?"* It was. 785 of 10,420
+ * mounts resolve to nothing.
+ *
+ * The delicate part is not the synthesis, it is the IDENTITY. The card asks for
+ * `ja-JP-NanamiNeural` because the voice lives on the field; the bytes come from
+ * Google `ja-JP-Neural2-C`. The row must say Neural2-C — anything else makes 785
+ * rows claim a provenance they do not have — so the RESOLVER bridges the gap,
+ * and only for speech, and only to that one named voice.
+ */
+describe("a clip this project synthesised", () => {
+  function speechFixture(): { db: Db; store: BlobStore } {
+    const db = openDatabase(MEMORY);
+    // The digest is injected so `src/blobs/store.ts` stays free of `node:crypto`
+    // — and it must be the SAME one `storeGeneratedSpeech` uses, or the store
+    // rejects the write as an address that does not match its bytes.
+    const store = new MemoryBlobStore(sha256Hex);
+    return { db, store };
+  }
+
+  it("records the voice that actually spoke, not the one the card asked for", () => {
+    const { db, store } = speechFixture();
+    const bytes = new Uint8Array([0x49, 0x44, 0x33, 1, 2, 3, 4, 5]);
+    const hash = storeGeneratedSpeech(db, store, { text: "こんにちは", lang: "ja-JP", options: {} }, bytes);
+
+    const row = db
+      .prepare("SELECT kind, mime, byte_size, voice, lang, options, refcount, bytes FROM blobs WHERE hash = ?")
+      .get(hash) as Record<string, unknown>;
+    expect(row["kind"]).toBe("speech");
+    expect(row["mime"]).toBe("audio/mpeg");
+    expect(row["byte_size"]).toBe(bytes.length);
+    // THE CLAIM. Nanami never touched these bytes.
+    expect(row["voice"]).toBe(FILL_VOICE);
+    expect(row["lang"]).toBe("ja-JP");
+    // The payload is in the STORE, never inline — `blobs.bytes` is for text.
+    expect(row["bytes"]).toBeNull();
+    expect(store.read(hash)).toEqual(bytes);
+    // Refcount 1: a generator mount has no `blob_refs` row, so nothing else will
+    // ever count this reference and a 0 is one sweep away from deletion.
+    expect(row["refcount"]).toBe(1);
+    db.close();
+  });
+
+  it("is idempotent in both halves — a second tap is not a second row", () => {
+    const { db, store } = speechFixture();
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const a = storeGeneratedSpeech(db, store, { text: "ねこ", lang: "ja-JP", options: {} }, bytes);
+    const b = storeGeneratedSpeech(db, store, { text: "ねこ", lang: "ja-JP", options: {} }, bytes);
+    expect(a).toBe(b);
+    expect(
+      (db.prepare("SELECT count(*) AS n FROM blobs").get() as { n: number }).n,
+    ).toBe(1);
+    db.close();
+  });
+
+  it("refuses an empty clip, which could never be read back", () => {
+    const { db, store } = speechFixture();
+    expect(() =>
+      storeGeneratedSpeech(db, store, { text: "むおん", lang: "ja-JP", options: {} }, new Uint8Array()),
+    ).toThrow(/empty clip/);
+    db.close();
+  });
+
+  it("is found by a card asking for a DIFFERENT voice — and only for speech", () => {
+    const { db, store } = speechFixture();
+    const text = "その提案は合理的であり、検討に値すると思います。";
+    const hash = storeGeneratedSpeech(db, store, { text, lang: "ja-JP", options: {} }, new Uint8Array([9, 9, 9]));
+
+    const asked = (kind: string, voice: string | null): string | null =>
+      resolveAudioHash(db, "someCard", {
+        origin: "generator",
+        request: { kind: kind as never, text, voice, lang: "ja-JP", options: {} },
+      });
+
+    // The card's own request. Misses on the exact identity, then finds the fill.
+    expect(asked("speech", "ja-JP-NanamiNeural")).toBe(hash);
+    // Already asking for the fill voice: a direct hit, no fallback needed.
+    expect(asked("speech", FILL_VOICE)).toBe(hash);
+    // NOT A GENERAL "any voice will do". A text kind never falls back — its
+    // identity is the whole cache and a wrong hit there is a wrong answer.
+    expect(asked("ai", "ja-JP-NanamiNeural")).toBeNull();
+    db.close();
+  });
+
+  it("does NOT rescue a card whose text differs — the fallback is voice only", () => {
+    const { db, store } = speechFixture();
+    storeGeneratedSpeech(db, store, { text: "ねこ", lang: "ja-JP", options: {} }, new Uint8Array([1]));
+    const other = resolveAudioHash(db, "someCard", {
+      origin: "generator",
+      request: { kind: "speech", text: "いぬ", voice: "ja-JP-NanamiNeural", lang: "ja-JP", options: {} },
+    });
+    expect(other).toBeNull();
     db.close();
   });
 });

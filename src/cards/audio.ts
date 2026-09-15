@@ -67,6 +67,7 @@ import { readBlob } from "../blobs/db.js";
 import type { SqliteHandle } from "../db/browser.js";
 import type { AudioAddress } from "../render/audio.js";
 import type { BlobPayload } from "../blobs/url.js";
+import { FILL_VOICE } from "../generate/speech.js";
 
 /**
  * The synchronous half of `AudioResolver`.
@@ -109,6 +110,53 @@ function mimeFor(db: SqliteHandle, hash: string): string {
 }
 
 /**
+ * ─── THE GAP-FILL VOICE, AND WHY THE FALLBACK IS THIS NARROW ────────────────
+ *
+ * Zach, 2026-09-15, on a 合理 card whose example sentence would not play:
+ * *"it won't let me play the audio of the example sentence — do you think
+ * because it's missing? then we need a way to regenerate it."* It was missing:
+ * **785 of 10,420 mounts (7.5%) resolve to nothing**, on 627 cards — 576 example
+ * sentences and 209 head words, and **178 of those head words are on mode-2
+ * cards, where decision 29 makes the clip the QUESTION.** Those cards ask
+ * nothing at all.
+ *
+ * Filling one is not as simple as synthesising it, because **the voice lives on
+ * the FIELD, not the card** (`src/accent/respeak-cli.ts` found this the hard
+ * way). Every 単語 card asks for `ja-JP-NanamiNeural`, and this project's settled
+ * voice is Google's `ja-JP-Neural2-C` — Zach's own choice by ear, re-confirmed
+ * 2026-09-15. That leaves three ways to fill a gap and two of them are bad:
+ *
+ *   * **Store the Google bytes under the Nanami identity.** The card plays, and
+ *     `blobs.voice` now says Nanami for 785 rows that Nanami never made. The
+ *     survey in `src/accent/speech.ts` ("all 7,409 ja-JP Nanami clips") becomes
+ *     wrong, silently, and nothing downstream can tell.
+ *   * **Adopt Neural2-C on the field**, which is what `respeak` does on a clean
+ *     whole run. That unreferences all 4,359 existing sentence clips and makes
+ *     every 単語 card silent until the whole corpus is re-synthesised — the
+ *     regeneration Zach has deferred five times.
+ *   * **Store it honestly and let the RESOLVER bridge the gap.** That is this.
+ *
+ * The blob records `ja-JP-Neural2-C`, because Neural2-C made it. A mount asking
+ * for Nanami misses, and only then is the same text looked up under the fill
+ * voice. Nothing lies and no existing card changes: a card whose Nanami clip
+ * exists hits on the first lookup and never reaches here.
+ *
+ * **It is ONE named voice and not "any voice", which is what keeps
+ * `respeak`'s safety property alive.** That command refuses to adopt a voice
+ * while any word is missing its clip, precisely so those cards go SILENT and the
+ * mistake is loud. A resolver that accepted any voice would quietly serve the
+ * old Nanami clip instead and hide it. After an adoption the mount asks for
+ * Neural2-C, the fallback looks for Neural2-C, and a missing one is still
+ * missing — silent, loudly, exactly as before.
+ *
+ * The string itself comes from `src/generate/speech.ts`, the half that WRITES
+ * these rows. Two copies of one voice name is exactly the drift that makes a
+ * cache miss permanently and silently: the reader and the writer have to be
+ * looking at the same characters or the fallback never fires.
+ */
+export { FILL_VOICE } from "../generate/speech.js";
+
+/**
  * Resolve an address to a hash. Exported because "did this card's audio resolve
  * at all" is a question worth asking without reading 617.9 MiB to answer it —
  * a session-preflight or a coverage sweep wants the hash and not the bytes.
@@ -125,18 +173,20 @@ export function resolveAudioHash(
     return row?.hash ?? null;
   }
   const request = address.request;
-  return lookupGeneration(
-    db,
-    generationIdentity({
-      kind: request.kind,
-      // RAW. `generationIdentity` normalises, and normalising here as well
-      // produces a different key and therefore a permanent miss.
-      text: request.text,
-      voice: request.voice,
-      lang: request.lang,
-      options: request.options,
-    }),
-  );
+  const asked = generationIdentity({
+    kind: request.kind,
+    // RAW. `generationIdentity` normalises, and normalising here as well
+    // produces a different key and therefore a permanent miss.
+    text: request.text,
+    voice: request.voice,
+    lang: request.lang,
+    options: request.options,
+  });
+  const hit = lookupGeneration(db, asked);
+  if (hit !== null) return hit;
+  // Speech only, and only when the card asked for some OTHER voice. See above.
+  if (request.kind !== "speech" || asked.voice === FILL_VOICE) return null;
+  return lookupGeneration(db, { ...asked, voice: FILL_VOICE });
 }
 
 /**

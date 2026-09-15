@@ -35,7 +35,11 @@
 import { SqliteBlobStore } from "../src/blobs/sqlite.js";
 import { exportLocalArchive } from "../src/backup/index.js";
 import { exportSync, mergeSync } from "../src/sync/index.js";
-import { resolveDescriptorText, storeDescriptorText } from "../src/generate/index.js";
+import {
+  resolveDescriptorText,
+  storeDescriptorText,
+  storeGeneratedSpeech,
+} from "../src/generate/index.js";
 import {
   databaseFilesInOpfs,
   importDatabaseBrowser,
@@ -81,6 +85,7 @@ import type {
   UngradeRequest,
   PreviewRequest,
   BacklinksRequest,
+  StoreClipRequest,
   StoreGenerationRequest,
   SetFieldRequest,
   TemplateChoice,
@@ -1615,6 +1620,36 @@ function storeGeneration(request: StoreGenerationRequest): void {
   post({ kind: "storeGeneration", id: request.id, hash });
 }
 
+/**
+ * CACHE A CLIP THE LAPTOP JUST MADE — Zach, 2026-09-15.
+ *
+ * The sibling of `storeGeneration`, and the differences are all consequences of
+ * audio not being text. The bytes arrive base64 (they crossed HTTP that way and
+ * decoding once here keeps them off the page), and they go to the PAYLOAD store
+ * rather than inline into `blobs.bytes` — two handles, which this worker already
+ * holds and the page never will.
+ *
+ * IT NEVER SYNTHESISES AND NEVER FETCHES. `vite.generate.ts` owns the Google key
+ * and has already written this into `build/hashigo.db`, the copy that survives a
+ * seed rebuild. A failure to cache is logged rather than thrown: the clip is
+ * already playing from the response he asked for, and losing it at the next boot
+ * is a smaller harm than failing the request he can see.
+ */
+function storeClip(request: StoreClipRequest): void {
+  const db = requireCards();
+  let hash: string | null = null;
+  try {
+    if (store === null) throw new Error("no payload store — send `open` first");
+    const binary = atob(request.audio);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    hash = storeGeneratedSpeech(db, store, request.slot, bytes);
+  } catch (cause) {
+    log(`could not cache the clip: ${(cause as Error).message}`, "bad");
+  }
+  post({ kind: "storeClip", id: request.id, hash });
+}
+
 function backup(request: BackupRequest): void {
   const db = requireCards();
   const archive = exportLocalArchive(db, new Date().toISOString());
@@ -2203,6 +2238,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "storeGeneration":
           storeGeneration(request);
+          break;
+        case "storeClip":
+          storeClip(request);
           break;
         case "setField":
           setField(request);

@@ -56,3 +56,5 @@ export {
   type ResolveOptions,
   type ResolvedFieldGeneration,
 } from "./store.js";
+
+export { storeGeneratedSpeech, FILL_VOICE, type SpeechDescriptor } from "./speech.js";
