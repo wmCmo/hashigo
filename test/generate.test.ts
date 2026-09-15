@@ -53,6 +53,7 @@ import {
 import { GENERATOR_FIELD_TYPES, FIELD_TYPE_BLOB_KIND } from "../src/schema/index.js";
 import { orderSides, resolveCard, type TemplateInput } from "../src/template/index.js";
 import { memoryDocument, renderResolvedCard, renderSides, serialise } from "../src/render/index.js";
+import { alignFurigana, rubyPlainText } from "../src/render/ruby.js";
 
 const DB = "build/hashigo.db";
 const haveCorpus = existsSync(DB);
@@ -1044,5 +1045,50 @@ describe("a local reasoning model's token budget", () => {
         { provider: "ollama", model: "gpt-oss:20b", maxTokens: 256, fetch: fake as never },
       ),
     ).resolves.toBe("");
+  });
+});
+
+/**
+ * ─── THE FURIGANA FILL'S OUTPUT FORMAT, AGAINST THE REAL CORPUS ─────────────
+ *
+ * A furigana generation does NOT hold a reading. It holds the INPUT with a
+ * `(reading)` after each KANJI RUN — which is why decision 37's `readingOf()`
+ * has to unwrap it, and why dumping the whole reading after a mixed base would
+ * put `あり得る(ありえる)` on 350 cards instead of `あり得(え)る`.
+ *
+ * These cases are lifted from rows that already exist in `build/hashigo.db`, so
+ * the test is "does the fill produce what Mochi produced" rather than "does it
+ * produce what I expected".
+ */
+describe("the furigana fill's bracket form", () => {
+  it("annotates each kanji run and leaves the kana alone", () => {
+    // Real rows: "あり得る" -> "あり得(え)る", "おろし金" -> "おろし金(がね)".
+    const stored = (base: string, reading: string): string =>
+      rubyPlainText(alignFurigana(base, reading));
+    expect(stored("あり得る", "ありえる")).toBe("あり得(え)る");
+    expect(stored("おろし金", "おろしがね")).toBe("おろし金(がね)");
+    expect(stored("お世話", "おせわ")).toBe("お世話(せわ)");
+    // A base that is all kanji takes one bracket over the whole of it.
+    expect(stored("試行", "しこう")).toBe("試行(しこう)");
+  });
+
+  it("leaves an all-kana base exactly as it is", () => {
+    // Real rows: "いたす" -> "いたす", "おっしゃる" -> "おっしゃる". Annotating
+    // すずらん with すずらん is noise on the card.
+    const built = alignFurigana("いたす", "いたす");
+    expect(built.kind).toBe("none");
+    // `none` carries no segments — the script writes the base through unchanged,
+    // which is exactly the row the corpus holds.
+    expect(built.segments).toEqual([]);
+  });
+
+  it("REFUSES rather than annotating coarsely when the reading will not place", () => {
+    // `alignFurigana` falls back to one reading over the whole base when it
+    // cannot match the kana runs. The corpus holds no such row for a mixed base,
+    // and writing one would put a coarse annotation on exactly the cards where
+    // the reading is the answer being drilled.
+    const built = alignFurigana("言い渡す", "いーわたす");
+    expect(built.kind).toBe("whole");
+    expect(built.reason).not.toBe("");
   });
 });
