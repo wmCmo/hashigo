@@ -9,6 +9,7 @@ import {
   cardInputFor,
   decodeReversePermutation,
   directionForTrackKind,
+  linkTargetsOf,
   loadCard,
   loadRenderedCard,
   renderLoadedCard,
@@ -19,7 +20,8 @@ import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 import { expandGeneratorFields } from "../src/generate/index.js";
 import type { AudioResolver } from "../src/render/audio.js";
 import { memoryDocument, renderSides, serialise } from "../src/render/index.js";
-import { orderSides, resolveCard, type TemplateInput } from "../src/template/index.js";
+import { prepareCard } from "../src/review/index.js";
+import { orderSides, resolveCard, side, walkSides, type TemplateInput } from "../src/template/index.js";
 
 /**
  * Stage 7's card loader — a card id in, a renderable card out.
@@ -725,5 +727,138 @@ describe.skipIf(!haveCorpus)("what links here, over the real collection", () => 
     } finally {
       db.close();
     }
+  });
+});
+
+/**
+ * ─── THE NAME BEHIND A BARE `[[id]]` ────────────────────────────────────────
+ *
+ * Zach, 2026-09-15, from a reverse 漢字 card on his phone reading
+ * `give, tKEAH1CO, perform, alms`:
+ *
+ *     *"instead of rendering the word, it shows the id — which is the leftovers
+ *     artifact from mochi era, where you can only states the id, and it will
+ *     render the first field?? i want that too"*
+ *
+ * The renderer could always do this; nothing ever handed it a `resolveCardLink`,
+ * so the id fallback was the only branch anything could reach. These pin BOTH
+ * halves — that the name is found, and that a link whose target is gone keeps
+ * rendering the way it does today rather than sprouting brackets.
+ */
+describe.skipIf(!haveCorpus)("a bare wiki-link renders the target's name", () => {
+  it("names the card on his screen — 施, where one link is bare and one is not", () => {
+    const db = openDatabase(DB, { readOnly: true });
+    try {
+      const prepared = prepareCard({ db, cardId: "knvtZ4cA", direction: "forward" });
+      expect(prepared).not.toBeNull();
+      // `Meaning` is authored `give, [[tKEAH1CO]], perform, [[alms|2JIxWV2M]]` —
+      // one of each Mochi form, on one card. That is why this card is the fixture.
+      expect(prepared?.linkNames["tKEAH1CO"]).toBe("bestow");
+
+      const out = renderSides(prepared!.sides, {
+        document: memoryDocument(),
+        resolveCardLink: (id) => {
+          const name = prepared!.linkNames[id];
+          return name === undefined ? {} : { name };
+        },
+      });
+      const html = out.sides.map((side) => serialise(side.element)).join(" ");
+      // ANCHOR TEXT, not the serialised markup. The id is still in `href` and
+      // `data-card-id` and must be — that is how the link opens the card. A first
+      // draft of this test asserted the id was absent from the HTML and failed on
+      // exactly that, which is the assertion being wrong rather than the code.
+      expect(html).toContain(">bestow<");
+      // The defect, in the form he photographed it: the id as the visible word.
+      expect(html).not.toContain(">tKEAH1CO<");
+      // The authored display text still wins — this is not "always use the name".
+      expect(html).toContain(">alms<");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("names every bare link that actually reaches a side, over the whole corpus", () => {
+    const db = openDatabase(DB, { readOnly: true });
+    try {
+      // The bare form has to be found by REGEX, not by SQL. A first draft filtered
+      // `value NOT LIKE '%|%'`, which throws away every value carrying one of each
+      // form — including 施, the card he actually photographed. 17 cards instead
+      // of 33, and the sweep would have looked healthy while missing the fixture.
+      const values = db
+        .prepare("SELECT DISTINCT card_id, value FROM card_field_values WHERE value LIKE '%[[%'")
+        .all() as readonly { card_id: string; value: string }[];
+      const cards = [
+        ...new Set(
+          values
+            .filter((row) => /\[\[[^\]|]+\]\]/.test(String(row.value)))
+            .map((row) => row.card_id),
+        ),
+      ].map((card_id) => ({ card_id }));
+      expect(cards.length).toBeGreaterThan(20);
+
+      let named = 0;
+      let unrendered = 0;
+      for (const { card_id: cardId } of cards) {
+        const prepared = prepareCard({ db, cardId, direction: "forward" });
+        if (prepared === null) continue;
+        // Only the links the reader can SEE. A stored value whose field the
+        // template never prints has no link on screen and needs no name — card
+        // `v47WrgSq` is a 敬語 card carrying `Kanji = [[QpWoUpUL]]` that 敬語's
+        // body does not mention, a leftover from a template it used to be on.
+        const bare = linkTargetsOf(prepared.sides).filter((id) => {
+          let isBare = false;
+          walkSides(prepared.sides, (node) => {
+            if (node.kind !== "wikiLink" || node.target !== id) return;
+            if (node.display === null || node.display === "") isBare = true;
+          });
+          return isBare;
+        });
+        for (const id of bare) {
+          const row = db.prepare("SELECT name FROM cards WHERE id = ?").get(id) as
+            | { name: string }
+            | undefined;
+          if (row === undefined) {
+            unrendered += 1;
+            continue;
+          }
+          // The name is the CARD'S OWN, never reconstructed from the link.
+          expect(prepared.linkNames[id], `${cardId} -> ${id}`).toBe(row.name);
+          named += 1;
+        }
+      }
+      // The figure quoted in `src/cards/link-names.ts`. It moves when he authors
+      // a link, so it is a floor rather than an equality.
+      expect(named).toBeGreaterThanOrEqual(25);
+      expect(unrendered).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("leaves a DEAD target exactly as it renders today — brackets are a regression", () => {
+    // `resolveCardLink` returning null makes the renderer print the authored
+    // source verbatim. 18 links in this corpus point at a card that is gone, and
+    // they read fine today because their display text is authored. `{}` keeps that.
+    const out = renderSides(
+      [
+        side(0, [
+          {
+            kind: "paragraph",
+            children: [
+              { kind: "wikiLink", display: "alms", target: "deadCard" },
+              { kind: "text", text: " / " },
+              { kind: "wikiLink", display: null, target: "alsoDead" },
+            ],
+          },
+        ]),
+      ],
+      { document: memoryDocument(), resolveCardLink: () => ({}) },
+    );
+    const html = out.sides.map((rendered) => serialise(rendered.element)).join(" ");
+    expect(html).toContain(">alms<");
+    expect(html).not.toContain("[[");
+    // With no name to print, the id fallback still stands — an empty anchor is
+    // invisible and untappable, which is what that branch exists to prevent.
+    expect(html).toContain(">alsoDead<");
   });
 });

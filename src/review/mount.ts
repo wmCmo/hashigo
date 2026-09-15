@@ -78,8 +78,10 @@
 import {
   cardAudioResolver,
   directionForTrackKind,
+  linkNamesFor,
   loadCard,
   renderLoadedCard,
+  type LinkNames,
   type LoadedCard,
 } from "../cards/index.js";
 import { expandGeneratorFields, storeTextResolver } from "../generate/index.js";
@@ -162,6 +164,16 @@ export interface PreparedCard {
   readonly mode: CardMode;
   readonly expanded: number;
   readonly divergent: readonly string[];
+  /**
+   * Card id → name, for the wiki-links on these sides.
+   *
+   * Collected HERE, in the half that holds the database, because the renderer's
+   * `resolveCardLink` is synchronous and the page has no database to ask. A bare
+   * `[[id]]` printed its raw id on 33 cards until 2026-09-15 for exactly that
+   * reason — the fallback was the only branch anything could reach. See
+   * `src/cards/link-names.ts`.
+   */
+  readonly linkNames: LinkNames;
 }
 
 /** `MountOptions` minus the database. The page's half. */
@@ -296,6 +308,10 @@ export function prepareCard(options: PrepareOptions): PreparedCard | null {
     mode: cardMode(loaded),
     expanded: bound.expanded.length,
     divergent: bound.divergent,
+    // AFTER `expandGeneratorFields`, not before: a generator's output is rendered
+    // text and can carry links of its own, so collecting from `rendered.sides`
+    // would miss them.
+    linkNames: linkNamesFor(db, bound.sides),
   };
 }
 
@@ -347,6 +363,16 @@ export function mountPrepared<E extends RenderElement>(
   const result = renderSides(prepared.sides, {
     document: options.document,
     renderers: marks.renderers,
+    // A bare `[[id]]` prints the TARGET CARD'S NAME, which is what Mochi does and
+    // what `wikiLink` has always been able to do — it had never been given a
+    // resolver, so the "never render an empty anchor" fallback was the only branch
+    // reachable and 33 cards showed a raw id. `{}` and not `null` for an unknown
+    // id: null means "no such card" and prints `[[display|id]]` verbatim, which
+    // would be a regression on the 18 links whose target really is gone.
+    resolveCardLink: (id) => {
+      const name = prepared.linkNames[id];
+      return name === undefined ? {} : { name };
+    },
   });
   // Filled straight away, unlike furigana: the annotation is a stored field on
   // the card that is already in hand, not a generation that has to be looked up.

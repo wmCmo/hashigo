@@ -30,6 +30,8 @@ export {
 
 export { backlinksOf, type Backlink } from "./backlinks.js";
 
+export { linkNamesFor, linkTargetsOf, type LinkNames } from "./link-names.js";
+
 export {
   cardContext,
   cardInputFor,
