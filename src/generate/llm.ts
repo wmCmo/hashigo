@@ -120,6 +120,28 @@ export const OLLAMA_HOST = "http://127.0.0.1:11434";
 export const OLLAMA_MODEL = "qwen3:8b";
 
 /**
+ * A LOCAL REASONING MODEL SPENDS THE SAME BUDGET ON THINKING AS ON ANSWERING.
+ *
+ * `MAX_TOKENS` is 256 in `vite.generate.ts` and that is right for Anthropic,
+ * where the answer IS the output — "an emoji line, a sentence". Ollama counts
+ * reasoning tokens against `num_predict`, and Ollama returns the reasoning in a
+ * SEPARATE `thinking` field, so a model that deliberates past the cap stops with
+ * `done_reason: "length"` and an EMPTY `response`. Measured on gpt-oss:20b,
+ * 2026-09-15, translating 彼なら彼で、自分のやり方があるんだよ。:
+ *
+ *     num_predict=256    eval=256  done=length  response=""
+ *     num_predict=2048   eval=421  done=stop    response="When it comes to him,
+ *                                                he's his own person…"
+ *
+ * Two of three sentences in the first batch run came back empty for exactly
+ * this. The reasoning is FREE here — it is his own GPU, and the only cost is
+ * seconds — so the floor is generous. It bounds a runaway, nothing more; the
+ * answer stays short because the system prompt says so, not because the budget
+ * cuts it off.
+ */
+export const OLLAMA_MIN_PREDICT = 2_048;
+
+/**
  * Is a local daemon actually there?
  *
  * Asked before every batch and once per server start, never per request: the
@@ -151,15 +173,31 @@ async function viaOllama(descriptor: LlmDescriptor, options: LlmOptions): Promis
       prompt: descriptor.text,
       stream: false,
       think: false,
-      options: { num_predict: options.maxTokens },
+      // The caller's budget is for the ANSWER; the floor covers the thinking
+      // that shares it. See `OLLAMA_MIN_PREDICT`.
+      options: { num_predict: Math.max(options.maxTokens, OLLAMA_MIN_PREDICT) },
     }),
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
     throw new Error(`ollama answered ${response.status} — ${detail.slice(0, 200)}`);
   }
-  const body = (await response.json()) as { response?: string };
-  return stripThinking(body.response ?? "");
+  const body = (await response.json()) as {
+    response?: string;
+    thinking?: string;
+    done_reason?: string;
+  };
+  const text = stripThinking(body.response ?? "");
+  // NAME THE CAUSE. "returned nothing" sent a first batch run looking at the
+  // model when the answer was the token budget, and the two are fixed
+  // differently. `thinking` present with `response` empty is the same story from
+  // the other side: it deliberated and never got to the answer.
+  if (text === "" && (body.done_reason === "length" || (body.thinking ?? "") !== "")) {
+    throw new Error(
+      `${options.model} spent its whole token budget thinking (done_reason=${body.done_reason ?? "?"}) — raise num_predict`,
+    );
+  }
+  return text;
 }
 
 async function viaAnthropic(descriptor: LlmDescriptor, options: LlmOptions): Promise<string> {

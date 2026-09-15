@@ -26,6 +26,7 @@ import {
   FILL_VOICE,
   generateText,
   ollamaReachable,
+  OLLAMA_MIN_PREDICT,
   stripThinking,
   systemPrompt,
   resolveDescriptorText,
@@ -985,5 +986,63 @@ describe("the text provider and its prompt", () => {
     // Qwen3 is a thinking model and Ollama returns the reasoning without this.
     expect(seen["think"]).toBe(false);
     expect(seen["stream"]).toBe(false);
+  });
+});
+
+/**
+ * ─── THE TOKEN BUDGET IS SHARED WITH THE THINKING ───────────────────────────
+ *
+ * Two of the first three sentences in a real batch run came back empty, and
+ * "the model returned nothing" pointed at the model. It was the budget: Ollama
+ * counts reasoning against `num_predict` and returns the reasoning in a separate
+ * `thinking` field, so a long deliberation stops at `done_reason: "length"` with
+ * `response` empty. Measured on gpt-oss:20b:
+ *
+ *     num_predict=256   eval=256  done=length  response=""
+ *     num_predict=2048  eval=421  done=stop    response="When it comes to him…"
+ */
+describe("a local reasoning model's token budget", () => {
+  it("gives the thinking headroom the caller's answer budget does not have", async () => {
+    let seen: Record<string, unknown> = {};
+    const fake = async (_url: string, init: { body: string }): Promise<unknown> => {
+      seen = JSON.parse(init.body) as Record<string, unknown>;
+      return { ok: true, json: async () => ({ response: "ok", done_reason: "stop" }) };
+    };
+    await generateText(
+      { kind: "ai", text: "x", options: {} },
+      { provider: "ollama", model: "gpt-oss:20b", maxTokens: 256, fetch: fake as never },
+    );
+    // The caller asked for 256 — that is the ANSWER budget, and it must not be
+    // what bounds the reasoning that shares it.
+    expect((seen["options"] as { num_predict: number }).num_predict).toBe(OLLAMA_MIN_PREDICT);
+    expect(OLLAMA_MIN_PREDICT).toBeGreaterThan(256);
+  });
+
+  it("names the budget rather than blaming the model when it runs out", async () => {
+    const fake = async (): Promise<unknown> => ({
+      ok: true,
+      json: async () => ({ response: "", thinking: "We need to translate…", done_reason: "length" }),
+    });
+    await expect(
+      generateText(
+        { kind: "translate", text: "彼なら彼で", options: { from: "ja", to: "en" } },
+        { provider: "ollama", model: "gpt-oss:20b", maxTokens: 256, fetch: fake as never },
+      ),
+    ).rejects.toThrow(/token budget thinking/);
+  });
+
+  it("still reports a genuinely empty answer, with no thinking, as empty", async () => {
+    const fake = async (): Promise<unknown> => ({
+      ok: true,
+      json: async () => ({ response: "  ", done_reason: "stop" }),
+    });
+    // Not an error here: the caller decides what an empty field means, and
+    // `vite.generate.ts` already refuses to store one.
+    await expect(
+      generateText(
+        { kind: "ai", text: "x", options: {} },
+        { provider: "ollama", model: "gpt-oss:20b", maxTokens: 256, fetch: fake as never },
+      ),
+    ).resolves.toBe("");
   });
 });

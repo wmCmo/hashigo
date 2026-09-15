@@ -65,6 +65,7 @@ export {
   stripThinking,
   systemPrompt,
   OLLAMA_HOST,
+  OLLAMA_MIN_PREDICT,
   OLLAMA_MODEL,
   type LlmDescriptor,
   type LlmOptions,
