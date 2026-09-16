@@ -226,6 +226,12 @@ export const ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize"
 /** Settled by measurement 2026-08-20 — see the TTS section of `CLAUDE.md`. */
 export const VOICE = "ja-JP-Neural2-C";
 
+/** `ja-JP-Neural2-C` → `ja-JP`. Google names every voice `<lang>-<region>-…`. */
+export function languageOf(voice: string): string {
+  const parts = voice.split("-");
+  return parts.length >= 2 ? `${parts[0]}-${parts[1]}` : "ja-JP";
+}
+
 export interface SynthesiseOptions {
   readonly apiKey: string;
   readonly voice?: string;
@@ -269,7 +275,16 @@ export async function synthesise(
     },
     body: JSON.stringify({
       input,
-      voice: { languageCode: "ja-JP", name: options.voice ?? VOICE },
+      // DERIVED FROM THE VOICE, not stated beside it. Google names every voice
+      // `<lang>-<region>-<family>`, so the two can be made unable to disagree —
+      // and they DID disagree: `languageCode` was pinned to `ja-JP` here, so the
+      // 2026-09-16 fill spoke **130 en-US texts with the Japanese voice**, which
+      // reads English through Japanese phonology. Nothing could notice: the row
+      // records `lang = en-US` and `voice = ja-JP-Neural2-C` truthfully, and the
+      // pair is only wrong together. Picking an English fill voice is Zach's —
+      // he chose this one by ear — so this fixes the disagreement and not the
+      // choice.
+      voice: { languageCode: languageOf(options.voice ?? VOICE), name: options.voice ?? VOICE },
       audioConfig: { audioEncoding: options.encoding ?? "MP3" },
     }),
   });

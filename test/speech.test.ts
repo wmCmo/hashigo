@@ -27,6 +27,7 @@ import {
   SENTENCE_BREAK_MS,
   VOICE,
   isKana,
+  languageOf,
   pausedSsml,
   speechSsml,
   splitMoras,
@@ -208,6 +209,20 @@ describe("the request itself", () => {
     expect((seen[0] as { input: { ssml?: string } }).input.ssml).toContain("^イ!リョー");
     expect((seen[1] as { input: { text?: string } }).input.text).toBe("～なり～なり");
     expect((seen[1] as { input: { ssml?: string } }).input.ssml).toBeUndefined();
+  });
+
+  it("derives the language from the voice, so the two cannot disagree", async () => {
+    // They DID disagree: `languageCode` was pinned to `ja-JP` beside whatever
+    // voice was asked for, so the 2026-09-16 fill spoke 130 en-US texts with the
+    // Japanese voice. Both halves of the row were individually truthful.
+    let body: { voice: { languageCode: string; name: string } } | null = null;
+    const fetch = (async (_url: string, init: { body: string }) => {
+      body = JSON.parse(init.body);
+      return ok(Buffer.from("audio").toString("base64"));
+    }) as unknown as typeof globalThis.fetch;
+    await synthesise("gulls", null, { apiKey: "k", fetch, voice: "en-US-Neural2-D" });
+    expect(body!.voice).toEqual({ languageCode: "en-US", name: "en-US-Neural2-D" });
+    expect(languageOf(VOICE)).toBe("ja-JP");
   });
 
   it("uses the voice settled by measurement, and asks for mp3", async () => {
