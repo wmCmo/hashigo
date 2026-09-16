@@ -814,6 +814,37 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     reverse tracks permute side order, and the first version printed the answer
     above the question on the first card of the first real session.
     See `DECISIONS.md` 44.
+45. **THE SEED FETCH GETS A SCREEN, AND THE LADDER CLIMBS ON IT.** Zach,
+    2026-09-16, handing over `hashigo-sync-v3.html` — a running prototype with
+    presets, a stall simulator and a slider per stage. *"i agree that loading
+    animation would be perfect."* **IT IS THE SEED FETCH, NOT DECISION 33's
+    SYNC**, and the rename had to happen before it could be built: `sync` here
+    means the mailbox (~1 MB, backgrounded since 2026-09-14), while this is
+    `ensureFile` — 74 MB of cards + 9 MB of text + up to 643 MB of audio, which
+    cannot background because nothing can open until it lands. **The gate
+    survives for a new reason**: there is no fast seed fetch, so `GATE_MS = 500`
+    exists so a boot that fetches NOTHING never flashes a download UI (verified:
+    30 samples, never shown). **CHANGE IS REASSURANCE, MOTION IS NOT** — his line
+    — so the screen is mostly numbers and the bar encodes the phase (sweeping =
+    indeterminate, filling = bytes). **Three corrections against the codebase:**
+    the colour lerp moved to CSS, because his `[224,69,29] → [27,59,111]` are the
+    LIGHT tokens and `#1B3B6F` on the dark ground is **1.60:1** — invisible on
+    the only screen he uses; the geometry IS the shipped mark (`railX(77)` is
+    `[18.09, 81.91]`, the `d` already in `index.html`, pinned by test); and the
+    authored accent is held at `opacity: 0` while animating, or the static
+    vermilion rung covers the moving one and **the beat never reads as empty**.
+    Timing `drop 800 · beat 200 · fade 500 · hold 600`, phased so `t = 0` is the
+    start of `hold` — a fetch inside one cycle shows the resting mark and no
+    motion. `REWARD_STAGES` (`hold: 0`) starts on the drop from the same
+    implementation, so deck completion is a one-line change. **The clock is
+    `performance.now()` directly**, never a value anything else scales — a
+    prototype that multiplied it by an unrelated speed ran 20× too fast. **No
+    red** for the stall (decision 40's argument) and **no "use the local copy"**
+    escape hatch (the local copy is the stale thing). **One deviation, deliberate:**
+    the boot log is KEPT below the readout — it is what he diagnosed three faults
+    with in one week. **NOT VERIFIED: reduced motion** — implemented, and
+    `prefers-reduced-motion` cannot be emulated with the tools here.
+    See `DECISIONS.md` 45.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

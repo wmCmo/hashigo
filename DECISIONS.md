@@ -1733,6 +1733,103 @@ right**: it holds his verbatim reasoning and this quotes it.
     real session. The boundary is still the first VISIBLE side, still measured in
     display positions, and `test/app-logic.test.ts` still pins that regression.
 
+45. **THE SEED FETCH GETS A SCREEN, AND THE LADDER CLIMBS ON IT.** Zach,
+    2026-09-16, handing over `hashigo-sync-v3.html` — a running prototype with
+    presets for a fast / typical / post-rebuild fetch, a stall simulator, and a
+    slider per animation stage. *"i agree that loading animation would be
+    perfect."* The numbers here are his, read off that file.
+
+    ─── IT IS THE SEED FETCH, NOT DECISION 33's SYNC ─────────────────────────
+
+    His draft called it "the sync screen", and the name had to change before the
+    design could be built. **In this repo `sync` means decision 33** — the
+    mailbox, device-to-device, ~1 MB of JSON, pushing in the background since
+    2026-09-14. This is the other thing entirely: `ensureFile` in
+    `app/db.worker.ts`, which is 74 MB of cards + 9 MB of text + up to 643 MB of
+    audio, and which cannot run in the background because there is nothing to
+    open until it lands.
+
+    Every premise moved with the name. **The gate survives for a different
+    reason than the draft gave.** "Most syncs are fast" is false of this; there
+    is no fast seed fetch. Either every file is already in OPFS and nothing is
+    fetched at all, or it is hundreds of megabytes. `GATE_MS = 500` exists so a
+    boot that fetches NOTHING never flashes a full-screen download UI — measured:
+    30 samples on such a boot, never shown once.
+
+    ─── CHANGE IS REASSURANCE, MOTION IS NOT ─────────────────────────────────
+
+    His line, and the strongest thing in the design. A spinner looks identical
+    whether the transfer is healthy or hung, so after ninety seconds it reads as
+    frozen; a byte counter going up is evidence. So the screen is mostly numbers,
+    the bar ENCODES the phase (sweeping = indeterminate, filling = measurable
+    bytes), and the climb is deliberately slow enough to read as breathing.
+
+    It was also half-built already. `showFetchProgress` has carried a real
+    per-file bar since 2026-09-08, after *"frozen on this page for like 5 mins"*.
+    This adds the mark, the phases and the stall notice to that rather than
+    replacing it.
+
+    ─── THREE THINGS CORRECTED AGAINST THE CODEBASE ──────────────────────────
+
+    * **The colour lerp moved from JavaScript to CSS.** The prototype interpolates
+      `[224,69,29] → [27,59,111]` — the LIGHT `--vermilion` and `--indigo`. Dark
+      overrides both, and measured against the dark ground `#1B3B6F` is
+      **1.60:1**: the landed rungs would be invisible on the only screen he
+      reviews on. `rungMix` returns a 0..1 position and `color-mix` reads the
+      tokens. Verified in both themes — dark resolves to `#7fa4e1` (7.00:1) and
+      `#f05a2e`.
+    * **The geometry is the SHIPPED mark.** `railX(77)` is `[18.09, 81.91]`,
+      which is the `d` attribute already authored in `app/index.html`, to the
+      digit. All four slots are pinned, so changing the mark and forgetting the
+      animation fails rather than drifting into a resting form that differs
+      subtly from the static logo.
+    * **The authored accent is held at `opacity: 0` while animating.** Otherwise
+      the static vermilion rung sits on top of the moving one and **the beat
+      never reads as empty** — which is the entire point of the beat.
+
+    ─── THE TIMING, AND WHY IT IS SLOW ───────────────────────────────────────
+
+    `drop 800 · beat 200 · fade 500 · hold 600`, cycle 2100 ms. An earlier version
+    used 520/260, correct for a one-shot reward and too urgent for an idle loop:
+    with `easeOutCubic` peak velocity is 3× average, so 520 ms puts the accent
+    near 96 px/s inside a 62 px mark and 800 ms puts it near 63 px/s.
+
+    **The beat is load-bearing** — without it the new accent fades in under cover
+    of the drop and is never seen to arrive, which was the defect in his first
+    version. **The loop is PHASED so `t = 0` is the start of `hold`**, so a fetch
+    that clears the gate but ends inside one cycle shows the complete mark and no
+    motion at all. `REWARD_STAGES` with `hold: 0` makes the offset equal the
+    cycle, so deck completion — if it ever ships — starts on the drop from the
+    same implementation.
+
+    **The clock is `performance.now()` directly, never a value anything else
+    scales.** In one of his prototypes it was multiplied by an unrelated speed and
+    ran 20× too fast. Measured: the drop took ~750 ms of wall clock while the
+    transfer ran at 472 MB/s.
+
+    ─── NO RED, AND NO ESCAPE HATCH ──────────────────────────────────────────
+
+    The stall notice is a recessed panel and plain language. `--vermilion` means
+    *the next rung* — it is the reward colour, and spending it on an error state
+    poisons it, the same argument as delete having no colour of its own
+    (decision 40). And an earlier draft's *"use the copy already on this device"*
+    button is CUT, on his reasoning: the fetch runs because the seed changed, so
+    the local copy is by definition the stale thing. It is not a safety valve, it
+    is a trapdoor.
+
+    ─── ONE DEVIATION FROM HIS SPEC, DELIBERATE ──────────────────────────────
+
+    He wrote *"mark and wordmark, phase label, one progress bar, a numeric
+    readout. Nothing else."* **The boot log is kept**, quiet, below the readout.
+    It is the instrument he used to diagnose three separate faults in one week —
+    a stale server, a missing route, and the audio budget — and deleting it would
+    have cost him those. Reversible if he wants the purer screen.
+
+    **NOT VERIFIED: reduced motion.** The still path is implemented and
+    `restFrame` is covered by tests, but `prefers-reduced-motion` cannot be
+    emulated with the tools available here, so nobody has watched it.
+    See `DECISIONS.md` 45.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach
