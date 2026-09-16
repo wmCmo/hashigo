@@ -20,7 +20,7 @@ import { openDatabase } from "../src/db/index.js";
 import { MEMORY, type Db } from "../src/db/index.js";
 import { MemoryBlobStore, type BlobStore } from "../src/blobs/store.js";
 import { sha256Hex } from "../src/blobs/sha256.js";
-import { resolveAudioHash } from "../src/cards/index.js";
+import { audioHashCandidates, cardAudioResolver, resolveAudioHash } from "../src/cards/index.js";
 import { resolveGenerationAsync } from "../src/import/blobs.js";
 import {
   FILL_VOICE,
@@ -889,6 +889,75 @@ describe("a clip this project synthesised", () => {
     // NOT A GENERAL "any voice will do". A text kind never falls back — its
     // identity is the whole cache and a wrong hit there is a wrong answer.
     expect(asked("ai", "ja-JP-NanamiNeural")).toBeNull();
+    db.close();
+  });
+
+  /**
+   * ─── THE ROW IS NOT THE CLIP, AND THAT MADE THE GAP UNREPAIRABLE ──────────
+   *
+   * Zach, 2026-09-16, on a 略歴 card: *"is it just me or nothing happens when
+   * you click the generate buttons"*. Reproduced in the Browser pane: the
+   * button said `speaking…`, the laptop answered, the worker filed the bytes —
+   * and a fresh `generate audio` button took its place. For ever.
+   *
+   * A device carries every `blobs` ROW (the card seed is whole) and only the
+   * payloads `app-bootstrap` had budget for, which is each card's CHEAPEST clip
+   * first (decision 34). The 2026-09-16 fill gave that sentence a second,
+   * smaller `ja-JP-Neural2-C` row, so the seed shipped the 50 KB Neural2-C
+   * payload and left the 158 KB Nanami one behind — measured in the shipped
+   * seed, 139 speech rows there have no payload.
+   *
+   * The card asks Nanami. The Nanami ROW hits. The fallback never ran, and one
+   * `BlobMissingError` became `null`.
+   */
+  it("plays the fill clip when the asked voice's ROW is there and its BYTES are not", () => {
+    const { db, store } = speechFixture();
+    const text = "彼の略歴を見ると、彼は多くの異なる業界で経験を積んできたことがわかります。";
+    const bytes = new Uint8Array([0x49, 0x44, 0x33, 7, 7, 7]);
+    const fill = storeGeneratedSpeech(db, store, { text, lang: "ja-JP", options: {} }, bytes);
+
+    // The Mochi-era row, present with its byte_size and WITHOUT its payload —
+    // exactly what a seed rebuild leaves on the device. Written by hand because
+    // nothing in this project can produce that state on purpose.
+    db.prepare(
+      `INSERT INTO blobs (hash, kind, mime, byte_size, source_text, voice, lang, options, refcount)
+       VALUES (?, 'speech', 'audio/mpeg', 158400, ?, 'ja-JP-NanamiNeural', 'ja-JP', '{}', 1)`,
+    ).run("deadbeef".repeat(8), text);
+
+    const address = {
+      origin: "generator",
+      request: { kind: "speech", text, voice: "ja-JP-NanamiNeural", lang: "ja-JP", options: {} },
+    } as const;
+
+    // The PREFERRED hash is still the row the card asked for — this does not
+    // quietly re-rank provenance, and `fill-generations` still reads it that way.
+    expect(resolveAudioHash(db, "someCard", address)).toBe("deadbeef".repeat(8));
+    expect(audioHashCandidates(db, "someCard", address)).toEqual(["deadbeef".repeat(8), fill]);
+
+    // But the resolver, which is the half that holds the store, plays the clip
+    // that exists. Before this it returned null and the card was mute.
+    const played = cardAudioResolver(db, "someCard", { store })(address);
+    expect(played?.hash).toBe(fill);
+    expect(played?.bytes).toEqual(bytes);
+    db.close();
+  });
+
+  it("is still silent, loudly, when NEITHER hash has bytes", () => {
+    const { db } = speechFixture();
+    const text = "どこにも音がない";
+    db.prepare(
+      `INSERT INTO blobs (hash, kind, mime, byte_size, source_text, voice, lang, options, refcount)
+       VALUES (?, 'speech', 'audio/mpeg', 1200, ?, 'ja-JP-NanamiNeural', 'ja-JP', '{}', 1)`,
+    ).run("f0".repeat(32), text);
+    // An empty store, not a missing one: the walk must exhaust its candidates
+    // and return null rather than throw the first `BlobMissingError` at the page.
+    const resolver = cardAudioResolver(db, "someCard", { store: new MemoryBlobStore(sha256Hex) });
+    expect(
+      resolver({
+        origin: "generator",
+        request: { kind: "speech", text, voice: "ja-JP-NanamiNeural", lang: "ja-JP", options: {} },
+      }),
+    ).toBeNull();
     db.close();
   });
 

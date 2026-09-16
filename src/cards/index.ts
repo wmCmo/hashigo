@@ -23,6 +23,7 @@
  */
 
 export {
+  audioHashCandidates,
   cardAudioResolver,
   resolveAudioHash,
   type CardAudioOptions,

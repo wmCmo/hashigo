@@ -157,20 +157,40 @@ function mimeFor(db: SqliteHandle, hash: string): string {
 export { FILL_VOICE } from "../generate/speech.js";
 
 /**
- * Resolve an address to a hash. Exported because "did this card's audio resolve
- * at all" is a question worth asking without reading 617.9 MiB to answer it —
- * a session-preflight or a coverage sweep wants the hash and not the bytes.
+ * EVERY hash this address could legitimately play, best first.
+ *
+ * ─── WHY THIS IS A LIST AND NOT ONE ANSWER — 2026-09-16 ─────────────────────
+ *
+ * Zach, over a 略歴 card: *"is it just me or nothing happens when you click the
+ * generate buttons"*. It was not just him, and the button was not the fault.
+ *
+ * The asked voice HIT and the bytes were not there. `blobs` and the payload
+ * store are two different files, and a device carries every ROW (the card seed
+ * is whole) while carrying only the payloads `app-bootstrap` had budget for —
+ * which takes each card's CHEAPEST clip first (decision 34). The 2026-09-16 fill
+ * gave that sentence a second, smaller `ja-JP-Neural2-C` row, so the seed
+ * shipped the 50 KB Neural2-C payload and left the 158 KB Nanami one behind. The
+ * card asks for Nanami, the Nanami ROW is right there, the fallback below never
+ * ran, and `cardAudioResolver` turned the missing payload into `null`.
+ *
+ * **That made the gap unrepairable, which is the part that reached him.** He
+ * pressed "generate audio", the laptop answered, the worker filed the bytes
+ * under the fill voice correctly — and the next lookup hit the same dead Nanami
+ * row again. The button vanished and came back: nothing happens, for ever.
+ *
+ * So a single "the" hash is the wrong shape. Resolution is a preference order,
+ * and only the caller holding the store can say which entry is real.
  */
-export function resolveAudioHash(
+export function audioHashCandidates(
   db: SqliteHandle,
   cardId: string,
   address: AudioAddress,
-): string | null {
+): string[] {
   if (address.origin === "attachment") {
     const row = db.prepare(SELECT_ATTACHMENT).get(cardId, address.key) as
       | { hash: string; mime: string }
       | undefined;
-    return row?.hash ?? null;
+    return row === undefined ? [] : [row.hash];
   }
   const request = address.request;
   const asked = generationIdentity({
@@ -183,10 +203,31 @@ export function resolveAudioHash(
     options: request.options,
   });
   const hit = lookupGeneration(db, asked);
-  if (hit !== null) return hit;
+  const found = hit === null ? [] : [hit];
   // Speech only, and only when the card asked for some OTHER voice. See above.
-  if (request.kind !== "speech" || asked.voice === FILL_VOICE) return null;
-  return lookupGeneration(db, { ...asked, voice: FILL_VOICE });
+  if (request.kind !== "speech" || asked.voice === FILL_VOICE) return found;
+  const fill = lookupGeneration(db, { ...asked, voice: FILL_VOICE });
+  if (fill === null || fill === hit) return found;
+  found.push(fill);
+  return found;
+}
+
+/**
+ * Resolve an address to a hash. Exported because "did this card's audio resolve
+ * at all" is a question worth asking without reading 617.9 MiB to answer it —
+ * a session-preflight or a coverage sweep wants the hash and not the bytes.
+ *
+ * THE PREFERRED one, which is the question those callers are asking: on the
+ * laptop every row has its payload (measured 2026-09-16: 0 of 11,613 without),
+ * so "is there a row" and "can it play" are the same question there. They come
+ * apart on a DEVICE, and `cardAudioResolver` is where that is answered.
+ */
+export function resolveAudioHash(
+  db: SqliteHandle,
+  cardId: string,
+  address: AudioAddress,
+): string | null {
+  return audioHashCandidates(db, cardId, address)[0] ?? null;
 }
 
 /**
@@ -206,16 +247,21 @@ export function cardAudioResolver(
 ): SyncAudioResolver {
   const store = options.store ?? null;
   return (address: AudioAddress): BlobPayload | null => {
-    const hash = resolveAudioHash(db, cardId, address);
-    if (hash === null) return null;
-    try {
-      return { hash, bytes: readBlob(db, hash, store), mime: mimeFor(db, hash) };
-    } catch (cause) {
-      // A row whose payload is nowhere is a real state of this corpus — Mochi
-      // lost 17 of them — and a review session must not end because one clip is
-      // gone. Anything else is a bug and is rethrown.
-      if (cause instanceof BlobMissingError) return null;
-      throw cause;
+    for (const hash of audioHashCandidates(db, cardId, address)) {
+      try {
+        return { hash, bytes: readBlob(db, hash, store), mime: mimeFor(db, hash) };
+      } catch (cause) {
+        // A row whose payload is nowhere is a real state of this corpus — Mochi
+        // lost 17 of them, and a device carries rows it has no bytes for by
+        // design. A review session must not end because one clip is gone, and
+        // it must not stop at the FIRST gone one either: `continue` is what
+        // makes the fill voice reachable behind a Nanami row with no payload,
+        // and therefore what makes "generate audio" able to repair anything.
+        // Anything else is a bug and is rethrown.
+        if (cause instanceof BlobMissingError) continue;
+        throw cause;
+      }
     }
+    return null;
   };
 }
