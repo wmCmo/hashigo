@@ -207,11 +207,19 @@ async function speech(
       }
     }
     const key = process.env["GOOGLE_TTS_SECRET"] as string;
-    // PLAIN TEXT, never SSML. `src/accent/speech.ts` settled this: a sentence has
-    // several accent phrases, the frontend has context and handles them, and the
-    // boundary heuristic was measured to fail SILENTLY on `に引き換え`. A head
-    // word reaching here is synthesised plain for the same reason a word with no
-    // derived accent is — no notation beats a guess (decision 8).
+    // NO ACCENT NOTATION, ever, on anything reaching here. `src/accent/speech.ts`
+    // settled that: a sentence has several accent phrases, the frontend has
+    // context and handles them, and the boundary heuristic was measured to fail
+    // SILENTLY on `に引き換え`. A head word reaching here is synthesised without
+    // it for the same reason a word with no derived accent is — no notation
+    // beats a guess (decision 8).
+    //
+    // THAT IS NOT THE SAME AS "plain text, never SSML", which this comment used
+    // to say and which cost Zach a rushed clip on 2026-09-16. `synthesise` now
+    // spells a sentence's WRITTEN pauses as `<break>`, because Google reads
+    // straight through `、` — measured, 6.34 s against Azure's 7.92 s on the same
+    // sentence, with no internal gap at all. A break needs no phrase boundary
+    // guessed; it goes where he typed the comma.
     const bytes = await synthesise(descriptor.text, null, { apiKey: key, voice: FILL_VOICE });
     const hash = storeGeneratedSpeech(
       db,

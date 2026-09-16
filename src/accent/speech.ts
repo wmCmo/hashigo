@@ -123,6 +123,98 @@ export function speechSsml(request: SpeechRequest): string {
   return `<speak><phoneme alphabet="yomigana" ph="${ph}">${request.reading}</phoneme></speak>`;
 }
 
+// ─── the pauses a sentence was written with ──────────────────────────────────
+
+/**
+ * GOOGLE DOES NOT PAUSE AT `、`, AND THAT IS MEASURED, NOT SUSPECTED.
+ *
+ * Zach, 2026-09-16, on the 略歴 example sentence: *"i think the generated audio
+ * was speaking without pausing on comma or natural pausing section"*. He is
+ * right, and the same sentence in Mochi's Azure clip is the control:
+ *
+ *     彼の略歴を見ると、彼は多くの異なる業界で経験を積んできたことがわかります。
+ *     Azure ja-JP-NanamiNeural   7.92 s   gaps at 2.06 s (120 ms), 4.50 s (100 ms)
+ *     Google Neural2-C, plain    6.34 s   NO internal gap at all
+ *
+ * Measured by decoding both and taking a 20 ms RMS envelope, gaps being runs
+ * under 2% of peak. **`<speak>` alone changes nothing** — wrapping the identical
+ * text in SSML returned a byte-identical 50,688-byte file. The comma has to be
+ * spelled as a break or Neural2-C reads straight through it.
+ *
+ *     <break time="200ms"/>   6.62 s   1.58 s (220 ms), 3.72 s (80 ms)
+ *     <break time="400ms"/>   6.84 s   1.58 s (420 ms)
+ *     <s> per sentence        7.01 s   1.68 s (400 ms)
+ *
+ * **200 ms, because the second gap is the point.** Nanami's own comma pause is
+ * 120 ms, so 400 is already theatrical beside the thing he has shadowed for four
+ * years — and the 200 ms request is the one that also brought back a SECOND
+ * phrase break at 3.72 s that the plain reading did not have. Asking for the
+ * pause he wrote changes how the model phrases the rest, which is the *"natural
+ * pausing section"* half of his sentence.
+ *
+ * The sentence break is 400 ms on Google's own showing: `<s>` per sentence, the
+ * markup that exists to mean exactly this, measured 400 ms at that boundary.
+ *
+ * ─── WHY THIS IS NOT THE SSML THE HEADER REFUSES ────────────────────────────
+ *
+ * That refusal is about ACCENT NOTATION on a sentence — `<phoneme>` needs every
+ * accent-phrase boundary right and was measured to fail silently on `に引き換え`.
+ * This needs no boundary at all: a break goes where HE typed a comma. It is the
+ * same argument as decision 44 for `---` — the punctuation is authored, and a
+ * renderer that ignores it is overruling the author.
+ *
+ * Nothing reaches here that has no such punctuation, so the 9,907 word clips are
+ * byte-for-byte what they were: `pausedSsml` returns null and the plain path
+ * runs. **1,681 of 11,588 speech texts carry a `、`**; 45 carry a sentence end
+ * that is not the last character.
+ */
+export const COMMA_BREAK_MS = 200;
+export const SENTENCE_BREAK_MS = 400;
+
+/** `、，` pause; `。！？` also pause, but only where the text continues after them. */
+const COMMA = /[、，]/u;
+const SENTENCE_END = /[。．！？!?]/u;
+
+function escapeXml(text: string): string {
+  return text
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;")
+    .replace(/"/gu, "&quot;")
+    .replace(/'/gu, "&apos;");
+}
+
+/**
+ * The sentence as SSML with its written pauses spelled out — or null when it has
+ * none, which is every isolated word and is why this cannot change those clips.
+ *
+ * TRAILING punctuation gets no break. A break at the very end buys nothing but
+ * silence at the end of a file that already has 700-900 ms of it, and on a
+ * mode-2 card (decision 29) the clip IS the question, so a longer tail is dead
+ * time before he can answer.
+ */
+export function pausedSsml(text: string): string | null {
+  const characters = [...text];
+  let out = "";
+  let broke = false;
+  for (let i = 0; i < characters.length; i += 1) {
+    const ch = characters[i] as string;
+    out += escapeXml(ch);
+    // Anything after this that is not more punctuation or space — otherwise the
+    // break lands inside `。」` or at the end and does nothing but pad the file.
+    const rest = characters.slice(i + 1).join("");
+    if (rest.trim() === "") continue;
+    if (COMMA.test(ch)) {
+      out += `<break time="${COMMA_BREAK_MS}ms"/>`;
+      broke = true;
+    } else if (SENTENCE_END.test(ch) && !SENTENCE_END.test(characters[i + 1] as string)) {
+      out += `<break time="${SENTENCE_BREAK_MS}ms"/>`;
+      broke = true;
+    }
+  }
+  return broke ? `<speak>${out}</speak>` : null;
+}
+
 // ─── the call ────────────────────────────────────────────────────────────────
 
 /**
@@ -148,6 +240,11 @@ export interface SynthesiseOptions {
  * `input` is SSML when the word has a derived accent and plain text when it does
  * not — see the header on why a guess is worse than nothing.
  *
+ * A SENTENCE takes a third path: no accent notation, but its written pauses
+ * spelled as `<break>`, because Google reads straight through `、` otherwise.
+ * `pausedSsml` carries that measurement. The three are mutually exclusive and
+ * ordered — an annotated word is kana and cannot contain punctuation.
+ *
  * The key travels in `x-goog-api-key`, NOT `?key=`: a query string lands in
  * server logs, proxy logs and shell history, and a header does not.
  */
@@ -156,7 +253,13 @@ export async function synthesise(
   request: SpeechRequest | null,
   options: SynthesiseOptions,
 ): Promise<Uint8Array> {
-  const input = request === null ? { text } : { ssml: speechSsml(request) };
+  const paused = request === null ? pausedSsml(text) : null;
+  const input =
+    request !== null
+      ? { ssml: speechSsml(request) }
+      : paused === null
+        ? { text }
+        : { ssml: paused };
   const call = options.fetch ?? globalThis.fetch;
   const response = await call(ENDPOINT, {
     method: "POST",

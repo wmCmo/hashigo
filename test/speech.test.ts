@@ -22,9 +22,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  COMMA_BREAK_MS,
   NotKanaError,
+  SENTENCE_BREAK_MS,
   VOICE,
   isKana,
+  pausedSsml,
   speechSsml,
   splitMoras,
   synthesise,
@@ -110,6 +113,75 @@ describe("THE TRAP: kanji content silently discards the notation", () => {
     expect(speechSsml({ reading: "イリョー", accent: 1 })).toBe(
       '<speak><phoneme alphabet="yomigana" ph="^イ!リョー">イリョー</phoneme></speak>',
     );
+  });
+});
+
+/**
+ * ─── THE PAUSES HE WROTE ────────────────────────────────────────────────────
+ *
+ * Zach, 2026-09-16, on the 略歴 example sentence the fill had just made: *"i
+ * think the generated audio was speaking without pausing on comma or natural
+ * pausing section"*. Decoded and measured against Mochi's Azure clip of the very
+ * same sentence: Azure 7.92 s with gaps at 2.06 s and 4.50 s, Google Neural2-C
+ * 6.34 s with NO internal gap at all. Wrapping it in `<speak>` unchanged came
+ * back byte-identical, so the break has to be spelled out.
+ */
+describe("the pauses a sentence was written with", () => {
+  it("spells `、` as a break, and leaves a word with no punctuation alone", () => {
+    const ssml = pausedSsml("彼の略歴を見ると、彼は多くの異なる業界で経験を積んできたことがわかります。");
+    expect(ssml).toBe(
+      `<speak>彼の略歴を見ると、<break time="${COMMA_BREAK_MS}ms"/>彼は多くの異なる業界で経験を積んできたことがわかります。</speak>`,
+    );
+    // THE PROPERTY THAT KEEPS 9,907 WORD CLIPS BYTE-FOR-BYTE WHAT THEY WERE.
+    expect(pausedSsml("略歴")).toBeNull();
+    expect(pausedSsml("～なり～なり")).toBeNull();
+  });
+
+  it("does NOT break on trailing punctuation — the file already ends in silence", () => {
+    // A break at the very end adds nothing but dead time, and on a mode-2 card
+    // (decision 29) the clip IS the question, so the tail is time before he can
+    // answer. Measured tails: 700-900 ms already.
+    expect(pausedSsml("略歴。")).toBeNull();
+    expect(pausedSsml("本当ですか？")).toBeNull();
+    expect(pausedSsml("「そうだね」")).toBeNull();
+  });
+
+  it("breaks longer at a sentence end that the text continues past", () => {
+    const ssml = pausedSsml("そうだ。行こう。");
+    expect(ssml).toBe(`<speak>そうだ。<break time="${SENTENCE_BREAK_MS}ms"/>行こう。</speak>`);
+    expect(SENTENCE_BREAK_MS).toBeGreaterThan(COMMA_BREAK_MS);
+  });
+
+  it("escapes the text, because this is markup now and a card may hold an `&`", () => {
+    const ssml = pausedSsml("A & B、<C>");
+    expect(ssml).toContain("A &amp; B、");
+    expect(ssml).toContain("&lt;C&gt;");
+    expect(ssml).not.toMatch(/<C>/u);
+  });
+
+  it("sends it as SSML, and an accent request still wins", async () => {
+    const seen: Array<{ input: { text?: string; ssml?: string } }> = [];
+    const fetch = (async (_url: string, init: { body: string }) => {
+      seen.push(JSON.parse(init.body) as { input: { text?: string } });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ audioContent: Buffer.from("audio").toString("base64") }),
+        text: async () => "",
+      };
+    }) as unknown as typeof globalThis.fetch;
+
+    await synthesise("彼の略歴を見ると、彼は…", null, { apiKey: "k", fetch });
+    expect(seen[0]?.input.ssml).toContain(`<break time="${COMMA_BREAK_MS}ms"/>`);
+    expect(seen[0]?.input.text).toBeUndefined();
+
+    // An annotated word is kana by construction and cannot carry punctuation, so
+    // the two paths cannot both fire — but the order is pinned rather than
+    // reasoned about, because a `<phoneme>` losing to a `<break>` would be the
+    // silent no-op this module exists to prevent.
+    await synthesise("医療", { reading: "イリョー", accent: 1 }, { apiKey: "k", fetch });
+    expect(seen[1]?.input.ssml).toContain("^イ!リョー");
+    expect(seen[1]?.input.ssml).not.toContain("break");
   });
 });
 
