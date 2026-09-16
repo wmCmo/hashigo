@@ -68,6 +68,19 @@
 import { BlobUrlScope } from "../src/blobs/url.js";
 import { browserDocument, CLASS } from "../src/render/index.js";
 import { audioAddress } from "../src/render/audio.js";
+import {
+  climbFrame,
+  etaLabel,
+  GATE_MS,
+  railX,
+  readout,
+  restFrame,
+  rungMix,
+  slotY,
+  type Phase,
+  type Rung,
+  type Sample,
+} from "./sync-climb.js";
 import { mountPrepared, type MountedCard, type PreparedCard } from "../src/review/index.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import {
@@ -258,9 +271,144 @@ function mib(bytes: number): string {
  */
 const fetchRows = new Map<string, { row: HTMLElement; fill: HTMLElement; label: HTMLElement }>();
 
+
+// ─── THE SEED DOWNLOAD, DRAWN — Zach's design, 2026-09-16 ────────────────────
+//
+// His prototype came with dials on it: presets for a fast / typical / post-rebuild
+// fetch, a stall simulator, sliders for every stage. `./sync-climb.ts` holds the
+// numbers and the rules; this is the half that touches the DOM.
+//
+// **THE CLOCK IS INDEPENDENT OF EVERYTHING ELSE.** `performance.now()` directly,
+// never a value anything else scales — in one of his prototypes the climb was
+// multiplied by an unrelated speed and ran 20× too fast. The animation must look
+// identical on a fast and a slow connection; it is the logo breathing, not a
+// progress indicator wearing a disguise.
+const bootFetch = el("bootfetch");
+const bootPhase = el("bootphase");
+const bootBar = el("bootbar");
+const bootFill = el("bootfill");
+const bootGot = el("bootgot");
+const bootRate = el("bootrate");
+const bootEta = el("booteta");
+const bootStall = el("bootstall");
+const bootRungs = el("bootrungs");
+const bootAccent = el("bootaccent");
+
+const PHASE_WORDS: Readonly<Record<Phase, string>> = {
+  connecting: "Connecting to your computer",
+  downloading: "Downloading your cards",
+  saving: "Saving to this device",
+  ready: "Ready",
+};
+
+/** Per-file samples, so the rate and the stall are about THIS transfer. */
+let fetchSamples: Sample[] = [];
+let fetchStartedAt = 0;
+let climbRaf: number | undefined;
+let climbShownAt: number | null = null;
+
+/**
+ * Paint one frame of the climb into the boot mark.
+ *
+ * The rungs REPLACE the authored group's children, and the authored accent is
+ * hidden while they do — otherwise the static vermilion rung sits on top of the
+ * moving one and the beat never reads as empty.
+ */
+function paintClimb(rungs: readonly Rung[]): void {
+  const ns = "http://www.w3.org/2000/svg";
+  bootRungs.replaceChildren(
+    ...rungs
+      .filter((rung) => rung.s >= -0.2 && rung.s <= 4.05)
+      .map((rung) => {
+        const y = slotY(rung.s);
+        const [x1, x2] = railX(y);
+        const path = document.createElementNS(ns, "path");
+        path.setAttribute("d", `M${x1.toFixed(2)} ${y.toFixed(2)}H${x2.toFixed(2)}`);
+        path.setAttribute("opacity", rung.op.toFixed(3));
+        path.style.setProperty("--t", rungMix(rung.s).toFixed(3));
+        return path;
+      }),
+  );
+}
+
+/**
+ * Show the screen, once the fetch has been slow enough to deserve it.
+ *
+ * THE GATE IS WHY MOST BOOTS SHOW NOTHING. A full-frame download UI that flashes
+ * for 400 ms reads as a glitch and makes a fast boot feel slower than it was —
+ * and the common case here is that every file is already in OPFS and nothing is
+ * fetched at all. The draft justified the gate with "most syncs are fast"; the
+ * real reason is that most boots fetch NOTHING.
+ */
+function startClimb(): void {
+  if (climbShownAt !== null) return;
+  climbShownAt = performance.now();
+  bootFetch.hidden = false;
+  bootAccent.setAttribute("opacity", "0");
+  const quiet = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (quiet) {
+    // Still, and honest about it. The byte counter is the progress indicator in
+    // this mode, which is the right fallback because it was carrying the
+    // information anyway.
+    paintClimb(restFrame());
+    return;
+  }
+  const tick = (now: number): void => {
+    paintClimb(climbFrame(now - (climbShownAt ?? now)));
+    climbRaf = requestAnimationFrame(tick);
+  };
+  climbRaf = requestAnimationFrame(tick);
+}
+
+/** Put the mark back the way `index.html` authored it. */
+function stopClimb(): void {
+  if (climbRaf !== undefined) cancelAnimationFrame(climbRaf);
+  climbRaf = undefined;
+  climbShownAt = null;
+  paintClimb(restFrame());
+  bootAccent.removeAttribute("opacity");
+  bootFetch.hidden = true;
+}
+
+/** The readout, from what the worker has posted about the current file. */
+function paintFetch(phase: Phase, message: Extract<AppMessage, { kind: "fetching" }>): void {
+  const now = performance.now();
+  const view = readout(phase, fetchSamples, message.total, now, fetchStartedAt);
+  bootPhase.textContent =
+    phase === "downloading"
+      ? `${PHASE_WORDS[phase]} · ${message.index} of ${message.of}`
+      : PHASE_WORDS[phase];
+  // The bar ENCODES the phase: sweeping is indeterminate, filling is bytes.
+  bootBar.classList.toggle("sweep", view.fraction === null);
+  bootFill.style.width = view.fraction === null ? "" : `${(view.fraction * 100).toFixed(1)}%`;
+  bootGot.textContent =
+    message.total === null
+      ? mib(message.received)
+      : `${mib(message.received)} of ${mib(message.total)}`;
+  const first = fetchSamples[0];
+  const last = fetchSamples[fetchSamples.length - 1];
+  const seconds = first !== undefined && last !== undefined ? (last.at - first.at) / 1000 : 0;
+  bootRate.textContent = view.stalled
+    ? "stalled"
+    : seconds > 0.5 && last !== undefined && first !== undefined
+      ? `${((last.received - first.received) / seconds / 1048576).toFixed(1)} MB/s`
+      : "";
+  bootEta.textContent = etaLabel(view.etaSeconds);
+  bootStall.hidden = !view.stalled;
+  if (view.stalled) {
+    bootStall.textContent =
+      "No data for a while. The transfer is still open — your computer may have gone " +
+      "to sleep, or dropped off the tailnet.";
+  }
+}
+
 function showFetchProgress(message: Extract<AppMessage, { kind: "fetching" }>): void {
   let entry = fetchRows.get(message.url);
   if (entry === undefined) {
+    // A new file: its own samples, its own clock. The rate and the stall are
+    // about THIS transfer — 9 MB of text and 643 MB of audio share nothing.
+    fetchSamples = [];
+    fetchStartedAt = performance.now();
     const row = document.createElement("div");
     row.className = "logline step fetchrow";
     const label = document.createElement("span");
@@ -288,6 +436,16 @@ function showFetchProgress(message: Extract<AppMessage, { kind: "fetching" }>): 
   entry.fill.style.width = pct === null ? "100%" : `${pct}%`;
   entry.row.classList.toggle("indeterminate", message.total === null && !message.done);
   entry.row.classList.toggle("good", message.done);
+
+  // ── and the designed screen above the log ──
+  fetchSamples.push({ at: performance.now(), received: message.received });
+  // Bounded: a 643 MB file at ~10 posts a second is thousands of samples, and
+  // the rate window only ever looks at the first and the last.
+  if (fetchSamples.length > 600) fetchSamples.splice(0, fetchSamples.length - 600);
+  if (performance.now() - fetchStartedAt >= GATE_MS) startClimb();
+  if (climbShownAt !== null) {
+    paintFetch(message.done ? "saving" : "downloading", message);
+  }
 }
 
 /** One scope per card presentation: the scope that mints a URL revokes it. */
@@ -6405,6 +6563,11 @@ async function boot(): Promise<void> {
     // overwritten by the "not persistent" one.
     checkEviction(opened);
     await checkPersistence();
+    // The climb stops with the screen it lives on, and the mark goes back to the
+    // form `index.html` authored. A `requestAnimationFrame` loop left running
+    // behind a hidden section is a wake-up every frame for the life of the
+    // session — which is problem #1 in SPEC, on a phone.
+    stopClimb();
     bootView.hidden = true;
     reviewView.hidden = false;
     // The rail is on screen from here at ≥1024px, so it has to have something in

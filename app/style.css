@@ -383,6 +383,116 @@ body {
   line-height: 1;
 }
 
+/* ─── THE SEED DOWNLOAD, DRAWN — Zach's design, 2026-09-16 ──────────────────
+ *
+ * *"change is reassurance, motion is not"*. A spinner looks identical whether
+ * the transfer is healthy or hung, so after ninety seconds it reads as frozen; a
+ * byte counter going up is evidence. Hence mostly numbers, tabular so they do
+ * not jitter, and a mark that breathes rather than spins.
+ *
+ * THE BAR ENCODES THE PHASE and the label is confirmation, not the signal:
+ * sweeping = indeterminate (connecting, saving to disk, or a proxy that stripped
+ * `Content-Length`), filling = measurable bytes.
+ */
+.bootfetch {
+  margin: 0 auto 18px;
+  max-width: 400px;
+  text-align: center;
+}
+
+.bootphase {
+  color: var(--ink);
+  font-size: 14px;
+  margin: 0 0 14px;
+  min-height: 21px;
+}
+
+.bootbar {
+  background: var(--sunk);
+  height: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.bootbar > i {
+  background: var(--indigo);
+  inset: 0 auto 0 0;
+  position: absolute;
+  transition: width 0.25s linear;
+  width: 0;
+}
+
+/* Indeterminate. The sweep is the ONLY moving thing that carries no number, and
+   it is reserved for the two phases where there genuinely is none. */
+.bootbar.sweep > i {
+  animation: bootsweep 1.5s ease-in-out infinite;
+  transition: none;
+  width: 34%;
+}
+
+@keyframes bootsweep {
+  from {
+    left: -34%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+.bootnums {
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  justify-content: space-between;
+  margin-top: 10px;
+  min-height: 17px;
+}
+
+.booteta {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  margin: 18px 0 0;
+  min-height: 17px;
+}
+
+/* NO RED. `--vermilion` means "the next rung" — it is the reward colour, and
+   spending it on an error state poisons it. Same reasoning as delete having no
+   colour of its own. A recessed panel and plain language instead. */
+.bootstall {
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 12.5px;
+  margin: 18px 0 0;
+  padding: 11px 13px;
+  text-align: left;
+}
+
+/* The climbing rungs. THE MIX HAPPENS HERE, NOT IN JAVASCRIPT — his prototype
+   lerps the LIGHT hexes, and `#1B3B6F` on the dark ground measures 1.60:1, so
+   the landed rungs would be invisible on the screen he actually reviews on.
+   `--t` is the position along the ramp; the tokens know about the theme. */
+#bootrungs > path {
+  stroke: color-mix(in srgb, var(--indigo) calc(var(--t, 1) * 100%), var(--vermilion));
+}
+
+/* Reduced motion: the mark stands still and the bar stops sweeping. The byte
+   counter is the progress indicator then — which is the correct fallback,
+   because it was carrying the information all along. */
+@media (prefers-reduced-motion: reduce) {
+  .bootbar > i {
+    transition: none;
+  }
+
+  .bootbar.sweep > i {
+    animation: none;
+    opacity: 0.4;
+    width: 100%;
+  }
+}
+
 .bootlog {
   border: 1px solid var(--line);
   font-size: 13px;

@@ -67,12 +67,20 @@
             <path d="M16 87L27.5 32" />
             <path d="M84 87L72.5 32" />
           </g>
-          <g fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round">
+          <!-- THE RUNGS ARE REPLACED WHILE A SEED FILE DOWNLOADS. `app/main.ts`
+               swaps this group's contents for `climbFrame`'s output and puts
+               them back at rest when it finishes, so the static mark below is
+               both the resting frame and the fallback when nothing animates.
+               `test/app-logic.test.ts` pins that `railX`/`slotY` reproduce these
+               four `d` attributes exactly — the animation draws the SHIPPED
+               mark rather than a copy that can drift from it. -->
+          <g id="bootrungs" fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round">
             <path d="M18.09 77H81.91" />
             <path d="M22.27 57H77.73" />
             <path d="M25.83 40H74.17" />
           </g>
           <path
+            id="bootaccent"
             d="M31.47 13H68.53"
             fill="none"
             stroke="var(--vermilion)"
@@ -82,6 +90,25 @@
         </svg>
         <span class="wordmark">hashigo</span>
       </h1>
+      <!-- CHANGE IS REASSURANCE, MOTION IS NOT — Zach, 2026-09-16. A spinner
+           looks the same whether the transfer is healthy or hung; a byte counter
+           going up is evidence. So this is mostly numbers, and the climb above is
+           deliberately slow enough to read as breathing rather than as working.
+           Hidden until a fetch has run past the gate: a boot that fetches nothing
+           must never flash it. -->
+      <div id="bootfetch" class="bootfetch" hidden>
+        <p id="bootphase" class="bootphase" role="status" aria-live="polite"></p>
+        <div id="bootbar" class="bootbar"><i id="bootfill"></i></div>
+        <div class="bootnums">
+          <span id="bootgot"></span><span id="bootrate"></span>
+        </div>
+        <p id="booteta" class="booteta"></p>
+        <!-- The only question a long transfer raises is SLOW OR BROKEN, so this
+             is the highest-value thing on the screen. No warning colour:
+             `--vermilion` means the next rung, and spending it on an error state
+             poisons it — the same argument as delete having no colour. -->
+        <p id="bootstall" class="bootstall" hidden></p>
+      </div>
       <div id="bootlog" class="bootlog" aria-live="polite"></div>
       <p class="bootnote">
         First run fetches the database into OPFS. After that it is local and offline.

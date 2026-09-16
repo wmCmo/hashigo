@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { childrenOf, rootsOf, subtreeTotals, type TreeDeck } from "../app/deck-tree.js";
@@ -9,6 +11,18 @@ import {
   type BoundarySide,
 } from "../app/review-boundary.js";
 import { revealScroll, type RevealViewport } from "../app/review-scroll.js";
+import {
+  climbFrame,
+  etaLabel,
+  railX,
+  readout,
+  restFrame,
+  rungMix,
+  slotY,
+  REWARD_STAGES,
+  SYNC_STAGES,
+  type Sample,
+} from "../app/sync-climb.js";
 import { revealSteps, type StepSide } from "../app/review-steps.js";
 import { audioIsStale } from "../app/seed-freshness.js";
 import {
@@ -748,5 +762,116 @@ describe("following the reveal down the page", () => {
   it("returns whole pixels, so a smooth scroll has an integer to land on", () => {
     expect(revealScroll(phone(700.4, 800.6))).toBe(155);
     expect(Number.isInteger(revealScroll(phone(700.4, 800.6)))).toBe(true);
+  });
+});
+
+// ── the climb, while the seed downloads ──────────────────────────────────────
+
+/**
+ * Zach's design, 2026-09-16, handed over as a prototype with dials on it. These
+ * pin the three things that are easy to break and invisible when broken.
+ */
+describe("the climbing mark on the boot screen", () => {
+  it("draws the SHIPPED mark, not a copy of it", () => {
+    // `app/index.html` authors the rungs by hand. If the animation's geometry
+    // drifts from them, the loop ends at rest in a subtly different shape than
+    // the static logo — which nobody would report and everybody would feel.
+    const html = readFileSync("app/index.html", "utf8");
+    for (const [slot, d] of [
+      [0, "M31.47 13H68.53"],
+      [1, "M25.83 40H74.17"],
+      [2, "M22.27 57H77.73"],
+      [3, "M18.09 77H81.91"],
+    ] as const) {
+      expect(html, `slot ${slot} is not in the mark`).toContain(d);
+      const y = slotY(slot);
+      const [x1, x2] = railX(y);
+      expect(`M${x1.toFixed(2)} ${y}H${x2.toFixed(2)}`).toBe(d);
+    }
+  });
+
+  it("STARTS AT REST, so a short fetch shows the complete mark and no motion", () => {
+    // The phase offset. Easy to break, easy to miss: get it wrong and every boot
+    // that clears the gate opens mid-drop, which reads as the logo glitching.
+    expect(climbFrame(0)).toEqual(restFrame());
+    expect(climbFrame(SYNC_STAGES.hold - 1)).toEqual(restFrame());
+    // One millisecond later the drop has begun — the rungs have moved off their
+    // slots, even if only barely.
+    expect(climbFrame(SYNC_STAGES.hold + 1)[1]!.s).toBeGreaterThan(1);
+  });
+
+  it("keeps the BEAT — a window with nothing at the top of the mark", () => {
+    // Without it the new accent fades in under cover of the drop and is never
+    // seen to arrive. That was the defect in his first version.
+    const beatAt = SYNC_STAGES.hold + SYNC_STAGES.drop + SYNC_STAGES.beat / 2;
+    const during = climbFrame(beatAt);
+    expect(during).toHaveLength(3);
+    expect(during.some((rung) => rung.s < 0.5)).toBe(false);
+    // And it is exactly as long as it says: one frame either side is not the beat.
+    expect(climbFrame(SYNC_STAGES.hold + SYNC_STAGES.drop - 1)).toHaveLength(4);
+    expect(
+      climbFrame(SYNC_STAGES.hold + SYNC_STAGES.drop + SYNC_STAGES.beat + 1),
+    ).toHaveLength(4);
+  });
+
+  it("gives the reward timing one pass that starts ON the drop", () => {
+    // `hold: 0` makes the offset equal the cycle, so t=0 is the drop's first
+    // frame rather than the rest. One implementation, two timings — which is
+    // what makes "re-evaluate if deck completion ships" a one-line change.
+    const start = climbFrame(0, REWARD_STAGES);
+    expect(start).toHaveLength(4);
+    expect(start[0]!.s).toBe(0);
+    // A quarter through the drop it has visibly moved.
+    expect(climbFrame(REWARD_STAGES.drop / 4, REWARD_STAGES)[0]!.s).toBeGreaterThan(0.3);
+  });
+
+  it("returns a MIX POSITION, never a colour — the themes differ", () => {
+    // His prototype lerps [224,69,29] → [27,59,111] in JavaScript. Those are the
+    // LIGHT tokens; dark overrides both, and #1B3B6F on the dark ground measures
+    // 1.60:1 — the landed rungs would be invisible on the screen he actually
+    // uses. The mix belongs in CSS, where the tokens know about the theme.
+    expect(rungMix(0)).toBe(0);
+    expect(rungMix(1)).toBe(1);
+    expect(rungMix(3)).toBe(1);
+    expect(rungMix(-2)).toBe(0);
+    expect(rungMix(0.5)).toBeCloseTo(0.5);
+  });
+});
+
+describe("what the download screen says", () => {
+  const sample = (at: number, received: number): Sample => ({ at, received });
+
+  it("shows no estimate until a rate has had time to settle", () => {
+    const samples = [sample(0, 0), sample(2_000, 8_000_000)];
+    // An ETA that appears instantly then swings from 2 minutes to 11 is worse
+    // than none.
+    expect(readout("downloading", samples, 640_000_000, 2_000, 0).etaSeconds).toBeNull();
+    const later = [sample(0, 0), sample(20_000, 80_000_000)];
+    expect(readout("downloading", later, 640_000_000, 20_000, 0).etaSeconds).toBeCloseTo(140, 0);
+  });
+
+  it("calls it stalled on BYTES, not on slowness", () => {
+    // A 2G train is not a stall, and saying so every commute would cry wolf.
+    const crawling = [sample(0, 0), sample(20_000, 40_000)];
+    expect(readout("downloading", crawling, 640_000_000, 20_100, 0).stalled).toBe(false);
+    // Nothing since 20 s, asked at 29 s: past the 8 s threshold.
+    expect(readout("downloading", crawling, 640_000_000, 29_000, 0).stalled).toBe(true);
+    // And only while downloading — a long disk write is not a stalled transfer.
+    expect(readout("saving", crawling, 640_000_000, 29_000, 0).stalled).toBe(false);
+  });
+
+  it("sweeps rather than inventing a percentage when Content-Length is missing", () => {
+    // `tailscale serve` sits in front of this on his phone and a proxy may strip
+    // the header. A made-up percentage is worse than an honest "still going".
+    expect(readout("downloading", [sample(0, 1_000)], null, 1_000, 0).fraction).toBeNull();
+    expect(readout("downloading", [sample(0, 50)], 100, 1_000, 0).fraction).toBeCloseTo(0.5);
+  });
+
+  it("words the estimate the way he would say it", () => {
+    expect(etaLabel(null)).toBe("");
+    expect(etaLabel(12)).toBe("less than a minute left");
+    expect(etaLabel(59)).toBe("less than a minute left");
+    expect(etaLabel(95)).toBe("about 2 minutes left");
+    expect(etaLabel(61)).toBe("about 1 minute left");
   });
 });
