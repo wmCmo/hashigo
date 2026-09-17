@@ -175,6 +175,28 @@ function initStability(w: Fsrs6Parameters, grade: number): number {
   return w[Math.min(Math.max(grade - 1, 0), 3)] as number;
 }
 
+/**
+ * UNDER THE FITTED VECTOR THIS RETURNS THE FLOOR FOR BOTH REACHABLE GRADES, and
+ * that is worth knowing before reading a first review's difficulty as a signal.
+ *
+ * `w[4]` is 1.00059 — one of the five parameters the fit left sitting on a clamp
+ * boundary (see the note on `FSRS6_FITTED_PARAMETERS`). So:
+ *
+ *     grade 1 (forgot)     1.00059 - e^0      + 1 =   1.00
+ *     grade 3 (remembered) 1.00059 - e^2.651  + 1 = -12.17  -> clamped to 1.00
+ *
+ * **The first grade therefore moves STABILITY only** (`w[0]` 0.212 against `w[2]`
+ * 3.281, a 1-day interval against 3), and difficulty starts carrying information
+ * from the SECOND review, through `nextDifficulty`: a miss there takes it 1.00 ->
+ * 7.31 -> 9.15. Measured by walking real sequences through `gradeMemory`.
+ *
+ * NOT A DEFECT TO FIX HERE. It is the documented consequence of binary grades —
+ * *"with binary grades the difficulty machinery is weakly identified, and the
+ * fit's real content is in the decay and the stability update, not in a
+ * per-parameter reading"* — and the weights are marked PROVISIONAL pending the
+ * refit. Changing `w[4]` by hand would be reading one entry of a vector the same
+ * note says must not be read one entry at a time.
+ */
 function initDifficulty(w: Fsrs6Parameters, grade: number): number {
   return (w[4] as number) - Math.exp((w[5] as number) * (grade - 1)) + 1;
 }
