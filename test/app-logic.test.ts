@@ -24,6 +24,7 @@ import {
   type Sample,
 } from "../app/sync-climb.js";
 import { overdueLabel, overdueTitle, dueDateOf } from "../app/overdue.js";
+import { barValueText, barWidths } from "../app/progress.js";
 import { revealSteps, type StepSide } from "../app/review-steps.js";
 import { audioIsStale } from "../app/seed-freshness.js";
 import {
@@ -945,5 +946,55 @@ describe("how late a track is, in words", () => {
     expect(dueDateOf("whenever")).toBeNull();
     expect(overdueTitle(5, "2026-09-12T04:00:00.000+09:00")).toBe("due 2026-09-12 — 5 days late");
     expect(overdueTitle(5, null)).toBe("5 days late");
+  });
+});
+
+/**
+ * ─── THE DAY'S BAR, WITH THE MISSES IN IT ───────────────────────────────────
+ *
+ * Zach, 2026-09-17: *"for missed/forgot card, we can actually make it visible on
+ * the progress bar, but maybe as a red bar? so the bar can now tell the
+ * proportion"*.
+ */
+describe("the progress bar's two widths", () => {
+  it("draws the misses as a PREFIX of the fill, not a slice out of it", () => {
+    const w = barWidths({ answeredToday: 10, missedToday: 3, plannedToday: 40 });
+    expect(w.donePercent).toBeCloseTo(25);
+    expect(w.missedPercent).toBeCloseTo(7.5);
+    // The property that makes both segments monotonic: each only ever grows, so
+    // the boundary never walks backwards while he reviews.
+    expect(w.missedPercent).toBeLessThanOrEqual(w.donePercent);
+  });
+
+  it("clamps a numerator that legitimately exceeds its denominator", () => {
+    // `answeredToday` counts grades made ANYWHERE today, including a sync pull,
+    // while `plannedToday` is built from this device's plan. A phone morning
+    // landing on the laptop can put the numerator ahead for one paint, and a bar
+    // wider than 100% overhangs the header.
+    const w = barWidths({ answeredToday: 99, missedToday: 99, plannedToday: 40 });
+    expect(w.donePercent).toBe(100);
+    expect(w.missedPercent).toBe(100);
+    expect(w.done).toBe(40);
+  });
+
+  it("never lets the red exceed the fill, whatever it is handed", () => {
+    const w = barWidths({ answeredToday: 4, missedToday: 9, plannedToday: 40 });
+    expect(w.missed).toBe(4);
+    expect(w.missedPercent).toBeLessThanOrEqual(w.donePercent);
+  });
+
+  it("survives an empty day rather than dividing by zero", () => {
+    const w = barWidths({ answeredToday: 0, missedToday: 0, plannedToday: 0 });
+    expect(w.donePercent).toBe(0);
+    expect(w.missedPercent).toBe(0);
+    expect(Number.isFinite(w.donePercent)).toBe(true);
+  });
+
+  it("SAYS the misses too, because the bar is 2px of colour", () => {
+    expect(barValueText(barWidths({ answeredToday: 12, missedToday: 3, plannedToday: 40 })))
+      .toBe("12 of 40 answered today, 3 missed");
+    // A clean day says nothing about misses rather than saying "0 missed".
+    expect(barValueText(barWidths({ answeredToday: 12, missedToday: 0, plannedToday: 40 })))
+      .toBe("12 of 40 answered today");
   });
 });

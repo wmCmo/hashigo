@@ -242,6 +242,22 @@ export interface SessionProgress {
    * reset at 00:00 mid-review would look exactly like the bug this replaces.
    */
   readonly answeredToday: number;
+  /**
+   * How many of `answeredToday` he MISSED — Zach, 2026-09-17: *"for missed/forgot
+   * card, we can actually make it visible on the progress bar … so the bar can now
+   * tell the proportion"*.
+   *
+   * COUNTED FROM THE SAME ROWS as `answeredToday`, in the same statement, and that
+   * is the whole reason it lives here rather than on a counter in the page. A
+   * tally kept in the session would zero on the reload that `answeredToday` was
+   * built to survive, and the bar would then show a red segment that had shrunk to
+   * nothing while the fill beside it stayed — a bar that contradicts itself is
+   * worse than one that never had the segment.
+   *
+   * A decision-13 re-ask writes no review, so a card he missed is counted ONCE, at
+   * the grade, and showing it again does not count it twice.
+   */
+  readonly missedToday: number;
   /** `answeredToday` plus the fresh items still ahead. Today's whole workload. */
   readonly plannedToday: number;
 }
@@ -563,24 +579,35 @@ export class ReviewSession {
    * WRITTEN, in the row's own offset, which is `localDate`'s meaning of the word
    * and the reason a trip abroad cannot silently move the tally.
    */
-  private countAnsweredToday(): number {
+  /**
+   * Today's grades, and how many of them were misses — ONE statement, one row set.
+   *
+   * Two queries would be two answers to one question and could disagree by a
+   * review written between them; the bar draws both numbers against each other,
+   * so it is the one place that difference would show.
+   */
+  private countAnsweredToday(): { answered: number; missed: number } {
     const row = this.db
       .prepare(
-        `SELECT COUNT(*) AS n FROM reviews
+        `SELECT COUNT(*) AS n, SUM(CASE WHEN remembered = 0 THEN 1 ELSE 0 END) AS missed
+           FROM reviews
           WHERE reviewed_at >= ? AND substr(reviewed_at, 1, 10) = ?`,
       )
-      .get(this.today, this.today) as { n: number } | undefined;
-    return row?.n ?? 0;
+      .get(this.today, this.today) as { n: number; missed: number | null } | undefined;
+    // `SUM` over no rows is NULL, not 0 — the one thing that differs from COUNT.
+    return { answered: row?.n ?? 0, missed: row?.missed ?? 0 };
   }
 
   progress(): SessionProgress {
     const answeredFresh = Math.min(this.cursor, this.plan.length);
     const reasksShown = Math.max(0, this.cursor - this.plan.length);
-    const answeredToday = this.countAnsweredToday();
+    const today = this.countAnsweredToday();
+    const answeredToday = today.answered;
     return {
       planned: this.plan.length,
       answered: answeredFresh,
       answeredToday,
+      missedToday: today.missed,
       plannedToday: answeredToday + (this.plan.length - answeredFresh),
       dueCount: this.plan.filter((i) => i.origin === "due").length,
       newCount: this.plan.filter((i) => i.origin === "new").length,

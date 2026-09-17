@@ -737,6 +737,50 @@ describe("the day's tally, not the session's", () => {
     }
   });
 
+  /**
+   * Zach, 2026-09-17: *"for missed/forgot card, we can actually make it visible on
+   * the progress bar, but maybe as a red bar? so the bar can now tell the
+   * proportion"*. The red is drawn from this number.
+   */
+  it("counts the misses from the SAME rows as the day's tally", () => {
+    const { db } = fixture(4, 0);
+    try {
+      const s = buildSession(db, { now: AT, newLimit: 0 });
+      expect(s.progress()).toMatchObject({ answeredToday: 0, missedToday: 0 });
+
+      s.answer(false, { at: AT });
+      expect(s.progress()).toMatchObject({ answeredToday: 1, missedToday: 1 });
+      s.answer(true, { at: AT });
+      expect(s.progress()).toMatchObject({ answeredToday: 2, missedToday: 1 });
+
+      // IT SURVIVES THE RELOAD, which is the reason it is read from `reviews`
+      // rather than counted in the session. A tally kept in memory would come
+      // back 0 here while `answeredToday` came back 2, and the bar would then be
+      // contradicting itself.
+      const reloaded = buildSession(db, { now: AT, newLimit: 0 }).progress();
+      expect(reloaded).toMatchObject({ answeredToday: 2, missedToday: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("counts a missed card ONCE, not again when decision 13 re-asks it", () => {
+    const { db } = fixture(3, 0);
+    try {
+      const s = buildSession(db, { now: AT, newLimit: 0 });
+      s.answer(false, { at: AT });
+      s.answer(true, { at: AT });
+      s.answer(true, { at: AT });
+      expect(s.current()?.reask).toBe(true);
+      const before = s.progress().missedToday;
+      // A re-ask writes no review, so neither number can move — including this one.
+      s.answer(false, { at: AT });
+      expect(s.progress().missedToday).toBe(before);
+    } finally {
+      db.close();
+    }
+  });
+
   it("undo puts the fraction back exactly", () => {
     const { db } = fixture(3, 0);
     try {

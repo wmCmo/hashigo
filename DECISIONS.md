@@ -1991,6 +1991,63 @@ right**: it holds his verbatim reasoning and this quotes it.
     device win every flag conflict against every peer, including peers holding newer
     truth. That is a sync question, not a search question.
 
+48. **THE DAY'S BAR SHOWS THE MISSES, IN RED — AND THAT IS ZACH ANSWERING A
+    QUESTION DECISION 32 LEFT OPEN.** Zach, 2026-09-17: *"for missed/forgot card,
+    we can actually make it visible on the progress bar, but maybe as a red bar?
+    so the bar can now tell the proportion"*.
+
+    **Decision 32 took the colours off grading** — `remembered` was green and
+    `forgot` was red, the brief adds no hues beyond indigo and vermilion, and the
+    pair became weight-and-position instead. `app/style.css` has carried the
+    caveat in as many words ever since: *"FLAGGED FOR ZACH: this is the one place
+    the brief's palette discipline costs a semantic signal he has 103,110 reps of
+    muscle memory for"*. He is putting the red back, unprompted, and he is putting
+    it where it costs the brief nothing — on a **2px summary**, not on a control.
+    **The buttons are unchanged**; they keep weight and position and gain no hue.
+
+    `--danger`, not `--vermilion`: decision 32 allows one vermilion per screen and
+    it is the mark's top rung, while `--danger` is already what `--no` resolves to,
+    so the bar says the same red as every other "no" in the app. Measured against
+    the track: fill 7.10:1 light / 5.03:1 dark, miss 3.85:1 / 3.76:1. **The two
+    segments are within 1.34:1 of each other in dark**, so the boundary is carried
+    by HUE — which is the safe direction, blue against orange being the one pair
+    that survives every common colour-vision deficiency.
+
+    **THE RED IS A PREFIX, ANCHORED AT ZERO, NOT A TIP.** Both segments start at
+    the left edge and the miss is painted OVER the fill, so each width only ever
+    grows and the boundary never walks backwards mid-session. Painting the misses
+    at the leading edge instead would put a red tip on the bar for exactly as long
+    as his last answer was a miss — the bar reporting the last grade, which the
+    screen already shows him, instead of the day's proportion, which is what he
+    asked for.
+
+    **`missedToday` IS COUNTED FROM `reviews`, IN THE SAME STATEMENT AS
+    `answeredToday`.** That is the load-bearing part. A tally kept on the session
+    would zero on the reload `answeredToday` exists to survive — Zach graded one
+    card, refreshed, and read `0/715` as a lost review — and the bar would then
+    show a red segment that had vanished while the fill beside it stayed. Two
+    queries would be two answers to one question; the bar is the one place that
+    difference would show. A decision-13 re-ask writes no review, so a missed card
+    counts ONCE and showing it again does not count it twice. Both pinned.
+
+    **AND THE QUESTION HE ASKED FIRST, ANSWERED: yes, `forgot` on a NEW card
+    grades it, and it should.** *"technically you can't forget things you haven't
+    learned right?"* — `gradeMemory` sees `memory === null` and calls FSRS's
+    `init`, which is **a function of the grade alone**: stability 0.212 and a
+    **1-day** interval for a miss against 3.281 and **3 days** for a hit. With
+    decision 2's binary grades and no separate learning step, that first grade IS
+    the initial-stability signal — remove it and a new card he did not know gets 3
+    days anyway. It is not hypothetical either: **86 of his 9,085 tracks** have a
+    first-ever review recorded as a miss.
+    **The one place his instinct is literally right is `lapses`**, which
+    `card_tracks` increments on any miss including the first, where Anki's
+    definition counts only a failure of a card already learned. **Left alone, on
+    purpose**: nothing schedules on that column and nothing displays it — the
+    dashboard's 失敗 figures all come from `sum(1 - remembered)` over `reviews` —
+    so changing it would alter a stored number on the system of record for no
+    observable gain. Recorded here so the next reader does not have to re-derive
+    it.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

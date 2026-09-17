@@ -918,6 +918,34 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     it moves who wins a sync.
     See `DECISIONS.md` 47.
 
+48. **THE DAY'S BAR SHOWS THE MISSES, IN RED — HIM ANSWERING A QUESTION DECISION
+    32 LEFT OPEN.** Zach, 2026-09-17: *"for missed/forgot card, we can actually make
+    it visible on the progress bar, but maybe as a red bar? so the bar can now tell
+    the proportion"*. Decision 32 took the colours off grading and `app/style.css`
+    has carried the caveat ever since — *"the one place the brief's palette
+    discipline costs a semantic signal he has 103,110 reps of muscle memory for"*.
+    He is putting the red back where it costs the brief nothing: a **2px summary**,
+    not a control. **The buttons are unchanged.** `--danger` not `--vermilion`
+    (decision 32 allows one vermilion per screen, and `--no` already resolves to
+    `--danger`): fill 7.10:1 light / 5.03:1 dark against the track, miss 3.85 /
+    3.76, and the two are within **1.34:1** of each other in dark so the boundary is
+    carried by HUE — blue against orange, the one pair that survives every common
+    colour-vision deficiency. **The red is a PREFIX anchored at zero**, painted over
+    the fill, so both widths only ever grow; at the leading edge it would report his
+    last grade rather than the day's proportion. **`missedToday` is counted from
+    `reviews` in the SAME statement as `answeredToday`** — a tally on the session
+    would zero on the reload `answeredToday` exists to survive, and the bar would
+    contradict itself; a decision-13 re-ask writes no review so a miss counts once.
+    **And the question he asked first: yes, `forgot` on a NEW card grades it, and it
+    should** — `gradeMemory` calls FSRS `init`, a function of the grade alone:
+    stability 0.212 / **1 day** for a miss against 3.281 / **3 days** for a hit, and
+    with decision 2's binary grades that first grade IS the initial-stability
+    signal. **86 of his 9,085 tracks** have a first review recorded as a miss. His
+    instinct is literally right about `lapses` alone (Anki counts only a failure of
+    a card already learned); **left alone on purpose** — nothing schedules on that
+    column and nothing displays it, the dashboard's 失敗 comes from
+    `sum(1 - remembered)` over `reviews`. See `DECISIONS.md` 48.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19

@@ -119,6 +119,7 @@ import {
   type SyncStatus,
 } from "./sync-client.js";
 import { overdueLabel, overdueTitle } from "./overdue.js";
+import { barValueText, barWidths } from "./progress.js";
 import { reviewAction } from "./review-keys.js";
 import {
   promptPositions as promptBoundary,
@@ -228,6 +229,7 @@ const peekText = el("peektext");
 const progressLabel = el("progress");
 const progressBar = el("progressbar");
 const progressFill = el("progressfill");
+const progressMiss = el("progressmiss");
 const revealButton = el<HTMLButtonElement>("reveal");
 const revealWord = el("revealword");
 const forgotButton = el<HTMLButtonElement>("forgot");
@@ -820,11 +822,17 @@ async function showCardAt(): Promise<void> {
   // decision-13 re-ask is a card he already answered, so counting it would make
   // the bar go BACKWARDS every time he forgets one. Re-asks are shown as the
   // `+2` beside the count instead, where a growing number reads correctly.
-  const planned = Math.max(reply.progress.plannedToday, 1);
-  const done = Math.min(reply.progress.answeredToday, planned);
-  progressFill.style.width = `${((100 * done) / planned).toFixed(2)}%`;
-  progressBar.setAttribute("aria-valuenow", String(done));
-  progressBar.setAttribute("aria-valuemax", String(planned));
+  //
+  // AND THE MISSES, as a red prefix — his request of 2026-09-17. The arithmetic
+  // (and the clamping the two numbers need) is `app/progress.ts`, which `test/`
+  // can reach; this only writes the widths.
+  const widths = barWidths(reply.progress);
+  progressFill.style.width = `${widths.donePercent.toFixed(2)}%`;
+  progressMiss.style.width = `${widths.missedPercent.toFixed(2)}%`;
+  progressBar.setAttribute("aria-valuenow", String(widths.done));
+  progressBar.setAttribute("aria-valuemax", String(widths.planned));
+  // The bar is 2px of colour, so the misses have to be SAID as well as drawn.
+  progressBar.setAttribute("aria-valuetext", barValueText(widths));
 
   if (reply.card === null) {
     // Only the real cursor can finish the session. Running off the end of a

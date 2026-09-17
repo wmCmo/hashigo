@@ -715,8 +715,34 @@ body {
   background: var(--accent);
   display: block;
   height: 100%;
+  /* BOTH SEGMENTS START AT THE LEFT EDGE and the miss is painted over the fill,
+     so it is a prefix rather than a slice — see `app/progress.ts`. Absolute
+     rather than flexed because the two widths are independent numbers and must
+     not be able to push each other. */
+  left: 0;
+  position: absolute;
+  top: 0;
   /* Slow enough to be seen, short enough not to be waited on. */
   transition: width 0.25s ease-out;
+}
+
+/* THE MISSES — Zach, 2026-09-17: *"for missed/forgot card, we can actually make
+   it visible on the progress bar, but maybe as a red bar? so the bar can now tell
+   the proportion"*.
+
+   THIS IS HIM ANSWERING A QUESTION THIS FILE HAS BEEN CARRYING. Decision 32 took
+   the colours off grading — `remembered` was green and `forgot` was red, and the
+   brief adds no hues beyond indigo and vermilion — and the note above says it in
+   as many words: *"this is the one place the brief's palette discipline costs a
+   semantic signal he has 103,110 reps of muscle memory for"*. He is putting the
+   red back, and he is putting it where it costs nothing: on a 2px SUMMARY, not on
+   a control. The buttons keep weight-and-position and gain no hue.
+
+   `--danger` and NOT `--vermilion`: decision 32 allows one vermilion per screen
+   and it is the mark's top rung, and `--danger` is already what `--no` resolves
+   to, so the bar and every other "no" in the app say the same red. */
+.progressbar .miss {
+  background: var(--no);
 }
 
 .hint {
