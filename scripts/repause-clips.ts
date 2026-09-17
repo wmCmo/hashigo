@@ -121,9 +121,23 @@ async function main(): Promise<number> {
       // crash in between leaves it that way. The payload goes with it: nothing
       // else can reference a generation blob (no `blob_refs` row, refcount 1),
       // so leaving it is an orphan the sweep would collect anyway.
+      //
+      // REFCOUNT TO ZERO BEFORE THE DELETE, and the schema is why: the trigger
+      // `blobs_no_delete_while_referenced` aborts any DELETE at `refcount > 0`,
+      // and `storeGeneratedSpeech` writes every clip at 1. The first run of this
+      // script hit that on all 137 and reported `0 replaced · 137 failed` — the
+      // database defending itself, correctly, and nothing was written.
+      //
+      // BOTH STATEMENTS ARE INSIDE THE TRANSACTION, which is the whole safety
+      // argument: a delete that aborts rolls the zeroed refcount back with it.
+      // Doing it the other way round once left a legitimate row sitting at 0
+      // after its delete failed — one `sweepUnreferenced` from being collected.
+      // The `blobs are immutable` trigger does not name `refcount`, so this is
+      // the one column an UPDATE may touch.
       const fresh = db.transaction(() => {
         const written = storeGeneratedSpeech(db, store, descriptor, bytes);
         if (written === row.hash) return false;
+        db.prepare("UPDATE blobs SET refcount = 0 WHERE hash = ?").run(row.hash);
         db.prepare("DELETE FROM blobs WHERE hash = ?").run(row.hash);
         return true;
       })();
