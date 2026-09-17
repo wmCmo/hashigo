@@ -944,7 +944,23 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     instinct is literally right about `lapses` alone (Anki counts only a failure of
     a card already learned); **left alone on purpose** — nothing schedules on that
     column and nothing displays it, the dashboard's 失敗 comes from
-    `sum(1 - remembered)` over `reviews`. See `DECISIONS.md` 48.
+    `sum(1 - remembered)` over `reviews`.
+    **AND MOCHI'S MODEL, WHICH HE RAISED AND HIS OWN EXPORT MEASURES.** *"in mochi
+    … until the card is added to your review deck it won't keep track of your
+    grade, but i don't know which approach is the best"*. He is right about Mochi:
+    miss rate by review number is **#1 0.95%** (9,085 tracks) · #2 3.37% · #3 3.11%
+    · **2+ 4.04%** · overall 3.76%. A genuine first exposure should be the HARDEST
+    review a card ever gets; his is **four times easier than average**, which is
+    what a log looks like when the learning attempts are discarded and only the
+    graduation is written. **HASHIGO ALREADY HAS THE BETTER HALF OF BOTH, which is
+    why nothing changed**: decision 13's re-ask writes nothing whichever button he
+    presses, so a track takes **exactly one review per session** and cannot loop —
+    the answer to *"how many times is okay"* is ANY number, the first press counts
+    and every press after it is free. What Mochi throws away is the one thing FSRS
+    asks for there, since `w[0]`-`w[3]` ARE "initial stability for this first
+    rating". **The one real difference left is TIMING, not bookkeeping** — a bombed
+    new card returns tomorrow rather than in minutes, and the lever for that is
+    decision 13's placement, which is his. See `DECISIONS.md` 48.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

@@ -2048,6 +2048,43 @@ right**: it holds his verbatim reasoning and this quotes it.
     observable gain. Recorded here so the next reader does not have to re-derive
     it.
 
+    ─── AND MOCHI'S MODEL, WHICH HE RAISED AND HIS OWN EXPORT MEASURES ───
+
+    Zach, same day: *"in mochi flashcard, until the card is added to your review
+    deck (from new card to due card) it won't keep track of your grade, but i
+    don't know which approach is the best"*. **He is right about Mochi, and the
+    evidence is in his own corpus** — miss rate by review number:
+
+        review #1   9,085 tracks    0.95% miss   <- the EASIEST review in the history
+        review #2   9,073 tracks    3.37% miss
+        review #3   9,072 tracks    3.11% miss
+        reviews 2+  94,025 rows     4.04% miss
+        overall     103,110 rows    3.76% miss
+
+    A genuine first exposure should be the HARDEST review a card ever gets. His
+    is four times easier than average, which is what a log looks like when the
+    learning attempts are discarded and only the graduation is written.
+
+    **HASHIGO ALREADY HAS THE BETTER HALF OF BOTH, WHICH IS WHY NOTHING CHANGED.**
+    What Mochi's rule protects is real — flailing at a new card should not be
+    recorded as five failures. **Decision 13 already gives exactly that**: the
+    re-ask writes nothing whichever button he presses (`answer()` returns
+    `graded: false` before it reaches `gradeTrack`), so a track takes **exactly
+    one review per session**, and it cannot loop — a track is in the plan once and
+    the re-ask branch returns before the queue push. So the answer to *"how many
+    times is okay"* is **any number**: the first press counts, every press after it
+    in that session is free.
+    What Mochi throws away is the one thing FSRS asks for at that moment. `w[0]`
+    through `w[3]` ARE "initial stability for this first rating" — discard the
+    first grade and every new card starts at the same stability whether he knew it
+    or not.
+
+    **The one real difference left is TIMING, not bookkeeping**: a bombed new card
+    returns tomorrow (1 day), where Anki would re-drill it in minutes at a learning
+    step. The re-ask is that same idea at SESSION scope instead. If it ever feels
+    too far away, the lever is decision 13's placement, not the grading — and that
+    one is his.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach
