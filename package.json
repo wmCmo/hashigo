@@ -75,6 +75,10 @@
       "types": "./dist/render/math.d.ts",
       "default": "./dist/render/math.js"
     },
+    "./fields": {
+      "types": "./dist/fields/index.d.ts",
+      "default": "./dist/fields/index.js"
+    },
     "./accent": {
       "types": "./dist/accent/index.d.ts",
       "default": "./dist/accent/index.js"

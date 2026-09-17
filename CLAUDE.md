@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 45 files, 1222 passed, 1 skipped (the FSRS refit, gated). ~53 s.
+npm test                # 46 files, 1242 passed, 1 skipped (the FSRS refit, gated). ~53 s.
                         # MEASURED 2026-09-17, not arithmetic. The 1127 here before it
                         # was 1117 plus ten new tests, added up rather than run — and it
                         # missed 79 tests from the same day. Run the suite or leave it alone.
@@ -168,7 +168,7 @@ npm test                # 45 files, 1222 passed, 1 skipped (the FSRS refit, gate
                         # Still deliberately not done.
 npm run typecheck       # exit 0
 npm run app:check       # exit 0 — app/ has its OWN tsconfig and this is a REQUIRED gate
-npm run build           # refuses to exit 0 unless dist/ actually imports (28 export subpaths)
+npm run build           # refuses to exit 0 unless dist/ actually imports (29 export subpaths)
 npm run rebuild -- --force   # the schema-bump chore as ONE command, with invariants
                         # that fail loudly on the step everyone skips. See below.
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報

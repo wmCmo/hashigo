@@ -56,6 +56,10 @@ const BROWSER_ENTRY_POINTS = [
   "src/text/index.ts",
   "src/search/index.ts",
   "src/accent/store.ts",
+  // The field registry. Every runtime reads it — the editor in the page, the
+  // worker in OPFS, the scripts in Node — so it is pinned from the day it lands
+  // rather than after someone reaches for `node:fs` inside a settings default.
+  "src/fields/index.ts",
   "src/blobs/db.ts",
 ] as const;
 

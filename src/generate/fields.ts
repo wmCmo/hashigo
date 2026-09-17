@@ -32,6 +32,7 @@
  * audio, which is the point — see `src/render/reveal.ts`.
  */
 
+import { NON_KEY_OPTIONS } from "../fields/identity.js";
 import { FIELD_TYPE_BLOB_KIND, GENERATOR_FIELD_TYPES, type BlobKind } from "../schema/index.js";
 import { groupDigits } from "../template/resolve.js";
 import { renderPlainText } from "../text/index.js";
@@ -140,17 +141,20 @@ export interface FieldGenerationRequest {
 /**
  * Options that are NOT part of Mochi's cache key.
  *
+ * MOVED to `src/fields/identity.ts` so the field registry can DESCRIBE this rule
+ * without becoming a second copy of it, and re-exported here because this file is
+ * where the rule is APPLIED — `keyOptions` below is still the only thing that
+ * decides what is hashed. The direction is the point: a registry that decided
+ * would let a cache key move as a side effect of documenting it, and a moved key
+ * orphans every blob it addressed.
+ *
  * Measured, not assumed: across 42,569 blob identities not one carries
  * `ai-custom-prompt` or `randomize`. `lang` and `voice` are excluded because
  * `generationIdentity` gives them their own slots — leaving them in would hash
- * them twice.
+ * them twice. The set also excludes every `hashigo-` key by rule, so a locally
+ * added one cannot silently re-address a field.
  */
-const NON_KEY_OPTIONS: ReadonlySet<string> = new Set([
-  "ai-custom-prompt",
-  "randomize",
-  "lang",
-  "voice",
-]);
+export { NON_KEY_OPTIONS };
 
 /** `<<Field>>`, `<< Field >>`. Polysemy's prompt really has the spaces. */
 const PROMPT_MARKER = /<<\s*([^<>]+?)\s*>>/g;
