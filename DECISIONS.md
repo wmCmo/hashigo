@@ -1958,6 +1958,39 @@ right**: it holds his verbatim reasoning and this quotes it.
     `db.worker.ts`, for the reason `app/deck-scope.ts` gives: `test/` cannot import the
     worker, and worker SQL nobody can test is how the deck archive shipped inverted.
 
+    ─── AMENDED THE SAME DAY: THE EDITED TIER EXCLUDES ARCHIVED CARDS ───
+
+    **`cards.updated_at` is not only Mochi's edit time**, and the tier above was
+    written as though it were. `src/backup/archive.ts`'s `UPDATE_CARD_STATE` sets
+    `updated_at = strftime('now')` on every card whose flags the archive carries —
+    and the archive stores only NON-DEFAULT rows, which is exactly the archived and
+    pinned ones. So **decision 17's restore, the disaster path the whole backup
+    exists for, moves all 244 archived cards to the top of "recently edited" on a
+    single millisecond.**
+
+    **Found by opening the palette, not by reading it.** The Browser pane's device
+    had had a restore, and the first empty Ctrl+K after this shipped was **40
+    archived cards and nothing else** — `369768579 · ある · 果‎物 · 払う · 雨 · 葉 ·
+    毛 · frailty · reversal …`. Reproduced on a copy of the corpus: `backup export`
+    then `backup apply`, and the top twelve by `updated_at` are those same names in
+    that same order. `test/app-recent.test.ts` now runs the restore's own statement
+    and requires the suggestions to survive it.
+
+    **The filter is the right rule independently of the timestamp**, which is why it
+    lives here rather than being a workaround: an archived card is one he took OUT of
+    rotation, and offering it before he has typed anything is a guess he has already
+    answered. Search finds it the moment he types — the row carries its own
+    `archived` label. **The other two tiers keep theirs**: a PIN is an explicit
+    request, and an OPEN is something he just did.
+
+    **NOT FIXED, and it deserves its own look: the restore stamping `now` at all.**
+    Two reasons it is not a one-line change. The archive carries no per-card clock to
+    restore instead — only templates got `updatedAt` — so preserving the real time is
+    a FORMAT change. And `cards.updated_at` is **decision 33's LWW clock** for
+    `archived` and `pinned`, so a restore that stamps `now` also makes the restoring
+    device win every flag conflict against every peer, including peers holding newer
+    truth. That is a sync question, not a search question.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

@@ -124,7 +124,10 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 44 files, 1127 passed, 1 skipped (the FSRS refit, gated). ~95 s.
+npm test                # 44 files, 1206 passed, 1 skipped (the FSRS refit, gated). ~54 s.
+                        # MEASURED 2026-09-17, not arithmetic. The 1127 here before it
+                        # was 1117 plus ten new tests, added up rather than run — and it
+                        # missed 79 tests from the same day. Run the suite or leave it alone.
                         # EXITS 0 ON A PASSING RUN as of 2026-08-26. It is a wrapper
                         # (`scripts/test.mjs`) that reads the SUMMARY, which is
                         # STRICTER than the exit code, not looser: the run must have
@@ -896,6 +899,23 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     decision 33's payload. **The gallery is excluded** (`suggest: false`) — an empty
     deck listing ordered by relevance would be a lie; the `@` picker is included.
     `app/recent.ts` over a structural `ScopedDb`, for `deck-scope.ts`'s reason.
+    **AMENDED THE SAME DAY — THE EDITED TIER EXCLUDES ARCHIVED CARDS**, and the
+    reason is that `cards.updated_at` is not only Mochi's edit time.
+    `src/backup/archive.ts`'s `UPDATE_CARD_STATE` stamps `strftime('now')` on every
+    card whose flags the archive holds, and the archive stores only NON-DEFAULT
+    rows — exactly the archived and pinned ones. So decision 17's restore, the
+    disaster path the backup exists for, moves all **244** archived cards to the top
+    of "recently edited" on one millisecond. Not hypothetical: the first empty
+    Ctrl+K after this shipped was **40 archived cards and nothing else**, on a device
+    that had had a restore, and it reproduces from `export` + `apply` on a copy. The
+    filter is the right rule anyway — an archived card is one he took OUT of
+    rotation, and offering it before he types is a guess he has already answered;
+    search still finds it the moment he does. Pinned and opened keep theirs: a pin is
+    an explicit request and an open is something he just did. **NOT FIXED, and worth
+    its own look: the restore stamping `now` at all.** The archive carries no
+    per-card clock to restore instead, so that is a format change — and
+    `cards.updated_at` is decision 33's LWW clock for `archived`/`pinned`, so moving
+    it moves who wins a sync.
     See `DECISIONS.md` 47.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**

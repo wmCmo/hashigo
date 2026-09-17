@@ -120,12 +120,65 @@ describe.skipIf(!haveCorpus)("suggestCards over the real corpus", () => {
     expect(stamps).toContain(newest);
 
     // And it is genuinely the newest 40, not the alphabet wearing a new ORDER BY.
+    // ARCHIVED EXCLUDED — see `suggestCards`. One archived card sits inside the
+    // unfiltered top 40 of this corpus, so the filter is load-bearing even here.
     const expected = (
-      db.prepare("SELECT id FROM cards ORDER BY updated_at DESC LIMIT 40").all() as {
-        id: string;
-      }[]
+      db
+        .prepare("SELECT id FROM cards WHERE archived = 0 ORDER BY updated_at DESC LIMIT 40")
+        .all() as { id: string }[]
     ).map((row) => row.id);
     expect(rows.map((row) => row.id)).toEqual(expected);
+    expect(rows.filter((row) => row.archived === 1)).toEqual([]);
+  });
+
+  /**
+   * ─── THE STATE THIS SHIPPED BROKEN IN ──────────────────────────────────────
+   *
+   * `cards.updated_at` is not only Mochi's edit time. `src/backup/archive.ts`'s
+   * `UPDATE_CARD_STATE` stamps `strftime('now')` on every card whose flags the
+   * archive carries, and the archive stores only NON-DEFAULT rows — which is
+   * exactly the archived and pinned ones. So decision 17's restore, the disaster
+   * path the whole backup exists for, moves all 244 archived cards to the top of
+   * "recently edited" on one millisecond.
+   *
+   * Found by opening the palette rather than by reading: the Browser pane's
+   * device had had a restore, and the first empty Ctrl+K showed FORTY archived
+   * cards and nothing else. This reproduces it with the restore's own statement.
+   */
+  it("survives a decision-17 restore, which stamps every archived card with `now`", () => {
+    const restored = join(dir, "restored.db");
+    copyFileSync(SOURCE, restored);
+    const after = new Database(restored);
+    try {
+      // The backup's own UPDATE, narrowed to the rows the archive actually holds.
+      const touched = after
+        .prepare(
+          `UPDATE cards SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE archived = 1`,
+        )
+        .run().changes;
+      expect(touched).toBe(244);
+
+      const { sql, args } = scopeToSubtree(after as unknown as ScopedDb, null);
+      const rows = suggestCards(after as unknown as ScopedDb, {
+        scopeSql: sql,
+        scopeArgs: args,
+        visited: [],
+        limit: 40,
+      });
+      // Before the filter this was 40 of 40 archived, which is the whole list.
+      expect(rows.filter((row) => row.archived === 1)).toEqual([]);
+      expect(rows.length).toBe(40);
+      // Still the genuinely-newest unarchived ones, not a shortened list.
+      expect(rows[0]?.id).toBe(
+        (
+          after
+            .prepare("SELECT id FROM cards WHERE archived = 0 ORDER BY updated_at DESC LIMIT 1")
+            .get() as { id: string }
+        ).id,
+      );
+    } finally {
+      after.close();
+    }
   });
 
   it("puts what he opened above what he edited, in the log's own order", () => {

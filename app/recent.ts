@@ -125,11 +125,40 @@ export function suggestCards(db: ScopedDb, options: SuggestOptions): SuggestRow[
     take(visited.map((id) => byId.get(id)).filter((row): row is SuggestRow => row !== undefined));
   }
 
+  // ARCHIVED CARDS ARE EXCLUDED FROM THIS TIER ONLY, and the reason is measured.
+  //
+  // `cards.updated_at` is not only Mochi's edit time. `src/backup/archive.ts`'s
+  // `UPDATE_CARD_STATE` stamps `strftime('now')` on every card whose flags the
+  // archive carries — and the archive stores only NON-DEFAULT rows, which is
+  // exactly the archived and pinned ones. So decision 17's restore moves all 244
+  // archived cards to the top of "recently edited", in one block, on the same
+  // millisecond.
+  //
+  // That is not a hypothetical. The Browser pane's device had had a restore, and
+  // the first empty Ctrl+K after this shipped was FORTY archived cards and
+  // nothing else. Reproduced on a copy: export, apply, and the top twelve by
+  // `updated_at` are `369768579 · ある · 果‎物 · 払う · 雨 …`, the same nine names
+  // in the same order the app showed.
+  //
+  // The narrow fix would be to stop the restore stamping `now`. That is the
+  // deeper bug and it is NOT done here: the archive carries no per-card clock to
+  // restore instead, so fixing it is a format change, and `cards.updated_at` is
+  // decision 33's LWW clock for `archived`/`pinned` — moving it moves who wins a
+  // sync. Worth its own look, not worth doing inside a search suggestion.
+  //
+  // This is the right rule regardless of the timestamp, which is why it belongs
+  // here anyway: an archived card is one he took OUT of rotation, and offering it
+  // before he has typed anything is a guess he has already answered. Search still
+  // finds it the moment he types — the row even has its own `archived` label.
+  // The other two tiers keep theirs: a PIN is an explicit request, and an OPEN is
+  // something he just did.
   if (out.length < limit) {
     take(
       db
         .prepare(
-          `SELECT ${COLUMNS} ${FROM} WHERE ${scopeSql} ORDER BY c.updated_at DESC LIMIT ?`,
+          `SELECT ${COLUMNS} ${FROM}
+            WHERE c.archived = 0 AND ${scopeSql}
+            ORDER BY c.updated_at DESC LIMIT ?`,
         )
         .all(...scopeArgs, limit) as SuggestRow[],
     );
