@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+import { loadMarks } from "../src/accent/marks.js";
 import {
   AnnotationError,
   cleanSentence,
@@ -12,7 +13,7 @@ import {
   splitMorae,
   toHiragana,
 } from "../src/accent/sentence.js";
-import { openDatabase } from "../src/db/index.js";
+import { MEMORY, openDatabase } from "../src/db/index.js";
 import { memoryDocument, type MemoryElement } from "../src/render/dom.js";
 import { accentMarkSupport } from "../src/render/accent-marks.js";
 import { renderSides } from "../src/render/index.js";
@@ -113,10 +114,30 @@ describe("cleaning the generated sentence", () => {
     );
   });
 
-  it("REFUSES when latin is woven in, rather than guessing where it starts", () => {
-    expect(cleanSentence("私は cat が好きです。")).toBeNull();
+  it("refuses a line with no Japanese in it at all", () => {
     expect(cleanSentence("Just an English sentence.")).toBeNull();
     expect(cleanSentence("")).toBeNull();
+  });
+
+  /**
+   * Zach, 2026-09-17, over a 風潮 card: *"somehow ojad field is not here..."*.
+   *
+   * It was refused for containing `SNS`. All TEN sentences the old blanket rule
+   * refused are legitimate Japanese carrying a loan acronym — K-pop, Tシャツ,
+   * SNS ×4, ABC, CSV, PDF — and reading those a letter at a time is the CORRECT
+   * reading, not the failure: `SNS` -> `えすえぬえ*す`, measured.
+   */
+  it("keeps a sentence whose latin is a loan acronym, which is most of them", () => {
+    const sns = "最近の若者の間で、SNSでの情報共有が主流となり、新しい風潮が生まれています。";
+    expect(cleanSentence(sns)).toBe(sns);
+    expect(cleanSentence("このファイルをPDF形式に変換してください。")).toBe(
+      "このファイルをPDF形式に変換してください。",
+    );
+    // A woven romaji gloss still reaches the analyser — and the analyser refuses
+    // it on its own mora count (`53 kana morae vs 65 from labels`), which is a
+    // check that can SEE the problem rather than a proxy that cannot tell an
+    // acronym from a translation. This function no longer guesses.
+    expect(cleanSentence("彼は秘密を持っている Kare wa himitsu wo motte iru")).not.toBeNull();
   });
 
   it("unwraps quote furniture only when it wraps the WHOLE line", () => {
@@ -257,3 +278,65 @@ function* findAll(root: MemoryElement, wanted: string): Generator<MemoryElement>
 function isElement(node: unknown): node is MemoryElement {
   return typeof node === "object" && node !== null && "children" in node && "getAttribute" in node;
 }
+
+/**
+ * ─── A RE-RUN THAT CHANGES NOTHING MUST SAY SO ──────────────────────────────
+ *
+ * `loadMarks`'s report is the only thing standing between "the analyser is
+ * deterministic" and "the analyser quietly changed its mind about 3,710
+ * sentences". On 2026-09-17 it could not tell those apart: SQLite counts an
+ * UPDATE that writes the identical string as a change, so `written` was the
+ * whole corpus on every run and `skipped` was structurally zero. Confirming that
+ * nothing had drifted meant diffing every value against the last shipped seed by
+ * hand.
+ */
+describe("loading the annotations is idempotent, and says so", () => {
+  function fixture() {
+    const db = openDatabase(MEMORY);
+    db.prepare("INSERT INTO decks (id, name) VALUES ('d', 'deck')").run();
+    db.prepare(
+      "INSERT INTO templates (id, name, content) VALUES ('t', '単語', '<<単語>>')",
+    ).run();
+    db.prepare(
+      `INSERT INTO template_fields (template_id, id, name, type, pos, local)
+       VALUES ('t', 'name', '単語', 'plain', 0, 0), ('t', ?, ?, 'plain', 1, 1)`,
+    ).run(MARKS_FIELD.id, MARKS_FIELD.name);
+    db.prepare(
+      "INSERT INTO cards (id, deck_id, template_id, name) VALUES ('c1', 'd', 't', '風潮')",
+    ).run();
+    return db;
+  }
+
+  const lines = [{ text: "SNSが主流です。", ok: true, marks: "えすえぬえ*すが|しゅりゅーで*す_" }];
+  const rows = [{ cardId: "c1", sentence: "SNSが主流です。" }];
+
+  it("writes once, then reports every unchanged row as unchanged", () => {
+    const db = fixture();
+    try {
+      const first = loadMarks(db, lines, rows);
+      expect(first).toMatchObject({ written: 1, skipped: 0, malformed: 0, unannotated: 0 });
+
+      // THE PROPERTY. Same input, same database: nothing to write.
+      const second = loadMarks(db, lines, rows);
+      expect(second).toMatchObject({ written: 0, skipped: 1 });
+
+      const value = db
+        .prepare("SELECT value FROM card_field_values WHERE card_id = 'c1' AND field_id = ?")
+        .get(MARKS_FIELD.id) as { value: string };
+      expect(value.value).toBe("えすえぬえ*すが|しゅりゅーで*す_");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("counts a GENUINE change as written, so a drift cannot hide in `skipped`", () => {
+    const db = fixture();
+    try {
+      loadMarks(db, lines, rows);
+      const moved = [{ text: "SNSが主流です。", ok: true, marks: "えすえぬえす*が|しゅりゅーで*す_" }];
+      expect(loadMarks(db, moved, rows)).toMatchObject({ written: 1, skipped: 0 });
+    } finally {
+      db.close();
+    }
+  });
+});

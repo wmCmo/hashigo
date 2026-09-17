@@ -176,10 +176,23 @@ export function loadMarks(
     bySentence.set(line.text, line.marks);
   }
 
+  // `WHERE value IS NOT excluded.value` IS WHAT MAKES `skipped` MEAN ANYTHING.
+  //
+  // Without it SQLite counts an UPDATE that writes the identical string as a
+  // change, so `written` was the whole corpus on every run and `skipped` was
+  // structurally zero — a line reading "3,719 written · 0 unchanged" that could
+  // not distinguish a no-op re-run from the analyser having changed its mind.
+  //
+  // That distinction is not academic: on 2026-09-17 a re-run said exactly that,
+  // and the only way to know nothing had drifted was to diff 3,710 values
+  // against the last shipped seed by hand. It came back 0 — but the report
+  // should have been able to say so. `IS NOT` rather than `<>` because it is
+  // null-safe, and a row with a NULL value must count as different.
   const write = db.prepare(
     `INSERT INTO card_field_values (card_id, field_id, value)
      VALUES (?, ?, ?)
-     ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`,
+     ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value
+       WHERE card_field_values.value IS NOT excluded.value`,
   );
   const run = db.transaction((rows: readonly SentenceRow[]) => {
     for (const row of rows) {

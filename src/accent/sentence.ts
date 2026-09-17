@@ -155,10 +155,37 @@ export function splitMorae(reading: string): string[] {
  * shapes: a trailing `(Watashi ni wa himitsu ga …)` romaji gloss, and a
  * `(Translation: …)` aside. **OpenJTalk reads latin letters out one at a time**,
  * so an unstripped gloss does not fail — it appends `ティー アール エー エヌ …`
- * to the reading and every mark after the sentence lands on a letter name. That
- * is why this refuses rather than trying: a sentence that still holds latin
- * after the parenthetical is removed has the English WOVEN IN, and guessing
- * where it starts would put marks on the wrong morae while looking fine.
+ * to the reading and every mark after the sentence lands on a letter name.
+ * Stripping the parenthetical is therefore still right and still happens below.
+ *
+ * ─── BUT THE BLANKET LATIN REFUSAL WAS BOTH WRONG AND REDUNDANT ─────────────
+ *
+ * Zach, 2026-09-17, over a 風潮 card on his phone: *"somehow ojad field is not
+ * here..."*. It was not there because this returned null, and it returned null
+ * because the sentence contains `SNS`.
+ *
+ * **Every one of the ten sentences this rule was refusing is a legitimate
+ * Japanese sentence carrying a loan acronym**, not an English gloss:
+ *
+ *     主流 K-pop · お揃い Tシャツ · 風潮 SNS · 晒す SNS · 略称「ABC」
+ *     輸出 CSV · 発信 SNS · 略語 SNS · 木綿 Tシャツ · 変換 PDF
+ *
+ * Reading those out one letter at a time is not the failure — **it is the
+ * correct reading**. Measured through `tools/accent_sentence.py`: `SNS` ->
+ * `えすえぬえ*す`, `PDF` -> `ぴーでぃーえふ`, `ABC` -> `えいびーし*ー`, `Tシャツ`
+ * -> `てぃーしゃつ`. All annotate cleanly.
+ *
+ * **And the case this was guarding is caught by something better.** The analyser
+ * counts its own kana morae against the label count and refuses on a mismatch,
+ * with the numbers in the message. Fed the woven gloss it says
+ * `ok: false, "53 kana morae vs 65 from labels"` — on its own, without this
+ * rule. `K-pop` fails there too (`28 vs 30`, the hyphen), which is the right
+ * outcome reached by a check that can SEE the problem rather than by a proxy
+ * that cannot tell an acronym from a translation.
+ *
+ * So the refusal moved to where the evidence is. A sentence with latin in it now
+ * reaches the analyser, and the analyser decides — decision 8's shape again: a
+ * wrong annotation drilled is worse than none, and the mora count is what knows.
  */
 export function cleanSentence(generated: string): string | null {
   const line = generated
@@ -177,7 +204,8 @@ export function cleanSentence(generated: string): string | null {
   text = text.trim();
 
   if (text === "") return null;
-  if (/[A-Za-z]/.test(text)) return null;
+  // NO BLANKET LATIN REFUSAL — see above. The analyser's own mora-count check is
+  // the guard, and it can tell `SNS` from a romaji translation. This one could not.
   return text;
 }
 

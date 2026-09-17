@@ -596,7 +596,15 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
         templates: 10,
         // WAS 3,848. +3,710 `ojad` annotations — one per card whose example
         // sentence the analyser could read, on 単語 and 言葉. See decision 43.
-        fieldValues: 7_558,
+        // WAS 7,558, +9 on 2026-09-17. Zach, over a 風潮 card: *"somehow ojad
+        // field is not here..."*. `cleanSentence` refused any sentence still
+        // holding latin, and all ten it was refusing are legitimate Japanese
+        // carrying a loan acronym — SNS, PDF, ABC, Tシャツ, CSV, K-pop. Reading
+        // those a letter at a time is the CORRECT reading (`SNS` -> `えすえぬえ*す`,
+        // measured), and the gloss the rule existed for is caught by the
+        // analyser's own mora count. Nine now annotate; K-pop still fails the
+        // count check, correctly. The other 3,710 values are byte-identical.
+        fieldValues: 7_567,
         settings: 4,
         // The 244 individually archived cards. They LOOK like something the export
         // rebuilds and they are not: `UPSERT_CARD` writes `archived` from Mochi, and
