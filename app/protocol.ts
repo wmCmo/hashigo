@@ -567,7 +567,21 @@ export interface TemplateFieldRow {
   readonly values: number;
   /** How many times the body references it. A rename rewrites exactly these. */
   readonly references: number;
-  /** Fields whose `source_field_id` is this one. A delete would unbind them. */
+  /**
+   * 1-based sides the body names it on. EMPTY means it renders nowhere, which is
+   * a real state and not an error: `言葉`'s `かな主流` holds all six values and its
+   * body never names them (decision 28), and `読み` is a generator input rather
+   * than a display field (decision 10).
+   */
+  readonly sides: readonly number[];
+  /**
+   * Fields that consume this one. A delete would unbind them.
+   *
+   * BOTH kinds of dependency, which is new: `source_field_id`, and the `<<Field>>`
+   * markers inside an `ai` field's prompt. The column alone could never see the
+   * second, so nothing ever said that `単語` feeds `例文` — the one dependency
+   * `schema.sql` warns about by name.
+   */
   readonly dependents: readonly string[];
 }
 

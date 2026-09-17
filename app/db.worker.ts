@@ -50,6 +50,7 @@ import {
   type BrowserDb,
 } from "../src/db/browser.js";
 import { backlinksOf } from "../src/cards/index.js";
+import { decodeFieldOptions } from "../src/cards/index.js";
 import { cardAudioResolver } from "../src/cards/index.js";
 import { directionForTrackKind } from "../src/cards/index.js";
 import { ACCENT_FIELD_TYPE, READING_FIELD, prepareCard } from "../src/review/index.js";
@@ -62,7 +63,12 @@ import {
 } from "../src/session/index.js";
 import { searchCards } from "../src/search/index.js";
 import { collect, collectGlance, renderDashboard } from "../src/dashboard/index.js";
-import { countReferences, renameFieldEverywhere } from "../src/template/index.js";
+import {
+  countReferences,
+  promptDependencies,
+  renameFieldEverywhere,
+  sideIndex,
+} from "../src/template/index.js";
 import { positionKeys, FIELD_TYPES } from "../src/schema/index.js";
 // The SQL fragments for "live" and "due", from the module that owns them. This
 // query is why that module exists: it used to spell the due comparison with
@@ -2113,13 +2119,32 @@ function templateDetail(db: BrowserDb, templateId: string): TemplateDetail | nul
     values_: number;
   }[];
 
+  // BOTH kinds of dependency. The column is one of them; the other lives inside
+  // an `ai` field's prompt, which names its input BY NAME (`src/generate/fields.ts`
+  // substitutes `<<Field>>` markers there). Building this from the column alone is
+  // why the editor never said that `単語` feeds `例文` — and `schema.sql` calls that
+  // out as the reason `source_field_id` is legitimately NULL on four fields.
+  const byName = new Map(fields.map((field) => [field.name.trim(), field.id]));
   const dependentsOf = new Map<string, string[]>();
+  const dependsOn = (targetId: string, consumer: string): void => {
+    const list = dependentsOf.get(targetId) ?? [];
+    if (!list.includes(consumer)) list.push(consumer);
+    dependentsOf.set(targetId, list);
+  };
   for (const field of fields) {
-    if (field.source === null) continue;
-    const list = dependentsOf.get(field.source) ?? [];
-    list.push(field.name);
-    dependentsOf.set(field.source, list);
+    if (field.source !== null) dependsOn(field.source, field.name);
+    const prompt = decodeFieldOptions(field.options)["ai-custom-prompt"];
+    if (typeof prompt !== "string") continue;
+    for (const name of promptDependencies(prompt)) {
+      const targetId = byName.get(name.trim());
+      // A marker naming no field of this template resolves to nothing — silently,
+      // which is the trap this whole line of work exists to surface. It is shown
+      // by the body's own unknown-marker check, not invented as a dependency here.
+      if (targetId !== undefined && targetId !== field.id) dependsOn(targetId, field.name);
+    }
   }
+
+  const sidesOf = sideIndex(row.content);
 
   return {
     id: row.id,
@@ -2143,6 +2168,7 @@ function templateDetail(db: BrowserDb, templateId: string): TemplateDetail | nul
         local: field.local === 1,
         values: Number(field.values_),
         references: countReferences(row.content, field.name),
+        sides: sidesOf.get(field.name.trim()) ?? [],
         dependents: dependentsOf.get(field.id) ?? [],
       }),
     ),

@@ -93,6 +93,13 @@ import {
 // is the same lexer the parser uses (`FIELD_TOKEN`), so the 'not a field' check on
 // screen cannot disagree with what the renderer will actually resolve.
 import { referencedNames } from "../src/template/index.js";
+import { decodeFieldOptions } from "../src/cards/index.js";
+import {
+  factsLine,
+  inputLine,
+  settingLines,
+  undeclaredKeys,
+} from "./field-form.js";
 // The link rules, in an import-free module `test/` can reach — the same seam as
 // `./keys.ts` and `./review-keys.ts`. `test/app-links.test.ts` round-trips all
 // 8,744 authored links through it.
@@ -5178,15 +5185,7 @@ function templateFieldRow(
 
   const facts = document.createElement("p");
   facts.className = "tpl-facts";
-  facts.textContent = [
-    field.type,
-    field.local ? "local (decision 9 — protected from re-import)" : null,
-    `${field.references} reference(s) in the body`,
-    field.values === 0 ? null : `${field.values.toLocaleString()} value(s)`,
-    field.dependents.length === 0 ? null : `feeds ${field.dependents.join(", ")}`,
-  ]
-    .filter((part) => part !== null)
-    .join(" · ");
+  facts.textContent = factsLine(field);
 
   const ops = document.createElement("div");
   ops.className = "tpl-ops";
@@ -5242,8 +5241,109 @@ function templateFieldRow(
     true,
   );
 
+  const settings = templateFieldSettings(detail, field);
+  if (settings !== null) {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "gcard-op";
+    toggle.textContent = "⌄";
+    toggle.title = "what this field carries";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.addEventListener("click", () => {
+      const open = settings.hidden;
+      settings.hidden = !open;
+      toggle.textContent = open ? "⌃" : "⌄";
+      toggle.setAttribute("aria-expanded", String(open));
+    });
+    ops.insertBefore(toggle, ops.firstChild);
+    settings.hidden = true;
+    row.append(name, facts, ops, settings);
+    return row;
+  }
+
   row.append(name, facts, ops);
   return row;
+}
+
+/**
+ * What a field carries, unfolded under its own row.
+ *
+ * IN THE ROW rather than in a panel beside it or a modal above it — Zach's call,
+ * 2026-09-17. `.tpl-field` collapses to one column under 640px already, so a
+ * `grid-column: 1 / -1` child is the same thing on the phone as on the laptop and
+ * there is no second layout to keep honest. A layer over a layer is the shape his
+ * phone handles worst.
+ *
+ * Every control here is generated from `settingsOf(field.type)`, so this function
+ * knows nothing about speech, prompts or translation directions, and a new
+ * setting is a registry entry rather than a branch.
+ */
+function templateFieldSettings(
+  detail: TemplateDetail,
+  field: TemplateFieldRow,
+): HTMLElement | null {
+  const options = decodeFieldOptions(field.options);
+  const lines = settingLines(field.type, options);
+  const extras = undeclaredKeys(field.type, options);
+  const nameOf = (id: string): string | null =>
+    detail.fields.find((entry) => entry.id === id)?.name ?? null;
+  const input = inputLine(field, nameOf);
+  if (lines.length === 0 && extras.length === 0 && input === null) return null;
+
+  const panel = document.createElement("div");
+  panel.className = "tpl-settings";
+
+  if (input !== null) {
+    const pipe = document.createElement("p");
+    pipe.className = "tpl-setting-pipe";
+    pipe.textContent = input;
+    panel.appendChild(pipe);
+  }
+
+  for (const line of lines) {
+    const item = document.createElement("div");
+    item.className = "tpl-setting";
+    if (line.unset) item.classList.add("is-unset");
+
+    const label = document.createElement("span");
+    label.className = "tpl-setting-label";
+    label.textContent = line.label;
+
+    const value = document.createElement("span");
+    value.className = "tpl-setting-value";
+    value.textContent = line.value;
+    // Said in the row rather than only in the note, because "you cannot change
+    // this" is the first thing a reader wants and the last thing a note gives.
+    if (line.readOnly) value.title = "read-only";
+
+    const note = document.createElement("p");
+    note.className = "tpl-setting-note";
+    note.textContent = line.note;
+
+    item.append(label, value, note);
+    panel.appendChild(item);
+  }
+
+  for (const extra of extras) {
+    // Shown, never dropped. `options` is free-form JSON that survived an import
+    // and will survive a sync; a key this build does not declare is more likely
+    // to be something real than something wrong.
+    const item = document.createElement("div");
+    item.className = "tpl-setting is-undeclared";
+    const label = document.createElement("span");
+    label.className = "tpl-setting-label";
+    label.textContent = extra.key;
+    const value = document.createElement("span");
+    value.className = "tpl-setting-value";
+    value.textContent = extra.value;
+    const note = document.createElement("p");
+    note.className = "tpl-setting-note";
+    note.textContent = "Carried by this field and not declared by its kind — kept as it is.";
+    item.append(label, value, note);
+    panel.appendChild(item);
+  }
+
+  return panel;
 }
 
 function openAddField(detail: TemplateDetail, run: TemplateRunner): void {
