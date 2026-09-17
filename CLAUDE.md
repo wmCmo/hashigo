@@ -150,11 +150,22 @@ npm test                # 44 files, 1206 passed, 1 skipped (the FSRS refit, gate
                         # six threads in one process crash it. It passes twice first,
                         # so two green runs are not evidence. vitest.config.ts has the
                         # ten measured runs.
-                        # The underlying fix is still no file needing 60 s of its own
-                        # wall clock; roundtrip.test.ts needs 67 s. Splitting it means
-                        # a second full corpus import (~12 s) in the new file, so it
-                        # trades ~24 s of suite time for a cosmetic win the wrapper
-                        # already covers. Deliberately not done.
+                        # WHY IT TAKES ~53 s, MEASURED PER FILE 2026-09-17. The suite
+                        # does 236 s of work across 44 files at ~4.5x parallelism, and
+                        # TWO files set the floor:
+                        #   dashboard.test.ts  49.8 s  (2 full corpus imports)
+                        #   roundtrip.test.ts  48.8 s  (9 full corpus imports)
+                        # The other 42 files total ~138 s and finish entirely behind
+                        # those two, so cores do not help: the wall clock is the longest
+                        # single file plus change.
+                        # THIS CORRECTS THE NOTE THAT USED TO BE HERE. It named
+                        # roundtrip alone at 67 s and concluded that splitting it would
+                        # buy ~24 s. It would buy roughly NOTHING — dashboard is the
+                        # longer of the two now, and splitting the shorter one cannot
+                        # move a floor the other file already sets. Both would have to
+                        # stop re-importing 21 MB of Transit, which is a real change to
+                        # how the oracle tests get their corpus, not a split.
+                        # Still deliberately not done.
 npm run typecheck       # exit 0
 npm run app:check       # exit 0 — app/ has its OWN tsconfig and this is a REQUIRED gate
 npm run build           # refuses to exit 0 unless dist/ actually imports (28 export subpaths)
