@@ -1875,6 +1875,89 @@ right**: it holds his verbatim reasoning and this quotes it.
     mark's top rung) and no `--danger`: being behind is the thing he is currently
     FIXING, which is decision 40's argument against red on the stall notice.
 
+47. **AN EMPTY Ctrl+K SUGGESTS; IT DOES NOT LIST THE ALPHABET. AND THE APP KEEPS NO
+    SEARCH-QUERY HISTORY.** Zach, 2026-09-17: *"if i search something using ctrl+k,
+    would it leave any search history? like notion when you hit your ctrl +k for the
+    first time, it would list pages that it thinks would relevant to you, even if you
+    never search, how does it do that? can we do it too?"* Two questions, and the
+    answer to the first is the mechanism behind the second.
+
+    **NOTION IS NOT PREDICTING. It keeps an access log**, and an empty palette is that
+    log, newest first. Recency of his own attention is the strongest signal any of
+    these apps has and it needs no model — but it is a TRAIL, which is exactly what he
+    asked whether we leave.
+
+    **THE QUERY IS STILL NOT RECORDED, AND THAT DOES NOT CHANGE.** `src/search`'s own
+    header says it "does not remember history"; nothing writes the typed string to the
+    database, to `localStorage`, or anywhere else, and the palette is rebuilt from
+    scratch on every open. What was added is a log of CARDS OPENED, not of things
+    typed. The distinction is the whole reason this is written down: a recents list is
+    worth a trail of what he looked at, and a list of half-typed search strings is not
+    worth one.
+
+    **WHAT THE ALPHABET WAS COSTING.** The palette asked `browse` with an empty query,
+    which falls through to the deck listing — `ORDER BY c.name LIMIT 40`. Over the
+    whole collection that is not a neutral default, it is noise. The real first ten:
+
+        ...にも程がある · ...は...に限る · 124652706 · 13458922 · 142796732
+        · 143710122 · 149924640 · 158370089 · 169199604 · 190891495
+
+    **Eight of the first ten are cards whose name is an opaque number.** The most
+    valuable slot in the search UI was spending itself on sort order.
+
+    **THE SIGNAL THAT LOOKS RIGHT AND IS NOT: `last_reviewed_at`.** "Recently
+    reviewed" is the obvious first idea and it is measurably unusable. **All 103,110
+    imported reviews carry `time_unknown = 1`** and their timestamps are midnight, so
+    `card_tracks.last_reviewed_at` holds **307 distinct values across 7,716 cards** and
+    the newest days tie **16, 22, 69 and 52** rows deep. Ordering by it orders the top
+    of the list ARBITRARILY — the same defect as the alphabet wearing a better name.
+    It also measured **182 ms** as a correlated subquery against **2.0 ms** for the
+    ranking below, per call, on every open. Deliberately not used.
+
+    **THE THREE TIERS, and they are separate queries on purpose.** One `ORDER BY` over
+    a computed score would have to invent weights between "pinned" and "three days
+    ago", and there is nothing here to derive those from; the order of the tiers IS
+    the ranking and it is readable.
+
+    1. **PINNED.** 0 cards today, but the card menu already promises pinning "keeps it
+       near the top of a search", and before a query exists this is the only place
+       that promise can be kept. Above the visit log: pinning is a deliberate act,
+       opening is a trace.
+    2. **OPENED HERE** — `app/visits.ts`, 50 card ids in `localStorage`, newest first.
+       **Grading is NOT a visit**: a session grades dozens, so logging reviews would
+       push every deliberate open off the list within one sitting and the palette
+       would just mirror the queue, which he can already see. Notion logs the page you
+       navigated to, not the feed that scrolled past. Two funnels cover every
+       deliberate open — `openPreview` and `openEditorById` — and only after the card
+       comes back, because a dead link kept at the top for fifty opens is worse than
+       no entry.
+    3. **EDITED** — `cards.updated_at`, which is Mochi's real per-card edit time and
+       **SURVIVED the import**: 787 distinct days, full timestamps, already indexed
+       (`cards_updated`). It reads as a recents list on its own — 維持 ·
+       さることながら · persecute · 正答 · 群衆 · ford · さまよう · 繰り広げる — and it
+       is what makes the palette useful on a device whose log is empty, which is the
+       case an access log alone cannot answer.
+
+    **`localStorage`, NOT THE DATABASE**, for the reason the theme, the playback rate,
+    the deck tree's open rows, the device id and the eviction receipt are there: it is
+    a per-device convenience, and a table for it is a schema bump, which **decision
+    41** made expensive the same way it made every other one expensive. It is
+    deliberately NOT in decision 33's sync payload — "what I looked at on my phone" is
+    not something the laptop needs, and the `updated_at` tier already syncs for free.
+    `?reset=1` clears it: a re-seed happens to restore the same card ids, so the log
+    would still resolve, but "delete Hashigo's local database" leaving behind a record
+    of what he opened is the surprising reading of that sentence.
+
+    **THE GALLERY IS EXCLUDED, and the `suggest` flag exists to say so.** An empty
+    gallery is "the cards in this deck", which is a listing; the worker's own comment
+    has always said that imposing a relevance order on it "would be a lie". The `@`
+    link picker IS included — a bare `@` is the palette's question in eight rows, and
+    the alphabet spends all eight on numeric names.
+
+    Lives in `app/recent.ts` over a structural `ScopedDb` rather than inside
+    `db.worker.ts`, for the reason `app/deck-scope.ts` gives: `test/` cannot import the
+    worker, and worker SQL nobody can test is how the deck archive shipped inverted.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

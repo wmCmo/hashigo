@@ -104,6 +104,7 @@ import type { ShadowingSide } from "../src/render/reveal.js";
 // `test/app-logic.test.ts` and the headers of both files.
 import { childrenOf as treeChildrenOf, subtreeTotals } from "./deck-tree.js";
 import { isTypingTarget, type KeyTarget } from "./keys.js";
+import { clearVisits, noteVisit, readVisits } from "./visits.js";
 import { mountClimb } from "./climb.js";
 import { installOrigin, registerServiceWorker, watchForInstall } from "./install.js";
 import {
@@ -2766,6 +2767,10 @@ async function maybeReset(): Promise<boolean> {
     return false;
   }
   const reply = await ask<"reset">({ kind: "reset" });
+  // The visit log too. A re-seed happens to restore the same card ids, so the log
+  // would still resolve — but "delete Hashigo's local database" leaving behind a
+  // record of what he opened is the surprising reading of that sentence.
+  clearVisits();
   line(
     `reset: removed ${reply.removed.join(", ")} · ${reply.localReviews} local grade(s) gone. ` +
       `Reload without ?reset=1 to re-import.`,
@@ -2833,6 +2838,11 @@ const layers: Layer[] = [];
 
 async function openPreview(cardId: string): Promise<void> {
   const reply = await ask<"preview">({ kind: "preview", cardId });
+  // THE VISIT, and the two funnels are here and in `openEditorById` because every
+  // deliberate open in the app goes through one of them — palette, card link,
+  // gallery, `e` in review. Only after the card came back: a dead link is not a
+  // visit, and logging one would keep it at the top of Ctrl+K for fifty opens.
+  if (reply.card !== null) noteVisit(cardId);
 
   const root = document.createElement("div");
   root.className = "layer";
@@ -3922,17 +3932,23 @@ function openPalette(): void {
 
   const run = async (): Promise<void> => {
     const token = ++paletteToken;
+    const suggesting = input.value.trim() === "";
     const reply = await ask<"browse">({
       kind: "browse",
       query: input.value,
       deckId: null,
       limit: 40,
+      suggest: true,
+      visited: readVisits(),
     });
     if (token !== paletteToken) return;
     paletteHits = reply.hits;
     paletteIndex = 0;
-    foot.textContent =
-      reply.total === 0
+    // "recent" rather than "40 of 7,716", which counts the collection and says nothing
+    // about what is on screen. The suggestion list is not a result set.
+    foot.textContent = suggesting
+      ? `recent · ${reply.hits.length}`
+      : reply.total === 0
         ? "nothing"
         : `${reply.hits.length} of ${reply.total.toLocaleString()}` +
           (reply.mode === null ? "" : ` · ${reply.mode} · ${reply.elapsedMs.toFixed(0)}ms`);
@@ -4179,6 +4195,11 @@ async function paintGallery(): Promise<void> {
     query: gallery.query,
     deckId: gallery.deckId,
     limit: 300,
+    // FALSE, and that is the point of the flag: an empty gallery is "the cards in this
+    // deck", which is a listing. Ordering it by what he opened lately would be a
+    // different question answered under the same heading.
+    suggest: false,
+    visited: [],
   });
   if (token !== galleryToken) return;
 
@@ -4793,7 +4814,16 @@ function attachLinkEditing(area: HTMLTextAreaElement, onSaveNeeded: () => void):
       area.parentElement?.appendChild(menu);
     }
     const mine = ++token;
-    void ask<"browse">({ kind: "browse", query: trigger.query, deckId: null, limit: 8 }).then(
+    void ask<"browse">({
+      kind: "browse",
+      query: trigger.query,
+      deckId: null,
+      limit: 8,
+      // A bare `@` is the palette's question in miniature: eight rows and nothing
+      // typed. The alphabet spends all eight of them on numeric names.
+      suggest: true,
+      visited: readVisits(),
+    }).then(
       (reply) => {
         if (mine !== token || live === null) return;
         hits = reply.hits;
@@ -4900,7 +4930,9 @@ function openConfirm(
 /** Open the editor for a card the page does not already hold prepared. */
 async function openEditorById(cardId: string): Promise<void> {
   const reply = await ask<"preview">({ kind: "preview", cardId });
-  if (reply.card !== null) openEditorFor(reply.card, reply.templates);
+  if (reply.card === null) return;
+  noteVisit(cardId);
+  openEditorFor(reply.card, reply.templates);
 }
 
 // ─── his #11 and #1 ─────────────────────────────────────────────────────────

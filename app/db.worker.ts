@@ -71,6 +71,7 @@ import { positionKeys, FIELD_TYPES } from "../src/schema/index.js";
 import { dueOnOrBefore, liveTrack } from "../src/scheduler/index.js";
 
 import { archiveSubtree, restoreArchive, scopeToSubtree } from "./deck-scope.js";
+import { suggestCards, type SuggestRow } from "./recent.js";
 import { audioIsStale } from "./seed-freshness.js";
 
 import type {
@@ -1399,8 +1400,11 @@ function decks(request: DecksRequest): void {
  * search unit in Japanese (意味, する, ない all return 0 from MATCH and 3, 228 and
  * 74 from the ranked scan). It routes and reports which path ran.
  *
- * With no query it is a deck listing instead, ordered by name — a browse, not a
- * ranking, so imposing a relevance order on it would be a lie.
+ * With no query it depends on WHO ASKED. For the gallery (`suggest` false) it is a
+ * deck listing ordered by name — a browse, not a ranking, so imposing a relevance
+ * order on it would be a lie. For Ctrl+K and the `@` picker (`suggest` true) the
+ * alphabet is not neutral, it is noise, and `suggestCards` answers instead: pinned,
+ * then opened here, then recently edited. See `app/recent.ts`.
  */
 function browse(request: BrowseRequest): void {
   const db = requireCards();
@@ -1414,21 +1418,22 @@ function browse(request: BrowseRequest): void {
   const { sql: scopeSql, args: scopeArgs } = scopeToSubtree(db, request.deckId);
 
   if (request.query.trim() === "") {
-    const rows = db
-      .prepare(
-        `SELECT c.id AS id, c.name AS name, c.archived AS archived, c.pinned AS pinned,
-                dp.path AS deck
-           FROM cards c LEFT JOIN deck_paths dp ON dp.deck_id = c.deck_id
-          WHERE ${scopeSql}
-          ORDER BY c.name LIMIT ?`,
-      )
-      .all(...scopeArgs, request.limit) as {
-      id: string;
-      name: string;
-      archived: number;
-      pinned: number;
-      deck: string | null;
-    }[];
+    const rows = request.suggest
+      ? suggestCards(db, {
+          scopeSql,
+          scopeArgs,
+          visited: request.visited,
+          limit: request.limit,
+        })
+      : (db
+          .prepare(
+            `SELECT c.id AS id, c.name AS name, c.archived AS archived, c.pinned AS pinned,
+                    dp.path AS deck
+               FROM cards c LEFT JOIN deck_paths dp ON dp.deck_id = c.deck_id
+              WHERE ${scopeSql}
+              ORDER BY c.name LIMIT ?`,
+          )
+          .all(...scopeArgs, request.limit) as SuggestRow[]);
     const total = Number(
       (
         db

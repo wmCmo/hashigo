@@ -393,6 +393,22 @@ export interface BrowseRequest {
   /** Restrict to one deck. Null browses everything. */
   readonly deckId: string | null;
   readonly limit: number;
+  /**
+   * What an EMPTY query means, and the two callers disagree.
+   *
+   * The gallery is a deck listing, where `ORDER BY name` is the honest answer and a
+   * relevance order would be a lie — that is `false`. Ctrl+K and the `@` picker are
+   * asking "what am I likely to want", where the alphabet is noise (eight of the
+   * first ten cards in the real corpus are named by an opaque number) — that is
+   * `true`, and `app/recent.ts` answers it.
+   */
+  readonly suggest: boolean;
+  /**
+   * Cards he opened here, newest first, from `app/visits.ts`. The log lives in the
+   * page's `localStorage` and the worker has none, so it travels on the request.
+   * Ignored unless `suggest` is set and the query is empty.
+   */
+  readonly visited: readonly string[];
 }
 
 export interface BrowseHit {

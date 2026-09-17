@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 43 files, 1117 passed, 1 skipped (the FSRS refit, gated). ~95 s.
+npm test                # 44 files, 1127 passed, 1 skipped (the FSRS refit, gated). ~95 s.
                         # EXITS 0 ON A PASSING RUN as of 2026-08-26. It is a wrapper
                         # (`scripts/test.mjs`) that reads the SUMMARY, which is
                         # STRICTER than the exit code, not looser: the run must have
@@ -870,6 +870,33 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     missing chip, not a quiet one). No vermilion (decision 32) and no red: being
     behind is the thing he is currently fixing, which is decision 40's argument on
     the stall notice. See `DECISIONS.md` 46.
+
+47. **AN EMPTY Ctrl+K SUGGESTS; IT DOES NOT LIST THE ALPHABET — AND NO SEARCH QUERY
+    IS EVER RECORDED.** Zach, 2026-09-17: *"if i search something using ctrl+k, would
+    it leave any search history? like notion … it would list pages that it thinks
+    would relevant to you, even if you never search, how does it do that?"* **Notion
+    is not predicting — it keeps an ACCESS LOG**, and an empty palette is that log.
+    **The typed query is still stored nowhere** (`src/search`'s header already said it
+    "does not remember history"); what exists now is a log of cards OPENED. The
+    distinction is the point: a recents list is worth a trail of what he looked at, a
+    list of half-typed strings is not. **The alphabet was the cost** — the palette's
+    empty state fell through to `ORDER BY c.name`, whose real first ten are
+    `...にも程がある · ...は...に限る` and **eight cards named by an opaque number**.
+    **`last_reviewed_at` LOOKS like the signal and is unusable:** all 103,110 imported
+    reviews are `time_unknown = 1`, so it holds **307 distinct values over 7,716
+    cards** and ties 16/22/69/52 deep — an arbitrary order with a plausible name, at
+    **182 ms** against **2.0 ms** for what shipped. Three tiers instead, separate
+    queries because a single score would need invented weights: **pinned** (0 today,
+    but the card menu already promises it), **opened here** (`app/visits.ts`, 50 ids in
+    `localStorage`; **grading is not a visit** — a session would flush the log and the
+    palette would just mirror the queue), then **edited** (`cards.updated_at` survived
+    the import with real timestamps: 787 distinct days, and it reads as a recents list
+    by itself — 維持 · さることながら · persecute · 正答 · 群衆). `localStorage` and not
+    a table, because decision 41 made a schema bump expensive; deliberately not in
+    decision 33's payload. **The gallery is excluded** (`suggest: false`) — an empty
+    deck listing ordered by relevance would be a lie; the `@` picker is included.
+    `app/recent.ts` over a structural `ScopedDb`, for `deck-scope.ts`'s reason.
+    See `DECISIONS.md` 47.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
