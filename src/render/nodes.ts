@@ -73,6 +73,7 @@ import { stripInvisible } from "../text/index.js";
 import {
   attributeValue,
   cardHref,
+  tagHref,
   classifyMedia,
   dataSuffix,
   inertElementText,
@@ -100,6 +101,7 @@ export const CLASS = {
   code: "hashigo-code",
   math: "hashigo-math",
   cardLink: "hashigo-card-link",
+  tag: "hashigo-tag",
   link: "hashigo-link",
   image: "hashigo-image",
   audio: "hashigo-audio",
@@ -126,6 +128,7 @@ export const DATA = {
   language: "data-language",
   math: "data-math",
   cardId: "data-card-id",
+  tag: "data-tag",
   resolved: "data-resolved",
   mediaKind: "data-media-kind",
   mediaRef: "data-media-ref",
@@ -275,6 +278,8 @@ export type RenderDiagnosticKind =
   | "url-blocked"
   /** A media reference that is not a store key (absolute URL, or a path). */
   | "media-blocked"
+  /** `resolveTag` returned null, or was absent; rendered as its authored text. */
+  | "tag-unresolved"
   /** `resolveCardLink` returned null; rendered as its authored text. */
   | "card-link-unresolved"
   /** An `element` node whose name is not in `ELEMENTS`; rendered inert. */
@@ -294,6 +299,12 @@ export interface RenderDiagnostic {
 }
 
 // ─── options ─────────────────────────────────────────────────────────────────
+
+/** Where a tag points. Return null from `resolveTag` for "no such tag". */
+export interface TagTarget {
+  /** Defaults to `#/tag/<encoded path>`. */
+  readonly href?: string;
+}
 
 /** Where a wiki-link points. Return null from `resolveCardLink` for "no such card". */
 export interface CardLinkTarget {
@@ -327,6 +338,13 @@ export interface RenderSettings<E extends RenderElement = RenderElement> {
    * database question and this module does not open one.
    */
   readonly resolveCardLink?: (id: string) => CardLinkTarget | null;
+  /**
+   * Resolve a `#tag`. Omit it and every tag renders as PLAIN TEXT, which is the
+   * safe default and the one the corpus census wants: whether a tag exists is a
+   * database question and this module does not open one. Returning null for an
+   * unknown path is what stops a stray `#` becoming a chip that leads nowhere.
+   */
+  readonly resolveTag?: (path: string) => TagTarget | null;
   /** Replace individual node renderers. Merged over the defaults. */
   readonly renderers?: Partial<NodeRenderers<E>>;
   readonly hooks?: RenderHooks<E>;
@@ -679,6 +697,45 @@ export function defaultRenderers<E extends RenderElement>(): NodeRenderers<E> {
       context.attribute(element, DATA.math, node.display ? "display" : "inline");
       element.appendChild(context.verbatim(node.text));
       parent.appendChild(element);
+    },
+
+    /**
+     * `#Mathematics` — a tag, which he wants to BEHAVE like a link and LOOK
+     * unlike one. This half is the behaviour; `app/style.css` carries the look.
+     *
+     * Unresolved renders as the authored source, invisible marks and all, for
+     * `wikiLink`'s reason and with `wikiLink`'s shape: the parser cannot see the
+     * tag table, so a `#` that means nothing must come out as the characters it
+     * went in as rather than as a chip that leads nowhere.
+     */
+    tag(node, parent, context) {
+      const resolve = context.settings.resolveTag;
+      if (resolve === undefined) {
+        // NOT a diagnostic. A caller with no resolver has not failed to resolve
+        // anything — it has declined to do tags at all, which is the documented
+        // default and what the corpus census does. Diagnosing it would put 66
+        // "unresolved" entries into a sweep whose whole job is to report that
+        // nothing anywhere was refused or dropped.
+        context.appendText(parent, node.source);
+        context.count("tag:text");
+        return;
+      }
+      const target = node.path === "" ? null : resolve(node.path);
+      if (target === null) {
+        context.diagnose("tag-unresolved", node.source);
+        context.appendText(parent, node.source);
+        context.count("tag:text");
+        return;
+      }
+      const element = context.element("a", CLASS.tag);
+      context.attribute(element, "href", target.href ?? tagHref(node.path));
+      context.attribute(element, DATA.tag, node.path);
+      // The `#` is kept in the DISPLAY. It is how he wrote it, it is what makes
+      // the chip read as a tag without a word of chrome, and decision 19's
+      // "links render plainly, in place" is the same instinct one element over.
+      context.appendText(element, `#${node.path}`);
+      parent.appendChild(element);
+      context.count("tag:link");
     },
 
     wikiLink(node, parent, context) {

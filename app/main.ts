@@ -3100,6 +3100,42 @@ document.addEventListener(
   true,
 );
 
+/**
+ * A TAG BEHAVES LIKE A LINK AND LOOKS UNLIKE ONE — Zach, 2026-09-18:
+ * *"i want the tag to behave like hyperlink too, but looks different than like
+ * hyperlink"*.
+ *
+ * The behaviour is here; the look is `.hashigo-tag` in `app/style.css`.
+ *
+ * A tap SEARCHES for the tag rather than opening a filtered gallery, and that is
+ * a deliberately small answer to a question that could have been a large one.
+ * `card_search_index.tags` already carries the path (`Chemistry
+Mathematics
+
+ * Physics` on one card), the palette already ranks a tag hit above prose, and the
+ * counts line up: 9 cards for Mathematics, 8 for Buddhism, 2 for Dialect/Kansai.
+ * A `tag:` filter in the query router would be better and is not needed to make
+ * the text stop being inert.
+ *
+ * Capture phase on the document, exactly as the card-link handler above it, so
+ * it works inside review AND inside any layer without per-layer wiring.
+ */
+document.addEventListener(
+  "click",
+  (event) => {
+    const anchor = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>(
+      `a.${CLASS.tag}`,
+    );
+    if (anchor === null || anchor === undefined) return;
+    const path = anchor.getAttribute("data-tag");
+    if (path === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openPalette(path);
+  },
+  true,
+);
+
 // ─── his request 3: `e` edits every field, from either mode ─────────────────
 
 /**
@@ -3917,7 +3953,19 @@ let paletteIndex = 0;
 let paletteHits: readonly BrowseHit[] = [];
 let paletteToken = 0;
 
-function openPalette(): void {
+/**
+ * The palette, optionally SCOPED TO A TAG.
+ *
+ * Ctrl+K opens it with no scope, which is decision 47's suggestion list. A tap on
+ * a `#tag` opens it scoped: the box starts empty and lists the tag's cards, and
+ * anything he types then searches WITHIN the tag instead of replacing it.
+ *
+ * The scope is not a seeded query, and the difference is the whole point. Seeding
+ * `Mathematics` into the box returned **18 cards where 9 carry the tag** — the
+ * other 9 merely say the word somewhere. A tag that lands you next to its own
+ * cards is not a link.
+ */
+function openPalette(tagPath: string | null = null): void {
   if (document.querySelector(".palette") !== null) return;
   const root = document.createElement("div");
   root.className = "layer palette";
@@ -3935,7 +3983,7 @@ function openPalette(): void {
   const input = document.createElement("input");
   input.className = "palette-input";
   input.type = "search";
-  input.placeholder = "search cards";
+  input.placeholder = tagPath === null ? "search cards" : `search within #${tagPath}`;
   input.autocomplete = "off";
   input.spellcheck = false;
   const list = document.createElement("div");
@@ -3947,13 +3995,16 @@ function openPalette(): void {
 
   const run = async (): Promise<void> => {
     const token = ++paletteToken;
-    const suggesting = input.value.trim() === "";
+    // A tag scope is never "suggesting": an empty box under `#Mathematics` means
+    // "the tag's cards", which is a listing and not a guess at what he wants.
+    const suggesting = input.value.trim() === "" && tagPath === null;
     const reply = await ask<"browse">({
       kind: "browse",
       query: input.value,
       deckId: null,
+      tagPath,
       limit: 40,
-      suggest: true,
+      suggest: tagPath === null,
       visited: readVisits(),
     });
     if (token !== paletteToken) return;
@@ -3961,11 +4012,13 @@ function openPalette(): void {
     paletteIndex = 0;
     // "recent" rather than "40 of 7,716", which counts the collection and says nothing
     // about what is on screen. The suggestion list is not a result set.
+    const scope = tagPath === null ? "" : `#${tagPath} · `;
     foot.textContent = suggesting
       ? `recent · ${reply.hits.length}`
       : reply.total === 0
-        ? "nothing"
-        : `${reply.hits.length} of ${reply.total.toLocaleString()}` +
+        ? `${scope}nothing`
+        : scope +
+          `${reply.hits.length} of ${reply.total.toLocaleString()}` +
           (reply.mode === null ? "" : ` · ${reply.mode} · ${reply.elapsedMs.toFixed(0)}ms`);
     paintPalette(list);
   };

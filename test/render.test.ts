@@ -716,6 +716,7 @@ describe("the contract other stages build against", () => {
         "strong",
         "table",
         "tableCell",
+        "tag",
         "text",
         "unknown",
         "wikiLink",

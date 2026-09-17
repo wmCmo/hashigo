@@ -226,6 +226,17 @@ export function cardHref(id: string): string {
   return `#/card/${encodeURIComponent(id)}`;
 }
 
+/**
+ * The in-app href for a tag path. Minted, not authored, for `cardHref`'s reason.
+ *
+ * `encodeURIComponent` matters more here than it does for a card id, because a
+ * tag path legitimately contains `/` — `Dialect/Kansai` — and leaving it raw
+ * would mint a two-segment route out of one tag.
+ */
+export function tagHref(path: string): string {
+  return `#/tag/${encodeURIComponent(path)}`;
+}
+
 // ─── media references ────────────────────────────────────────────────────────
 
 export type MediaKind = "audio" | "image" | "video" | "file";

@@ -78,6 +78,7 @@
 import {
   cardAudioResolver,
   directionForTrackKind,
+  knownTagsFor,
   linkNamesFor,
   loadCard,
   renderLoadedCard,
@@ -174,6 +175,16 @@ export interface PreparedCard {
    * `src/cards/link-names.ts`.
    */
   readonly linkNames: LinkNames;
+  /**
+   * The `#tag` paths on these sides that are REAL tags.
+   *
+   * Collected here for `linkNames`' reason, stated one comment up: the
+   * renderer's resolver is synchronous and the page has no database. It travels
+   * with the card so that a card mounted before anything else has loaded still
+   * gets its tags — see `knownTagsFor`, which records the boot race that taught
+   * this.
+   */
+  readonly knownTags: readonly string[];
 }
 
 /** `MountOptions` minus the database. The page's half. */
@@ -312,6 +323,7 @@ export function prepareCard(options: PrepareOptions): PreparedCard | null {
     // text and can carry links of its own, so collecting from `rendered.sides`
     // would miss them.
     linkNames: linkNamesFor(db, bound.sides),
+    knownTags: knownTagsFor(db, bound.sides),
   };
 }
 
@@ -373,6 +385,14 @@ export function mountPrepared<E extends RenderElement>(
       const name = prepared.linkNames[id];
       return name === undefined ? {} : { name };
     },
+    // A tag the workspace does not have renders as its own text. The asymmetry
+    // with `resolveCardLink` above is deliberate: an unknown card id is usually a
+    // deleted card and still worth a link, whereas an unknown `#` is usually not
+    // a tag at all — a URL fragment, a stray hash — and must not become a chip.
+    // Straight off the prepared card. No option, no page-held set, no request
+    // that could arrive after the mount: the worker already answered "which of
+    // this card's tags exist" while it had the database open.
+    resolveTag: (path: string) => (prepared.knownTags.includes(path) ? {} : null),
   });
   // Filled straight away, unlike furigana: the annotation is a stored field on
   // the card that is already in hand, not a generation that has to be looked up.

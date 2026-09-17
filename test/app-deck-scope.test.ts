@@ -10,6 +10,7 @@ import {
   archiveSubtree,
   restoreArchive,
   scopeToSubtree,
+  scopeToTag,
   subtreeDeckIds,
   type ScopedDb,
 } from "../app/deck-scope.js";
@@ -293,5 +294,88 @@ describe.skipIf(!haveCorpus)("the page walk and the worker walk agree", () => {
         ).n;
       expect(count(sqlIds), `${name} disagrees`).toBe(count(pageIds));
     }
+  });
+});
+
+// ─── the same question, for a tag ───────────────────────────────────────────
+
+/**
+ * WHAT A `#tag` TAP SHOWS.
+ *
+ * Zach, 2026-09-18, wanting `#Mathematics` in a card's text to behave like a
+ * link. The first cut seeded the search box with `Mathematics` and returned
+ * **18 cards where 9 carry the tag** — the other 9 merely say the word. So the
+ * tap carries a SCOPE now, and this is what the scope has to mean.
+ *
+ * Two properties, both of which the first two attempts got wrong:
+ *
+ *   * DESCENDANTS COUNT. `tags.path` is a materialised path, and `Dialect` is a
+ *     SYNTHESISED ancestor with no cards of its own — it exists only because
+ *     `Dialect/Kansai` needs a parent and `tags.parent_path` is a foreign key.
+ *     An `=` match opens an empty listing on a tag the sidebar shows.
+ *   * NO WILDCARDS. The prefix was matched with `LIKE ? ESCAPE '\'` first; the
+ *     backslash did not survive being written to disk, SQLite received
+ *     `ESCAPE ''`, and every tap died. `substr` needs no escaping and cannot
+ *     over-match.
+ */
+describe("a tag scope lists the tag's cards, and its children's", () => {
+  function cardsTagged(tagPath: string): number {
+    const { sql, args } = scopeToTag(tagPath);
+    return (
+      db.prepare(`SELECT count(*) AS n FROM cards c WHERE ${sql}`).get(...args) as { n: number }
+    ).n;
+  }
+
+  it("counts exactly the cards carrying the tag", () => {
+    if (!haveCorpus) return;
+    for (const [path, expected] of [
+      ["Mathematics", 9],
+      ["Buddhism", 8],
+      ["Law", 5],
+    ] as const) {
+      const direct = (
+        db.prepare("SELECT count(*) AS n FROM card_tags WHERE tag_path = ?").get(path) as {
+          n: number;
+        }
+      ).n;
+      expect(direct, `${path} moved in the corpus`).toBe(expected);
+      expect(cardsTagged(path), path).toBe(expected);
+    }
+  });
+
+  it("reaches a child tag's cards from the parent — Dialect has none of its own", () => {
+    if (!haveCorpus) return;
+    const own = (
+      db.prepare("SELECT count(*) AS n FROM card_tags WHERE tag_path = 'Dialect'").get() as {
+        n: number;
+      }
+    ).n;
+    // The synthesised ancestor really does carry nothing. If this ever becomes
+    // non-zero the corpus changed, and the test below still holds either way.
+    expect(own).toBe(0);
+    expect(cardsTagged("Dialect")).toBe(cardsTagged("Dialect/Kansai"));
+    expect(cardsTagged("Dialect/Kansai")).toBe(2);
+  });
+
+  it("does not match a SIBLING whose name merely starts the same way", () => {
+    if (!haveCorpus) return;
+    // `Dialect` must not reach a hypothetical `Dialectic`. The `/` in the
+    // comparison is what makes that true, so it is asserted rather than assumed.
+    db.prepare("INSERT INTO tags (path, parent_path, name) VALUES ('Dialectic', NULL, 'Dialectic')").run();
+    const victim = db.prepare("SELECT id FROM cards LIMIT 1").get() as { id: string };
+    db.prepare("INSERT INTO card_tags (card_id, tag_path) VALUES (?, 'Dialectic')").run(victim.id);
+    try {
+      expect(cardsTagged("Dialect")).toBe(2);
+      expect(cardsTagged("Dialectic")).toBe(1);
+    } finally {
+      db.prepare("DELETE FROM card_tags WHERE tag_path = 'Dialectic'").run();
+      db.prepare("DELETE FROM tags WHERE path = 'Dialectic'").run();
+    }
+  });
+
+  it("finds nothing for a tag nobody uses, rather than everything", () => {
+    if (!haveCorpus) return;
+    expect(cardsTagged("NoSuchTag")).toBe(0);
+    expect(cardsTagged("")).toBe(0);
   });
 });

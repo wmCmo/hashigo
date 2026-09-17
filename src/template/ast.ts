@@ -316,6 +316,37 @@ export interface LinkNode {
   readonly children: readonly Inline[];
 }
 
+/**
+ * `#Mathematics`, `#Dialect/Kansai` — a tag, written inline in the text.
+ *
+ * Zach, 2026-09-18: *"i want the tag to behave like hyperlink too, but looks
+ * different than like hyperlink"*.
+ *
+ * THE TAG IS IN TWO PLACES AND ALWAYS HAS BEEN. `card_tags` holds it as data
+ * (Mathematics on 9 cards), and Mochi ALSO wrote the literal `#Mathematics` into
+ * the field text — 約数's 意味 really is `divisor; factor; measure #Mathematics`.
+ * This node is the second of those, and it exists so the text stops being inert.
+ *
+ * MEASURED BEFORE THE GRAMMAR WAS CHOSEN. 49 `#` tokens across 44 field values,
+ * and **every single one is a tag**: 38 match a `tags.path` outright and the
+ * other 11 are the same names carrying a U+200B ZERO WIDTH SPACE right after the
+ * `#` — the identical trap `src/import/tags.ts` documents on the way in, which is
+ * why `path` is stripped of invisible marks here too. There is no `C#`, no
+ * `#1`, and no colour literal in any field VALUE; `#FF0000` exists only inside a
+ * 漢字 template attribute, which the markup parser takes before inline ever runs.
+ *
+ * RESOLUTION IS THE RENDERER'S JOB, exactly as it is for `wikiLink`: the parser
+ * cannot see the tag table, so an unknown path renders as the plain text it was
+ * authored as rather than as a chip that leads nowhere.
+ */
+export interface TagNode {
+  readonly kind: "tag";
+  /** Invisible marks stripped; the resolvable form. `Dialect/Kansai`. */
+  readonly path: string;
+  /** Exactly as authored, invisible marks and all, for the unresolved case. */
+  readonly source: string;
+}
+
 /** `![alt](src)`. Mochi also embeds audio this way (`![clip.mp3](uVQp0iMb.mp3)`). */
 export interface ImageNode {
   readonly kind: "image";
@@ -384,6 +415,7 @@ export type Inline =
   | CodeSpanNode
   | MathNode
   | WikiLinkNode
+  | TagNode
   | LinkNode
   | ImageNode
   | ClozeNode

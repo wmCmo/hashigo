@@ -111,3 +111,55 @@ export function linkNamesFor(db: SqliteHandle, sides: readonly Side[]): LinkName
   }
   return names;
 }
+
+// ─── the same question, for `#tags` ─────────────────────────────────────────
+
+/**
+ * Every `#tag` path written on `sides`, in document order, de-duplicated.
+ *
+ * Zach, 2026-09-18: *"i want the tag to behave like hyperlink too"*.
+ *
+ * It lives beside `linkTargetsOf` because it is the identical problem and the
+ * header above already argues it: the renderer's resolver is SYNCHRONOUS and the
+ * page holds no database, so the answer has to be collected in the half that
+ * does. The first attempt at this shipped the workspace's whole tag list on the
+ * `decks` reply instead, and it was wrong for a reason worth keeping — that
+ * request races the worker's `open` at boot, so a card mounted first rendered
+ * every tag as dead text and never re-rendered. A fact a card needs travels with
+ * the card.
+ */
+export function tagPathsOf(sides: readonly Side[]): string[] {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  walkSides(sides, (node) => {
+    if (node.kind !== "tag" || node.path === "") return;
+    if (seen.has(node.path)) return;
+    seen.add(node.path);
+    paths.push(node.path);
+  });
+  return paths;
+}
+
+/**
+ * Which of those paths are real tags.
+ *
+ * A list and not a map: a tag has nothing to carry but its own existence, and
+ * the href is minted from the path. The renderer prints an unknown `#` as the
+ * text it was authored as, which is what makes a generous grammar safe — every
+ * `#` in this corpus is a real tag, but a URL fragment in a future field value
+ * would parse as one and must not become a chip that leads nowhere.
+ *
+ * `tags` holds 20 rows for 19 real tags: `Dialect` exists only because
+ * `Dialect/Kansai` needs a parent and `tags.parent_path` is a foreign key onto
+ * `tags.path`. A synthesised ancestor is still a tag worth clicking — it is how
+ * he would reach every card under it — so this does not filter on cards.
+ */
+export function knownTagsFor(db: SqliteHandle, sides: readonly Side[]): string[] {
+  const paths = tagPathsOf(sides);
+  if (paths.length === 0) return [];
+  const placeholders = paths.map(() => "?").join(", ");
+  const rows = db
+    .prepare(`SELECT path FROM tags WHERE path IN (${placeholders})`)
+    .all(...paths) as readonly { path: string }[];
+  return rows.map((row) => row.path);
+}

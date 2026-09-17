@@ -137,3 +137,35 @@ export function scopeToSubtree(
   const ids = subtreeDeckIds(db, deckId);
   return { sql: `c.deck_id IN (${holes(ids.length)})`, args: ids };
 }
+
+/**
+ * The same fragment, for a TAG rather than a deck.
+ *
+ * Zach, 2026-09-18, wanting `#Mathematics` in a card's text to be tappable. What
+ * a tap should then show is the tag's cards, and the first cut showed a SEARCH
+ * for the word instead: 18 hits where 9 carry the tag, because the other 9 merely
+ * say "mathematics" somewhere. A link that lands next to the answer is not a link.
+ *
+ * DESCENDANTS COUNT, and that is the whole reason this is a prefix and not an `=`.
+ * `tags.path` is a materialised path — SPEC's "store the full path string and
+ * index every prefix, and arbitrary nesting depth falls out with no schema
+ * change" — so `Dialect` has to reach the 2 cards tagged `Dialect/Kansai`, which
+ * are the only cards `Dialect` has. As a synthesised ancestor it carries none of
+ * its own (`src/import/tags.ts`: it exists because `parent_path` is a foreign key
+ * onto `path`), so an `=` would open an empty gallery on a tag the sidebar shows.
+ *
+ * NO `LIKE`, AND THAT IS THE SECOND THING THIS GOT WRONG. The first cut matched
+ * the prefix with `LIKE ? ESCAPE '\'`, which needs a backslash to survive being
+ * written to disk — it did not, the clause reached SQLite as `ESCAPE ''`, and
+ * every tag tap died on *"ESCAPE expression must be a single character"*. A
+ * `substr` comparison needs no escaping, admits no wildcard, and is exact: a tag
+ * called `a_b` cannot quietly match `axb`. `test/app-deck-scope.test.ts` pins it.
+ */
+export function scopeToTag(tagPath: string): { sql: string; args: string[] } {
+  return {
+    sql:
+      "c.id IN (SELECT ct.card_id FROM card_tags ct WHERE ct.tag_path = ? " +
+      "OR substr(ct.tag_path, 1, length(?) + 1) = ? || '/')",
+    args: [tagPath, tagPath, tagPath],
+  };
+}

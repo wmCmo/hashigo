@@ -57,6 +57,8 @@ import {
   type TextNode,
   elementSpec,
 } from "./ast.js";
+import { startsTag, tagEnd } from "./tag.js";
+import { stripInvisible } from "../text/index.js";
 
 // ─── the field lexer ─────────────────────────────────────────────────────────
 
@@ -630,6 +632,16 @@ export function parseInline(text: string, tokens: readonly FieldToken[]): Inline
           children: parseInline(indexed === null ? body : (indexed[2] as string), tokens),
         });
         i = close + 2;
+        continue;
+      }
+    }
+
+    if (ch === "#" && startsTag(text, i)) {
+      const end = tagEnd(text, i + 1);
+      if (end > i + 1) {
+        const source = text.slice(i, end);
+        push({ kind: "tag", path: stripInvisible(source.slice(1)), source });
+        i = end;
         continue;
       }
     }

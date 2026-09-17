@@ -392,6 +392,16 @@ export interface BrowseRequest {
   readonly query: string;
   /** Restrict to one deck. Null browses everything. */
   readonly deckId: string | null;
+  /**
+   * Restrict to one tag and its descendants. Null means no tag scope.
+   *
+   * Sent when he taps a `#tag` in a card's text. It is a SCOPE and not a query,
+   * so a query typed on top of it searches WITHIN the tag rather than replacing
+   * it — which is the difference between a link and a seeded search box, and the
+   * first cut of this was the second thing: 18 hits for `#Mathematics` where 9
+   * carry the tag.
+   */
+  readonly tagPath?: string | null;
   readonly limit: number;
   /**
    * What an EMPTY query means, and the two callers disagree.

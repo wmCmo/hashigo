@@ -76,7 +76,7 @@ import { positionKeys, FIELD_TYPES } from "../src/schema/index.js";
 // where the scheduler counted 646.
 import { dueOnOrBefore, liveTrack } from "../src/scheduler/index.js";
 
-import { archiveSubtree, restoreArchive, scopeToSubtree } from "./deck-scope.js";
+import { archiveSubtree, restoreArchive, scopeToSubtree, scopeToTag } from "./deck-scope.js";
 import { suggestCards, type SuggestRow } from "./recent.js";
 import { audioIsStale } from "./seed-freshness.js";
 import { COUNT_HELD, mergeLocalFields, readSeedFields } from "./local-fields.js";
@@ -1513,7 +1513,16 @@ function browse(request: BrowseRequest): void {
   // opened a gallery that disagreed with the number he clicked: English showed
   // "1258" and listed 0 cards, 日本語 showed "5947" and listed 3. Every deck with
   // children was affected, which is every deck he actually navigates through.
-  const { sql: scopeSql, args: scopeArgs } = scopeToSubtree(db, request.deckId);
+  const deckScope = scopeToSubtree(db, request.deckId);
+  // Both scopes AND together, so a tag tapped inside a deck gallery narrows
+  // rather than replaces. Nothing sends both today; writing it as an `and` costs
+  // one line and removes the question.
+  const tagScope =
+    request.tagPath === undefined || request.tagPath === null
+      ? { sql: "1 = 1", args: [] as string[] }
+      : scopeToTag(request.tagPath);
+  const scopeSql = `(${deckScope.sql}) AND (${tagScope.sql})`;
+  const scopeArgs = [...deckScope.args, ...tagScope.args];
 
   if (request.query.trim() === "") {
     const rows = request.suggest

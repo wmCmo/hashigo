@@ -1028,6 +1028,50 @@ body {
   color: var(--indigo-deep);
 }
 
+/* ── A TAG BEHAVES LIKE A LINK AND LOOKS UNLIKE ONE ─────────────────────────
+   Zach, 2026-09-18: *"i want the tag to behave like hyperlink too, but looks
+   different than like hyperlink"*.
+
+   So it takes NEITHER of the two things that say "link" on this screen: not the
+   indigo, and not the underline. It takes a shape instead — a hairline box on
+   the sunk ground, which is the same chip the deck line already uses for `new
+   card` / `reversed` / `due N days ago` (decision 46), one element further in.
+   A reader who cannot tell the hues apart still sees a box where a link has a
+   rule under it, which is decision 38's argument applied before it bites.
+
+   The `#` stays in the text rather than becoming a `::before`: he typed it, it
+   is what makes the chip read as a tag with no other chrome, and a generated
+   mark would not survive being copied out of the card.
+
+   Square corners, hairline, no shadow — decision 32.
+
+   `--ink` and not `--muted`, and the pair was measured rather than assumed:
+   `--ink` on `--sunk` is **10.86:1 light / 14.88:1 dark**, and the hover pair
+   `--accent` on `--sunk` is 8.38 / 7.45. A tag is body text he reads inside a
+   definition, not a caption on a deck line, so it takes the body colour.
+   (`--muted` on `--sunk` measures **4.76:1** today. Decision 32 records 4.21:1
+   for that pair and it is no longer what the stylesheet computes — the figure is
+   stale, not the reasoning, and it is reported rather than edited here.) */
+.hashigo-tag {
+  background: var(--sunk);
+  border: 1px solid var(--hair);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.86em;
+  padding: 0 4px;
+  text-decoration: none;
+  /* Never let a tag be the thing that widens the column. It sits inside card
+     text whose own rule is `overflow-wrap: break-word`, and a chip with a border
+     is exactly the kind of inline box that would otherwise refuse to break. */
+  overflow-wrap: break-word;
+}
+
+.hashigo-tag:hover,
+.hashigo-tag:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* It leaves the app. Said with a mark rather than only a colour, and it is
    `::after` on the anchor so it travels with the text when the line wraps. */
 .hashigo-link::after {
