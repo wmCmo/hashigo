@@ -1828,7 +1828,52 @@ right**: it holds his verbatim reasoning and this quotes it.
     **NOT VERIFIED: reduced motion.** The still path is implemented and
     `restFrame` is covered by tests, but `prefers-reduced-motion` cannot be
     emulated with the tools available here, so nobody has watched it.
-    See `DECISIONS.md` 45.
+
+46. **A LATE TRACK SAYS HOW LATE, ON THE DECK LINE, AND A TRACK DUE TODAY SAYS
+    NOTHING.** Zach, 2026-09-17: *"it would actually be perfect if there's a label
+    showing when this card was due in the past — like i didn't have time to review
+    so now im like catching up, but it would be helpful to see that this track was
+    due 5 days ago or something"*. A fourth chip beside `new card`, `again · not
+    graded` and `reversed`, last in the row because it is the only one that
+    changes every day.
+
+    **THE NUMBER IS THE SCHEDULER'S AND IS NOT A SUBTRACTION.**
+    `QueuedTrack.overdueDays` already existed, documented "whole days late, 0 when
+    due today", and it counts in **local dates** — `QueueOptions.now` says *"only
+    its local date is used"*. `Date.now() - due_at` is a different quantity: a card
+    due at 23:00 yesterday is ONE DAY late and fourteen hours old, and the label
+    says days. Decision 6 again — name the basis or the number is not a fact. So
+    the worker passes the figure through and `app/overdue.ts` only chooses words.
+    The figure is fixed when the session is PLANNED, so a session left open past
+    midnight shows yesterday's count; that is worth knowing and is not worth a
+    clock on the page.
+
+    **DUE TODAY GETS NO CHIP, and that is the request rather than a shortcut.**
+    134 of his 1,166 due tracks are due today. A card due today is not late, it is
+    the plan working, and chipping all 134 would stop the late ones standing out —
+    which is the whole thing he asked for. A new track has no due date at all and
+    the worker sends 0, which is why 0 can mean "not late" without ambiguity.
+
+    **THE BUCKETS ARE MEASURED, AND HIS QUEUE IS BIMODAL.** As of 2026-09-17, over
+    1,166 due tracks: 134 due today · 135 one day · **827 between 2 and 30** ·
+    **nothing at all between 31 and 364** · 70 over a year, the oldest **757 days**
+    (数字, untouched since 2024-08). So days carry the case he described and years
+    carry the tail, and the months arm is for a future that has not happened yet.
+    `757 days` is a true number nobody reads as a duration, so that arm says "due 2
+    years ago" and the `title` carries `due 2026-09-01 — 16 days late` for the
+    pointer that has one. Months clamp at 11: `364 / 30.44` rounds to 12, and "due
+    12 months ago" beside a "due 1 year ago" meaning FEWER days is the worse pair.
+    A test sweeps every day from 1 to 800 and requires the label to be monotonic.
+
+    **QUIET, AND NOT A WARNING.** 827 of the 1,032 late tracks are 2-30 days late,
+    so a catch-up session puts a chip on nearly every card and one that shouts on
+    80% of a session is one he stops reading. It keeps the chip SHAPE — the row has
+    to read as one thing, `.reversetag`'s own reason — and drops only the text to
+    `--muted`: **5.22:1 light, 6.66:1 dark**, both above AA at 10px. Dropping the
+    BORDER to `--hair` instead measures **1.29:1**, which is not a quiet chip but a
+    missing one. No `--vermilion` (decision 32 allows one per screen and it is the
+    mark's top rung) and no `--danger`: being behind is the thing he is currently
+    FIXING, which is decision 40's argument against red on the stall notice.
 
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 

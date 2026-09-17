@@ -672,6 +672,8 @@ function next(request: NextRequest): void {
       deckPath: "",
       isNew: false,
       reask: false,
+      overdueDays: 0,
+      dueAt: null,
       pinned: false,
       archived: false,
       progress: active.progress(),
@@ -697,6 +699,12 @@ function next(request: NextRequest): void {
     // Decision 25: the label is per TRACK, and `origin` already is.
     isNew: item.origin === "new",
     reask: item.reask,
+    // The scheduler's own figure, counted in LOCAL DATES. Passed through rather
+    // than derived on the page — `app/overdue.ts` carries why those differ.
+    // A new track has no due date and `dueTracks` never yields it, so 0 here is
+    // "not late" and not a missing value.
+    overdueDays: item.origin === "new" ? 0 : item.track.overdueDays,
+    dueAt: item.track.dueAt,
     ...collectionState(db, item.cardId),
     progress: active.progress(),
   });

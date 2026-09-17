@@ -845,6 +845,31 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     with in one week. **NOT VERIFIED: reduced motion** — implemented, and
     `prefers-reduced-motion` cannot be emulated with the tools here.
     See `DECISIONS.md` 45.
+46. **A LATE TRACK SAYS HOW LATE; A TRACK DUE TODAY SAYS NOTHING.** Zach,
+    2026-09-17: *"it would be helpful to see that this track was due 5 days ago"* —
+    he had been away and was catching up. A fourth chip on the deck line beside
+    `new card` / `again · not graded` / `reversed`, last because it is the only one
+    that changes daily. **The number is `QueuedTrack.overdueDays`, which already
+    existed and counts in LOCAL DATES** — `Date.now() - due_at` is a different
+    quantity (a card due at 23:00 yesterday is ONE day late and fourteen hours
+    old), so the worker passes the scheduler's figure through and `app/overdue.ts`
+    only chooses words. Decision 6. Fixed at PLAN time, so a session open past
+    midnight shows yesterday's count. **Due today gets no chip** — 134 of his 1,166
+    are, a card due today is the plan working, and chipping them all would stop the
+    late ones standing out, which is the request. A new track has no due date and
+    the worker sends 0, so 0 unambiguously means "not late". **The buckets are
+    measured and his queue is BIMODAL**: 135 one day · **827 between 2 and 30** ·
+    **nothing between 31 and 364** · 70 over a year, oldest **757 days** (数字,
+    untouched since 2024-08). Days carry his case, years carry the tail, months are
+    for a future that has not happened; months clamp at 11 because `364 / 30.44`
+    rounds to 12 and "12 months" beside "1 year" meaning fewer days is the worse
+    pair. A test sweeps 1-800 days for monotonicity. **QUIET, not a warning** — 827
+    of 1,032 means nearly every card in a catch-up session carries one, so it keeps
+    the chip shape and drops only the text to `--muted` (5.22:1 light, 6.66:1 dark,
+    both above AA at 10px; dropping the BORDER to `--hair` measures 1.29:1 and is a
+    missing chip, not a quiet one). No vermilion (decision 32) and no red: being
+    behind is the thing he is currently fixing, which is decision 40's argument on
+    the stall notice. See `DECISIONS.md` 46.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

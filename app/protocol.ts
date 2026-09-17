@@ -1014,6 +1014,22 @@ export interface CardMessage {
   /** Decision 13: showing again, and it will not be graded. */
   readonly reask: boolean;
   /**
+   * WHOLE DAYS LATE, the scheduler's own figure — `QueuedTrack.overdueDays`,
+   * counted in local dates. 0 when the track was due today, and 0 on a new one.
+   *
+   * Zach, 2026-09-17: *"it would be helpful to see that this track was due 5
+   * days ago"*. Passed through rather than derived on the page, because
+   * `Date.now() - due` is a different quantity: a card due at 23:00 yesterday is
+   * one day late and fourteen hours old. See `./overdue.ts`.
+   *
+   * Fixed when the session was PLANNED, which is the boot. A session running
+   * past midnight shows yesterday's count for the rest of its life — worth
+   * knowing, not worth a clock on the page.
+   */
+  readonly overdueDays: number;
+  /** `due_at` as the scheduler issued it, RFC 3339 with his offset. For the title. */
+  readonly dueAt: string | null;
+  /**
    * Collection state, so the screen's pin/archive controls can say which way they
    * go. A toggle that guesses its own starting state is a toggle that lies half
    * the time; the worker owns the row, so the worker says.

@@ -117,6 +117,7 @@ import {
   syncNow,
   type SyncStatus,
 } from "./sync-client.js";
+import { overdueLabel, overdueTitle } from "./overdue.js";
 import { reviewAction } from "./review-keys.js";
 import {
   promptPositions as promptBoundary,
@@ -990,6 +991,21 @@ async function showCardAt(): Promise<void> {
   // (81 more), and 9 cards carry a per-card override. Everything else, 数字
   // included, resolves to off.
   if (reply.card.direction === "reverse") deckLine.appendChild(tag("reversed", "reversetag"));
+  // HOW LATE IT IS — Zach, 2026-09-17: *"it would be helpful to see that this
+  // track was due 5 days ago"*. Last in the row, because it is the only tag that
+  // changes every day and the three before it are properties of the card.
+  //
+  // QUIET, and it must stay quiet: 827 of his 1,032 late tracks are 2-30 days
+  // late, so on a catch-up session nearly every card carries one. A chip that
+  // shouts on 80% of a session is a chip he stops seeing. It is also not an
+  // error — decision 40's argument against red for the stall applies here with
+  // more force, since being behind is the thing he is currently FIXING.
+  const late = overdueLabel(reply.overdueDays);
+  if (late !== null) {
+    const chip = tag(late, "latetag");
+    chip.title = overdueTitle(reply.overdueDays, reply.dueAt);
+    deckLine.appendChild(chip);
+  }
 
   readingButton.hidden = card.mode.readingFieldId === null;
   readingButton.textContent = card.mode.reading ? "Reading → false" : "Reading → true";

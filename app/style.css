@@ -648,6 +648,7 @@ body {
 
 /* Decision 25: `New Card`, and it is PER TRACK. Ink + border, never the accent
    green — green is `remembered` and nothing else. */
+.latetag,
 .newtag,
 .reasktag,
 .reversetag {
@@ -675,6 +676,23 @@ body {
 .reversetag {
   border-color: var(--edge);
   color: var(--indigo);
+}
+
+/* Zach, 2026-09-17: *"it would be helpful to see that this track was due 5 days
+   ago"*. THE QUIETEST CHIP IN THE ROW, deliberately — 827 of his 1,032 late
+   tracks are 2-30 days late, so a catch-up session puts one of these on nearly
+   every card, and a chip that shouts on 80% of a session is one he stops
+   reading. It keeps the chip SHAPE — `.reversetag`'s note applies, the row has
+   to read as one thing — and drops only the text to `--muted`: 5.22:1 light,
+   6.66:1 dark, both above AA at this size. Dropping the BORDER to `--hair`
+   instead was measured at 1.29:1 and is not a quiet chip, it is a missing one.
+
+   NOT a warning colour. `--vermilion` is the reward and decision 32 allows one
+   per screen; `--danger` would say he did something wrong, and what he actually
+   did was take a few days off and come back. Same argument decision 40 used to
+   keep red off the stall notice. */
+.latetag {
+  color: var(--muted);
 }
 
 /* His request 4. It rides the HEADER's bottom border rather than being sticky

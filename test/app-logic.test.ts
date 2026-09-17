@@ -23,6 +23,7 @@ import {
   SYNC_STAGES,
   type Sample,
 } from "../app/sync-climb.js";
+import { overdueLabel, overdueTitle, dueDateOf } from "../app/overdue.js";
 import { revealSteps, type StepSide } from "../app/review-steps.js";
 import { audioIsStale } from "../app/seed-freshness.js";
 import {
@@ -873,5 +874,76 @@ describe("what the download screen says", () => {
     expect(etaLabel(59)).toBe("less than a minute left");
     expect(etaLabel(95)).toBe("about 2 minutes left");
     expect(etaLabel(61)).toBe("about 1 minute left");
+  });
+});
+
+/**
+ * ─── HOW LATE THIS TRACK IS ─────────────────────────────────────────────────
+ *
+ * Zach, 2026-09-17: *"it would actually be perfect if there's a label showing
+ * when this card was due in the past … this track was due 5 days ago or
+ * something"*.
+ *
+ * The buckets come from his real queue on that date, 1,166 due tracks: 134 due
+ * today, 135 one day late, 827 between 2 and 30, NOTHING between 31 and 364,
+ * and 70 over a year (数字, untouched since 2024-08; the oldest is 757 days).
+ */
+describe("how late a track is, in words", () => {
+  it("says nothing at all for a track that is not in the past", () => {
+    // 134 of 1,166. Due TODAY is the plan working, and a chip on every one of
+    // them would stop the late ones standing out — which is the whole request.
+    expect(overdueLabel(0)).toBeNull();
+    expect(overdueLabel(-3)).toBeNull();
+    // A new track has no due date; the worker sends 0 and this is why that is
+    // safe rather than a missing value wearing a number's clothes.
+    expect(overdueLabel(Number.NaN)).toBeNull();
+  });
+
+  it("counts days for the case he described, and names yesterday", () => {
+    expect(overdueLabel(1)).toBe("due yesterday");
+    expect(overdueLabel(5)).toBe("due 5 days ago");
+    // 827 of his 1,032 late tracks are in here.
+    expect(overdueLabel(30)).toBe("due 30 days ago");
+  });
+
+  it("switches to months and then years, because 757 days is not a duration", () => {
+    expect(overdueLabel(31)).toBe("due 1 month ago");
+    expect(overdueLabel(61)).toBe("due 2 months ago");
+    // Clamped at 11: `364 / 30.44` rounds to 12, and "due 12 months ago" beside
+    // a "due 1 year ago" that means FEWER days is the worse pair.
+    expect(overdueLabel(364)).toBe("due 11 months ago");
+    expect(overdueLabel(365)).toBe("due 1 year ago");
+    // The real oldest track in his queue.
+    expect(overdueLabel(757)).toBe("due 2 years ago");
+  });
+
+  it("never lets months and years disagree about which is longer", () => {
+    // A sweep rather than three examples: the label must be monotonic in days,
+    // and the two boundaries are exactly where a rounding rule goes wrong.
+    const rank = (days: number): number => {
+      const label = overdueLabel(days);
+      if (label === null) return 0;
+      const n = Number(/\d+/.exec(label)?.[0] ?? 1);
+      if (label.includes("year")) return n * 365;
+      if (label.includes("month")) return n * 30.44;
+      return n;
+    };
+    let previous = 0;
+    for (let days = 1; days <= 800; days += 1) {
+      const now = rank(days);
+      expect(now, `${days} days ranked below ${days - 1}`).toBeGreaterThanOrEqual(previous);
+      previous = now;
+    }
+  });
+
+  it("SLICES the date for the title and never parses it", () => {
+    // `due_at` carries his offset. `new Date()` would re-interpret it in the
+    // viewer's zone and can land a day off — on a label whose only job is a day
+    // count, a defect that appears when travelling.
+    expect(dueDateOf("2026-09-12T04:00:00.000+09:00")).toBe("2026-09-12");
+    expect(dueDateOf(null)).toBeNull();
+    expect(dueDateOf("whenever")).toBeNull();
+    expect(overdueTitle(5, "2026-09-12T04:00:00.000+09:00")).toBe("due 2026-09-12 — 5 days late");
+    expect(overdueTitle(5, null)).toBe("5 days late");
   });
 });
