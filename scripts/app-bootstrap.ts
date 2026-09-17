@@ -151,8 +151,11 @@ const speechBudget = Number(flag("speech-bytes", String(200 * 1024 * 1024)));
 const cardOut = resolve(outDir, "hashigo-app.db");
 const storeOut = resolve(outDir, "hashigo-app-blobs.db");
 const genOut = resolve(outDir, "hashigo-app-gen.db");
+const fieldsOut = resolve(outDir, "hashigo-app-fields.db");
 let genRows = 0;
 let genBytes = 0;
+let fieldRows = 0;
+let fieldValueRows = 0;
 
 /** Header bytes 18 and 19: 1 = rollback journal, 2 = WAL. */
 function journalMode(file: string): { write: number; read: number } {
@@ -456,6 +459,95 @@ try {
     genBytes = rows.reduce((n, row) => n + Number(row["byte_size"] ?? 0), 0);
   }
 
+  // ── FILE 4: THE LOCALLY-AUTHORED FIELDS ────────────────────────────
+  //
+  // Zach, 2026-09-17, over a 風潮 card: *"somehow ojad field is not here..."*.
+  // It was fixed the same hour, in `build/hashigo.db` — and it could not reach
+  // his phone, because **the card database is re-fetched only when `seedReviews`
+  // differs**, and authoring a field value moves that by zero.
+  //
+  // That is the audio bug of 2026-09-12 one file over: a seed that changed for a
+  // reason the freshness check cannot see, skipped in green, for ever. The repair
+  // there was to give the audio its own identity; this gives the local fields
+  // theirs.
+  //
+  // WHAT RIDES HERE: `template_fields.local = 1` and their values — `ojad`
+  // (3,719), `型` (3,830), `読み` (12), `かな主流` (6). 320 KB of text. Every one of
+  // them is authored or derived HERE and exists in no Mochi export, which is
+  // decision 9's definition of the flag and exactly the set with no way across.
+  //
+  // WHAT DOES NOT: `templates.content`. A body edit would have to overwrite a
+  // body he may have edited on the device (the template editor writes one), and
+  // `templates.updated_at` exists precisely so that merge can be done with a
+  // clock rather than by last-writer. Half-solving it here is worse than the gap.
+  {
+    const fieldsDb = new Database(fieldsOut);
+    fieldsDb.exec("PRAGMA journal_mode = DELETE");
+    fieldsDb.exec(`
+      DROP TABLE IF EXISTS local_fields;
+      DROP TABLE IF EXISTS local_values;
+      DROP TABLE IF EXISTS field_meta;
+      CREATE TABLE local_fields (
+        template_id     TEXT NOT NULL,
+        id              TEXT NOT NULL,
+        name            TEXT NOT NULL,
+        type            TEXT NOT NULL,
+        source_field_id TEXT,
+        options         TEXT,
+        pos             INTEGER NOT NULL,
+        PRIMARY KEY (template_id, id)
+      );
+      CREATE TABLE local_values (
+        card_id  TEXT NOT NULL,
+        field_id TEXT NOT NULL,
+        value    TEXT NOT NULL,
+        PRIMARY KEY (card_id, field_id)
+      );
+      CREATE TABLE field_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    `);
+    const fieldDefs = cardDb
+      .prepare(
+        `SELECT template_id, id, name, type, source_field_id, options, pos
+           FROM template_fields WHERE local = 1`,
+      )
+      .all() as Record<string, unknown>[];
+    // JOINED THROUGH THE CARD'S OWN TEMPLATE, never on `field_id` alone.
+    // `card_field_values` is deliberately not foreign-keyed to `template_fields`
+    // (losing four years of authored text is worse than an orphan row), so two
+    // templates declaring the same field id would double-count a value here.
+    const values = cardDb
+      .prepare(
+        `SELECT v.card_id, v.field_id, v.value
+           FROM card_field_values v
+           JOIN cards c ON c.id = v.card_id
+           JOIN template_fields f ON f.template_id = c.template_id AND f.id = v.field_id
+          WHERE f.local = 1`,
+      )
+      .all() as Record<string, unknown>[];
+    const putField = fieldsDb.prepare(
+      `INSERT INTO local_fields (template_id, id, name, type, source_field_id, options, pos)
+       VALUES (@template_id, @id, @name, @type, @source_field_id, @options, @pos)`,
+    );
+    const putValue = fieldsDb.prepare(
+      `INSERT INTO local_values (card_id, field_id, value) VALUES (@card_id, @field_id, @value)`,
+    );
+    fieldsDb.transaction(() => {
+      for (const row of fieldDefs) putField.run(row);
+      for (const row of values) putValue.run(row);
+      // Its own identity, the same shape as `blob_store_meta.created` and
+      // `gen_meta.created`, and for the same reason a COUNT would be wrong: he
+      // authors values ON the device (`setField`, and decision 29's `Reading`
+      // flip), so a local count stops matching the server's and never recovers.
+      fieldsDb
+        .prepare("INSERT INTO field_meta (key, value) VALUES ('created', ?)")
+        .run(new Date().toISOString());
+    })();
+    fieldsDb.exec("VACUUM");
+    fieldsDb.close();
+    fieldRows = fieldDefs.length;
+    fieldValueRows = values.length;
+  }
+
   // ── THE SEED MANIFEST ───────────────────────────────────────────────────
   //
   // A tiny sidecar naming what this bootstrap produced, so a browser that
@@ -518,6 +610,15 @@ try {
               .get() as { value: string } | undefined
           )?.value ?? "",
         ),
+        fieldValues: fieldValueRows,
+        /** File 4's own identity. Same argument as `storeCreated`. */
+        fieldsCreated: String(
+          (
+            new Database(fieldsOut, { readonly: true })
+              .prepare("SELECT value FROM field_meta WHERE key = 'created'")
+              .get() as { value: string } | undefined
+          )?.value ?? "",
+        ),
         storeCreated: String(
           (
             new Database(storeOut, { readonly: true })
@@ -531,6 +632,16 @@ try {
     )}
 `,
     "utf8",
+  );
+
+  process.stdout.write(
+    `fields  ${fieldsOut}
+` +
+      `        ${statSync(fieldsOut).size.toLocaleString()} bytes on disk · ` +
+      `${fieldRows} local field(s) · ${fieldValueRows.toLocaleString()} value(s)
+` +
+      `        ojad / 型 / 読み / かな主流 — authored here, in no Mochi export
+`,
   );
 
   process.stdout.write(

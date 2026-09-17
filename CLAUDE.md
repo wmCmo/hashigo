@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 44 files, 1206 passed, 1 skipped (the FSRS refit, gated). ~54 s.
+npm test                # 45 files, 1222 passed, 1 skipped (the FSRS refit, gated). ~53 s.
                         # MEASURED 2026-09-17, not arithmetic. The 1127 here before it
                         # was 1117 plus ten new tests, added up rather than run — and it
                         # missed 79 tests from the same day. Run the suite or leave it alone.

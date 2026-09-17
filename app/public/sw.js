@@ -69,6 +69,7 @@ const PRECACHE = self.__HASHIGO_PRECACHE__ ?? ["/"];
 const NEVER_CACHE = new Set([
   "/hashigo-app.db",
   "/hashigo-app-gen.db",
+  "/hashigo-app-fields.db",
   "/hashigo-app-blobs.db",
   "/hashigo-app.json",
 ]);

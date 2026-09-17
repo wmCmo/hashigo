@@ -73,6 +73,7 @@ import { dueOnOrBefore, liveTrack } from "../src/scheduler/index.js";
 import { archiveSubtree, restoreArchive, scopeToSubtree } from "./deck-scope.js";
 import { suggestCards, type SuggestRow } from "./recent.js";
 import { audioIsStale } from "./seed-freshness.js";
+import { COUNT_HELD, mergeLocalFields, readSeedFields } from "./local-fields.js";
 
 import type {
   AnswerRequest,
@@ -120,11 +121,13 @@ import type {
 const CARD_DB = "/hashigo.db";
 const STORE_DB = "/hashigo-blobs.db";
 const GEN_DB = "/hashigo-gen.db";
+const FIELDS_DB = "/hashigo-fields.db";
 
 /** Served by `vite.app.config.ts` middleware from `build/app/`. */
 const CARD_URL = "/hashigo-app.db";
 const STORE_URL = "/hashigo-app-blobs.db";
 const GEN_URL = "/hashigo-app-gen.db";
+const FIELDS_URL = "/hashigo-app-fields.db";
 /** A few hundred bytes describing the two above. See `seedManifest`. */
 const SEED_URL = "/hashigo-app.json";
 
@@ -301,6 +304,13 @@ interface SeedManifest {
    */
   readonly genCreated?: string;
   readonly generations?: number;
+  /**
+   * `field_meta.created` of the LOCAL FIELD file the server is serving. Absent on
+   * a manifest written before 2026-09-17, which is why every use is optional —
+   * an older seed must keep working rather than re-fetching on every boot.
+   */
+  readonly fieldsCreated?: string;
+  readonly fieldValues?: number;
 }
 
 /**
@@ -333,6 +343,57 @@ async function seedManifest(): Promise<SeedManifest | null> {
     return typeof parsed.seedReviews === "number" ? (parsed as SeedManifest) : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Copy the locally-authored fields from file 4 into the card database.
+ *
+ * ─── INSERT-ONLY, AND THAT IS THE WHOLE SAFETY ARGUMENT ─────────────────────
+ *
+ * `ON CONFLICT DO NOTHING` on both tables. A value this device already holds is
+ * left exactly as it is, because **this device authors values too**: `setField`
+ * is the card editor, and `flipReading` is decision 29's audit loop — the one he
+ * uses constantly, the `Reading → true` button. Overwriting would take those
+ * back, silently, on a boot that looked like a download.
+ *
+ * `Reading` is `local = 0` (Mochi owns it) so it is not in this file at all, and
+ * that is belt as well as braces. `型` is `local = 1` and he CAN edit it here.
+ *
+ * ─── WHAT INSERT-ONLY DOES NOT SOLVE, STATED RATHER THAN HIDDEN ─────────────
+ *
+ * A value that CHANGED on the laptop does not cross. That is not an oversight
+ * and it is not fixable here: the device may hold his edit of the same row, and
+ * choosing between them needs a clock. `card_field_values` has none — decision
+ * 33 named that gap and deferred it to a schema bump. So this delivers every
+ * value the device has never seen, which is the reported case (the nine `ojad`
+ * annotations of 2026-09-17 were absent, not stale), and stops exactly where
+ * guessing would begin.
+ *
+ * Returns how many rows were new.
+ */
+async function applyLocalFields(): Promise<number> {
+  const db = cards;
+  if (db === null) return 0;
+  if (!(await databaseFilesInOpfs()).includes(FIELDS_DB)) return 0;
+  const seed = await openDatabaseBrowser({ filename: FIELDS_DB, applySchema: false });
+  try {
+    const { fields, values } = readSeedFields(seed);
+    if (values.length === 0) return 0;
+    const have = Number((db.prepare(COUNT_HELD).get() as { n: number }).n);
+    // ONE TRANSACTION over both tables, so a boot that dies half way leaves
+    // nothing partial — and so a value can never land ahead of the field
+    // declaration that makes it render.
+    const report = db.transaction(() => mergeLocalFields(db, fields, values))();
+    log(
+      `  local fields: ${have.toLocaleString()} here, ${values.length.toLocaleString()} served — ` +
+        `${report.added.toLocaleString()} taken in` +
+        (report.differs > 0 ? `, ${report.differs.toLocaleString()} differ and were LEFT ALONE` : ""),
+      report.differs > 0 ? "bad" : report.added > 0 ? "good" : undefined,
+    );
+    return report.added;
+  } finally {
+    seed.close();
   }
 }
 
@@ -563,10 +624,39 @@ async function open(request: OpenRequest): Promise<void> {
     }
   }
 
+  // ── AND THE LOCAL FIELDS (file 4), on the same rule ─────────────────────
+  //
+  // `ojad`, `型`, `読み`, `かな主流` — everything `template_fields.local = 1`.
+  // Zach, 2026-09-17: *"somehow ojad field is not here..."*. It had been fixed on
+  // the laptop an hour earlier and could not cross, because the card database is
+  // re-fetched only on `seedReviews` and a field value moves that by zero.
+  let refetchFields = request.reimport;
+  const fieldsWerePresent = present.includes(FIELDS_DB);
+  if (fieldsWerePresent && !refetchFields && manifest !== null) {
+    const serving = manifest.fieldsCreated ?? "";
+    const held = await openDatabaseBrowser({ filename: FIELDS_DB, applySchema: false });
+    const heldCreated =
+      (
+        held.prepare("SELECT value FROM field_meta WHERE key = 'created'").get() as
+          | { value: string }
+          | undefined
+      )?.value ?? "";
+    held.close();
+    if (audioIsStale(serving, heldCreated)) {
+      refetchFields = true;
+      log(
+        `  the local fields here were built ${heldCreated || "(unknown)"} and the ` +
+          `server is serving ${serving} — re-fetching them`,
+        "step",
+      );
+    }
+  }
+
   const imported =
-    (await ensureFile(CARD_DB, CARD_URL, reimport, { index: 1, of: 3 })) +
-    (await ensureFile(GEN_DB, GEN_URL, refetchGen, { index: 2, of: 3 })) +
-    (await ensureFile(STORE_DB, STORE_URL, refetchStore, { index: 3, of: 3 }));
+    (await ensureFile(CARD_DB, CARD_URL, reimport, { index: 1, of: 4 })) +
+    (await ensureFile(GEN_DB, GEN_URL, refetchGen, { index: 2, of: 4 })) +
+    (await ensureFile(FIELDS_DB, FIELDS_URL, refetchFields, { index: 3, of: 4 })) +
+    (await ensureFile(STORE_DB, STORE_URL, refetchStore, { index: 4, of: 4 }));
 
   // `applySchema: false` on all: these arrive fully formed. An empty pool plus a
   // failed fetch must NOT quietly create a blank database and call it success.
@@ -592,6 +682,8 @@ async function open(request: OpenRequest): Promise<void> {
   // It runs on the boot that FETCHED the file. `hasGenerations` is asked first so
   // an unchanged file costs one count rather than 28,676 no-op inserts.
   await applyGenerations(refetchGen);
+  // File 4, insert-only. See `applyLocalFields` for why it may never overwrite.
+  await applyLocalFields();
 
   const cardCount = Number(
     (cards.prepare("SELECT count(*) AS n FROM cards").get() as { n: number }).n,

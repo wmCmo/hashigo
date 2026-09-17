@@ -93,6 +93,7 @@ const ASSET_DIR = resolve(root, "build/app");
 const ASSETS: ReadonlyMap<string, string> = new Map([
   ["/hashigo-app.db", resolve(ASSET_DIR, "hashigo-app.db")],
   ["/hashigo-app-gen.db", resolve(ASSET_DIR, "hashigo-app-gen.db")],
+  ["/hashigo-app-fields.db", resolve(ASSET_DIR, "hashigo-app-fields.db")],
   ["/hashigo-app-blobs.db", resolve(ASSET_DIR, "hashigo-app-blobs.db")],
   // The seed manifest: a few hundred bytes naming what the three files above hold,
   // so a browser that already has a database can tell whether it is the CURRENT
