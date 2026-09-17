@@ -793,6 +793,19 @@ body {
 
 .hashigo-side {
   border-top: 1px solid var(--hair);
+  /* A RUN WITH NO BREAK OPPORTUNITY MUST BREAK ANYWAY.
+     Zach, 2026-09-18, over 習慣 on his phone: *"this is outrageous lol"*. An `ai`
+     generation had degenerated into 🔄🕰️ followed by 🔁 twenty-nine times, and a
+     wall of emoji carries no break opportunity at all — so the h4 holding it
+     measured 1,709px inside a 317px card and pushed the whole page sideways,
+     header and all. Nothing was setting `nowrap`; `overflow-wrap: normal` simply
+     means "break only where you may", and there was nowhere.
+     `break-word` and not `anywhere`: both fix this (measured, 1709 -> 317), but
+     `anywhere` also changes intrinsic sizing and would break ordinary English
+     words mid-word when a narrower line would have done. This breaks only what
+     would otherwise overflow, which is the actual rule wanted — and it covers
+     every long unbreakable run, not the emoji case alone. */
+  overflow-wrap: break-word;
   padding: 16px 0;
 }
 

@@ -839,3 +839,66 @@ describe("the drawing canvas is measured, so its box must not lie", () => {
     expect(properties(".hashigo-draw")).toContain("outline");
   });
 });
+
+// ─── a run with no break opportunity still has to break ─────────────────────
+
+/**
+ * ZACH, 2026-09-18, over 習慣 on his phone: *"this is outrageous lol"*.
+ *
+ * The card's emoji line was `🔄🕰️` followed by `🔁` twenty-nine times, and it ran
+ * clean off the screen — the whole page scrolled sideways, header included.
+ *
+ * MEASURED IN CHROMIUM at 375px rather than guessed: the `<h4>` holding it
+ * reported `scrollWidth` **1709** inside a **317px** card. Nothing in the
+ * stylesheet was setting `nowrap` — every element in the chain computed
+ * `white-space: normal` and `overflow-wrap: normal`, and that is the whole
+ * story. `normal` means "break only where a break is allowed", and a wall of
+ * emoji offers nowhere. Adding `overflow-wrap: break-word` to `.hashigo-side`
+ * took the same element to **317**.
+ *
+ * SO THIS IS NOT AN EMOJI RULE. It is the general one: any long unbreakable run
+ * — a URL, a pasted token, a Latin word longer than the column — did this, and
+ * the emoji case is only the one he happened to meet.
+ *
+ * The content behind it is a separate fault and is NOT fixed by this: **250 of
+ * the 17,228 `ai` generations are one character repeated**, 35 of them to the
+ * 128-character ceiling, and 246 of those arrived with the 2026-09-08 Mochi
+ * import rather than being made here. 習慣's own ends mid-emoji on a lone high
+ * surrogate. Regenerating is his call and comes after the app is finished.
+ */
+describe("card text wraps even when nothing offers a break", () => {
+  function declarations(selector: string): Map<string, string> {
+    const at = css.indexOf(`\n${selector} {`);
+    expect(at, `${selector} has no rule in app/style.css`).toBeGreaterThan(-1);
+    const open = css.indexOf("{", at);
+    const out = new Map<string, string>();
+    for (const part of css
+      .slice(open + 1, css.indexOf("}", open))
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split(";")) {
+      const colon = part.indexOf(":");
+      if (colon < 0) continue;
+      out.set(part.slice(0, colon).trim().toLowerCase(), part.slice(colon + 1).trim().toLowerCase());
+    }
+    return out;
+  }
+
+  it("breaks a run that would otherwise overflow the column", () => {
+    expect(declarations(".hashigo-side").get("overflow-wrap")).toBe("break-word");
+  });
+
+  it("does NOT reach for `anywhere`, which would break ordinary words too", () => {
+    // Both repair the measured case. `anywhere` also participates in intrinsic
+    // sizing and will split a Latin word mid-word when a narrower line would
+    // have done, so it buys nothing here and costs the typography.
+    const wrap = declarations(".hashigo-side").get("overflow-wrap");
+    expect(wrap).not.toBe("anywhere");
+  });
+
+  it("leaves white-space alone — the fault was never a nowrap", () => {
+    // Stated because the obvious wrong repair is `white-space: normal !important`
+    // somewhere, chasing a nowrap that does not exist. Every element in the
+    // measured chain already computed `normal`.
+    expect(declarations(".hashigo-side").has("white-space")).toBe(false);
+  });
+});
