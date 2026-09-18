@@ -851,6 +851,63 @@ describe("a clip this project synthesised", () => {
     db.close();
   });
 
+  it("files a clip it did NOT synthesise under the voice that did", () => {
+    // The endpoint can now answer a "generate audio" press from a clip already on
+    // the laptop — Mochi's own `en-US-AIGenerate1Neural`, say — and the device
+    // caches whatever came back. Filing those bytes at `FILL_VOICE` would claim
+    // this project spoke them, which is the same false provenance the test above
+    // refuses in the other direction, and would corrupt the voice survey.
+    const { db, store } = speechFixture();
+    const bytes = new Uint8Array([0x49, 0x44, 0x33, 7, 7, 7]);
+    const text = "she was assiduous in point out every feature";
+    const hash = storeGeneratedSpeech(
+      db,
+      store,
+      { text, lang: "en-US", voice: "en-US-AIGenerate1Neural", options: { gender: "male" } },
+      bytes,
+    );
+    const row = db.prepare("SELECT voice, lang FROM blobs WHERE hash = ?").get(hash) as
+      Record<string, unknown>;
+    expect(row["voice"]).toBe("en-US-AIGenerate1Neural");
+    expect(row["lang"]).toBe("en-US");
+
+    // AND IT RESOLVES ON THE FIRST LOOKUP, not through the fill-voice fallback —
+    // which is the other half of why the producing voice is the right key.
+    expect(
+      resolveAudioHash(db, "someCard", {
+        origin: "generator",
+        request: {
+          kind: "speech",
+          text,
+          lang: "en-US",
+          voice: "en-US-AIGenerate1Neural",
+          options: { gender: "male" },
+        },
+      }),
+    ).toBe(hash);
+    db.close();
+  });
+
+  it("still defaults to the fill voice when no producing voice is given", () => {
+    // Every existing caller omits it, and the key scheme must not move for them:
+    // `../src/blobs/generation.ts` spells out what one changed bit costs.
+    const { db, store } = speechFixture();
+    const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    const withOut = storeGeneratedSpeech(db, store, { text: "いぬ", lang: "ja-JP", options: {} }, bytes);
+    const withNull = storeGeneratedSpeech(
+      db, store, { text: "いぬ", lang: "ja-JP", voice: null, options: {} }, bytes,
+    );
+    const withFill = storeGeneratedSpeech(
+      db, store, { text: "いぬ", lang: "ja-JP", voice: FILL_VOICE, options: {} }, bytes,
+    );
+    expect(withNull).toBe(withOut);
+    expect(withFill).toBe(withOut);
+    expect(
+      (db.prepare("SELECT voice FROM blobs WHERE hash = ?").get(withOut) as { voice: string }).voice,
+    ).toBe(FILL_VOICE);
+    db.close();
+  });
+
   it("is idempotent in both halves — a second tap is not a second row", () => {
     const { db, store } = speechFixture();
     const bytes = new Uint8Array([1, 2, 3, 4]);

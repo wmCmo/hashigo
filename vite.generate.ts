@@ -173,13 +173,38 @@ async function speech(
   descriptor: Descriptor,
   send: (status: number, body: unknown) => void,
 ): Promise<void> {
-  const identity = generationIdentity({
-    kind: "speech",
-    text: descriptor.text,
-    voice: FILL_VOICE,
-    lang: descriptor.lang,
-    options: descriptor.options,
-  });
+  const under = (voice: string | null) =>
+    generationIdentity({
+      kind: "speech",
+      text: descriptor.text,
+      voice,
+      lang: descriptor.lang,
+      options: descriptor.options,
+    });
+  // THE CARD'S OWN VOICE FIRST, THEN THE FILL — `audioHashCandidates`' order,
+  // and this endpoint used to skip the first half entirely.
+  //
+  // ─── WHAT THAT COST, MEASURED 2026-09-18 ────────────────────────────────
+  //
+  // The device offers "generate audio" when IT cannot resolve a mount. That is a
+  // statement about the seed subset, not about the corpus: `app-bootstrap`
+  // spends its byte budget on each card's cheapest clip first, so **141 clips
+  // (20 MiB) sit on the laptop and not in the seed** — 82 Nanami, 45
+  // `en-US-AIGenerate1Neural`, 9 already at the fill voice. The laptop is
+  // missing NOTHING: 0 of 11,591 speech rows lack a payload here.
+  //
+  // Keyed on `FILL_VOICE` alone, every one of those 141 presses missed a file
+  // sitting on this disk, billed Google, and filed a SECOND clip — so an English
+  // sentence came back in `ja-JP-Neural2-C`, which is the 130-row defect
+  // `src/accent/speech.ts` already records, being manufactured one tap at a time.
+  // Zach's report was `assiduous`: the right clip is 74,400 bytes, reads in
+  // 0.5 ms, and was re-synthesised at ~300 ms into the wrong voice.
+  //
+  // The asked voice is tried FIRST rather than merely as well, because it is the
+  // clip the card is actually for.
+  const wanted = descriptor.voice !== null && descriptor.voice !== FILL_VOICE
+    ? [descriptor.voice, FILL_VOICE]
+    : [FILL_VOICE];
   const storeFile = defaultStoreDatabase(CARD_DB);
   if (!existsSync(storeFile)) {
     send(503, { error: `no payload store at ${storeFile}` });
@@ -187,8 +212,9 @@ async function speech(
   }
   const opened = openBlobStoreDatabase(storeFile, { mustExist: true, create: false });
   try {
-    const hit = lookupGeneration(db, identity);
-    if (hit !== null) {
+    for (const voice of wanted) {
+      const hit = lookupGeneration(db, under(voice));
+      if (hit === null) continue;
       // `readBlob` THROWS on a row whose payload is gone rather than returning
       // null, and 17 such rows already exist — Mochi lost the files and left the
       // rows. Caught, not propagated: falling through and synthesising it again
@@ -200,10 +226,14 @@ async function speech(
           mime: "audio/mpeg",
           audio: Buffer.from(bytes).toString("base64"),
           cached: true,
+          // WHICH voice answered. A cache hit under the asked voice and one under
+          // the fill are different facts about what he is about to hear, and the
+          // whole reason this bug survived is that nothing said which it was.
+          voice,
         });
         return;
       } catch {
-        /* fall through and make it */
+        /* fall through and try the next voice, then make it */
       }
     }
     const key = process.env["GOOGLE_TTS_SECRET"] as string;
@@ -232,6 +262,18 @@ async function speech(
       mime: "audio/mpeg",
       audio: Buffer.from(bytes).toString("base64"),
       cached: false,
+      // `FILL_VOICE`, and it is NOT necessarily the right language. Synthesising
+      // an `en-US` text here speaks English through Japanese phonology — the
+      // exact pairing `src/accent/speech.ts` documents 130 existing rows of.
+      // The lookup above now spares the 45 English clips that already exist, so
+      // this arm is reached only for a text nothing has ever spoken. **Choosing
+      // an English fill voice is Zach's call, by ear** — he picked this one that
+      // way — so this reports the mismatch rather than inventing a second voice.
+      voice: FILL_VOICE,
+      mismatch:
+        descriptor.lang !== null && !descriptor.lang.startsWith(FILL_VOICE.slice(0, 2))
+          ? `spoken by ${FILL_VOICE} although the card says ${descriptor.lang}`
+          : undefined,
     });
   } finally {
     opened.close();

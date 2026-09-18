@@ -829,6 +829,21 @@ export interface StoreClipRequest {
   readonly slot: {
     readonly text: string;
     readonly lang: string | null;
+    /**
+     * WHO ACTUALLY SPOKE, as the laptop reported it — not what the card asked for.
+     *
+     * Omitted means `FILL_VOICE`, which is what this used to assume for every
+     * clip. That assumption was safe only while the endpoint could ONLY
+     * synthesise; now that it can answer from a cached clip in the card's own
+     * voice, filing those bytes as `ja-JP-Neural2-C` would stamp a provenance
+     * they do not have — the exact lie `src/generate/speech.ts` refuses to write
+     * for the opposite case, and the thing that would quietly corrupt its
+     * 7,409-clip voice survey.
+     *
+     * It also resolves BETTER: filed under the asked voice, the device's first
+     * lookup hits instead of falling through to the fill.
+     */
+    readonly voice?: string | null;
     readonly options: Readonly<Record<string, string>>;
   };
   /** base64 mp3. */

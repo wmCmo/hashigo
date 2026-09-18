@@ -46,6 +46,17 @@ export interface SpeechDescriptor {
   /** The generator's input — the RENDERED text (decision 7), raw and unnormalised. */
   readonly text: string;
   readonly lang: string | null;
+  /**
+   * The voice that PRODUCED these bytes. Omitted means `FILL_VOICE`, which is
+   * true of everything this project synthesises.
+   *
+   * It exists because one caller now files bytes it did not synthesise: the app
+   * caches whatever the laptop's `/generate/` handed back, and since 2026-09-18
+   * that can be a clip Mochi made in `en-US-AIGenerate1Neural`. Defaulting those
+   * to the fill voice would make the row claim this project spoke them — the
+   * same false provenance this file's header refuses in the other direction.
+   */
+  readonly voice?: string | null;
   readonly options: Readonly<Record<string, string>>;
 }
 
@@ -76,7 +87,10 @@ export function storeGeneratedSpeech(
   const identity = generationIdentity({
     kind: "speech",
     text: descriptor.text,
-    voice: FILL_VOICE,
+    // `?? FILL_VOICE`, so every existing caller is byte-for-byte unchanged and
+    // the key scheme is untouched — see the warning in `../blobs/generation.ts`
+    // about what one changed bit costs.
+    voice: descriptor.voice ?? FILL_VOICE,
     lang: descriptor.lang,
     options: descriptor.options,
   });

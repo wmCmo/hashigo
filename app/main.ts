@@ -1638,6 +1638,81 @@ async function fillGeneratedText(card: MountedCard<HTMLElement>): Promise<void> 
 // generated an empty string" are different facts. That attribute is the hook.
 const GENERATE_ENDPOINT = "/generate/";
 
+/**
+ * HOW LONG A GENERATION MAY SIT THERE BEFORE IT IS CALLED A FAILURE.
+ *
+ * Zach, 2026-09-18, on an English card: *"this one takes forever to generate"*.
+ * A bare `fetch` has NO timeout, so every one of these buttons could sit on
+ * `speaking…` — disabled, silent, unretryable — for as long as the link took to
+ * give up, which on a phone that has wandered off the tailnet is minutes or
+ * never. Nothing in the app could tell that from working.
+ *
+ * **This does not make anything faster, and it is not the fix for his card** —
+ * that one is in `vite.generate.ts`, where the lookup was missing a clip the
+ * laptop already had. This is what makes the NEXT one legible: a bounded wait,
+ * a sentence saying how long it waited, and the button put back so he can press
+ * it again.
+ *
+ * Two budgets, because the two paths have honestly different shapes. MEASURED
+ * on the laptop 2026-09-18, his own sentence: the Google call is **329 ms** and
+ * a cache hit serving a 188 KB clip is **9 ms**, so 30 s is roughly a hundred
+ * times the expected cost — long enough that a slow phone link is never cut off,
+ * short enough to be a wait rather than a hang. A text field can reach Opus or a
+ * local Ollama model, where tens of seconds is ordinary work rather than a
+ * stall, so it gets four times as long.
+ */
+const CLIP_TIMEOUT_MS = 30_000;
+const TEXT_TIMEOUT_MS = 120_000;
+
+/**
+ * `fetch` with a deadline, and a sentence for the two ways it ends badly.
+ *
+ * `AbortSignal.timeout` raises a `TimeoutError`, which is indistinguishable from
+ * any other abort at the call site unless it is named here — and "it timed out"
+ * and "the laptop is not reachable" send him to two different places.
+ */
+async function askLaptop(
+  body: unknown,
+  timeoutMs: number,
+): Promise<{ response: Response } | { failure: string }> {
+  const started = performance.now();
+  // `AbortSignal.timeout` IS NOT ASSUMED, and the reason is his phone. It needs
+  // Samsung Internet 20 (Chromium 103), and calling it where it is absent throws
+  // a TypeError SYNCHRONOUSLY — so a browser one version too old would not get a
+  // slow button, it would get a button that does nothing at all, which is
+  // strictly worse than the unbounded wait this replaces. Verified present in
+  // the dev browser (Chrome 152, raises `TimeoutError` at 1,014 ms for a 1,000 ms
+  // budget); the fallback is for the device I cannot test from here.
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const response = await fetch(GENERATE_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    return { response };
+  } catch (cause) {
+    const waited = ((performance.now() - started) / 1000).toFixed(0);
+    // `timedOut`, not the error's name: an abort reports itself as `AbortError`
+    // here and as `TimeoutError` under `AbortSignal.timeout`, and the flag is the
+    // one thing both spellings agree on.
+    return {
+      failure: timedOut
+        ? `the laptop did not answer in ${waited}s — it may be asleep, or off the tailnet. Press again to retry.`
+        : `could not reach the laptop: ${(cause as Error).message}`,
+    };
+  } finally {
+    // Or a 120 s text budget keeps the page awake for two minutes after a reply.
+    clearTimeout(timer);
+  }
+}
+
 /** Kinds the laptop will generate. Audio is deferred — `vite.generate.ts` says why. */
 const GENERATABLE: ReadonlySet<string> = new Set(["ai", "translate"]);
 
@@ -1749,7 +1824,12 @@ function offerMissingClip(
 async function requestClip(
   card: MountedCard<HTMLElement>,
   mount: MountedCard<HTMLElement>["result"]["media"][number],
-  request: { text: string; lang: string | null; options: Readonly<Record<string, string>> },
+  request: {
+    text: string;
+    lang: string | null;
+    voice: string | null;
+    options: Readonly<Record<string, string>>;
+  },
   button: HTMLButtonElement,
   clipButton: HTMLButtonElement,
 ): Promise<void> {
@@ -1757,16 +1837,39 @@ async function requestClip(
   const was = button.textContent;
   button.textContent = "speaking…";
   try {
-    const response = await fetch(GENERATE_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "speech", text: request.text, lang: request.lang, options: request.options }),
-    });
+    // `voice` IS SENT NOW, AND IT USED TO BE DROPPED. The endpoint keys its
+    // cache on the voice; without this it could only ever look under the fill
+    // voice, so 141 clips that exist on the laptop — 45 of them English — were
+    // re-synthesised on every press, in Japanese. `vite.generate.ts` carries the
+    // measurement.
+    const attempt = await askLaptop(
+      {
+        kind: "speech",
+        text: request.text,
+        lang: request.lang,
+        voice: request.voice,
+        options: request.options,
+      },
+      CLIP_TIMEOUT_MS,
+    );
+    if ("failure" in attempt) {
+      say(attempt.failure, true);
+      button.disabled = false;
+      button.textContent = was;
+      return;
+    }
+    const response = attempt.response;
     // The status before the body, for the reason `requestGeneration` records at
     // length: an empty 404 parsed as JSON reaches him as "Unexpected end of JSON
     // input", which names neither the status nor the cause.
     const raw = await response.text();
-    let body: { audio?: string; error?: string } = {};
+    let body: {
+      audio?: string;
+      error?: string;
+      cached?: boolean;
+      voice?: string;
+      mismatch?: string;
+    } = {};
     try {
       body = raw === "" ? {} : (JSON.parse(raw) as typeof body);
     } catch {
@@ -1787,11 +1890,23 @@ async function requestClip(
     }
     await ask<"storeClip">({
       kind: "storeClip",
-      slot: { text: request.text, lang: request.lang, options: request.options },
+      slot: {
+        text: request.text,
+        lang: request.lang,
+        // The producing voice, from the laptop. Undefined falls back to the fill
+        // voice in `storeGeneratedSpeech`, which is right for anything it made.
+        voice: body.voice ?? null,
+        options: request.options,
+      },
       audio: body.audio,
     }).catch(() => undefined);
     button.remove();
     clipButton.disabled = false;
+    // SAY WHICH IT WAS. A clip that came off the laptop's disk in the card's own
+    // voice and one Google just made in Japanese sound different and cost
+    // different things, and until now the screen said neither.
+    if (body.mismatch !== undefined) say(body.mismatch, true);
+    else if (body.cached === true) say(`already on the laptop — ${body.voice ?? "fill voice"}`);
     // Re-ask for the bytes, now that both stores have them.
     // `ShadowingSide.play` takes the MOUNT, not a reason — it is the per-clip
     // control decision 36 added, and `{ unmask: false }` is `prompt()`'s
@@ -1832,17 +1947,23 @@ async function requestGeneration(
   const was = button.textContent;
   button.textContent = "generating…";
   try {
-    const response = await fetch(GENERATE_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const attempt = await askLaptop(
+      {
         kind: slot.kind,
         text: slot.text,
         lang: slot.lang,
         voice: slot.voice,
         options: slot.options,
-      }),
-    });
+      },
+      TEXT_TIMEOUT_MS,
+    );
+    if ("failure" in attempt) {
+      say(attempt.failure, true);
+      button.disabled = false;
+      button.textContent = was;
+      return;
+    }
+    const response = attempt.response;
     // THE STATUS BEFORE THE BODY, AND THIS COST A ROUND TRIP.
     //
     // The first version called `response.json()` first. Zach's phone then hit a
