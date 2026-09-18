@@ -41,6 +41,88 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 > 81 seconds in the worker and says so before running, and the template editor refuses
 > two edits on purpose. **He has still never run any of it on his phone.**
 
+## FIELDS ARE MODULES — started 2026-09-17, stages A and B landed
+
+Zach, comparing the template editor with Mochi's: *"each field behavior are hardcoded,
+they are supposed to be module... this system is not even at 50%"*. His four calls, in
+his words on 2026-09-17: full module system · rebind every name-keyed pipe · allow type
+change and source repointing with the cost shown · settings expand in the row.
+
+**He was right about the disease and wrong about where it lives**, and the correction is
+the reason this section exists rather than a backlog entry. The settings he wanted were
+already in the database and already correct — `New Vocab / Example` is
+`type=speech, source_field_id → Example Sentence,
+options={"gender":"male","lang":"en-US","voice":"en-US-AIGenerate1Neural"}`. Three other
+things were broken: nothing DESCRIBED a kind, generation discarded the field's voice, and
+behaviour was bound by field NAME.
+
+**LANDED** — `277c8d5` the registry, `a2eaeba` the editor reads it, plus `0a27588` (a
+wrap fix) and `7ef2d59` (`#tag`). `src/fields/` is the registry; `app/field-form.ts`
+renders a field's settings from it; `src/template/sides.ts` answers WHERE a field renders.
+
+**LEFT, in dependency order.** C `setFieldOptions` + `setFieldSource` + the price dialog ·
+D the voice catalogue and the middleware honouring it · E card/deck voice overrides ·
+F `ojad` by role + the missing rebuild steps · G `setFieldType`, then `respeak`, then
+`読み`, then **`Reading` last**. The full plan, with the measured argument for each, is at
+`C:\Users\Zach\.claude\plans\snuggly-meandering-mist.md`.
+
+### The name-keyed bindings — the map, and why it is written down
+
+This is the part worth keeping. **A stored COUNT rots and gets believed** — this repo has
+been bitten three times (CLAUDE.md's stated passing-test count was once arithmetic —
+1,117 plus ten new tests, added up rather than run, and it missed 79 from the same day;
+`src/template/ast.ts`
+claims `ojad-template-apply` is "part of the documented rebuild sequence" and it is in
+neither this file's sequence nor `scripts/rebuild.mjs`; decision 32 records `--muted` on
+`--paper-sunk` at 4.21:1 and the stylesheet computes **4.76:1** today). A count belongs in
+a test, where being wrong turns it red. **A hardcoded name does not rot** — it stays
+hardcoded until someone fixes it — so the map is the thing to store, and re-deriving it
+costs ~370k tokens of agent work.
+
+**File and SYMBOL, never a line number.** Lines are what rot fastest; every entry below
+was re-verified by grepping the symbol on 2026-09-18.
+
+| where | the literal | what it decides |
+|---|---|---|
+| `src/accent/marks.ts` | `例文` / `Example` + `単語` / `言葉`, **three independent copies** | which cards get an `ojad` value, and which templates get the field |
+| `src/accent/sentence.ts` | `MARKS_FIELD = { id: "ojad" }` | the `ojad` field's identity |
+| `src/review/mount.ts` | `MARKS_FIELD.id` | how the EMPTY `<ojad>` element finds its value |
+| `scripts/ojad-template-apply.ts` | `TEMPLATES` / `SENTENCE_FIELDS` | where `<ojad>` is inserted — **and this one is HIS call, 2026-09-13, not an accident** |
+| `src/review/mode.ts` | `READING_FIELD = "Reading"` + type `boolean` | decision 29's produce/identify split |
+| `app/db.worker.ts` | `trim(tf.name) = 'Reading'` | the `Reading → true` audit button |
+| `src/accent/respeak.ts` | `WORD_FIELDS` = 単語/言葉 × `Speech` | which clips a re-synthesis touches |
+| `scripts/reading-apply.ts` | `local-yomi`, `local-kana-primary`, `TEMPLATES` | 読み / かな主流 |
+| `scripts/accent-field-apply.ts` | `ACCENT_FIELD`, and an `EDITS` table of template ids | the `型` field and the body surgery |
+| `src/accent/cli.ts` | `t.name IN ('単語','言葉')`, `v.field_id = 'name'` | head-word selection |
+| `scripts/generate-examples.ts` | `例文` / `Example` | example generation |
+
+**`型` is the counter-example and the pattern to copy.** `src/accent/store.ts` selects on
+`type = 'accent'` and follows `source_field_id`, so it works on ANY template that declares
+one. `ojad`, `読み` and `かな主流` all carry `source_field_id = NULL` and are bound by name
+instead. **The failure is silent**: rename `例文` and the ojad pipeline reports
+`0 written`, which reads as success.
+
+### Reported, not fixed
+
+* **Two stray `OJAD` fields on his devices** — New Vocab and Polysemy each carry one, with
+  no values and no references. Neither `build/hashigo.db` nor the seed has them: they were
+  made by the FIRST version of `ojad-template-apply`, which keyed on the field name and so
+  reached four templates. Nothing removes a field, so they persist. The rebinding in stage
+  F ignores them naturally (no role, no source); deleting them is his call.
+* **`npm run rebuild -- --force` silently drops all 3,719 `ojad` values** — `rebuild.mjs`
+  runs `cli.ts ojad` (the 33 hand adjudications) but neither `cli.ts sentences` nor
+  `cli.ts marks` nor `ojad-template-apply`. Every invariant stays green. Fix it with the
+  stage-F commit.
+* **250 of 17,228 `ai` generations are one character repeated**, 35 to the 128-character
+  ceiling; **246 arrived with the 2026-09-08 Mochi import**, so Mochi made them. 習慣's
+  ends mid-emoji on a lone high surrogate. Only visible since the wrap fix. Regenerating
+  is his call, after the app is finished.
+* **The sidebar deck tree is empty after every boot until `/` is pressed** — `loadDecks`
+  races the worker's `open`, the promise rejects, nothing retries. Pre-existing; verified
+  against `277c8d5` with the work stashed. Has its own task.
+* **`src/generate/voice.ts` has zero production callers** — a complete, tested
+  card → deck → workspace → field voice resolution that nothing reaches. Stage D wires it.
+
 ## STATE RIGHT NOW — 2026-08-26, tree clean, THE APP RUNS
 
 **There is an app.** `app/` is a page, an OPFS database, audio on the device and grades
