@@ -3032,6 +3032,89 @@ input[data-answer="incorrect"] {
   }
 }
 
+/* ── learned, deck by deck ──────────────────────────────────────────────────
+   A row per deck rather than a column per deck: deck sizes span three orders of
+   magnitude (単語 7,192 live tracks, 原神 2), so the shared vertical scale that
+   makes the time charts readable would render all but the largest as a hairline.
+   Each row carries its own proportion, and the figure is TEXT beside it — a row
+   has room, so nothing here is behind a hover (decision 19). */
+.glance-decks {
+  display: flex;
+  flex-direction: column;
+}
+
+.glance-deck {
+  align-items: center;
+  display: grid;
+  /* The bar column is fixed so every deck's fill starts and ends at the same two
+     x positions — a proportion you cannot compare down the column is a decoration.
+     `minmax(0, 1fr)` and not `1fr`: a grid item's default `min-width: auto` is its
+     content, so a long deck name would push the bar out of alignment instead of
+     ellipsing. */
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 84px auto;
+  padding: 3px 0;
+}
+
+.glance-deck-name {
+  color: var(--ink);
+  font-size: 0.78rem;
+  overflow: hidden;
+  /* Depth as indentation, and the rows arrive in path order, so nesting reads
+     without drawing a single rule. */
+  padding-left: calc(var(--deck-depth, 0) * 12px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* `--edge`, NOT `--sunk`, and it was measured on the real panel rather than on
+   `--paper` — this sits inside a layer, which has its own ground.
+
+     sunk vs panel   1.06 dark · 1.10 light     invisible
+     edge vs panel   2.02 dark · 1.86 light     reads as a rule
+
+   At 1.06 the unfilled half of the bar was not dim, it was GONE: a deck at 0%
+   (Synonym 0/7, and 数字 0/0 once archived) rendered no bar at all, which reads as
+   a row the screen forgot rather than as a deck he has not started. It also took
+   the proportion with it — a fill with no visible remainder cannot say how far
+   from full it is, which is the one thing a proportion bar is for. */
+.glance-deck-track {
+  background: var(--edge);
+  display: block;
+  height: 4px;
+  overflow: hidden;
+}
+
+/* Against that track: 4.95 light · 3.47 dark, both clear of the 3:1 that a
+   non-text boundary wants. */
+.glance-deck-fill {
+  background: var(--accent);
+  display: block;
+  height: 100%;
+}
+
+/* A finished deck, in the same green the grading path already means "kept" by.
+   NOT `--vermilion`: decision 32 allows one per screen and the focus ring has it,
+   and not red, which `--no` owns two charts above this one.
+
+   IT IS DECORATION AND MUST STAY THAT WAY, because green against indigo is the
+   isoluminant pair decision 48 warned about — 1.84 light, **1.40 dark**, so a
+   blue-green deficiency sees one colour. Nothing here depends on telling them
+   apart: every row prints `learned/live` beside the bar, so `19/19` says "done"
+   in text and a done bar is 100% full, which is its own signal. The green is
+   worth having and is worth nothing on its own. Do not move a fact onto it. */
+.glance-deck-fill.is-done {
+  background: var(--good);
+}
+
+.glance-deck-num {
+  color: var(--muted);
+  font-size: 0.72rem;
+  /* Tabular figures, so the slash lands in the same place down the column and the
+     counts can be read as a column rather than as 39 separate labels. */
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── the editor's template row, and link completion ─────────────────────────
    His feedback, 2026-09-07. The row is not a bare `<select>` on purpose: field
    ids are template-private, so moving a card hides values, and each option

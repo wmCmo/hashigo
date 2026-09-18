@@ -177,6 +177,25 @@ function codeFiles(): string[] {
   return out;
 }
 
+/**
+ * A relative ref, resolved the way a reader resolves it.
+ *
+ * `..` IS THE POINT. The first version of this stripped a leading `./` with
+ * `slice(2)` and nothing else, so a comment in `src/dashboard/` pointing at
+ * `../scheduler/predicates.ts` — a file that plainly exists — was reported as
+ * missing. That is the same false-miss failure the caller's own comment warns
+ * about, one directory up, and a cross-directory reference is exactly what a
+ * module wants to write when it borrows a definition from another one.
+ */
+function resolveRef(dir: string, ref: string): string {
+  const parts = dir.split("/");
+  for (const segment of ref.split("/")) {
+    if (segment === "..") parts.pop();
+    else if (segment !== ".") parts.push(segment);
+  }
+  return parts.join("/");
+}
+
 describe("claims inside code comments", () => {
   it("every file path a comment points at exists", () => {
     // Relative paths resolve against the file that mentions them, which is what a
@@ -198,7 +217,7 @@ describe("claims inside code comments", () => {
         // `src/dashboard/labels.ts`. Guessing there would produce false misses, and a
         // gate that cries wolf gets deleted by the next person to hit it.
         if (ref.startsWith(".") && !(file.startsWith("src/") || file.startsWith("app/"))) continue;
-        const target = ref.startsWith(".") ? `${dir}/${ref.slice(2)}` : ref;
+        const target = ref.startsWith(".") ? resolveRef(dir, ref) : ref;
         if (!existsSync(join(ROOT, target))) missing.push(`${file} -> ${ref}`);
       }
     }

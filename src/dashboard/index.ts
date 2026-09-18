@@ -60,8 +60,11 @@ export { renderDashboard, type RenderOptions } from "./render.js";
 export {
   collectGlance,
   shiftDate,
+  shiftMonth,
   type Glance,
   type GlanceDay,
+  type GlanceDeck,
   type GlanceForecastDay,
+  type GlanceLearnedMonth,
   type GlanceOptions,
 } from "./glance.js";

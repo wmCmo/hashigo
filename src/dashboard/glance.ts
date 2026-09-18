@@ -58,6 +58,9 @@
  */
 
 import { queueCounts, reviewForecast } from "../scheduler/queue.js";
+// The one definition of "live", from the module that owns it. Every figure on
+// this screen is drawn with it, which is what lets the deck rows sum to the tile.
+import { liveTrack } from "../scheduler/predicates.js";
 
 import type { SqliteHandle } from "../db/browser.js";
 
@@ -70,6 +73,31 @@ export interface GlanceDay {
 export interface GlanceForecastDay {
   readonly date: string;
   readonly due: number;
+}
+
+/** One month of "tracks reaching their first review". `cumulative` includes it. */
+export interface GlanceLearnedMonth {
+  /** `YYYY-MM`. */
+  readonly month: string;
+  readonly learned: number;
+  /** Every track learned on or before the end of this month. */
+  readonly cumulative: number;
+}
+
+/**
+ * One deck's share of the learned figure, rolled up over its whole subtree.
+ *
+ * `live` and `learned` mean exactly what they mean in `collection` — same
+ * predicate, same definition — so the three depth-0 rows sum to the headline
+ * pair. `test/glance.test.ts` pins that, because two figures on one screen that
+ * nearly agree are worse than one figure.
+ */
+export interface GlanceDeck {
+  readonly deckId: string;
+  readonly path: string;
+  readonly depth: number;
+  readonly live: number;
+  readonly learned: number;
 }
 
 export interface Glance {
@@ -104,11 +132,35 @@ export interface Glance {
     readonly cards: number;
     readonly tracks: number;
     readonly live: number;
+    /**
+     * Live tracks he has actually started — `reps > 0`.
+     *
+     * **NOT `live - fresh`, and the difference is not pedantry.** `fresh` is
+     * `../scheduler/predicates.ts`'s `isNewTrack`, which is `due_at IS NULL AND
+     * reps = 0` — a track seeded with a due date and no reps is SCHEDULED rather
+     * than new, and falls in neither set. That set is empty on the corpus today
+     * (measured 2026-09-18: 0 of 13,393) and is representable, so subtracting
+     * would be right until the day it silently was not. Counting `reps > 0`
+     * directly cannot drift, and makes `live - learned` the honest "to go".
+     */
+    readonly learned: number;
   };
   /** The last 14 CALENDAR days, oldest first. A quiet day is a gap, and shows as one. */
   readonly recent: readonly GlanceDay[];
   /** The next 14 days of scheduled work, tomorrow first. */
   readonly forecast: readonly GlanceForecastDay[];
+  /**
+   * The last `LEARNED_MONTHS` calendar months of first reviews, oldest first.
+   *
+   * A month in which he started nothing IS RETURNED, with 0 — the same rule as
+   * `recent`, for the same reason: a quiet month is a fact about the year and a
+   * chart that closes the gap hides it. `cumulative` is carried from the whole
+   * history rather than from the window, so the last bar's cumulative equals
+   * `collection.learned`.
+   */
+  readonly learnedByMonth: readonly GlanceLearnedMonth[];
+  /** Every deck, tree order, rolled up over its subtree. */
+  readonly decks: readonly GlanceDeck[];
 }
 
 /**
@@ -139,16 +191,117 @@ const ALL_TIME = `SELECT count(*) AS reviews, COALESCE(sum(remembered), 0) AS re
 /** `reviews_when` makes both of these a seek to one end of the index. */
 const SPAN = `SELECT min(reviewed_at) AS first_at, max(reviewed_at) AS last_at FROM reviews`;
 
+/**
+ * ONE scan for `live` and `learned`, not two — the same repair `queueCounts` made
+ * when its dormant count was a second statement (15.5 ms for the pair, 7.9 for one).
+ * Asking twice over the same join was paying twice for nothing: 14.2 ms -> 7.4.
+ */
 const COLLECTION = `
 SELECT (SELECT count(*) FROM cards) AS cards,
        (SELECT count(*) FROM card_tracks) AS tracks,
-       (SELECT count(*) FROM card_tracks t JOIN cards c ON c.id = t.card_id
-         WHERE t.dormant = 0 AND c.archived = 0) AS live`;
+       t.live    AS live,
+       t.learned AS learned
+  FROM (SELECT count(*) AS live,
+               sum(CASE WHEN t.reps > 0 THEN 1 ELSE 0 END) AS learned
+          FROM card_tracks t
+          JOIN cards c ON c.id = t.card_id
+         WHERE ${liveTrack()}) t`;
+
+/** How many calendar months of first-reviews the chart carries. */
+const LEARNED_MONTHS = 12;
+
+/**
+ * When each track was first reviewed, by month — "learned" as a rate.
+ *
+ * ─── IT IS RESTRICTED TO LIVE TRACKS, AND THE JOIN GOES AFTER THE GROUP BY ──
+ *
+ * The obvious query groups `reviews` by `track_id` and stops. That runs in 8 ms
+ * and totals **9,085**, against a headline of 9,010 — the 75 tracks that are
+ * dormant or sit on an archived card. Two numbers on one screen disagreeing by 75
+ * for a reason neither of them states is the defect, so the restriction is not
+ * optional; what IS optional is where it goes, and that was measured rather than
+ * guessed:
+ *
+ *     join inside the CTE, per REVIEW    32.6 ms     103,110 rows joined
+ *     join after it, per TRACK           12.8 ms       9,085 rows joined
+ *
+ * Identical output. `min()` collapses the reviews to one row per track first, so
+ * filtering afterwards touches an eleventh of the rows for the same answer.
+ * Real corpus, 2026-09-18, median of seven.
+ *
+ * All 42 months are returned and the window is taken in TypeScript, because the
+ * cumulative total has to run from the first review in 2022 — a SQL window that
+ * starts twelve months ago cannot know what came before it.
+ */
+const LEARNED_BY_MONTH = `
+WITH firsts AS (
+  SELECT track_id, substr(min(reviewed_at), 1, 7) AS month
+    FROM reviews
+   GROUP BY track_id
+)
+SELECT f.month AS month, count(*) AS learned
+  FROM firsts f
+  JOIN card_tracks t ON t.id = f.track_id
+  JOIN cards c ON c.id = t.card_id
+ WHERE ${liveTrack()}
+ GROUP BY f.month ORDER BY f.month`;
+
+/**
+ * The same pair per deck, rolled up over each deck's whole subtree.
+ *
+ * **NOT `metrics.ts`'s `deckProgress`, although it is right there and returns a
+ * superset of these columns.** That one reads the `deck_progress` VIEW, which
+ * counts every track — dormant ones and tracks on archived cards included — so
+ * its roots sum to 9,085 / 13,393 where this screen's headline says 9,010 /
+ * 12,917. The full report is internally consistent because every figure in it is
+ * drawn the same way; borrowing one row of it into a screen built on `liveTrack`
+ * would have put two definitions of the same word on one panel. So this is the
+ * headline query with a `GROUP BY`, and the roots sum to the headline.
+ *
+ * `deck_ancestry` supplies the rollup (every deck is its own ancestor at depth
+ * 0), `deck_paths` the name and the depth. Both are views in the schema, so this
+ * needs nothing from Node and runs in the OPFS worker like the rest of the file.
+ * 11 ms, 39 rows, same database and method as above.
+ */
+const DECK_LEARNED = `
+WITH per_deck AS (
+  SELECT c.deck_id AS deck_id,
+         count(*) AS live,
+         sum(CASE WHEN t.reps > 0 THEN 1 ELSE 0 END) AS learned
+    FROM card_tracks t
+    JOIN cards c ON c.id = t.card_id
+   WHERE ${liveTrack()}
+   GROUP BY c.deck_id
+)
+SELECT an.ancestor_id            AS deck_id,
+       dp.path                   AS path,
+       dp.depth                  AS depth,
+       COALESCE(sum(p.live), 0)    AS live,
+       COALESCE(sum(p.learned), 0) AS learned
+  FROM deck_ancestry an
+  JOIN deck_paths dp ON dp.deck_id = an.ancestor_id
+  LEFT JOIN per_deck p ON p.deck_id = an.deck_id
+ GROUP BY an.ancestor_id, dp.path, dp.depth
+ ORDER BY dp.path`;
 
 /** `YYYY-MM-DD`, `days` away from `date`. Negative goes back. */
 export function shiftDate(date: string, days: number): string {
   const at = new Date(`${date}T00:00:00Z`).getTime();
   return new Date(at + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * `YYYY-MM`, `months` away from `month`. Negative goes back.
+ *
+ * Month arithmetic on day 1 of the month and never on today's day-of-month:
+ * `new Date(2026, 8, 31)` minus one month is 1 October, not September, and a
+ * chart that loses a month every 31st is the classic version of this bug.
+ */
+export function shiftMonth(month: string, months: number): string {
+  const year = Number(month.slice(0, 4));
+  const index = Number(month.slice(5, 7)) - 1 + months;
+  const at = new Date(Date.UTC(year, index, 1));
+  return at.toISOString().slice(0, 7);
 }
 
 function ratio(remembered: number, reviews: number): number | null {
@@ -215,7 +368,51 @@ export function collectGlance(db: SqliteHandle, options: GlanceOptions = {}): Gl
     cards: number;
     tracks: number;
     live: number;
+    learned: number;
   };
+
+  // Every month, then the last twelve — the cumulative has to run from 2022.
+  const learnedRows = db.prepare(LEARNED_BY_MONTH).all() as {
+    month: string;
+    learned: number;
+  }[];
+  const learnedByMonth: GlanceLearnedMonth[] = [];
+  {
+    const byMonth = new Map(
+      learnedRows.map((row) => [String(row.month), Number(row.learned)]),
+    );
+    // Walk the WHOLE history accumulating, and keep only the tail. A running
+    // total taken over the window alone would start at zero twelve months ago
+    // and disagree with the tile by four years of work.
+    const from = shiftMonth(today.slice(0, 7), -(LEARNED_MONTHS - 1));
+    let cumulative = 0;
+    for (const month of [...byMonth.keys()].sort()) {
+      if (month >= from) break;
+      cumulative += byMonth.get(month) ?? 0;
+    }
+    for (let i = LEARNED_MONTHS - 1; i >= 0; i -= 1) {
+      const month = shiftMonth(today.slice(0, 7), -i);
+      const learned = byMonth.get(month) ?? 0;
+      cumulative += learned;
+      learnedByMonth.push({ month, learned, cumulative });
+    }
+  }
+
+  const decks = (
+    db.prepare(DECK_LEARNED).all() as {
+      deck_id: string;
+      path: string;
+      depth: number;
+      live: number;
+      learned: number;
+    }[]
+  ).map((row) => ({
+    deckId: String(row.deck_id),
+    path: String(row.path),
+    depth: Number(row.depth),
+    live: Number(row.live),
+    learned: Number(row.learned),
+  }));
 
   const counts = queueCounts(db);
   // `ForecastDay.count` is renamed to `due` here on purpose: this payload is read
@@ -250,8 +447,11 @@ export function collectGlance(db: SqliteHandle, options: GlanceOptions = {}): Gl
       cards: Number(collection.cards),
       tracks: Number(collection.tracks),
       live: Number(collection.live),
+      learned: Number(collection.learned),
     },
     recent,
     forecast,
+    learnedByMonth,
+    decks,
   };
 }

@@ -107,6 +107,7 @@ import { completeLink, linkAt, linksIn, triggerAt, type Trigger } from "./links.
 import { moveWithin } from "../src/schema/index.js";
 import type { RenderResult } from "../src/render/index.js";
 import type { ShadowingSide } from "../src/render/reveal.js";
+import type { GlanceDeck } from "../src/dashboard/index.js";
 // The two extracted rules. Import-free modules so `test/` can reach them; see
 // `test/app-logic.test.ts` and the headers of both files.
 import { childrenOf as treeChildrenOf, subtreeTotals } from "./deck-tree.js";
@@ -5572,8 +5573,35 @@ async function openDashboard(): Promise<void> {
         // punishes him for the time of day.
         g.today.reviews === 0 && g.streakDays > 0 ? "through yesterday" : "days",
       ],
-      ["live tracks", g.collection.live.toLocaleString(), `of ${g.collection.tracks.toLocaleString()}`],
+      // REPLACES "live tracks", which said 12,917 of 13,393 — the gap being the
+      // dormant and archived ones, a number he cannot act on. This is the same
+      // denominator carrying a figure that moves: decision 12 introduces 10 new
+      // tracks a day, so "to go" is the runway and it shortens every session.
+      [
+        "learned",
+        g.collection.learned.toLocaleString(),
+        `of ${g.collection.live.toLocaleString()} live · ` +
+          `${(g.collection.live - g.collection.learned).toLocaleString()} to go`,
+      ],
     ]),
+  );
+
+  // ── how fast that number moves ──
+  body.appendChild(glanceHead("tracks learned, last 12 months"));
+  body.appendChild(
+    glanceBars(
+      g.learnedByMonth.map((month) => ({
+        label: month.month.slice(5),
+        value: month.learned,
+        // No tone: `is-low` means "retention under 0.85" on the chart above, and
+        // there is no such thing as a bad month for STARTING cards. Reusing the
+        // red here would make the same colour mean two things on one screen.
+        good: null,
+        detail:
+          `${month.month} · ${month.learned.toLocaleString()} learned · ` +
+          `${month.cumulative.toLocaleString()} in all`,
+      })),
+    ),
   );
 
   // ── the last 14 active days ──
@@ -5610,6 +5638,10 @@ async function openDashboard(): Promise<void> {
       })),
     ),
   );
+
+  // ── where it stands, deck by deck ──
+  body.appendChild(glanceHead("learned by deck"));
+  body.appendChild(glanceDecks(g.decks));
 
   // ── the two windows ──
   body.appendChild(glanceHead("windows"));
@@ -5686,6 +5718,71 @@ function glanceTiles(rows: readonly (readonly [string, string, string])[]): HTML
     grid.appendChild(tile);
   }
   return grid;
+}
+
+/**
+ * The deck breakdown of the learned figure — a row per deck, tree order.
+ *
+ * ─── NOT `glanceBars`, AND NOT THE FULL REPORT'S TABLE ──────────────────────
+ *
+ * `glanceBars` is for a series over TIME: it shares one vertical scale across
+ * columns, which is what makes two weeks of reviews comparable at a glance. Decks
+ * are not a series and their sizes differ by three orders of magnitude — 単語 has
+ * 7,192 live tracks and 原神 has 2 — so one shared scale would render every deck
+ * but the largest as a hairline. Each row carries its OWN proportion instead, so
+ * a small deck at 90% reads as 90%.
+ *
+ * ─── THE NUMBER IS TEXT, NOT A TOOLTIP ─────────────────────────────────────
+ *
+ * The time charts need a readout because a bar has no room for its figure and a
+ * `title` is a hover affordance, which decision 19 forbids as a sole carrier. A
+ * row is wide, so `learned / live` simply sits in it and there is nothing to
+ * reveal, nothing to press, and no state to get wrong.
+ *
+ * DEPTH IS INDENTATION, and the rows arrive in path order so it reads as a tree.
+ * The leaf name is shown rather than the full path: `deck_paths` spells
+ * `日本語/単語/ビジネス`, and at depth 2 in a 375px column the ancestors are
+ * already above it on screen.
+ */
+function glanceDecks(decks: readonly GlanceDeck[]): HTMLElement {
+  const list = document.createElement("div");
+  list.className = "glance-decks";
+  for (const deck of decks) {
+    const row = document.createElement("div");
+    row.className = "glance-deck";
+    row.style.setProperty("--deck-depth", `${deck.depth}`);
+
+    const name = document.createElement("span");
+    name.className = "glance-deck-name";
+    // The leaf, but the full path is the accessible name — a screen reader has no
+    // indentation to read the nesting off.
+    name.textContent = deck.path.slice(deck.path.lastIndexOf("/") + 1);
+    name.title = deck.path;
+
+    const track = document.createElement("span");
+    track.className = "glance-deck-track";
+    const fill = document.createElement("i");
+    fill.className = "glance-deck-fill";
+    // `live` is 0 only for a deck holding no cards at all, which decision 3 drops
+    // from the tree — but an empty deck is creatable from the app, so guard it
+    // rather than paint a NaN-wide bar.
+    const share = deck.live === 0 ? 0 : deck.learned / deck.live;
+    fill.style.width = `${(100 * share).toFixed(1)}%`;
+    if (deck.learned === deck.live && deck.live > 0) fill.classList.add("is-done");
+    track.appendChild(fill);
+
+    const count = document.createElement("span");
+    count.className = "glance-deck-num";
+    count.textContent = `${deck.learned.toLocaleString()}/${deck.live.toLocaleString()}`;
+
+    row.append(name, track, count);
+    row.setAttribute(
+      "aria-label",
+      `${deck.path} — ${deck.learned} of ${deck.live} tracks learned`,
+    );
+    list.appendChild(row);
+  }
+  return list;
 }
 
 /** One column of a glance chart. `detail` is the sentence the readout says. */
