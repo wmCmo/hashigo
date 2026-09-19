@@ -109,6 +109,48 @@ export function initialStatus(): SyncStatus {
 }
 
 /**
+ * `fetch`, with the ONE failure that is not about the mailbox named properly.
+ *
+ * Zach, on his phone, 2026-09-19:
+ *
+ *     sync failed — Failed to fetch
+ *
+ * That is the same class of defect as the `<!doctype` line above and it arrives
+ * one layer earlier: `mailboxJson`'s careful diagnosis never runs, because
+ * `fetch` itself rejects before there is any response to inspect. "Failed to
+ * fetch" is the browser's words for "the request did not reach a server", and it
+ * names neither the server nor anything he can do.
+ *
+ * **It was not the laptop, either time.** Checked while he was looking at it: the
+ * `npm run phone` server answered `200` in 10 ms locally, `tailscale serve` was
+ * mapping `node.tailed819e.ts.net` to it, and that name answered `200` in 478 ms.
+ * `tailscale status` had the answer — his handset was `offline, last seen 2h ago`.
+ * The tailnet is the transport decision 33 chose precisely because it is not the
+ * open internet, and the cost it accepted is exactly this: **off the tailnet, no
+ * sync.** That is the designed availability, so the message should state it
+ * rather than leave him reading a browser string at 10pm.
+ *
+ * A `TypeError` is what every browser raises for a network-layer failure — DNS,
+ * refused connection, no route, TLS. It is deliberately NOT narrowed further:
+ * distinguishing them is not possible from here and would not change the action.
+ */
+async function reach(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (cause) {
+    if (cause instanceof TypeError) {
+      // NO EM DASH: `paintSync` renders this as `sync failed — <detail>`, and a
+      // second one in the detail makes the line read as three fragments.
+      throw new Error(
+        `could not reach the laptop. This device may be off the tailnet; ` +
+          `open Tailscale, reconnect, then sync again.`,
+      );
+    }
+    throw cause;
+  }
+}
+
+/**
  * GET something from the mailbox and insist it is actually JSON.
  *
  * ─── THE ERROR THIS EXISTS TO REPLACE ───────────────────────────────────────
@@ -136,7 +178,7 @@ export function initialStatus(): SyncStatus {
  * half, for every other way a mailbox can be absent.
  */
 async function mailboxJson(url: string): Promise<unknown> {
-  const response = await fetch(url, { cache: "no-store" });
+  const response = await reach(url, { cache: "no-store" });
   if (!response.ok) throw new Error(`${url} answered ${response.status}`);
   // Read as TEXT and parse here rather than trusting `response.json()`, so the
   // failure can say what actually came back. Checking `content-type` instead
@@ -209,7 +251,7 @@ export async function syncNow(ports: SyncPorts): Promise<SyncOutcome> {
   }
 
   const mine = await ports.exportPayload();
-  const put = await fetch(`/sync/${self}`, {
+  const put = await reach(`/sync/${self}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: mine.json,
@@ -359,7 +401,7 @@ export function isStale(status: SyncStatus, now: Date = new Date()): boolean {
 export async function pushNow(ports: SyncPorts): Promise<number> {
   const self = deviceId();
   const mine = await ports.exportPayload();
-  const put = await fetch(`/sync/${self}`, {
+  const put = await reach(`/sync/${self}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: mine.json,

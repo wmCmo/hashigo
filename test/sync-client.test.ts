@@ -204,6 +204,60 @@ describe("a mailbox that answers with a page", () => {
 });
 
 /**
+ * The failure that arrives one layer BEFORE the mailbox can be inspected.
+ *
+ * Zach, on his phone, 2026-09-19: *"sync failed — Failed to fetch"*. Checked
+ * while he was looking at it — the laptop was serving (200 in 10 ms locally,
+ * 200 in 478 ms through `node.tailed819e.ts.net`) and `tailscale status` said
+ * his handset was `offline, last seen 2h ago`. Off the tailnet is decision 33's
+ * accepted cost, so the message has to name it.
+ */
+describe("a device that cannot reach the laptop at all", () => {
+  function offTheTailnet(): void {
+    vi.stubGlobal("localStorage", {
+      getItem: (): string | null => "dev-selftest01",
+      setItem: (): void => undefined,
+    });
+    // EXACTLY what a browser does for a network-layer failure: `fetch` REJECTS
+    // with a TypeError. There is no response to look at, which is why none of
+    // the mailbox diagnostics above can reach this case.
+    vi.stubGlobal("fetch", async () => {
+      throw new TypeError("Failed to fetch");
+    });
+  }
+
+  it("says which machine and what to do, not the browser's words", async () => {
+    offTheTailnet();
+    const failure = await syncNow(ports(() => undefined)).catch((cause: Error) => cause.message);
+    expect(failure).toContain("could not reach the laptop");
+    expect(failure).toContain("tailnet");
+    expect(failure).toContain("Tailscale");
+    // The string he actually read, which says nothing he can act on.
+    expect(failure).not.toContain("Failed to fetch");
+  });
+
+  it("does not add a second em dash — `paintSync` already supplies one", () => {
+    // Rendered as `sync failed — <detail>`; a dash inside the detail makes the
+    // banner read as three fragments on a 375px screen.
+    const rendered = `sync failed — could not reach the laptop.`;
+    expect(rendered.split("—")).toHaveLength(2);
+  });
+
+  it("still rethrows a NON-network error untouched", async () => {
+    // `reach` may only dress up a TypeError. A bug in the client that throws
+    // something else must not come out wearing a networking diagnosis.
+    vi.stubGlobal("localStorage", {
+      getItem: (): string | null => "dev-selftest01",
+      setItem: (): void => undefined,
+    });
+    vi.stubGlobal("fetch", async () => {
+      throw new RangeError("a real bug, not the network");
+    });
+    await expect(syncNow(ports(() => undefined))).rejects.toThrow(/a real bug, not the network/);
+  });
+});
+
+/**
  * The two clocks say different things, and conflating them is what let a day of
  * grading look fine — Zach, 2026-09-14.
  */
