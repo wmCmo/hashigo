@@ -36,8 +36,54 @@ import { sha256Hex } from "../blobs/sha256.js";
 import type { BlobStore } from "../blobs/store.js";
 import type { SqliteHandle } from "../db/browser.js";
 
-/** Every clip this project synthesises. Zach's own choice, by ear, 2026-08-20. */
+/**
+ * Every JAPANESE clip this project synthesises. Zach's own choice, by ear,
+ * 2026-08-20. Also the default for a language nothing else covers.
+ */
 export const FILL_VOICE = "ja-JP-Neural2-C";
+
+/**
+ * THE FILL VOICE IS PER LANGUAGE, AND IT WAS NOT — which is the whole defect.
+ *
+ * Zach, 2026-09-20, on an English card: *"the example sentence is in Japanese
+ * voice 😭"*. One global constant meant every text this project ever spoke got
+ * `ja-JP-Neural2-C`, so an English sentence came out read through Japanese
+ * phonology. **130 clips in the corpus are exactly that** — all `en-US` text in
+ * the Japanese voice, made between 2026-09-15 and 2026-09-17 by the fill path,
+ * and every one of them already on his phone. Measured 2026-09-20; NONE of them
+ * has a correct-voice alternative, which is why they are audible rather than
+ * merely present.
+ *
+ * ─── THE KEY MUST NOT MOVE FOR JAPANESE ─────────────────────────────────────
+ *
+ * The fill voice is part of the generation identity (`../blobs/generation.ts`),
+ * so changing it re-keys every clip stored under it. `ja` therefore maps to the
+ * SAME constant it always did and every existing Japanese clip keeps its
+ * address. Only `en` moves — which is the intent: it orphans those 130 by
+ * construction, because the resolver stops looking under the voice they were
+ * filed at.
+ *
+ * ─── MATCHED BY LANGUAGE PREFIX, NOT BY THE FULL TAG ────────────────────────
+ *
+ * `en-US`, `en-GB` and a bare `en` are one decision about which voice reads
+ * English, and a table keyed on full BCP-47 tags would answer the first and
+ * silently fall through to Japanese for the others. Anything with no entry keeps
+ * the old behaviour, because this app is for studying Japanese and Japanese is
+ * the right guess for an untagged clip.
+ */
+const FILL_VOICES: Readonly<Record<string, string>> = {
+  ja: FILL_VOICE,
+  // MY PICK, NOT HIS — the same Neural2 family and gender as the voice he chose
+  // by ear, which is the closest thing to his stated taste that does not invent
+  // one. He is auditioning four candidates; when he says, this line changes and
+  // `scripts/voice-refill.ts` re-makes the affected clips.
+  en: "en-US-Neural2-D",
+};
+
+export function fillVoiceFor(lang: string | null | undefined): string {
+  if (typeof lang !== "string" || lang === "") return FILL_VOICE;
+  return FILL_VOICES[lang.slice(0, 2).toLowerCase()] ?? FILL_VOICE;
+}
 
 /** Matches every existing speech row in the corpus, and the store's sniffing. */
 const SPEECH_MIME = "audio/mpeg";
@@ -87,10 +133,12 @@ export function storeGeneratedSpeech(
   const identity = generationIdentity({
     kind: "speech",
     text: descriptor.text,
-    // `?? FILL_VOICE`, so every existing caller is byte-for-byte unchanged and
-    // the key scheme is untouched — see the warning in `../blobs/generation.ts`
-    // about what one changed bit costs.
-    voice: descriptor.voice ?? FILL_VOICE,
+    // `?? fillVoiceFor(lang)`, so a caller that does not name the producing
+    // voice still files under the voice that WOULD have spoken this language.
+    // Japanese resolves to the same constant it always did, so the key scheme is
+    // untouched there — see the warning in `../blobs/generation.ts` about what
+    // one changed bit costs.
+    voice: descriptor.voice ?? fillVoiceFor(descriptor.lang),
     lang: descriptor.lang,
     options: descriptor.options,
   });

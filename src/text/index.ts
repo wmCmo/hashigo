@@ -12,6 +12,7 @@ export {
   parseWikiLinks,
   renderPlainText,
   renderPlainTextParts,
+  speakableText,
   stripInvisible,
   type RenderOptions,
   type ResolveName,

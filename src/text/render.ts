@@ -183,6 +183,67 @@ export function renderPlainText(text: string, options: RenderOptions = {}): stri
 }
 
 /**
+ * Authored text -> the text a VOICE should read.
+ *
+ * Zach, 2026-09-20, on an English card in the wrong voice. Fixing the voice
+ * surfaced what it had been hiding: of the 130 mis-voiced clips, only **24 were
+ * clean**. The rest were reading markup out loud.
+ *
+ *     76   contain markdown emphasis    `a show which should **entice** a new audience`
+ *     30   are an UNRESOLVED generator  `<ai>Example sentence of plectrum</ai>`
+ *
+ * Corpus-wide it is 82 and 28, so this is almost exactly the same set — both
+ * arrived with the fill path and neither existed in Mochi's own clips, whose
+ * `source_text` for the same card is clean. Decision 7 says a generator's input
+ * is the RENDERED text and never the stored value; the fill path was handing
+ * over the raw field.
+ *
+ * ─── WHY THIS IS NOT `renderPlainText` ──────────────────────────────────────
+ *
+ * That one's contract is explicit: *"markdown is left readable"*, because it
+ * feeds `cards.search_text` and a search for `entice` must match text authored
+ * as `**entice**`. A reader wants the asterisks kept and a SPEAKER wants them
+ * gone, so these are two transforms rather than one with a flag — this one
+ * builds on that one and then removes what cannot be pronounced.
+ *
+ * ─── AN UNRESOLVED GENERATOR RETURNS THE EMPTY STRING ───────────────────────
+ *
+ * `<ai>Example sentence of plectrum</ai>` is a PROMPT that was never run. There
+ * is no correct way to speak it: read literally it is nonsense, and stripped to
+ * its content it becomes the instruction rather than the sentence. Returning ""
+ * lets the caller decline to synthesise at all, which is the honest outcome —
+ * those 30 cards need their example sentence GENERATED, not re-voiced, and that
+ * is a different repair.
+ */
+export function speakableText(text: string, options: RenderOptions = {}): string {
+  const plain = renderPlainText(text, options);
+  // An element with a name and a body is a generator mount the renderer never
+  // filled. `<ai>`, `<image>`, `<speech>` — the allowlist lives in
+  // `src/template/ast.ts` and is deliberately not duplicated here: ANY
+  // angle-bracketed element in a field value is unresolved by the time this is
+  // reached, because a resolved one has already been replaced by its output.
+  const withoutMounts = plain
+    // A paired element and everything between it - `<ai>...</ai>`. The
+    // backreference is what stops `<a>x</b>` matching as one element.
+    .replace(/<([a-z][a-z0-9-]*)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+    // Then any tag left unpaired: `<image>shrub` with no close, or `<br/>`.
+    .replace(/<\/?[a-z][a-z0-9-]*\b[^>]*>/gi, "");
+  const spoken = withoutMounts
+    // Emphasis, strongest marker first so `***x***` does not leave a stray `*`.
+    .replace(/\*\*\*(.+?)\*\*\*/gs, "$1")
+    .replace(/\*\*(.+?)\*\*/gs, "$1")
+    .replace(/\*(.+?)\*/gs, "$1")
+    .replace(/__(.+?)__/gs, "$1")
+    // `~~struck~~` is not spoken as anything; the words themselves still are.
+    .replace(/~~(.+?)~~/gs, "$1")
+    // Inline code fences carry no sound of their own.
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  return spoken;
+}
+
+/**
  * The same transform over several pieces of authored text, joined by newlines.
  *
  * This is the shape a card has: `content` plus one value per field. Empty and

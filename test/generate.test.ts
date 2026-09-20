@@ -32,6 +32,7 @@ import {
   resolveDescriptorText,
   storeDescriptorText,
   storeGeneratedSpeech,
+  fillVoiceFor,
 } from "../src/generate/index.js";
 import {
   setCardVoice,
@@ -1216,5 +1217,58 @@ describe("the furigana fill's bracket form", () => {
     const built = alignFurigana("言い渡す", "いーわたす");
     expect(built.kind).toBe("whole");
     expect(built.reason).not.toBe("");
+  });
+});
+
+/**
+ * WHICH VOICE READS WHICH LANGUAGE.
+ *
+ * Zach, 2026-09-20: *"the example sentence is in Japanese voice 😭"*. One global
+ * `FILL_VOICE` meant every text this project ever spoke got `ja-JP-Neural2-C`,
+ * and 130 English clips in the corpus are exactly that.
+ */
+describe("the fill voice is per language", () => {
+  it("keeps Japanese on the voice Zach chose by ear, at the SAME key", () => {
+    // Load-bearing: the fill voice is part of the generation identity, so a
+    // changed value here re-keys every clip stored under it. 7,409 Japanese
+    // clips depend on this being the identity function.
+    expect(fillVoiceFor("ja-JP")).toBe(FILL_VOICE);
+    expect(fillVoiceFor("ja")).toBe(FILL_VOICE);
+  });
+
+  it("gives English an English voice", () => {
+    expect(fillVoiceFor("en-US")).toMatch(/^en-/);
+    // Region-independent: a table keyed on full BCP-47 tags would answer en-US
+    // and silently fall through to Japanese for the rest.
+    expect(fillVoiceFor("en-GB")).toBe(fillVoiceFor("en-US"));
+    expect(fillVoiceFor("en")).toBe(fillVoiceFor("en-US"));
+  });
+
+  it("falls back to Japanese for a language nothing has chosen, and for nothing at all", () => {
+    // This app is for studying Japanese; an untagged clip is a Japanese clip.
+    // It also preserves the behaviour every existing caller had.
+    expect(fillVoiceFor(null)).toBe(FILL_VOICE);
+    expect(fillVoiceFor("")).toBe(FILL_VOICE);
+    expect(fillVoiceFor(undefined)).toBe(FILL_VOICE);
+    expect(fillVoiceFor("ko-KR")).toBe(FILL_VOICE);
+  });
+
+  it("files an unvoiced English clip under the English voice", () => {
+    // `storeGeneratedSpeech` defaults the producing voice to the language's fill
+    // voice, so a caller that does not name one still files truthfully.
+    // Inlined rather than reusing `speechFixture`, which is scoped to the
+    // describe above. Same two pieces: the digest must be the one
+    // `storeGeneratedSpeech` uses or the store rejects the address.
+    const db = openDatabase(MEMORY);
+    const store = new MemoryBlobStore(sha256Hex);
+    const hash = storeGeneratedSpeech(
+      db, store, { text: "a flock of gulls", lang: "en-US", options: {} },
+      new Uint8Array([0x49, 0x44, 0x33, 4, 4]),
+    );
+    const voice = (db.prepare("SELECT voice FROM blobs WHERE hash = ?").get(hash) as
+      { voice: string }).voice;
+    expect(voice).toMatch(/^en-/);
+    expect(voice).not.toBe(FILL_VOICE);
+    db.close();
   });
 });

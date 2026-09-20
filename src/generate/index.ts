@@ -57,7 +57,7 @@ export {
   type ResolvedFieldGeneration,
 } from "./store.js";
 
-export { storeGeneratedSpeech, FILL_VOICE, type SpeechDescriptor } from "./speech.js";
+export { storeGeneratedSpeech, FILL_VOICE, fillVoiceFor, type SpeechDescriptor } from "./speech.js";
 
 export {
   generateText,

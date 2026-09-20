@@ -67,7 +67,7 @@ import { readBlob } from "../blobs/db.js";
 import type { SqliteHandle } from "../db/browser.js";
 import type { AudioAddress } from "../render/audio.js";
 import type { BlobPayload } from "../blobs/url.js";
-import { FILL_VOICE } from "../generate/speech.js";
+import { fillVoiceFor } from "../generate/speech.js";
 
 /**
  * The synchronous half of `AudioResolver`.
@@ -154,7 +154,7 @@ function mimeFor(db: SqliteHandle, hash: string): string {
  * cache miss permanently and silently: the reader and the writer have to be
  * looking at the same characters or the fallback never fires.
  */
-export { FILL_VOICE } from "../generate/speech.js";
+export { FILL_VOICE, fillVoiceFor } from "../generate/speech.js";
 
 /**
  * EVERY hash this address could legitimately play, best first.
@@ -205,8 +205,12 @@ export function audioHashCandidates(
   const hit = lookupGeneration(db, asked);
   const found = hit === null ? [] : [hit];
   // Speech only, and only when the card asked for some OTHER voice. See above.
-  if (request.kind !== "speech" || asked.voice === FILL_VOICE) return found;
-  const fill = lookupGeneration(db, { ...asked, voice: FILL_VOICE });
+  // PER LANGUAGE since 2026-09-20 — an English card falling back to the Japanese
+  // fill voice is what made 130 English clips audible in Japanese. `ja` still
+  // resolves to the same constant, so no Japanese clip changes address.
+  const fillVoice = fillVoiceFor(asked.lang);
+  if (request.kind !== "speech" || asked.voice === fillVoice) return found;
+  const fill = lookupGeneration(db, { ...asked, voice: fillVoice });
   if (fill === null || fill === hit) return found;
   found.push(fill);
   return found;

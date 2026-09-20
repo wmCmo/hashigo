@@ -75,12 +75,13 @@ import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 
 import { synthesise } from "./src/accent/speech.js";
+import { speakableText } from "./src/text/index.js";
 import { defaultStoreDatabase, openBlobStoreDatabase } from "./src/blobs/index.js";
 import { generationIdentity, lookupGeneration } from "./src/blobs/generation.js";
 import { readBlob } from "./src/blobs/db.js";
 import { openDatabase } from "./src/db/index.js";
 import {
-  FILL_VOICE,
+  fillVoiceFor,
   generateText,
   OLLAMA_HOST,
   OLLAMA_MODEL,
@@ -202,9 +203,12 @@ async function speech(
   //
   // The asked voice is tried FIRST rather than merely as well, because it is the
   // clip the card is actually for.
-  const wanted = descriptor.voice !== null && descriptor.voice !== FILL_VOICE
-    ? [descriptor.voice, FILL_VOICE]
-    : [FILL_VOICE];
+  // PER LANGUAGE since 2026-09-20 — see `fillVoiceFor`. An `en-US` descriptor now
+  // falls back to the English voice, not the Japanese one.
+  const fillVoice = fillVoiceFor(descriptor.lang);
+  const wanted = descriptor.voice !== null && descriptor.voice !== fillVoice
+    ? [descriptor.voice, fillVoice]
+    : [fillVoice];
   const storeFile = defaultStoreDatabase(CARD_DB);
   if (!existsSync(storeFile)) {
     send(503, { error: `no payload store at ${storeFile}` });
@@ -250,7 +254,28 @@ async function speech(
     // straight through `、` — measured, 6.34 s against Azure's 7.92 s on the same
     // sentence, with no internal gap at all. A break needs no phrase boundary
     // guessed; it goes where he typed the comma.
-    const bytes = await synthesise(descriptor.text, null, { apiKey: key, voice: FILL_VOICE });
+    // WHAT IS SPOKEN IS NOT WHAT IS KEYED, and both halves are deliberate.
+    //
+    // `speakableText` removes what cannot be pronounced — markdown emphasis, and
+    // generator tags the renderer never filled. The fill path used to hand the
+    // RAW field value to Google, which is why 76 of his 130 mis-voiced clips read
+    // asterisks aloud and 30 recited `<ai>Example sentence of plectrum</ai>`.
+    // Decision 7's rule, applied where it had been skipped.
+    //
+    // The IDENTITY still uses `descriptor.text`, unchanged, because that is what
+    // the card's mount will look up. A row keyed on the cleaned text could never
+    // be found again. `source_text` is the generation's INPUT, not a transcript —
+    // the same reason the accent notation is not in it either.
+    const spoken = speakableText(descriptor.text);
+    if (spoken === "") {
+      send(422, {
+        error:
+          "there is nothing to speak here — this field is still an unresolved " +
+          "generator, so the sentence has to be generated before it can be voiced.",
+      });
+      return;
+    }
+    const bytes = await synthesise(spoken, null, { apiKey: key, voice: fillVoice });
     const hash = storeGeneratedSpeech(
       db,
       opened.store,
@@ -269,10 +294,13 @@ async function speech(
       // this arm is reached only for a text nothing has ever spoken. **Choosing
       // an English fill voice is Zach's call, by ear** — he picked this one that
       // way — so this reports the mismatch rather than inventing a second voice.
-      voice: FILL_VOICE,
+      voice: fillVoice,
+      // Still reported, because `fillVoiceFor` falls back to Japanese for a
+      // language it has no entry for — so this now means "nobody has chosen a
+      // voice for this language yet", which is the case worth surfacing.
       mismatch:
-        descriptor.lang !== null && !descriptor.lang.startsWith(FILL_VOICE.slice(0, 2))
-          ? `spoken by ${FILL_VOICE} although the card says ${descriptor.lang}`
+        descriptor.lang !== null && !descriptor.lang.startsWith(fillVoice.slice(0, 2))
+          ? `spoken by ${fillVoice} although the card says ${descriptor.lang}`
           : undefined,
     });
   } finally {
