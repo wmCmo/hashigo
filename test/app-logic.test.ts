@@ -24,6 +24,7 @@ import {
   type Sample,
 } from "../app/sync-climb.js";
 import { overdueLabel, overdueTitle, dueDateOf } from "../app/overdue.js";
+import { lastSeenLabel, lastSeenTitle } from "../app/last-seen.js";
 import { barValueText, barWidths } from "../app/progress.js";
 import { revealSteps, type StepSide } from "../app/review-steps.js";
 import { audioIsStale } from "../app/seed-freshness.js";
@@ -996,5 +997,73 @@ describe("the progress bar's two widths", () => {
     // A clean day says nothing about misses rather than saying "0 missed".
     expect(barValueText(barWidths({ answeredToday: 12, missedToday: 0, plannedToday: 40 })))
       .toBe("12 of 40 answered today");
+  });
+});
+
+/**
+ * WHEN HE LAST SAW A TRACK, as a plain date.
+ *
+ * Zach, 2026-09-23: *"it would be great if we can see when we reviewed this
+ * track last time … but i think just a plain date would be better, like
+ * `Jul 2, 2025` or something"*.
+ *
+ * He framed the date as a preference, and it is also the only honest rendering:
+ * all 103,110 imported reviews carry `time_unknown = 1` and the corpus holds
+ * exactly ONE distinct time-of-day, so the date is a fact and a clock time is
+ * invented. These pin the two ways that could quietly go wrong — the viewer's
+ * timezone, and the viewer's locale.
+ */
+describe("the last-seen date", () => {
+  it("renders his own example format", () => {
+    expect(lastSeenLabel("2025-07-02T00:00:00+09:00")).toBe("Jul 2, 2025");
+  });
+
+  it("reads the LOCAL date, not the viewer's", () => {
+    // `new Date(s).getDate()` would convert to the running machine's zone, so a
+    // review taken just after midnight in Tokyo reads as the previous day on a
+    // laptop set to UTC — the same track, two dates, depending on where he opens
+    // it. `src/scheduler/predicates.ts` documents the substring rule at length;
+    // this is that rule applied to display.
+    expect(lastSeenLabel("2025-07-02T00:00:00+09:00")).toBe("Jul 2, 2025");
+    expect(lastSeenLabel("2025-07-02T23:30:00+09:00")).toBe("Jul 2, 2025");
+    // Same instant, written in UTC, is a different LOCAL date and must say so.
+    expect(lastSeenLabel("2025-07-01T15:00:00Z")).toBe("Jul 1, 2025");
+  });
+
+  it("does not move with the device locale", () => {
+    // `toLocaleDateString` gives `7/2/2025` here and `02/07/2025` there, which
+    // are the same string to two different readers. He reads this on a laptop
+    // and a phone, so the month is spelled.
+    const label = lastSeenLabel("2025-12-31T00:00:00+09:00");
+    expect(label).toBe("Dec 31, 2025");
+    expect(label).not.toMatch(/\d+\/\d+/);
+  });
+
+  it("says nothing for a new track, rather than something wrong", () => {
+    // Null is a fact here — there is no last time — and 4,308 of his tracks are
+    // in that state. Rendering "Jan 1, 1970" or an empty chip would both be worse.
+    expect(lastSeenLabel(null)).toBeNull();
+    expect(lastSeenLabel(undefined)).toBeNull();
+    expect(lastSeenTitle(null)).toBeNull();
+  });
+
+  it("refuses a malformed value instead of inventing a plausible date", () => {
+    expect(lastSeenLabel("")).toBeNull();
+    expect(lastSeenLabel("not a date")).toBeNull();
+    expect(lastSeenLabel("2025-13-02T00:00:00+09:00")).toBeNull();
+    expect(lastSeenLabel("2025-00-02T00:00:00+09:00")).toBeNull();
+    expect(lastSeenLabel("2025-07-00T00:00:00+09:00")).toBeNull();
+  });
+
+  it("names what the date means, because the chip beside it is a due date", () => {
+    expect(lastSeenTitle("2025-07-02T00:00:00+09:00")).toBe("last reviewed Jul 2, 2025");
+  });
+
+  it("covers every month boundary", () => {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    for (let m = 1; m <= 12; m += 1) {
+      const mm = String(m).padStart(2, "0");
+      expect(lastSeenLabel(`2025-${mm}-15T00:00:00+09:00`)).toBe(`${months[m - 1]} 15, 2025`);
+    }
   });
 });

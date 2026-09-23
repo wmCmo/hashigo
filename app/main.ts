@@ -127,6 +127,7 @@ import {
   type SyncStatus,
 } from "./sync-client.js";
 import { overdueLabel, overdueTitle } from "./overdue.js";
+import { lastSeenLabel, lastSeenTitle } from "./last-seen.js";
 import { barValueText, barWidths } from "./progress.js";
 import { reviewAction } from "./review-keys.js";
 import {
@@ -1021,6 +1022,23 @@ async function showCardAt(): Promise<void> {
   if (late !== null) {
     const chip = tag(late, "latetag");
     chip.title = overdueTitle(reply.overdueDays, reply.dueAt);
+    deckLine.appendChild(chip);
+  }
+  // WHEN HE LAST SAW IT — Zach, 2026-09-23: *"oh wow it's been 8 months since i
+  // last reviewed this track"*. AFTER the late chip, because this one never
+  // changes while the session is open and the one before it is the actionable
+  // figure; and quiet for the same reason, since 9,085 of his tracks have a date
+  // and nearly every reviewed card will carry one.
+  //
+  // A DIFFERENT NUMBER FROM THE ONE ABOVE. A year-interval track that fell due
+  // three days ago is `due 3 days ago` and `Sep 20, 2025` — the late chip cannot
+  // say how long it has been, which is the thing he asked for.
+  const seen = lastSeenLabel(reply.lastReviewedAt);
+  if (seen !== null) {
+    const chip = tag(seen, "seentag");
+    // Says what the date means: bare, beside `due 17 days ago`, it could be read
+    // as a second due date.
+    chip.title = lastSeenTitle(reply.lastReviewedAt) ?? "";
     deckLine.appendChild(chip);
   }
 

@@ -1221,3 +1221,81 @@ describe("furigana fills", () => {
     }
   });
 });
+
+/**
+ * `$…$` ON THE PATH THAT SHIPS.
+ *
+ * Zach, 2026-09-23: *"it looks like latex isn't rendering correctly (like on
+ * 変動率 card)"*. `src/render/math.ts` had been complete and fully tested since
+ * stage 4 — and `mathRenderers` was imported by `test/japanese-render.test.ts`
+ * **and by nothing else**, so every one of those tests passed against a renderer
+ * `mountPrepared` never installed. Same fault as furigana in decision 37 (c).
+ *
+ * These assert through `mountCard`, which is the thing the app calls. A test that
+ * installs the renderer itself would pass today and would have passed all along,
+ * which is exactly how this survived.
+ */
+describe.skipIf(!HAS_CORPUS)("LaTeX reaches the shipping mount", () => {
+  /** Cards whose field values carry a `$…$` — 14 of them, all measured 2026-09-23. */
+  function mathCards(db: ReturnType<typeof openDatabase>, limit = 20): string[] {
+    return (
+      db
+        .prepare(
+          `SELECT DISTINCT v.card_id AS id FROM card_field_values v
+            WHERE v.value LIKE '%$%' AND v.value LIKE '%\%' LIMIT ?`,
+        )
+        .all(limit) as { id: string }[]
+    ).map((r) => r.id);
+  }
+
+  it("typesets every fragment in the corpus, and refuses none", () => {
+    const { db, store, close } = openCorpus();
+    try {
+      const ids = mathCards(db);
+      expect(ids.length).toBeGreaterThan(0);
+      let subset = 0;
+      let source = 0;
+      for (const cardId of ids) {
+        const card = mountCard<MemoryElement>({ db, cardId, document: memoryDocument(), store });
+        if (card === null) continue;
+        subset += card.result.census.get("math:subset") ?? 0;
+        // THE ONE THAT MATTERS. `math:source` is the verbatim fallback — it is
+        // what the app did on every card before this was wired, so a non-zero
+        // count here is either a regression or a fragment outside the subset.
+        source += card.result.census.get("math:source") ?? 0;
+        card.dispose();
+      }
+      expect(subset).toBeGreaterThan(0);
+      expect(source, "a fragment fell outside the subset and rendered as source").toBe(0);
+    } finally {
+      close();
+    }
+  });
+
+  it("puts ÷ on 変動費率, where he found it as `$\div$`", () => {
+    const { db, store, close } = openCorpus();
+    try {
+      const row = db
+        .prepare(`SELECT id FROM cards WHERE name LIKE '変動費率%' LIMIT 1`)
+        .get() as { id: string } | undefined;
+      expect(row, "the card Zach reported is not in the corpus").toBeDefined();
+      const card = mountCard<MemoryElement>({
+        db,
+        cardId: (row as { id: string }).id,
+        document: memoryDocument(),
+        store,
+      });
+      expect(card).not.toBeNull();
+      const text = (card as NonNullable<typeof card>).result.sides
+        .map((side) => side.element.textContent)
+        .join(" ");
+      expect(text).toContain("÷");
+      // The source must be GONE, not merely accompanied.
+      expect(text).not.toContain("$");
+      expect(text).not.toContain("\div");
+      (card as NonNullable<typeof card>).dispose();
+    } finally {
+      close();
+    }
+  });
+});

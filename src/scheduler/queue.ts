@@ -66,6 +66,21 @@ export interface QueuedTrack {
   readonly dueAt: string | null;
   /** Whole days late. 0 when due today; negative is impossible in this queue. */
   readonly overdueDays: number;
+  /**
+   * When this track was last graded, RFC 3339 with its offset — `null` on a new
+   * one. Straight from `card_tracks.last_reviewed_at`.
+   *
+   * **ONLY ITS DATE IS A FACT.** Every imported review carries `time_unknown = 1`
+   * and the corpus holds exactly ONE distinct time-of-day across all 103,110 rows
+   * (measured 2026-09-23) — Mochi truncated to the date and the importer writes
+   * local midnight. So a consumer may render the date and must not render a
+   * clock time; decision 6, name the basis.
+   *
+   * Checked rather than assumed: it is non-null on exactly the 9,085 tracks with
+   * `reps > 0`, null on all 4,308 new ones, and agrees with
+   * `max(reviews.reviewed_at)` on all 9,085 with zero disagreements.
+   */
+  readonly lastReviewedAt: string | null;
   readonly scheduledDays: number | null;
   readonly reps: number;
   readonly lapses: number;
@@ -100,6 +115,7 @@ SELECT t.id             AS track_id,
        t.due_at         AS due_at,
        t.scheduled_days AS scheduled_days,
        t.reps           AS reps,
+       t.last_reviewed_at AS last_reviewed_at,
        t.lapses         AS lapses,
        t.needs_rereview AS needs_rereview
   FROM card_tracks t
@@ -117,6 +133,7 @@ interface RawQueueRow {
   due_at: string | null;
   scheduled_days: number | null;
   reps: number;
+  last_reviewed_at: string | null;
   lapses: number;
   needs_rereview: number;
 }
@@ -189,6 +206,7 @@ function toQueued(row: RawQueueRow, today: number): QueuedTrack {
     overdueDays: row.due_at === null ? 0 : today - localDayNumber(row.due_at),
     scheduledDays: row.scheduled_days,
     reps: row.reps,
+    lastReviewedAt: row.last_reviewed_at,
     lapses: row.lapses,
     needsRereview: row.needs_rereview === 1 ? 1 : 0,
   };

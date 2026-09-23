@@ -651,7 +651,8 @@ body {
 .latetag,
 .newtag,
 .reasktag,
-.reversetag {
+.reversetag,
+.seentag {
   border: 1px solid var(--edge);
   color: var(--ink);
   display: inline-block;
@@ -692,6 +693,20 @@ body {
    did was take a few days off and come back. Same argument decision 40 used to
    keep red off the stall notice. */
 .latetag {
+  color: var(--muted);
+}
+
+/* Zach, 2026-09-23: *"oh wow it's been 8 months since i last reviewed this
+   track"* — and he asked for a plain date rather than the elapsed count, which
+   is also the only honest option: every imported review carries
+   `time_unknown = 1` and the corpus has ONE distinct time-of-day, so the date is
+   a fact and a clock time would be invented. `app/last-seen.ts` has the rest.
+
+   QUIET LIKE `.latetag`, and for the same reason at greater scale: 9,085 of his
+   13,393 tracks carry a date, so all but the new ones will show one. It sits
+   AFTER the late chip because that one is the actionable number and this one
+   never changes while the session is open. */
+.seentag {
   color: var(--muted);
 }
 
@@ -983,6 +998,63 @@ body {
   border: 0;
   border-top: 1px solid var(--line);
   margin: 14px 0;
+}
+
+/* ── LaTeX, the subset ───────────────────────────────────────────────────────
+   Zach, 2026-09-23: *"it looks like latex isn't rendering correctly (like on
+   変動率 card)"*. `src/render/math.ts` was written for this and was never
+   installed in the shipping render — it is wired in `src/review/mount.ts` now,
+   and these are the rules it needs. 14 cards, 122 field values, `\div` `\times`
+   `\frac`.
+
+   `math.ts` chose `<sup>⁄<sub>` for a fraction precisely so that an unstyled
+   render still reads `x⁄3` — its own comment: *"a stylesheet that has not loaded
+   must never turn a fraction into x3"*. So none of this is load-bearing for
+   correctness; it is here to stop the fraction looking like an exponent. */
+.hashigo-math {
+  /* A formula is not Japanese text: the proportional JP face gives `MTBF` and
+     `(I + D - 1)` inconsistent letter widths. Latin-first, JP as the fallback
+     for the `\text{ヒット率}` case. */
+  font-family: var(--sans);
+  white-space: nowrap;
+}
+
+/* Breathing room around the operator, the way it is set in print. `0.15em`, so
+   it tracks decision 35's type scale rather than fixing a pixel gap. */
+.hashigo-math-op {
+  margin: 0 0.15em;
+}
+
+/* The fraction reads as one token, so it must not break across a line, and its
+   parts must not inherit `sup`/`sub`'s vertical shift twice. */
+.hashigo-math-frac {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.hashigo-math-num,
+.hashigo-math-den {
+  font-size: 0.85em;
+}
+
+.hashigo-math-slash {
+  margin: 0 0.05em;
+}
+
+/* `\text{…}` — upright inside an italic run. The subset has no italic yet, so
+   this only has to promise it will not become one. */
+.hashigo-math-upright {
+  font-style: normal;
+}
+
+/* A fragment OUTSIDE the subset falls back to verbatim source, which is the
+   whole point of the design — a wrong formula is worse than visible source. It
+   should LOOK like source so a refusal is never mistaken for a rendering.
+   Nothing in the corpus hits this today (8 of 8 fragments typeset), so this rule
+   exists for the fragment he writes next. */
+.hashigo-math[data-typeset="source"] {
+  font-family: var(--mono);
+  opacity: 0.85;
 }
 
 /* ── links: two kinds, two destinations, two looks ──────────────────────────

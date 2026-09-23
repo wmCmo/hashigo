@@ -1085,6 +1085,25 @@ export interface CardMessage {
   /** `due_at` as the scheduler issued it, RFC 3339 with his offset. For the title. */
   readonly dueAt: string | null;
   /**
+   * WHEN HE LAST SAW THIS TRACK — `card_tracks.last_reviewed_at`, or null on a
+   * new one.
+   *
+   * Zach, 2026-09-23: *"it would be great if we can see when we reviewed this
+   * track last time, so we can see like oh wow it's been 8 months since i last
+   * reviewed this track, but i think just a plain date would be better"*.
+   *
+   * **A DATE, NEVER A TIME, and that is measured rather than stylistic.** All
+   * 103,110 imported reviews carry `time_unknown = 1` and the corpus holds
+   * exactly ONE distinct time-of-day; Mochi truncated to the date and the
+   * importer writes local midnight. Rendering "3:42pm" would be inventing a
+   * fact. See `./last-seen.ts`, which is the only place that formats it.
+   *
+   * It is a DIFFERENT quantity from `overdueDays` and both are worth showing: a
+   * track on a one-year interval that came due three days ago is `due 3 days ago`
+   * and was last seen a year back.
+   */
+  readonly lastReviewedAt: string | null;
+  /**
    * Collection state, so the screen's pin/archive controls can say which way they
    * go. A toggle that guesses its own starting state is a toggle that lies half
    * the time; the worker owns the row, so the worker says.

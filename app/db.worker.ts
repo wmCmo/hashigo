@@ -773,6 +773,7 @@ function next(request: NextRequest): void {
       reask: false,
       overdueDays: 0,
       dueAt: null,
+      lastReviewedAt: null,
       pinned: false,
       archived: false,
       progress: active.progress(),
@@ -804,6 +805,9 @@ function next(request: NextRequest): void {
     // "not late" and not a missing value.
     overdueDays: item.origin === "new" ? 0 : item.track.overdueDays,
     dueAt: item.track.dueAt,
+    // Null on a new track, which is a fact and not a missing value: there is
+    // no last time. `app/last-seen.ts` renders nothing for it.
+    lastReviewedAt: item.track.lastReviewedAt,
     ...collectionState(db, item.cardId),
     progress: active.progress(),
   });

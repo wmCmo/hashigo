@@ -95,6 +95,7 @@ import {
 import { renderSides, type RenderResult } from "../render/index.js";
 import { furiganaSupport } from "../render/ruby.js";
 import { accentMarkSupport } from "../render/accent-marks.js";
+import { mathRenderers } from "../render/math.js";
 import { MARKS_FIELD } from "../accent/sentence.js";
 import { fillTextSlots, textSlots, type TextSlot } from "./text.js";
 import type { RenderDocument, RenderElement } from "../render/dom.js";
@@ -372,9 +373,31 @@ export function mountPrepared<E extends RenderElement>(
   const marks = accentMarkSupport<E>(
     furiganaElement === undefined ? {} : { fallback: furiganaElement },
   );
+  /**
+   * `$…$` TYPESETS HERE, AND UNTIL 2026-09-23 IT DID NOT — the same fault as
+   * furigana above, in a different module, found the same way: Zach opened a card
+   * and read the source.
+   *
+   * `src/render/math.ts` is 382 lines with its own header arguing the subset
+   * decision, and `mathRenderers` was imported by **`test/japanese-render.test.ts`
+   * and nothing else**. Every one of its tests passed against a renderer the app
+   * never installed, so the suite was green and the card showed `変動費率＝変動費
+   * $\div$売上`.
+   *
+   * It composes with no care needed: furigana and the accent marks both override
+   * `element`, and this overrides `math` alone. Spread order is therefore
+   * irrelevant, and it is spread SECOND only to read as "the marks chain, plus
+   * this".
+   *
+   * **Installing it cannot take a formula away.** The core's default for a `math`
+   * node is verbatim source, which is byte for byte what this renderer falls back
+   * to on a fragment outside the subset — so the worst case is today's output.
+   * Measured over the real corpus 2026-09-23: **8 distinct fragments on 14 cards,
+   * all 8 typeset, 0 refused** (`\div` 100 uses, `\times` 31, `\frac` 1).
+   */
   const result = renderSides(prepared.sides, {
     document: options.document,
-    renderers: marks.renderers,
+    renderers: { ...marks.renderers, ...mathRenderers<E>() },
     // A bare `[[id]]` prints the TARGET CARD'S NAME, which is what Mochi does and
     // what `wikiLink` has always been able to do — it had never been given a
     // resolver, so the "never render an empty anchor" fallback was the only branch
