@@ -3393,6 +3393,14 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
 
   for (const field of fields) {
     const value = card.loaded.values.get(field.id) ?? "";
+    /**
+     * WHAT IS ON DISK NOW, not what was there when the editor opened. The blur
+     * check used to compare against `value` — captured once, never updated — so
+     * edit → blur (saved) → type it back to the original → blur compared equal and
+     * wrote NOTHING: the screen showed the original and the database kept the
+     * edit. Found 2026-09-24 when a test's own restore silently failed.
+     */
+    let saved = value;
     const row = document.createElement("label");
     row.className = "edit-row";
 
@@ -3417,6 +3425,11 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
     }
 
     const save = (next: string): void => {
+      // Recorded before the round trip so a second blur mid-flight does not send
+      // it twice; rolled back below if the worker refuses, so a failed save is
+      // retried on the next blur instead of being remembered as written.
+      const before = saved;
+      saved = next;
       void ask<"setField">({ kind: "setField", cardId: card.cardId, fieldId: field.id, value: next })
         .then((reply) => {
           status.textContent = `saved ${field.name}`;
@@ -3442,6 +3455,7 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
           // time the card is shown, and the status line says so.
         })
         .catch((cause: Error) => {
+          if (saved === next) saved = before;
           status.textContent = `${field.name}: ${cause.message}`;
           status.classList.add("bad");
         });
@@ -3475,7 +3489,7 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
       // upserts for the longest field in the corpus, and each one is an OPFS
       // write measured at 20-80 ms.
       area.addEventListener("blur", () => {
-        if (area.value !== value) save(area.value);
+        if (area.value !== saved) save(area.value);
       });
       row.appendChild(area);
       // Obsidian-style `[[` / `@` completion, and ctrl+click to follow a link into
@@ -3485,7 +3499,7 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
         attachLinkEditing(
           area,
           () => {
-            if (area.value !== value) save(area.value);
+            if (area.value !== saved) save(area.value);
           },
           // A card made from this field's `[[` starts where THIS card is. He changes
           // the template on the way (貫く is 単語, 貫 will be 漢字) and the deck
@@ -3516,6 +3530,51 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
     fitTextarea(area as HTMLTextAreaElement);
   }
   (body.querySelector(".edit-input, .edit-check") as HTMLElement | null)?.focus();
+
+  /**
+   * CTRL+ENTER: DONE — save, close the editor, show the card. Zach, 2026-09-24:
+   * *"usually on mochi, once i do ctrl + enter, it would close the edit modal and
+   * show the card preview right away"*.
+   *
+   * CAPTURE PHASE on the layer, so it wins over every field inside it — including
+   * the link picker, which used to claim Ctrl+Enter for "follow the link under the
+   * caret". That binding was an agent's (bdffa59, 2026-09-07), recorded in no
+   * decision, and it collided with his routine exactly: finishing a `[[` link
+   * leaves the caret INSIDE `[[貫|…]]`, so his habitual Ctrl+Enter would have
+   * opened the linked card instead of closing this one. Ctrl+click still follows.
+   *
+   * SAVE FIRST. Fields save on blur, so blurring the focused one sends its
+   * `setField` — and the worker answers messages in order, so the preview asked
+   * for next is rendered from the saved value, never the stale one.
+   *
+   * If he came here from a preview of this same card, that preview is still
+   * underneath and shows the text from before the edit; it is closed too and a
+   * fresh one opened, rather than revealing a stale card.
+   */
+  root.addEventListener(
+    "keydown",
+    (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key !== "Enter") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (layers.at(-1)?.root !== root) return;
+      // FLUSH EVERY FIELD, not just the focused one, and not by focus. Relying on
+      // `activeElement.blur()` failed in measurement: when the window does not
+      // hold focus, no blur event fires and the edit was dropped while the
+      // preview opened as if nothing had changed. Dispatching `blur` runs each
+      // field's own save, which writes only if its text differs from what is on
+      // disk — so untouched fields send nothing.
+      for (const area of root.querySelectorAll<HTMLTextAreaElement>("textarea.edit-input")) {
+        area.dispatchEvent(new Event("blur"));
+      }
+      (document.activeElement as HTMLElement | null)?.blur();
+      closeTop();
+      const under = layers.at(-1);
+      if (under !== undefined && under.ops && under.cardId === card.cardId) closeTop();
+      void openPreview(card.cardId);
+    },
+    { capture: true },
+  );
 }
 
 /**
@@ -5151,16 +5210,10 @@ function attachLinkEditing(
   });
 
   area.addEventListener("keydown", (event) => {
-    // CTRL+CLICK'S KEYBOARD TWIN, and the only way to follow a link without a
-    // pointer. Same rule, same offset.
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-      const span = linkAt(area.value, area.selectionStart);
-      if (span !== null) {
-        event.preventDefault();
-        void openEditorById(span.target);
-        return;
-      }
-    }
+    // Ctrl+Enter is NOT handled here any more. It used to follow the link under the
+    // caret; since 2026-09-24 it means "done — close and preview", his Mochi habit,
+    // and the editor layer takes it in the capture phase before this runs. See the
+    // handler at the end of `openEditorFor`. Ctrl+CLICK still follows a link.
     if (menu === null || live === null) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
