@@ -200,6 +200,49 @@ that moves audio bytes, and the page sends it from one place: the `resolve` hand
 to `mountPrepared`. So a card merely on screen produces no payload message at all
 — checkable from outside the code, in devtools.
 
+## The page is split into feature modules, and `main.ts` imports nothing back
+
+Split on 2026-09-25, when Zach asked whether a 7,386-line `main.ts` was healthy. It
+was not, for three measured reasons: nothing in it could be tested, every feature
+commit touched it (73 of them), which is where his parallel sessions collided, and 46
+module-level variables were readable and writable by 125 functions.
+
+```plaintext
+main.ts            the entry point and the REVIEW SCREEN: the session, the card,
+                   the preview and card editor, boot. ~3,400 lines, and the heart.
+shell.ts           the port main.ts provides at boot — what features still need from it
+worker-client.ts   the worker and `ask`          layers.ts   the modal stack
+ui.ts / dom.ts     say, the dialogs, the boot log, `el`
+sidebar.ts         the tree, templates, sync dot — OWNS deckIndex, templateChoices
+ops.ts             card operations and the undo stack
+palette.ts  gallery.ts  template-editor.ts  dashboard.ts  settings.ts
+deck-menu.ts  appearance.ts  backup-ui.ts
+```
+
+**Two rules hold it together, and `test/app-imports.test.ts` pins both.**
+
+1. **Nothing imports `main.ts`.** It is the one module with side effects at load, so
+   a cycle through it works only while nothing reads an import during evaluation.
+   A feature that needs something `main.ts` still owns asks `shell()` for it.
+   **`Shell` is a list that should only shrink**: each member is something a
+   feature needs and `main.ts` still owns; when that thing is extracted, the member
+   leaves and becomes a direct import. It started the day at four, grew to ten while
+   the features came out, and ended at five — all of them review-screen or preview.
+2. **Features may import each other.** The sidebar opens the gallery, the gallery
+   calls card operations, the palette reads the sidebar's templates — they only
+   ever call each other's functions after load, which ES modules handle.
+
+**A module-level list has ONE writer.** `deckIndex` and `templateChoices` are
+exported from `sidebar.ts` as live bindings and written only by `loadDecks`; an
+import cannot be assigned to, so the compiler enforces it. That is also why
+`refreshAfterOp` (in `ops.ts`) cannot touch the review card's pin/archive flags
+itself — it asks `main.ts` to, through `shell().repaintReviewFlags()`.
+
+The moves were made by a script that DERIVED each module's imports from what its
+code used, and refused to write anything when a name had no home — it refused
+twice, both times correctly (a local variable shadowing a top-level one of the same
+name). Nothing was retyped.
+
 ## Three things running it found that reasoning had not
 
 ### 1. The prompt boundary has to be POSITIONAL, because of reverse tracks
