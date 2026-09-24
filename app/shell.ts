@@ -16,42 +16,30 @@
  *
  * So `main.ts` PROVIDES these once, at boot, and a feature asks for them when it
  * runs. **This interface is a to-do list that should only ever get shorter**: each
- * member is something a feature needs and `main.ts` still owns. When the undo
- * stack or the preview is extracted, its members leave this interface and become
- * a direct import from their new home.
+ * member is something a feature needs and `main.ts` still owns. When a feature is
+ * extracted, its members leave this interface and become a direct import from
+ * their new home — `loadDecks` and `closeSidebar` left for `./sidebar.ts`, and
+ * the undo stack and card operations for `./ops.ts`, the same day.
  *
  * Asking before `main.ts` has provided throws, loudly, rather than returning a
  * stub — a feature that runs before boot finished is a bug worth seeing.
  */
 
 import type { PreparedCard } from "../src/review/index.js";
-import type { CardOp, DeckBrief, DeckOp, TemplateChoice } from "./protocol.js";
-
-/** One reversible step. The WORKER computed `run` when it acted; nothing re-derives it. */
-export interface UndoEntry {
-  readonly describe: string;
-  readonly run: () => Promise<void>;
-}
+import type { Layer } from "./layers.js";
+import type { DeckBrief, DeckOp, TemplateChoice } from "./protocol.js";
 
 export interface Shell {
-  // ── the undo stack and card operations (his #7, #13) ──
-  /** Put a reversal on the undo stack. */
-  readonly pushUndo: (entry: UndoEntry) => void;
-  /** Re-read everything an operation can have changed and repaint it. */
-  readonly refreshAfterOp: () => Promise<void>;
-  readonly runCardOp: (
-    op: CardOp,
-    cardId: string,
-    extra?: { readonly templateId?: string | null },
-  ) => Promise<void>;
-  readonly confirmDelete: (cardId: string, name: string) => void;
+  // ── the review screen ──
+  /** Move the session on to its next card. */
+  readonly showSessionCard: () => Promise<void>;
+  /** Re-read the review card's pin/archive flags and repaint its handle. */
+  readonly repaintReviewFlags: () => Promise<void>;
 
   // ── the preview and the card editor (his requests 2 and 3) ──
   readonly openPreview: (cardId: string) => Promise<void>;
-  readonly openEditorById: (
-    cardId: string,
-    options?: { readonly replacing?: HTMLElement },
-  ) => Promise<void>;
+  /** Repaint a preview layer's pin/archive/… buttons after its card changed. */
+  readonly paintLayerOps: (layer: Layer, host: HTMLElement) => void;
   readonly openEditorFor: (
     card: PreparedCard,
     choices?: readonly TemplateChoice[],

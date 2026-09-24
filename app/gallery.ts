@@ -10,6 +10,7 @@ import { el } from "./dom.js";
 import { shell } from "./shell.js";
 import { closeSidebar, deckIndex } from "./sidebar.js";
 import { ask } from "./worker-client.js";
+import { confirmDelete, openEditorById, runCardOp } from "./ops.js";
 
 /**
  * *"once you click the deck, what happens? the main screen goes to the card
@@ -139,17 +140,17 @@ function galleryCard(hit: BrowseHit): HTMLElement {
   bar.className = "gcard-ops";
   const ops: readonly (readonly [string, () => void])[] = [
     ["preview", () => void shell().openPreview(hit.cardId)],
-    ["edit", () => void shell().openEditorById(hit.cardId)],
+    ["edit", () => void openEditorById(hit.cardId)],
     [
       hit.pinned ? "unpin" : "pin",
-      () => void shell().runCardOp(hit.pinned ? "unpin" : "pin", hit.cardId),
+      () => void runCardOp(hit.pinned ? "unpin" : "pin", hit.cardId),
     ],
     [
       hit.archived ? "unarchive" : "archive",
-      () => void shell().runCardOp(hit.archived ? "unarchive" : "archive", hit.cardId),
+      () => void runCardOp(hit.archived ? "unarchive" : "archive", hit.cardId),
     ],
-    ["duplicate", () => void shell().runCardOp("duplicate", hit.cardId)],
-    ["delete", () => void shell().confirmDelete(hit.cardId, hit.name)],
+    ["duplicate", () => void runCardOp("duplicate", hit.cardId)],
+    ["delete", () => void confirmDelete(hit.cardId, hit.name)],
   ];
   for (const [label, run] of ops) {
     const button = document.createElement("button");

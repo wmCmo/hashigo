@@ -30,6 +30,7 @@ import {
 import { openTemplateEditor } from "./template-editor.js";
 import { openPrompt, say } from "./ui.js";
 import { ask } from "./worker-client.js";
+import { refreshAfterOp } from "./ops.js";
 
 /**
  * *"a side bar to navigate, which is a space where we create cards, navigate the
@@ -443,7 +444,7 @@ async function runSync(): Promise<void> {
     }
     // A merge can change what is due and what is archived, so the queue the
     // screen is holding may no longer be the right one.
-    if (outcome.reviewsAdded > 0 || outcome.flagsTaken > 0) await shell().refreshAfterOp();
+    if (outcome.reviewsAdded > 0 || outcome.flagsTaken > 0) await refreshAfterOp();
   } catch (error) {
     syncStatus = {
       ...syncStatus,

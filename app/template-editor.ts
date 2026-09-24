@@ -6,8 +6,8 @@
  * no test can import. The pure half of it — what a field's row SAYS — was already
  * in `./field-form.ts` and tested over the real 48 fields; this is the DOM half.
  *
- * It reloads the deck tree after an edit (`./sidebar.ts`) and pushes onto the undo
- * stack, which still lives in `main.ts` and so goes through `./shell.ts`.
+ * It reloads the deck tree after an edit (`./sidebar.ts`) and pushes each edit's
+ * reversal onto the undo stack (`./ops.ts`).
  */
 
 import { decodeFieldOptions } from "../src/cards/index.js";
@@ -21,10 +21,10 @@ import type {
   TemplateFieldRow,
   TemplateOpRequest,
 } from "./protocol.js";
-import { shell } from "./shell.js";
 import { loadDecks } from "./sidebar.js";
 import { openConfirm, say } from "./ui.js";
 import { ask } from "./worker-client.js";
+import { pushUndo, refreshAfterOp } from "./ops.js";
 
 /**
  * *"where can i edit my template? there should be a modal for editing template and
@@ -105,7 +105,7 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
       }
       if (done.undo !== null) {
         const entry = done.undo;
-        shell().pushUndo({
+        pushUndo({
           describe: done.describe,
           run: async () => {
             const back = await ask<"templateOp">({ kind: "templateOp", ...entry });
@@ -113,7 +113,7 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
               detail = back.template;
               paint();
             }
-            await shell().refreshAfterOp();
+            await refreshAfterOp();
           },
         });
       }

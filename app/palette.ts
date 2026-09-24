@@ -11,6 +11,7 @@ import { shell } from "./shell.js";
 import { loadDecks, templateChoices } from "./sidebar.js";
 import { readVisits } from "./visits.js";
 import { ask } from "./worker-client.js";
+import { pushUndo, refreshAfterOp } from "./ops.js";
 
 /**
  * *"i want notion, obsidian like searching feature, so like ctrl +k and it pops
@@ -221,11 +222,11 @@ export function buildNewCardForm(): HTMLElement {
         // HIS #13's "create card". Undone by deleting it — which is safe here in a
         // way `delete` generally is not: a card made seconds ago has no review
         // history to lose, which is the whole reason delete is otherwise final.
-        shell().pushUndo({
+        pushUndo({
           describe: `new card ${reply.cardId}`,
           run: async () => {
             await ask<"cardOp">({ kind: "cardOp", op: "delete", cardId: reply.cardId });
-            await shell().refreshAfterOp();
+            await refreshAfterOp();
           },
         });
         // Straight into the editor on the card just made: a title with no fields
