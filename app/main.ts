@@ -82,6 +82,19 @@ import {
   type Sample,
 } from "./sync-climb.js";
 import { mountPrepared, type MountedCard, type PreparedCard } from "../src/review/index.js";
+import { ask, listenToWorker } from "./worker-client.js";
+import {
+  bareLayer,
+  closeIfTop,
+  closeTop,
+  layerHost,
+  layers,
+  pushLayer,
+  registerLayer,
+  type Layer,
+} from "./layers.js";
+import { el } from "./dom.js";
+import { openConfirm, openPrompt, say } from "./ui.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import {
   attachInput,
@@ -163,7 +176,6 @@ import {
 import type {
   AnswerRefusal,
   AppMessage,
-  AppRequest,
   BrowseHit,
   CardOp,
   DeckOp,
@@ -176,56 +188,11 @@ import type {
   TemplateBrief,
 } from "./protocol.js";
 
-// ─── the worker, as a promise-returning client ───────────────────────────────
-
-const worker = new Worker(new URL("./db.worker.ts", import.meta.url), { type: "module" });
-
-let nextId = 1;
-const pending = new Map<
-  number,
-  { resolve: (value: never) => void; reject: (reason: Error) => void }
->();
-
-worker.onmessage = (event: MessageEvent<AppMessage>): void => {
-  const message = event.data;
-  if (message.kind === "log") {
-    line(message.text, message.level);
-    return;
-  }
-  if (message.kind === "fetching") {
-    showFetchProgress(message);
-    return;
-  }
-  const waiting = pending.get(message.id);
-  if (waiting === undefined) return;
-  pending.delete(message.id);
-  if (message.kind === "error") {
-    waiting.reject(Object.assign(new Error(message.message), { stack: message.stack ?? undefined }));
-    return;
-  }
-  (waiting.resolve as (value: AppMessage) => void)(message);
-};
-
-function ask<K extends keyof ReplyFor>(
-  request: Omit<Extract<AppRequest, { kind: K }>, "id">,
-): Promise<ReplyFor[K]> {
-  const id = nextId++;
-  return new Promise<ReplyFor[K]>((resolve, reject) => {
-    pending.set(id, {
-      resolve: resolve as (value: never) => void,
-      reject,
-    });
-    worker.postMessage({ ...request, id } as AppRequest);
-  });
-}
-
 // ─── the page ────────────────────────────────────────────────────────────────
 
-const el = <T extends HTMLElement>(id: string): T => {
-  const found = document.getElementById(id);
-  if (found === null) throw new Error(`#${id} is not in index.html`);
-  return found as T;
-};
+// The boot log and the seed-download readout. Subscribed first, so
+// `worker-client.ts` can replay whatever the worker said before this ran.
+listenToWorker({ log: (m) => line(m.text, m.level), fetching: showFetchProgress });
 
 const bootView = el("boot");
 const bootLog = el("bootlog");
@@ -2944,66 +2911,6 @@ async function maybeReset(): Promise<boolean> {
 
 // ─── his request 2: preview layers, and they STACK ──────────────────────────
 
-/**
- * A PREVIEW IS NOT A REVIEW — decision 30, and it decides everything here.
- *
- * > showing a preview card is not the same as put the card into a review mode,
- * > when you enter a review mode, everything goes as it is now, showing a
- * > previewed card lets you view every sides at once
- *
- * So a layer renders every side at once, fully revealed, with no masks, no
- * grading, and **nothing plays by itself**. A clip is one deliberate tap away, as
- * it always is — which is why the native `<audio>` controls, hidden in review, are
- * SHOWN in a layer: there is no reveal here to hang playback on.
- *
- * That also means a layer needs none of review's machinery. No `enter()` (which
- * would ask the mode-2 question), no drill boundary, no one-clip arbitration —
- * every side is unmasked with `{ silent: true }` and left alone.
- *
- * ─── THEY NEST, AND HIS OWN CORPUS SAYS THAT IS UNBOUNDED ───────────────────
- *
- * > when you click another link that's on the pop up modal, it opens another
- * > layer on the top, and you can keep going in mochi, and i kinda like that
- *
- * Measured before building it: 8,744 links from 4,335 cards, the deepest acyclic
- * chain is 9, and there are **23 MUTUAL pairs** — A links to B, B links back to A
- * — so the stack can grow without bound on real data. No depth cap is imposed
- * here, because the corpus does not impose one and a limit would be a decision
- * nobody has made. What IS bounded is cost: each layer owns its mount and
- * disposes it on close, so the audio controller and every object URL it minted go
- * with it (`src/blobs/url.ts` rule 1 — the scope that mints revokes).
- */
-interface Layer {
-  readonly root: HTMLElement;
-  /** Null for a layer that renders no card — the editor, and "card not found". */
-  readonly mounted: MountedCard<HTMLElement> | null;
-  /** The prepared card, so `e` can edit whatever layer is on top. */
-  readonly prepared: PreparedCard | null;
-  readonly cardId: string;
-  /**
-   * Whether the single-key card operations act on this layer.
-   *
-   * TRUE for a preview only, and it is deliberately not derived from `cardId`. The
-   * EDITOR carries a card id too, and every one of its fields is an input — so a
-   * layer keyed on the id alone would archive the card he is editing the moment
-   * focus sat on the panel instead of a box. A preview has nothing to type into,
-   * which is exactly why the bare keys belong there and nowhere else.
-   */
-  readonly ops: boolean;
-  /** Repainted in place by `refreshAfterOp`, for the same reason the review bar is. */
-  pinned: boolean;
-  archived: boolean;
-  /**
-   * Runs after the layer is removed, however it was closed — ✕, Escape, the
-   * backdrop, Ctrl+Enter. The editor uses it to save every field and, when it was
-   * opened FROM a preview, to turn back into a fresh one. See `openEditorFor`.
-   */
-  onClose?: () => void;
-}
-
-const layerHost = el("layers");
-const layers: Layer[] = [];
-
 async function openPreview(cardId: string): Promise<void> {
   const reply = await ask<"preview">({ kind: "preview", cardId });
   // THE VISIT, and the two funnels are here and in `openEditorById` because every
@@ -3069,7 +2976,7 @@ async function openPreview(cardId: string): Promise<void> {
     // layer BENEATH the one on screen and left the not-found box orphaned on top.
     // `closeTop` already tolerates a null mount (`top.mounted?.dispose()`), so this
     // needs no special case anywhere.
-    layers.push({
+    registerLayer({
       root,
       mounted: null,
       prepared: null,
@@ -3154,7 +3061,7 @@ async function openPreview(cardId: string): Promise<void> {
     pinned: reply.pinned,
     archived: reply.archived,
   };
-  layers.push(layer);
+  registerLayer(layer);
   paintLayerOps(layer, ops);
 
   // UNCONDITIONAL HERE, because decision 30 already settled it: a preview is
@@ -3205,29 +3112,6 @@ function paintLayerOps(layer: Layer, host: HTMLElement): void {
     button.addEventListener("click", run);
     host.appendChild(button);
   }
-}
-
-function closeIfTop(root: HTMLElement): void {
-  if (layers.at(-1)?.root !== root) {
-    // Not the top layer. Removing it would strand everything above it, so the
-    // click does nothing — the same thing every stacked dialog does.
-    return;
-  }
-  closeTop();
-}
-
-function closeTop(): void {
-  const top = layers.pop();
-  if (top === undefined) return;
-  // Dispose BEFORE detaching: the mount releases its audio leases and revokes
-  // every object URL it minted, and a detached tree would still be holding them.
-  // Null on an editor layer, which renders no card and holds no lease.
-  top.mounted?.dispose();
-  top.root.remove();
-  if (layerHost.childElementCount === 0) document.body.classList.remove("layered");
-  const next = layers.at(-1);
-  (next?.root.querySelector(".layer-close") as HTMLElement | undefined)?.focus();
-  top.onClose?.();
 }
 
 /**
@@ -3555,7 +3439,7 @@ function openEditorFor(
     }
   };
   // `ops: false` — this is the EDITOR. See `Layer.ops`.
-  layers.push({
+  registerLayer({
     root,
     mounted: null,
     prepared: null,
@@ -4290,9 +4174,7 @@ function openPalette(tagPath: string | null = null): void {
     }
   });
 
-  layerHost.appendChild(root);
-  document.body.classList.add("layered");
-  layers.push({ root, mounted: null, prepared: null, cardId: "", ops: false, pinned: false, archived: false });
+  pushLayer(bareLayer(root));
   input.focus();
   void run();
 }
@@ -4693,19 +4575,6 @@ async function runUndo(): Promise<void> {
 
 undoButton.addEventListener("click", () => void runUndo());
 
-/** One place the app says what just happened, on every surface. */
-function say(text: string, bad = false): void {
-  const strip = el("say");
-  strip.textContent = text;
-  strip.classList.toggle("bad", bad);
-  strip.hidden = false;
-  window.clearTimeout(sayTimer);
-  sayTimer = window.setTimeout(() => {
-    strip.hidden = true;
-  }, 4000);
-}
-let sayTimer = 0;
-
 async function runCardOp(
   op: CardOp,
   cardId: string,
@@ -4932,17 +4801,7 @@ function openTemplatePicker(card: PreparedCard, choices: readonly TemplateChoice
 
   panel.appendChild(list);
   root.append(backdrop, panel);
-  layerHost.appendChild(root);
-  document.body.classList.add("layered");
-  layers.push({
-    root,
-    mounted: null,
-    prepared: null,
-    cardId: "",
-    ops: false,
-    pinned: false,
-    archived: false,
-  });
+  pushLayer(bareLayer(root));
   (list.firstElementChild as HTMLElement | null)?.focus();
 }
 
@@ -5283,49 +5142,6 @@ function attachLinkEditing(
   });
 }
 
-function openConfirm(
-  title: string,
-  body: string,
-  verb: string,
-  run: () => void,
-  tone: "danger" | "normal" = "danger",
-): void {
-  const root = document.createElement("div");
-  root.className = "layer layer-confirm";
-  root.setAttribute("role", "dialog");
-  root.setAttribute("aria-modal", "true");
-  const backdrop = document.createElement("div");
-  backdrop.className = "layer-backdrop";
-  backdrop.addEventListener("click", () => closeIfTop(root));
-  const panel = document.createElement("div");
-  panel.className = "confirm-panel";
-  const h = document.createElement("h2");
-  h.textContent = title;
-  const p = document.createElement("p");
-  p.textContent = body;
-  const bar = document.createElement("div");
-  bar.className = "confirm-bar";
-  const cancel = document.createElement("button");
-  cancel.type = "button";
-  cancel.textContent = "cancel";
-  cancel.addEventListener("click", () => closeIfTop(root));
-  const go = document.createElement("button");
-  go.type = "button";
-  if (tone === "danger") go.className = "danger";
-  go.textContent = verb;
-  go.addEventListener("click", () => {
-    closeIfTop(root);
-    run();
-  });
-  bar.append(cancel, go);
-  panel.append(h, p, bar);
-  root.append(backdrop, panel);
-  layerHost.appendChild(root);
-  document.body.classList.add("layered");
-  layers.push({ root, mounted: null, prepared: null, cardId: "", ops: false, pinned: false, archived: false });
-  cancel.focus();
-}
-
 /**
  * A CARD CREATOR ON TOP OF WHAT HE IS EDITING — his Mochi routine, 2026-09-24.
  *
@@ -5477,9 +5293,7 @@ function openNewCardDialog(options: {
 
   panel.append(heading, title, template, deck, said, bar);
   root.append(backdrop, panel);
-  layerHost.appendChild(root);
-  document.body.classList.add("layered");
-  layers.push({ root, mounted: null, prepared: null, cardId: "", ops: false, pinned: false, archived: false });
+  pushLayer(bareLayer(root));
   // The name is already right in his routine, so the first thing he does is pick
   // the template — focus goes there.
   template.focus();
@@ -5692,17 +5506,7 @@ async function openTemplateEditorById(templateId: string): Promise<void> {
   }
 
   paint();
-  layerHost.appendChild(root);
-  document.body.classList.add("layered");
-  layers.push({
-    root,
-    mounted: null,
-    prepared: null,
-    cardId: "",
-    ops: false,
-    pinned: false,
-    archived: false,
-  });
+  pushLayer(bareLayer(root));
   close.focus();
 }
 
@@ -5981,17 +5785,7 @@ function openAddField(detail: TemplateDetail, run: TemplateRunner): void {
 
   panel.append(heading, text, nameRow, typeRow, bar);
   root.append(backdrop, panel);
-  layerHost.appendChild(root);
-  document.body.classList.add("layered");
-  layers.push({
-    root,
-    mounted: null,
-    prepared: null,
-    cardId: "",
-    ops: false,
-    pinned: false,
-    archived: false,
-  });
+  pushLayer(bareLayer(root));
   nameInput.focus();
 }
 
@@ -6175,17 +5969,7 @@ async function openDashboard(): Promise<void> {
   full.addEventListener("click", () => void buildDashboard());
   body.append(glanceHead("the four-year report"), note, full);
 
-  layerHost.appendChild(root);
-  document.body.classList.add("layered");
-  layers.push({
-    root,
-    mounted: null,
-    prepared: null,
-    cardId: "",
-    ops: false,
-    pinned: false,
-    archived: false,
-  });
+  pushLayer(bareLayer(root));
   close.focus();
 }
 
@@ -6437,17 +6221,7 @@ async function buildDashboard(): Promise<void> {
   panel.appendChild(frame);
   root.appendChild(panel);
 
-  layerHost.appendChild(root);
-  document.body.classList.add("layered");
-  layers.push({
-    root,
-    mounted: null,
-    prepared: null,
-    cardId: "",
-    ops: false,
-    pinned: false,
-    archived: false,
-  });
+  pushLayer(bareLayer(root));
   close.focus();
   say(`dashboard: ${reply.elapsedMs.toFixed(0)} ms over the whole history`);
 }
@@ -6692,17 +6466,7 @@ async function openSettings(): Promise<void> {
 
   body.appendChild(settingsState(reply));
   body.appendChild(status);
-  layerHost.appendChild(root);
-  document.body.classList.add("layered");
-  layers.push({
-    root,
-    mounted: null,
-    prepared: null,
-    cardId: "",
-    ops: false,
-    pinned: false,
-    archived: false,
-  });
+  pushLayer(bareLayer(root));
   (body.querySelector(".edit-input") as HTMLElement | null)?.focus();
 }
 
@@ -6897,93 +6661,6 @@ function settingsState(reply: ReplyFor["settings"]): HTMLElement {
 }
 
 /**
- * A one-field dialog: a name, a button, Enter and Escape.
- *
- * `window.prompt()` is what this replaces and it is not usable here. It blocks the
- * event loop (so the worker's replies queue behind it), it cannot be styled, and on
- * a phone it is a system sheet that reads as the browser interrupting rather than
- * the app asking. It also cannot say WHY it is asking, and every use of this one
- * has a consequence worth a sentence.
- */
-function openPrompt(
-  title: string,
-  body: string,
-  label: string,
-  initial: string,
-  run: (value: string) => void,
-): void {
-  const root = document.createElement("div");
-  root.className = "layer layer-confirm";
-  root.setAttribute("role", "dialog");
-  root.setAttribute("aria-modal", "true");
-  const backdrop = document.createElement("div");
-  backdrop.className = "layer-backdrop";
-  backdrop.addEventListener("click", () => closeIfTop(root));
-
-  const panel = document.createElement("div");
-  panel.className = "confirm-panel";
-  const heading = document.createElement("h2");
-  heading.textContent = title;
-  const text = document.createElement("p");
-  text.textContent = body;
-
-  const field = document.createElement("label");
-  field.className = "edit-row";
-  const name = document.createElement("span");
-  name.className = "edit-label";
-  name.textContent = label;
-  const input = document.createElement("input");
-  input.className = "edit-input";
-  input.type = "text";
-  input.value = initial;
-  field.append(name, input);
-
-  const bar = document.createElement("div");
-  bar.className = "confirm-bar";
-  const cancel = document.createElement("button");
-  cancel.type = "button";
-  cancel.textContent = "cancel";
-  cancel.addEventListener("click", () => closeIfTop(root));
-  const go = document.createElement("button");
-  go.type = "button";
-  go.textContent = "ok";
-  const submit = (): void => {
-    const value = input.value.trim();
-    // An empty name is refused rather than accepted-and-defaulted: a deck called
-    // "new deck" that he meant to name something is a deck he has to find again.
-    if (value === "") {
-      input.focus();
-      return;
-    }
-    closeIfTop(root);
-    run(value);
-  };
-  go.addEventListener("click", submit);
-  input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      submit();
-    }
-  });
-  bar.append(cancel, go);
-  panel.append(heading, text, field, bar);
-  root.append(backdrop, panel);
-  layerHost.appendChild(root);
-  document.body.classList.add("layered");
-  layers.push({
-    root,
-    mounted: null,
-    prepared: null,
-    cardId: "",
-    ops: false,
-    pinned: false,
-    archived: false,
-  });
-  input.focus();
-  input.select();
-}
-
-/**
  * Every deck operation goes through here, so undo and the error path exist once.
  *
  * The undo is spread from `reply.undo` rather than rebuilt: `restoreArchive`
@@ -7139,15 +6816,7 @@ function openCardMenu(cardId: string, name: string): void {
   document.body.classList.add("layered");
   // `ops: false` like the deck menu: the single-key card operations must keep
   // meaning the REVIEW card, not this dialog. The dialog has buttons for them.
-  layers.push({
-    root,
-    mounted: null,
-    prepared: null,
-    cardId: "",
-    ops: false,
-    pinned: false,
-    archived: false,
-  });
+  registerLayer(bareLayer(root));
   (list.firstElementChild as HTMLElement | null)?.focus();
 }
 
@@ -7259,17 +6928,7 @@ function openDeckMenu(deck: DeckBrief): void {
 
   panel.appendChild(list);
   root.append(backdrop, panel);
-  layerHost.appendChild(root);
-  document.body.classList.add("layered");
-  layers.push({
-    root,
-    mounted: null,
-    prepared: null,
-    cardId: "",
-    ops: false,
-    pinned: false,
-    archived: false,
-  });
+  pushLayer(bareLayer(root));
   (list.firstElementChild as HTMLElement | null)?.focus();
 }
 
@@ -7331,17 +6990,7 @@ function openDeckMove(deck: DeckBrief): void {
 
   panel.appendChild(list);
   root.append(backdrop, panel);
-  layerHost.appendChild(root);
-  document.body.classList.add("layered");
-  layers.push({
-    root,
-    mounted: null,
-    prepared: null,
-    cardId: "",
-    ops: false,
-    pinned: false,
-    archived: false,
-  });
+  pushLayer(bareLayer(root));
   (list.firstElementChild as HTMLElement | null)?.focus();
 }
 
