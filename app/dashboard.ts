@@ -1,14 +1,14 @@
 /**
  * THE DASHBOARD FROM THE SIDEBAR — his #1, moved out of `main.ts` on 2026-09-25.
  *
- * Self-contained enough that the only thing it needs from `main.ts` is closing the
- * drawer on a phone before it opens, which goes through `./shell.ts`.
+ * Self-contained: the only thing it needs besides the worker is closing the drawer
+ * on a phone before it opens, which `./sidebar.ts` owns.
  */
 
 import type { GlanceDeck } from "../src/dashboard/index.js";
 import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
 import type { ReplyFor } from "./protocol.js";
-import { shell } from "./shell.js";
+import { closeSidebar } from "./sidebar.js";
 import { say } from "./ui.js";
 import { ask } from "./worker-client.js";
 
@@ -27,7 +27,7 @@ import { ask } from "./worker-client.js";
  * dropped into a dark app at night is its own answer.
  */
 export async function openDashboard(): Promise<void> {
-  shell().closeSidebar();
+  closeSidebar();
   let reply: ReplyFor["glance"];
   try {
     reply = await ask<"glance">({ kind: "glance" });
