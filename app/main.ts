@@ -3482,9 +3482,16 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
       // its own editor. Only on the text kinds: a `number` field holds digits and a
       // `boolean` is a checkbox, so neither can contain a link.
       if (field.type === "plain" || field.type === "text") {
-        attachLinkEditing(area, () => {
-          if (area.value !== value) save(area.value);
-        });
+        attachLinkEditing(
+          area,
+          () => {
+            if (area.value !== value) save(area.value);
+          },
+          // A card made from this field's `[[` starts where THIS card is. He changes
+          // the template on the way (貫く is 単語, 貫 will be 漢字) and the deck
+          // follows it — see `openNewCardDialog`.
+          { deckId: card.loaded.deckId, templateId: card.loaded.templateId },
+        );
       }
     }
     body.appendChild(row);
@@ -4756,9 +4763,9 @@ function templateRow(card: PreparedCard, choices: readonly TemplateChoice[]): HT
   const note = document.createElement("p");
   note.className = "settings-note";
   note.textContent =
-    "Changing the template never deletes a value. Values whose field the new " +
-    "template does not declare stop rendering and stay stored — field ids are " +
-    "per-template, so 単語 and 言葉 share four and every other pair shares one.";
+    "Switching templates never deletes anything. A value only shows if the new " +
+    "template has the same field; the rest stay saved and come back if you switch " +
+    "back. 単語 and 言葉 share four fields; most other pairs share one.";
   row.appendChild(note);
   return row;
 }
@@ -4778,9 +4785,14 @@ function openTemplatePicker(card: PreparedCard, choices: readonly TemplateChoice
   const heading = document.createElement("h2");
   heading.textContent = `Template for ${card.loaded.name || card.cardId}`;
   const text = document.createElement("p");
+  // Zach, 2026-09-24: *"what does that even mean"*. The old sentence was true and
+  // written in the schema's vocabulary ("declares", "stop rendering"). What he
+  // needs from it is one fact — nothing is lost — and how to read the two numbers.
   text.textContent =
-    "Nothing is deleted. The number is how many of this card's non-empty values " +
-    "the new template also declares; the rest stop rendering and stay stored.";
+    "Switching never deletes anything. Each template has its own fields, so only " +
+    "some of what's filled in carries over: “keeps 3” means three of this card's " +
+    "filled-in fields will still show, “hides 2” means two won't — they stay " +
+    "saved and come back if you switch back.";
   panel.append(heading, text);
 
   const list = document.createElement("div");
@@ -4956,13 +4968,39 @@ function attachLinkMirror(area: HTMLTextAreaElement): () => void {
   return paint;
 }
 
-function attachLinkEditing(area: HTMLTextAreaElement, onSaveNeeded: () => void): void {
+/**
+ * THE CARD BEING EDITED, as far as the link picker needs it — the defaults for a
+ * card created from `[[`.
+ */
+interface LinkOrigin {
+  readonly deckId: string;
+  readonly templateId: string | null;
+}
+
+function attachLinkEditing(
+  area: HTMLTextAreaElement,
+  onSaveNeeded: () => void,
+  origin: LinkOrigin,
+): void {
   const repaint = attachLinkMirror(area);
   let menu: HTMLElement | null = null;
   let hits: readonly BrowseHit[] = [];
   let index = 0;
   let token = 0;
   let live: Trigger | null = null;
+
+  /**
+   * `+ create card` — his Mochi routine, 2026-09-24: type `[[` before 貫く, move
+   * the caret past 貫, arrow down to the bottom row, Enter, and a creator opens on
+   * top; make the card, and the link is already there.
+   *
+   * It is the row AFTER the hits, so `index === hits.length` selects it. Offered
+   * whenever something is typed — even when a card by that name exists, because a
+   * word and its kanji are often two cards (貫く in 単語, 貫 in 漢字) and the
+   * picker cannot know which one he means to make.
+   */
+  const canCreate = (): boolean => live !== null && live.query.trim() !== "";
+  const rows = (): number => hits.length + (canCreate() ? 1 : 0);
 
   const close = (): void => {
     menu?.remove();
@@ -4979,7 +5017,6 @@ function attachLinkEditing(area: HTMLTextAreaElement, onSaveNeeded: () => void):
       empty.className = "link-empty";
       empty.textContent = live.query === "" ? "type to search cards" : `no card matching ${live.query}`;
       menu.appendChild(empty);
-      return;
     }
     hits.forEach((hit, at) => {
       const item = document.createElement("button");
@@ -5000,9 +5037,55 @@ function attachLinkEditing(area: HTMLTextAreaElement, onSaveNeeded: () => void):
       menu!.appendChild(item);
       if (at === index) item.scrollIntoView({ block: "nearest" });
     });
+    if (canCreate()) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "link-item link-create";
+      if (index === hits.length) item.classList.add("on");
+      const name = document.createElement("b");
+      name.textContent = `+ create card “${live.query.trim()}”`;
+      const where = document.createElement("i");
+      where.textContent = "choose its template and deck next";
+      item.append(name, where);
+      item.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        choose(hits.length);
+      });
+      menu.appendChild(item);
+      if (index === hits.length) item.scrollIntoView({ block: "nearest" });
+    }
+  };
+
+  /**
+   * Make the card, THEN link to it, THEN open it — in that order so that nothing
+   * is written if he backs out of the creator. The trigger is captured now,
+   * because the textarea is under a layer until the creator closes and nothing
+   * can move its text in the meantime.
+   */
+  const create = (): void => {
+    if (live === null) return;
+    const trigger = live;
+    const name = trigger.query.trim();
+    close();
+    openNewCardDialog({
+      name,
+      deckId: origin.deckId,
+      templateId: origin.templateId,
+      onCreated: (cardId) => {
+        const out = completeLink(area.value, trigger, name, cardId);
+        area.value = out.text;
+        area.setSelectionRange(out.caret, out.caret);
+        repaint();
+        onSaveNeeded();
+      },
+    });
   };
 
   const choose = (at: number): void => {
+    if (at === hits.length && canCreate()) {
+      create();
+      return;
+    }
     const hit = hits[at];
     if (hit === undefined || live === null) return;
     const out = completeLink(area.value, live, hit.name === "" ? hit.cardId : hit.name, hit.cardId);
@@ -5051,6 +5134,16 @@ function attachLinkEditing(area: HTMLTextAreaElement, onSaveNeeded: () => void):
 
   area.addEventListener("input", refresh);
   area.addEventListener("click", () => refresh());
+  // MOVING THE CARET IS A NEW QUERY, and nothing heard it. Zach, 2026-09-24: type
+  // `[[` in front of 貫く, press → once, and the query is now 貫 — but the caret
+  // moved without an `input` or a `click`, so the menu kept showing what it had
+  // found for the empty query. Up/Down are left out on purpose: with the menu open
+  // they move the SELECTION, and refreshing would snap it back to the top.
+  area.addEventListener("keyup", (event) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") {
+      refresh();
+    }
+  });
   area.addEventListener("blur", () => {
     // Deferred: a mousedown on the menu fires blur first, and closing here
     // synchronously would destroy the item before its handler ran.
@@ -5071,10 +5164,11 @@ function attachLinkEditing(area: HTMLTextAreaElement, onSaveNeeded: () => void):
     if (menu === null || live === null) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      index = Math.max(0, Math.min(hits.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
+      // `rows()`, not `hits.length`: the create row is the last stop.
+      index = Math.max(0, Math.min(rows() - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
       paint();
     } else if (event.key === "Enter" || event.key === "Tab") {
-      if (hits.length === 0) return;
+      if (rows() === 0) return;
       event.preventDefault();
       choose(index);
     } else if (event.key === "Escape") {
@@ -5140,6 +5234,165 @@ function openConfirm(
   document.body.classList.add("layered");
   layers.push({ root, mounted: null, prepared: null, cardId: "", ops: false, pinned: false, archived: false });
   cancel.focus();
+}
+
+/**
+ * A CARD CREATOR ON TOP OF WHAT HE IS EDITING — his Mochi routine, 2026-09-24.
+ *
+ * *"on the reference field, i would type 貫く … put cursor here |貫く and then type
+ * [[ … when i move cursor to [[貫|く … i would press arrow ↓↓ to that option and
+ * enter, and boom, it brings up the create card modal for me on top of what i have
+ * now … it would be 単語 template … i will change it to 漢字 … and if that card
+ * contains english words i don't know, i can just repeat that process"*.
+ *
+ * The sidebar form already does creation; this is the same three choices as a
+ * layer, opened from the link picker with the word already in it. On create it
+ * makes the card, hands the new id back so the picker can finish the link, and
+ * opens the new card's editor — whose own fields have the same picker, which is
+ * what makes his "repeat that process" work to any depth.
+ *
+ * ─── THE DECK FOLLOWS THE TEMPLATE, UNTIL HE TOUCHES THE DECK ───────────────
+ *
+ * A card cannot be moved between decks from its editor, so this is the only moment
+ * the deck gets chosen — and his routine does not mention the deck at all, because
+ * in practice it is implied: 1,654 of his 1,744 漢字-template cards are in
+ * `日本語/漢字`. Starting from the 貫く card, the creator opens as `単語` in
+ * `日本語/単語`; switching it to `漢字` moves the deck to `日本語/漢字` with it. Once
+ * he picks a deck by hand, the template stops moving it.
+ *
+ * NOTHING IS WRITTEN UNTIL `create`. Backing out leaves no empty card behind and
+ * no half-finished `[[` turned into a link.
+ */
+function openNewCardDialog(options: {
+  readonly name: string;
+  readonly deckId: string;
+  readonly templateId: string | null;
+  readonly onCreated: (cardId: string) => void;
+}): void {
+  void loadDecks();
+  const root = document.createElement("div");
+  root.className = "layer layer-confirm";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.setAttribute("aria-label", "new card");
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+
+  const panel = document.createElement("form");
+  panel.className = "confirm-panel newcard-dialog";
+  const heading = document.createElement("h2");
+  heading.textContent = "New card";
+
+  const title = document.createElement("input");
+  title.className = "newcard-title";
+  title.type = "text";
+  title.value = options.name;
+  title.autocomplete = "off";
+  title.spellcheck = false;
+  title.setAttribute("aria-label", "name");
+
+  const template = document.createElement("select");
+  template.className = "newcard-select";
+  template.setAttribute("aria-label", "template");
+  const deck = document.createElement("select");
+  deck.className = "newcard-select";
+  deck.setAttribute("aria-label", "deck");
+
+  let deckTouched = false;
+  const fill = (): void => {
+    template.replaceChildren();
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "no template";
+    template.appendChild(none);
+    for (const entry of templateChoices) {
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = entry.name;
+      template.appendChild(option);
+    }
+    template.value = options.templateId ?? "";
+    deck.replaceChildren();
+    for (const entry of deckIndex) {
+      if (entry.archived) continue;
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = entry.path;
+      deck.appendChild(option);
+    }
+    deck.value = options.deckId;
+  };
+  fill();
+  // The lists may still be arriving on a cold page; refill once they have.
+  if (deckIndex.length === 0 || templateChoices.length === 0) void loadDecks().then(fill);
+
+  deck.addEventListener("change", () => {
+    deckTouched = true;
+  });
+  template.addEventListener("change", () => {
+    if (deckTouched) return;
+    const home = templateChoices.find((entry) => entry.id === template.value)?.homeDeckId;
+    if (home !== null && home !== undefined && deckIndex.some((entry) => entry.id === home)) {
+      deck.value = home;
+    }
+  });
+
+  const said = document.createElement("p");
+  said.className = "newcard-said";
+
+  const bar = document.createElement("div");
+  bar.className = "confirm-bar";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "cancel";
+  cancel.addEventListener("click", () => closeIfTop(root));
+  const go = document.createElement("button");
+  go.type = "submit";
+  go.textContent = "create";
+  bar.append(cancel, go);
+
+  panel.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const name = title.value.trim();
+    if (name === "" || deck.value === "") return;
+    go.disabled = true;
+    void ask<"createCard">({
+      kind: "createCard",
+      deckId: deck.value,
+      templateId: template.value === "" ? null : template.value,
+      name,
+    })
+      .then((reply) => {
+        pushUndo({
+          describe: `new card ${reply.cardId}`,
+          run: async () => {
+            await ask<"cardOp">({ kind: "cardOp", op: "delete", cardId: reply.cardId });
+            await refreshAfterOp();
+          },
+        });
+        closeIfTop(root);
+        // Link first, while the field he came from is still the one under this
+        // layer; then the new card's editor goes on top of it.
+        options.onCreated(reply.cardId);
+        void loadDecks(true);
+        void openEditorById(reply.cardId);
+      })
+      .catch((cause: Error) => {
+        said.classList.add("bad");
+        said.textContent = cause.message;
+        go.disabled = false;
+      });
+  });
+
+  panel.append(heading, title, template, deck, said, bar);
+  root.append(backdrop, panel);
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  layers.push({ root, mounted: null, prepared: null, cardId: "", ops: false, pinned: false, archived: false });
+  // The name is already right in his routine, so the first thing he does is pick
+  // the template — focus goes there.
+  template.focus();
 }
 
 /** Open the editor for a card the page does not already hold prepared. */

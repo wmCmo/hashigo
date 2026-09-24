@@ -3338,6 +3338,26 @@ input[data-answer="incorrect"] {
   font-style: normal;
 }
 
+/* `+ create card` — the last row of the picker, and an ACTION, not a card. A
+   hairline above it keeps it from reading as one more search result, and the
+   link blue says "this does something" the way every link here already does. It
+   is always the last stop for ↓, which is his whole routine. */
+.link-create {
+  border-top: 1px solid var(--line);
+}
+
+.link-create b {
+  color: var(--indigo);
+}
+
+/* The creator the picker opens: name, template, deck, stacked. The controls reuse
+   the sidebar form's own classes, so they look like the creator he already knows. */
+.newcard-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 /* ── what links here (Zach, 2026-09-14) ─────────────────────────────────────
    Backlinks, at the foot of the card and inside a preview. The rows are
    `.link-item`, unchanged — the link PICKER already lists cards as name over

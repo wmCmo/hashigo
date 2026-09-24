@@ -343,6 +343,14 @@ export interface TemplateBrief {
   readonly id: string;
   readonly name: string;
   readonly fields: number;
+  /**
+   * The deck that holds most of this template's live cards, or null for a template
+   * with none. Measured 2026-09-24: 1,654 of his 1,744 漢字-template cards are in
+   * `日本語/漢字`, and every template is lopsided the same way — so when he switches
+   * a new card to 漢字, this is where it belongs. A card cannot be moved between
+   * decks from its editor, so choosing the deck at creation is the only chance.
+   */
+  readonly homeDeckId: string | null;
 }
 
 /**

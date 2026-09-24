@@ -1495,10 +1495,15 @@ function decks(request: DecksRequest): void {
     templates: db
       .prepare(
         `SELECT t.id AS id, t.name AS name,
-                (SELECT count(*) FROM template_fields f WHERE f.template_id = t.id) AS fields
+                (SELECT count(*) FROM template_fields f WHERE f.template_id = t.id) AS fields,
+                -- The deck holding most of this template's cards: where a NEW card
+                -- of it most likely belongs. See TemplateBrief.homeDeckId in protocol.ts.
+                (SELECT c.deck_id FROM cards c
+                  WHERE c.template_id = t.id AND c.archived = 0
+                  GROUP BY c.deck_id ORDER BY count(*) DESC, c.deck_id LIMIT 1) AS homeDeckId
            FROM templates t ORDER BY t.name`,
       )
-      .all() as { id: string; name: string; fields: number }[],
+      .all() as { id: string; name: string; fields: number; homeDeckId: string | null }[],
   });
 }
 
