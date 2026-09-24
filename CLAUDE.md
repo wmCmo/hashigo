@@ -973,6 +973,17 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     new card returns tomorrow rather than in minutes, and the lever for that is
     decision 13's placement, which is his. See `DECISIONS.md` 48.
 
+49. **PRIVACY WAS NEVER HIS REQUIREMENT — DECISION 33's "NO CLOUD" LOSES ITS
+    REASON.** Zach, 2026-09-24: *"i never said i don't want anyone to see my study
+    history. im even thinking about making this app become usable for my
+    friends"*. Checked: the "not on the open internet" rationale was written by an
+    agent in `app/README.md` and inherited by decision 33, which he had delegated;
+    his own words carry no such line. **The merge rules and the mailbox survive**;
+    "no cloud" as a principle does not, and SPEC's `Workers + D1 + R2` is back on
+    its merits. **Friends is a DIRECTION, not a decision** — recorded so the next
+    architecture choice does not take a single-user shortcut blind. See
+    `DECISIONS.md` 49.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19

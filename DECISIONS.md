@@ -2085,6 +2085,32 @@ right**: it holds his verbatim reasoning and this quotes it.
     too far away, the lever is decision 13's placement, not the grading — and that
     one is his.
 
+49. **PRIVACY WAS NEVER HIS REQUIREMENT, AND DECISION 33's "NO CLOUD" LOSES ITS
+    REASON.** Zach, 2026-09-24, after being told a cloud mailbox would reverse the
+    choice that kept his study history off the open internet: *"uhm... i never said
+    i don't want anyone to see my study history. im even thinking about making this
+    app become usable for my friends"*.
+
+    **Checked before recording, and he is right.** The rationale enters in
+    `app/README.md`, written by an agent choosing between tunnels, and decision 33
+    (which he delegated outright — *"任せます lol"*) inherited it as "the choice
+    already made, for the same reason". `notes/zach-in-his-own-words.md` has no
+    line about privacy, private data or the open internet. It was an agent's
+    preference recorded in the voice of a requirement — the decision-44 shape again.
+
+    **What survives of decision 33:** the MERGE RULES (reviews union, last review
+    wins, LWW flags) and the mailbox that has no opinion about its files — none of
+    it cares where the mailbox lives. **What falls:** "no cloud" as a principle.
+    The tailnet is now just the transport that happens to be running, and SPEC's
+    original `Workers + D1 + R2` row is back on the table on its merits
+    (availability without the laptop, an off-machine copy for decision 41).
+
+    **"Usable for my friends" is a DIRECTION he is considering, not a decision.**
+    Recorded so the next architecture choice is made knowing it: a single-user
+    shortcut (one shared secret, one mailbox, his API keys paying for every
+    generation) is cheap now and expensive to unpick later. It is also adjacent to
+    open-sourcing, which is still deferred until after development.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach
