@@ -2993,6 +2993,12 @@ interface Layer {
   /** Repainted in place by `refreshAfterOp`, for the same reason the review bar is. */
   pinned: boolean;
   archived: boolean;
+  /**
+   * Runs after the layer is removed, however it was closed — ✕, Escape, the
+   * backdrop, Ctrl+Enter. The editor uses it to save every field and, when it was
+   * opened FROM a preview, to turn back into a fresh one. See `openEditorFor`.
+   */
+  onClose?: () => void;
 }
 
 const layerHost = el("layers");
@@ -3221,6 +3227,7 @@ function closeTop(): void {
   if (layerHost.childElementCount === 0) document.body.classList.remove("layered");
   const next = layers.at(-1);
   (next?.root.querySelector(".layer-close") as HTMLElement | undefined)?.focus();
+  top.onClose?.();
 }
 
 /**
@@ -3335,10 +3342,19 @@ function editableCard(): { card: PreparedCard; onSaved: () => void } | null {
 function openEditor(): void {
   const target = editableCard();
   if (target === null) return;
-  void openEditorById(target.card.cardId);
+  // From a PREVIEW of this card, the editor takes its place instead of stacking
+  // on it — see `openEditorFor`'s `fromPreview`. From the review screen there is
+  // no preview to replace and it opens as it always did.
+  const top = layers.at(-1);
+  const replacing = top !== undefined && top.ops && top.cardId === target.card.cardId ? top.root : undefined;
+  void openEditorById(target.card.cardId, replacing === undefined ? {} : { replacing });
 }
 
-function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = []): void {
+function openEditorFor(
+  card: PreparedCard,
+  choices: readonly TemplateChoice[] = [],
+  options: { readonly fromPreview?: boolean } = {},
+): void {
   const fields = card.loaded.template?.fields ?? [];
 
   const root = document.createElement("div");
@@ -3514,6 +3530,30 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
   body.appendChild(status);
   layerHost.appendChild(root);
   document.body.classList.add("layered");
+  /**
+   * THE EDITOR IS A MODE OF THE PREVIEW, NOT A LAYER ON TOP OF IT — Zach,
+   * 2026-09-24: *"when i pressed e … it should just turn the current preview modal
+   * to the editing, so that once we save the editing and close it it now renders
+   * the changes without going stale"*.
+   *
+   * It used to STACK: the preview stayed underneath, rendered from the text before
+   * the edit, and every way out except Ctrl+Enter (✕, Escape, the backdrop)
+   * uncovered it. Now `e` replaces the preview (`openEditorById`, `replacing`), and
+   * closing the editor — by any route — turns it back into a FRESH preview.
+   *
+   * `showPreview` starts true when it came from a preview and is set by Ctrl+Enter
+   * otherwise, since Ctrl+Enter always means "done, show me the card".
+   */
+  let showPreview = options.fromPreview === true;
+  const flushFields = (): void => {
+    // EVERY field, by dispatch, not by focus: with the window unfocused no blur
+    // event fires on its own, and an edit was dropped while the preview opened as
+    // if nothing had changed (measured). Each field writes only if its text
+    // differs from what is on disk, so untouched fields send nothing.
+    for (const area of root.querySelectorAll<HTMLTextAreaElement>("textarea.edit-input")) {
+      area.dispatchEvent(new Event("blur"));
+    }
+  };
   // `ops: false` — this is the EDITOR. See `Layer.ops`.
   layers.push({
     root,
@@ -3523,6 +3563,17 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
     ops: false,
     pinned: false,
     archived: false,
+    onClose: () => {
+      // Saves first, and the worker answers in order — so the preview asked for
+      // next is rendered from the saved text, never the stale one.
+      flushFields();
+      if (!showPreview) return;
+      // A preview of this card still underneath (it can only get there by some
+      // path that stacked) would now show old text; close it before opening fresh.
+      const under = layers.at(-1);
+      if (under !== undefined && under.ops && under.cardId === card.cardId) closeTop();
+      void openPreview(card.cardId);
+    },
   });
   // AFTER the layer is in the document: `scrollHeight` is 0 on a detached node,
   // so sizing at creation time would collapse every field to one line.
@@ -3543,13 +3594,8 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
    * leaves the caret INSIDE `[[貫|…]]`, so his habitual Ctrl+Enter would have
    * opened the linked card instead of closing this one. Ctrl+click still follows.
    *
-   * SAVE FIRST. Fields save on blur, so blurring the focused one sends its
-   * `setField` — and the worker answers messages in order, so the preview asked
-   * for next is rendered from the saved value, never the stale one.
-   *
-   * If he came here from a preview of this same card, that preview is still
-   * underneath and shows the text from before the edit; it is closed too and a
-   * fresh one opened, rather than revealing a stale card.
+   * Saving and the fresh preview are the layer's `onClose` (above), shared with
+   * every other way of closing the editor.
    */
   root.addEventListener(
     "keydown",
@@ -3558,20 +3604,11 @@ function openEditorFor(card: PreparedCard, choices: readonly TemplateChoice[] = 
       event.preventDefault();
       event.stopPropagation();
       if (layers.at(-1)?.root !== root) return;
-      // FLUSH EVERY FIELD, not just the focused one, and not by focus. Relying on
-      // `activeElement.blur()` failed in measurement: when the window does not
-      // hold focus, no blur event fires and the edit was dropped while the
-      // preview opened as if nothing had changed. Dispatching `blur` runs each
-      // field's own save, which writes only if its text differs from what is on
-      // disk — so untouched fields send nothing.
-      for (const area of root.querySelectorAll<HTMLTextAreaElement>("textarea.edit-input")) {
-        area.dispatchEvent(new Event("blur"));
-      }
+      // Saving and the fresh preview both live in this layer's `onClose`, so every
+      // way out behaves the same; Ctrl+Enter only adds "and show me the card".
+      showPreview = true;
       (document.activeElement as HTMLElement | null)?.blur();
       closeTop();
-      const under = layers.at(-1);
-      if (under !== undefined && under.ops && under.cardId === card.cardId) closeTop();
-      void openPreview(card.cardId);
     },
     { capture: true },
   );
@@ -5449,11 +5486,19 @@ function openNewCardDialog(options: {
 }
 
 /** Open the editor for a card the page does not already hold prepared. */
-async function openEditorById(cardId: string): Promise<void> {
+async function openEditorById(
+  cardId: string,
+  options: { readonly replacing?: HTMLElement } = {},
+): Promise<void> {
   const reply = await ask<"preview">({ kind: "preview", cardId });
   if (reply.card === null) return;
   noteVisit(cardId);
-  openEditorFor(reply.card, reply.templates);
+  // Swapped only NOW, once the editor is in hand: closing the preview before the
+  // round trip would show a blank gap, and if he closed it himself meanwhile it is
+  // no longer the top layer and the editor simply opens.
+  const replaced = options.replacing !== undefined && layers.at(-1)?.root === options.replacing;
+  if (replaced) closeTop();
+  openEditorFor(reply.card, reply.templates, { fromPreview: replaced });
 }
 
 // ─── his #11 and #1 ─────────────────────────────────────────────────────────
