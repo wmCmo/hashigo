@@ -137,6 +137,7 @@
  */
 
 import type { SqliteHandle } from "../db/browser.js";
+import { refreshSearchText } from "../generate/search-text.js";
 
 /** Bumped only for a change no reader could otherwise survive. */
 export const ARCHIVE_VERSION = 1;
@@ -818,6 +819,11 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
   let fieldValuesUpserted = 0;
   let fieldValuesOrphaned = 0;
   const upsertValue = db.prepare(UPSERT_VALUE);
+  // Every card whose text this apply may have changed. A sync and a restore both
+  // arrive through here, and the index view prefers `cards.search_text` over the
+  // live fields — so without the refresh below, an edit made on the laptop would
+  // land on the phone findable only by its OLD text. `src/generate/search-text.ts`.
+  const retextCards = new Set<string>();
   for (const v of archive.fieldValues) {
     if (cardExists.get(v.cardId) === undefined) {
       fieldValuesOrphaned += 1;
@@ -825,7 +831,9 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
     }
     upsertValue.run(v.cardId, v.fieldId, v.value);
     fieldValuesUpserted += 1;
+    retextCards.add(v.cardId);
   }
+  refreshSearchText(db, retextCards);
 
   let reviewsInserted = 0;
   let reviewsSkipped = 0;

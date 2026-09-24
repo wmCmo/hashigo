@@ -853,6 +853,12 @@ export interface StoreClipRequest {
 export interface StoreGenerationRequest {
   readonly kind: "storeGeneration";
   readonly id: number;
+  /**
+   * The card the fill was made FROM, so its search text can be refreshed at once.
+   * Optional because a generation is keyed by its text and could in principle be
+   * filled with no card in view; the review screen always has one.
+   */
+  readonly cardId?: string;
   readonly slot: {
     readonly kind: string;
     readonly text: string;

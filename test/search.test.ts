@@ -47,6 +47,7 @@ import {
 } from "../src/schema/index.js";
 import { INVISIBLE_MARKS } from "../src/text/index.js";
 import { okuriganaStem } from "../src/search/query.js";
+import { refreshSearchText } from "../src/generate/index.js";
 import {
   DEFAULT_SEARCH_LIMIT,
   FTS_BM25_WEIGHTS,
@@ -1080,5 +1081,80 @@ describe("searching falls back to the stem, but only on zero hits", () => {
     expect(result.hits).toEqual([]);
     expect(result.stemmedFrom).toBeNull();
     expect(result.query).toBe("猫かる");
+  });
+});
+
+/**
+ * AN EDITED CARD IS FOUND BY WHAT IT SAYS NOW.
+ *
+ * Zach, 2026-09-24: *"meaning, if i create a new card, it won't be indexed?"*
+ * Checking that answer found the worse case. `card_search_index` prefers
+ * `cards.search_text` over the live fields, every imported card has it set, and no
+ * write path in the app ever recomputed it — so on a copy of the real database,
+ * changing 厳格's 意味 to contain `qqplmk` left `qqplmk` unfindable and the OLD
+ * `rigorous` still returning 厳格. Sync and restore write fields the same way.
+ *
+ * These build that exact state by hand: a card whose `search_text` is populated,
+ * then an edit.
+ */
+describe("the index follows an edit", () => {
+  let db: Db;
+
+  function card(id: string, meaning: string): void {
+    db.prepare(`INSERT INTO cards (id, deck_id, template_id, name, content) VALUES (?, 'd', 't', ?, '')`).run(id, id);
+    db.prepare(`INSERT INTO card_field_values (card_id, field_id, value) VALUES (?, 'm', ?)`).run(id, meaning);
+    // Populated, the way the importer leaves every imported card. This is what
+    // makes the view ignore the live field.
+    refreshSearchText(db, [id]);
+  }
+
+  beforeAll(() => {
+    db = openDatabase(MEMORY);
+    db.prepare(`INSERT INTO decks (id, name) VALUES ('d', 'D')`).run();
+    db.prepare(`INSERT INTO templates (id, name, content) VALUES ('t', 'T', '<< 意味 >>')`).run();
+    db.prepare(
+      `INSERT INTO template_fields (template_id, id, name, type, local) VALUES ('t', 'm', '意味', 'plain', 0)`,
+    ).run();
+    // A LOCAL field — the derived accent label. It must stay out of the index.
+    db.prepare(
+      `INSERT INTO template_fields (template_id, id, name, type, local) VALUES ('t', 'k', '型', 'plain', 1)`,
+    ).run();
+    card("genkaku", "strict; rigorous");
+  });
+
+  afterAll(() => db.close());
+
+  const names = (q: string) => searchCards(db, q).hits.map((h) => h.cardId);
+
+  it("reproduces the defect when the refresh is skipped", () => {
+    // The state every edit in the app produced until now. Kept as a test so the
+    // reason for the refresh calls is executable rather than a comment.
+    db.prepare(`UPDATE card_field_values SET value = 'edited qqplmk' WHERE card_id = 'genkaku'`).run();
+    expect(names("qqplmk")).toEqual([]);
+    expect(names("rigorous")).toEqual(["genkaku"]);
+  });
+
+  it("finds the new text and forgets the old one once refreshed", () => {
+    refreshSearchText(db, ["genkaku"]);
+    expect(names("qqplmk")).toEqual(["genkaku"]);
+    expect(names("rigorous")).toEqual([]);
+  });
+
+  it("keeps a LOCAL field out of the index", () => {
+    // `型` is on 7,660 real cards; indexing it would make `平板` match a third
+    // of the collection.
+    db.prepare(`INSERT INTO card_field_values (card_id, field_id, value) VALUES ('genkaku', 'k', '平板')`).run();
+    refreshSearchText(db, ["genkaku"]);
+    expect(names("平板")).toEqual([]);
+  });
+
+  it("writes nothing when nothing changed", () => {
+    // Guarded by `IS NOT`: a refresh after a no-op edit must not rebuild the FTS row.
+    expect(refreshSearchText(db, ["genkaku"])).toBe(0);
+  });
+
+  it("indexes a brand-new card", () => {
+    card("newcard", "a freshly typed meaning zxqv");
+    expect(names("zxqv")).toEqual(["newcard"]);
   });
 });

@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
+import { refreshSearchText } from "../src/generate/index.js";
+import { searchCards } from "../src/search/index.js";
 
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 import {
@@ -626,6 +628,47 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
       expect(verifyLocalArchive(a)).toBeUndefined();
     } finally {
       db.close();
+    }
+  });
+});
+
+/**
+ * A SYNCED EDIT IS SEARCHABLE BY ITS NEW TEXT.
+ *
+ * Zach, 2026-09-24. Sync and restore both land through `applyLocalArchive`, and
+ * the search index prefers `cards.search_text` over the live fields — so a card
+ * he edited on the laptop used to arrive on the phone with the edit in its fields
+ * and the OLD text in its index.
+ */
+describe("apply refreshes the search index", () => {
+  it("finds a created card by the value the sync brought", () => {
+    const source = fixture({ withLocal: true });
+    const target = fixture({ withLocal: true });
+    try {
+      for (const db of [source, target]) {
+        db.prepare(
+          `INSERT INTO template_fields (template_id, id, name, type, pos, local)
+           VALUES ('tpl', 'meaning', '意味', 'plain', 'aa', 0)`,
+        ).run();
+        db.prepare(
+          `INSERT INTO cards (id, deck_id, template_id, name, content, archived, local)
+           VALUES ('mine', 'd', 'tpl', '自作', '', 0, 1)`,
+        ).run();
+        db.prepare("INSERT INTO card_tracks (card_id, kind) VALUES ('mine', 'forward')").run();
+      }
+      source.prepare(`INSERT INTO card_field_values (card_id, field_id, value) VALUES ('mine', 'meaning', 'laptop wording pqzr')`).run();
+      target.prepare(`INSERT INTO card_field_values (card_id, field_id, value) VALUES ('mine', 'meaning', 'phone wording mbxw')`).run();
+      // The phone's index is populated with ITS old text, as it would be.
+      refreshSearchText(target, ["mine"]);
+
+      applyLocalArchive(target, exportLocalArchive(source, AT));
+
+      const found = (q: string) => searchCards(target, q).hits.map((h) => h.cardId);
+      expect(found("pqzr")).toEqual(["mine"]);
+      expect(found("mbxw")).toEqual([]);
+    } finally {
+      source.close();
+      target.close();
     }
   });
 });

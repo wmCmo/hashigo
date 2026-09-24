@@ -71,3 +71,4 @@ export {
   type LlmOptions,
   type LlmProvider,
 } from "./llm.js";
+export { cardSearchText, refreshSearchText } from "./search-text.js";

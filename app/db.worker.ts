@@ -62,6 +62,10 @@ import {
   type ReviewSession,
 } from "../src/session/index.js";
 import { searchCards } from "../src/search/index.js";
+// After every write that changes what a card SAYS. The index view prefers
+// `cards.search_text` over the live fields, so a write that skips this leaves an
+// edited card findable only by its OLD text — see src/generate/search-text.ts.
+import { refreshSearchText } from "../src/generate/index.js";
 import { collect, collectGlance, renderDashboard } from "../src/dashboard/index.js";
 import {
   countReferences,
@@ -934,6 +938,7 @@ function setReading(request: ReadingRequest): void {
      VALUES (?, ?, ?)
      ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`,
   ).run(request.cardId, field.id, request.value ? "true" : "false");
+  refreshSearchText(db, [request.cardId]);
   post({ kind: "reading", id: request.id, cardId: request.cardId, value: request.value });
 }
 
@@ -1133,6 +1138,7 @@ function cardOp(request: CardOpRequest): void {
             `INSERT INTO card_field_values (card_id, field_id, value)
              SELECT ?, field_id, value FROM card_field_values WHERE card_id = ?`,
           ).run(copyId, card.id);
+          refreshSearchText(db, [copyId]);
           // Fresh tracks, NOT the original's schedule: a duplicate is a new card
           // he has never seen, and inheriting a 300-day interval would hide it.
           const reverse = db
@@ -1433,6 +1439,9 @@ function createCard(request: CreateCardRequest): void {
     }
   })();
 
+  // Indexed with its generations from the start, not left on the raw-field
+  // fallback — so a card made on the laptop is found the same way an imported one is.
+  refreshSearchText(db, [cardId]);
   // The session was built before this card existed, so it will not appear until
   // the next one. Said in the reply rather than silently rebuilt: rebuilding
   // mid-session would reshuffle the queue under him.
@@ -1687,6 +1696,7 @@ function setField(request: SetFieldRequest): void {
        ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`,
     ).run(request.cardId, request.fieldId, request.value);
   }
+  refreshSearchText(db, [request.cardId]);
   post({
     kind: "setField",
     id: request.id,
@@ -1915,6 +1925,11 @@ function storeGeneration(request: StoreGenerationRequest): void {
   } catch (cause) {
     log(`could not cache the generation: ${(cause as Error).message}`, "bad");
   }
+  // The card this was filled FROM, when the page says. A generation is keyed by
+  // its own text and not owned by a card, but a fill made from the review screen
+  // has one in front of it — so its sentence is searchable at once, not at the
+  // next rebuild.
+  if (hash !== null && request.cardId !== undefined) refreshSearchText(db, [request.cardId]);
   post({ kind: "storeGeneration", id: request.id, hash });
 }
 

@@ -2023,7 +2023,14 @@ async function requestGeneration(
     }
     // Cache it here too. A failure to cache is logged by the worker and does not
     // stop the text reaching the card — he asked for it, he should see it.
-    await ask<"storeGeneration">({ kind: "storeGeneration", slot, text: body.text }).catch(
+    await ask<"storeGeneration">({
+      kind: "storeGeneration",
+      // So the worker can refresh THIS card's search text now, rather than the
+      // sentence staying unfindable until the next rebuild.
+      cardId: card.cardId,
+      slot,
+      text: body.text,
+    }).catch(
       () => undefined,
     );
     button.remove();
