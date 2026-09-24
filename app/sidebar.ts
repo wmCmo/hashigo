@@ -16,7 +16,6 @@ import { el } from "./dom.js";
 import { openGallery } from "./gallery.js";
 import { installOrigin, registerServiceWorker, watchForInstall } from "./install.js";
 import { buildNewCardForm, fillNewCardChoices } from "./palette.js";
-import { shell } from "./shell.js";
 import {
   agoLabel,
   initialStatus,
@@ -31,6 +30,8 @@ import { openTemplateEditor } from "./template-editor.js";
 import { openPrompt, say } from "./ui.js";
 import { ask } from "./worker-client.js";
 import { refreshAfterOp } from "./ops.js";
+import { openDeckMenu, runDeckOp } from "./deck-menu.js";
+import { openSettings } from "./settings.js";
 
 /**
  * *"a side bar to navigate, which is a space where we create cards, navigate the
@@ -157,7 +158,7 @@ function paintTree(total: number): void {
   add.textContent = "+ new top-level deck";
   add.addEventListener("click", () => {
     openPrompt("New deck", "It starts empty, at the top level, with reverse set to inherit.",
-      "name", "", (name) => void shell().runDeckOp({ op: "create", deckId: "", name, parentId: null }));
+      "name", "", (name) => void runDeckOp({ op: "create", deckId: "", name, parentId: null }));
   });
   deckList.appendChild(add);
 
@@ -202,7 +203,7 @@ function deckNode(deck: DeckBrief, depth: number): HTMLElement {
   const openMenu = (event: Event): void => {
     event.stopPropagation();
     event.preventDefault();
-    shell().openDeckMenu(deck);
+    openDeckMenu(deck);
   };
   more.addEventListener("click", openMenu);
   more.addEventListener("keydown", (event) => {
@@ -218,7 +219,7 @@ function deckNode(deck: DeckBrief, depth: number): HTMLElement {
   // Kept as an accelerator, now that it is not the only route.
   row.addEventListener("contextmenu", (event) => {
     event.preventDefault();
-    shell().openDeckMenu(deck);
+    openDeckMenu(deck);
   });
   wrap.appendChild(row);
   if (kids.length > 0 && expanded.has(deck.id)) {
@@ -325,7 +326,7 @@ el("sidebarscrim").addEventListener("click", closeSidebar);
 el("dashboardlink").addEventListener("click", () => void openDashboard());
 el("settingslink").addEventListener("click", () => {
   closeSidebar();
-  void shell().openSettings();
+  void openSettings();
 });
 
 /* ── "add to home screen" (his PWA ask, 2026-09-12) ─────────────────────────

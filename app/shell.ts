@@ -19,7 +19,8 @@
  * member is something a feature needs and `main.ts` still owns. When a feature is
  * extracted, its members leave this interface and become a direct import from
  * their new home — `loadDecks` and `closeSidebar` left for `./sidebar.ts`, and
- * the undo stack and card operations for `./ops.ts`, the same day.
+ * the undo stack and card operations for `./ops.ts`, the deck menus and settings for
+ * `./deck-menu.ts` and `./settings.ts`, the same day.
  *
  * Asking before `main.ts` has provided throws, loudly, rather than returning a
  * stub — a feature that runs before boot finished is a bug worth seeing.
@@ -27,7 +28,7 @@
 
 import type { PreparedCard } from "../src/review/index.js";
 import type { Layer } from "./layers.js";
-import type { DeckBrief, DeckOp, TemplateChoice } from "./protocol.js";
+import type { TemplateChoice } from "./protocol.js";
 
 export interface Shell {
   // ── the review screen ──
@@ -45,16 +46,6 @@ export interface Shell {
     choices?: readonly TemplateChoice[],
     options?: { readonly fromPreview?: boolean },
   ) => void;
-
-  // ── decks and settings (his #12, #14) ──
-  readonly openDeckMenu: (deck: DeckBrief) => void;
-  readonly openSettings: () => Promise<void>;
-  readonly runDeckOp: (request: {
-    op: DeckOp;
-    deckId: string;
-    name?: string;
-    parentId?: string | null;
-  }) => Promise<void>;
 }
 
 let provided: Shell | null = null;

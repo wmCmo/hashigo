@@ -17,6 +17,9 @@ import type { BrowseHit, CardOp, TemplateChoice } from "./protocol.js";
 import { el } from "./dom.js";
 import { paintGallery } from "./gallery.js";
 import { bareLayer, closeIfTop, closeTop, layers, pushLayer } from "./layers.js";
+// The link rules, in an import-free module `test/` can reach — the same seam as
+// `./keys.ts` and `./review-keys.ts`. `test/app-links.test.ts` round-trips all
+// 8,744 authored links through it.
 import { completeLink, linkAt, linksIn, triggerAt } from "./links.js";
 import { shell } from "./shell.js";
 import { deckIndex, loadDecks, templateChoices } from "./sidebar.js";

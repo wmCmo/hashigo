@@ -9,6 +9,27 @@
 import { el } from "./dom.js";
 import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
 
+/**
+ * Append a line to the boot log.
+ *
+ * Here rather than in `main.ts` because the backup and eviction checks write to it
+ * too, and the boot log is what he diagnosed three faults with in one week — every
+ * part of the app that can explain itself there should be able to.
+ */
+export function line(text: string, level = "info"): void {
+  const log = el("bootlog");
+  const row = document.createElement("div");
+  row.className = `logline ${level}`;
+  row.textContent = text;
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+}
+
+/** MiB to one decimal — the only unit worth showing for a ~300 MB download. */
+export function mib(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 /** One place the app says what just happened, on every surface. */
 export function say(text: string, bad = false): void {
   const strip = el("say");

@@ -89,26 +89,31 @@ import {
   closeTop,
   layerHost,
   layers,
-  pushLayer,
   registerLayer,
   type Layer,
 } from "./layers.js";
 import { el } from "./dom.js";
-import { attachLinkEditing, confirmDelete, openEditorById, pushUndo, refreshAfterOp, runCardOp, runUndo, templateRow } from "./ops.js";
+import { checkEviction, checkPersistence, exportBackup } from "./backup-ui.js";
 import {
-  childrenOf,
+  attachLinkEditing,
+  confirmDelete,
+  openEditorById,
+  pushUndo,
+  refreshAfterOp,
+  runCardOp,
+  runUndo,
+  templateRow,
+} from "./ops.js";
+import {
   closeSidebar,
-  deckIndex,
   fillSidebar,
   openSidebar,
   railStanding,
   schedulePush,
-  subtreeCards,
 } from "./sidebar.js";
 import { openPalette } from "./palette.js";
-import { openGallery } from "./gallery.js";
 import { provideShell } from "./shell.js";
-import { openConfirm, openPrompt, say } from "./ui.js";
+import { line, mib, say } from "./ui.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import {
   attachInput,
@@ -116,9 +121,6 @@ import {
   type InputHandle,
   type InputSurface,
 } from "../src/render/input.js";
-// The link rules, in an import-free module `test/` can reach — the same seam as
-// `./keys.ts` and `./review-keys.ts`. `test/app-links.test.ts` round-trips all
-// 8,744 authored links through it.
 import type { RenderResult } from "../src/render/index.js";
 import type { ShadowingSide } from "../src/render/reveal.js";
 // Import-free rules `test/` can reach; see `test/app-logic.test.ts`.
@@ -138,15 +140,6 @@ import {
 import { revealScroll } from "./review-scroll.js";
 import { revealSteps, type RevealStep } from "./review-steps.js";
 import {
-  readTheme,
-  themeAttribute,
-  themeLabel,
-  forcedChrome,
-  THEMES,
-  THEME_KEY,
-  type Theme,
-} from "./theme.js";
-import {
   CAPTURE,
   DEFAULT_PLAYBACK,
   mayPlayClip,
@@ -162,9 +155,7 @@ import {
 import type {
   AnswerRefusal,
   AppMessage,
-  DeckOp,
   TemplateChoice,
-  DeckBrief,
   ReplyFor,
 } from "./protocol.js";
 
@@ -181,9 +172,6 @@ provideShell({
   openPreview,
   paintLayerOps,
   openEditorFor,
-  openDeckMenu,
-  openSettings,
-  runDeckOp,
 });
 
 const bootView = el("boot");
@@ -204,7 +192,6 @@ const forgotButton = el<HTMLButtonElement>("forgot");
 const rememberedButton = el<HTMLButtonElement>("remembered");
 const replayButton = el<HTMLButtonElement>("replay");
 const readingButton = el<HTMLButtonElement>("readingtoggle");
-const banner = el("banner");
 const doneView = el("done");
 const doneText = el("donetext");
 
@@ -215,18 +202,6 @@ const climb = mountClimb(
   document.getElementById("climbmark") as unknown as SVGSVGElement,
 );
 
-function line(text: string, level = "info"): void {
-  const row = document.createElement("div");
-  row.className = `logline ${level}`;
-  row.textContent = text;
-  bootLog.appendChild(row);
-  bootLog.scrollTop = bootLog.scrollHeight;
-}
-
-/** MiB to one decimal — the only unit worth showing for a ~300 MB download. */
-function mib(bytes: number): string {
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
 
 /**
  * The first-run download, drawn rather than narrated.
@@ -2196,170 +2171,6 @@ async function flipReading(): Promise<void> {
   }
 }
 
-// ─── decision 17: eviction, detected after the fact ─────────────────────────
-
-/**
- * A RECEIPT, in `localStorage`, of the last successful open.
- *
- * `localStorage` rather than the database, obviously — a receipt inside the thing
- * that went missing proves nothing. It is also the only store the PAGE can use;
- * `localStorage` does not exist in a worker, which is why this half lives here
- * and the worker reports the file's presence instead.
- */
-const RECEIPT_KEY = "hashigo.receipt.v1";
-
-interface Receipt {
-  readonly at: string;
-  readonly localReviews: number;
-  readonly schemaVersion: number;
-}
-
-function readReceipt(): Receipt | null {
-  try {
-    const raw = localStorage.getItem(RECEIPT_KEY);
-    if (raw === null) return null;
-    const parsed = JSON.parse(raw) as Partial<Receipt>;
-    return typeof parsed.at === "string" && typeof parsed.localReviews === "number"
-      ? { at: parsed.at, localReviews: parsed.localReviews, schemaVersion: parsed.schemaVersion ?? 0 }
-      : null;
-  } catch {
-    // A corrupt receipt is not worth failing a boot over; it just means the
-    // eviction check cannot answer this time, which it says rather than assumes.
-    return null;
-  }
-}
-
-function writeReceipt(receipt: Receipt): void {
-  try {
-    localStorage.setItem(RECEIPT_KEY, JSON.stringify(receipt));
-  } catch {
-    /* a full or disabled localStorage costs the check, not the session */
-  }
-}
-
-/**
- * Did the browser throw the database away since last time?
- *
- * **What this CAN detect:** OPFS had no card database, and a receipt says one was
- * there before. That is an eviction, or "clear site data", or a profile that moved
- * — indistinguishable from each other and all costing the same thing, so they get
- * the same message.
- *
- * **What it CANNOT detect, said out loud rather than implied:** a full site-data
- * clear takes the receipt with it, and then this looks exactly like a first run.
- * There is no store that survives that, so the honest fallback is the boot log —
- * a re-fetch of 72 MB is visible, and the number of local reviews is stated on
- * every successful open so the drop is noticeable even when the cause is not.
- *
- * It is the LOSS that is reported, not the event: `localReviews` is the only thing
- * in the database `exports/` cannot rebuild (decision 17), so a receipt saying 0
- * means an eviction cost nothing and does not deserve an alarm.
- */
-function checkEviction(opened: {
-  readonly cardsWerePresent: boolean;
-  readonly localReviews: number;
-  readonly schemaVersion: number;
-}): void {
-  const receipt = readReceipt();
-  if (!opened.cardsWerePresent && receipt !== null) {
-    const lost = receipt.localReviews;
-    line(
-      lost > 0
-        ? `THE DATABASE WAS GONE. A receipt from ${receipt.at.slice(0, 16)} says it held ` +
-            `${lost.toLocaleString()} local review(s). They are not recoverable from exports/ — ` +
-            `restore a backup with the export you took.`
-        : `The database was gone (receipt from ${receipt.at.slice(0, 16)}), but it held 0 local ` +
-            `reviews, so nothing was lost — exports/ rebuilds the rest.`,
-      lost > 0 ? "bad" : "info",
-    );
-    if (lost > 0) {
-      banner.replaceChildren(
-        document.createTextNode(
-          `Storage was cleared since ${receipt.at.slice(0, 10)} — ${lost.toLocaleString()} ` +
-            `local review(s) were lost. Restore from a backup, and keep exporting.`,
-        ),
-      );
-      banner.hidden = false;
-    }
-  }
-  writeReceipt({
-    at: new Date().toISOString(),
-    localReviews: opened.localReviews,
-    schemaVersion: opened.schemaVersion,
-  });
-}
-
-// ─── decision 17's banner ────────────────────────────────────────────────────
-
-/**
- * `navigator.storage.persist` is **Window-only** — absent from
- * `StorageManager.prototype` in a worker, confirmed on Zach's own handset. So the
- * grant is asked for HERE, and the worker can only read `persisted()`.
- *
- * The banner is not dismissible, per `notes/archive/persistence.md`. What DID
- * drop in priority is the "add to home screen" prompt: persistence was granted in
- * a plain browser tab on his device. But Chromium grants it off site engagement
- * and a fresh origin starts at zero, so the banner still has to exist.
- */
-async function checkPersistence(): Promise<void> {
-  // An eviction message already on screen is the more important one — it names a
-  // loss that HAS happened, not a risk — so this may not overwrite it. But the
-  // REQUEST still has to run: an evicted boot is precisely when persistence is
-  // most worth asking for, and an early return here would have skipped it. (That
-  // was a live flaw in the first version of this function.)
-  const evicted = !banner.hidden;
-  const say = (text: string): void => {
-    if (evicted) return;
-    banner.textContent = text;
-    banner.hidden = false;
-  };
-
-  if (navigator.storage?.persisted === undefined) {
-    say("this browser cannot report storage persistence — export a backup often");
-    return;
-  }
-  if (await navigator.storage.persisted()) {
-    if (!evicted) banner.hidden = true;
-    return;
-  }
-  const granted = (await navigator.storage.persist?.()) ?? false;
-  if (granted) {
-    line("storage persistence granted", "good");
-    if (!evicted) banner.hidden = true;
-    return;
-  }
-  line("storage persistence DENIED — the browser may evict this database", "bad");
-  if (evicted) return;
-  banner.replaceChildren(
-    document.createTextNode(
-      "storage is NOT persistent — the browser may evict your reviews. Export a backup: ",
-    ),
-  );
-  const button = document.createElement("button");
-  button.textContent = "export backup";
-  button.addEventListener("click", () => void exportBackup());
-  banner.appendChild(button);
-  banner.hidden = false;
-}
-
-/**
- * Decision 17's one tap.
- *
- * A `<a download>` is deliberate rather than a share sheet: the archive is rows
- * plus stable keys (`src/backup/README.md`), and a file he can see in his own
- * downloads folder is the point.
- */
-async function exportBackup(): Promise<void> {
-  const reply = await ask<"backup">({ kind: "backup" });
-  const url = URL.createObjectURL(new Blob([reply.json], { type: "application/json" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `hashigo-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  anchor.click();
-  URL.revokeObjectURL(url);
-  line(`backup ${reply.bytes.toLocaleString()} bytes · ${JSON.stringify(reply.counts)}`, "good");
-}
-
 // ─── wiring ──────────────────────────────────────────────────────────────────
 
 revealButton.addEventListener("click", reveal);
@@ -2420,50 +2231,6 @@ moreButton.addEventListener("click", () => {
     openCardMenu(currentCardId, previewOfCurrent?.loaded.name ?? currentCardId);
   }
 });
-
-// ─── his theme ──────────────────────────────────────────────────────────────
-
-/**
- * Zach, 2026-09-13: *"where do i change light dark theme?"* He could not — the
- * app followed `prefers-color-scheme` and had no control at all, even though
- * `style.css` has carried `[data-theme]` for both directions since decision 32.
- *
- * The attribute is applied twice on purpose: once by four inline lines in
- * `index.html`'s `<head>`, before anything paints, and once here. This module
- * runs after the document is parsed, which is too late to stop the boot screen
- * flashing the wrong ground — and the boot screen is up for as long as the
- * database takes to fetch. `app/theme.ts` owns the key both of them read.
- */
-let currentTheme: Theme = "system";
-try {
-  currentTheme = readTheme(localStorage.getItem(THEME_KEY));
-} catch {
-  /* a disabled localStorage costs the preference, not the session */
-}
-
-function applyTheme(theme: Theme): void {
-  currentTheme = theme;
-  const attribute = themeAttribute(theme);
-  if (attribute === null) document.documentElement.removeAttribute("data-theme");
-  else document.documentElement.setAttribute("data-theme", attribute);
-
-  // THE PHONE'S OWN CHROME HAS TO FOLLOW, or a forced-light app sits in a black
-  // status bar. `index.html` ships two media-scoped `theme-color` tags; forcing
-  // a theme means overriding BOTH, because either may be the one that matches.
-  const forced = forcedChrome(theme);
-  for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
-    if (forced !== null) meta.content = forced;
-    else meta.content = meta.media.includes("dark") ? "#1A1815" : "#ECEAE5";
-  }
-
-  try {
-    localStorage.setItem(THEME_KEY, theme);
-  } catch {
-    /* full or disabled: it still applies for this session */
-  }
-}
-
-applyTheme(currentTheme);
 
 // ─── the shadowing controls: loop, speed, and his own voice ─────────────────
 
@@ -3516,484 +3283,8 @@ function fitTextarea(area: HTMLTextAreaElement): void {
 /** Mirrors the worker's `EDITABLE_TYPES`. Kept in sync by the worker REFUSING. */
 const EDITABLE_FIELD_TYPES = new Set(["plain", "text", "boolean", "number", "accent"]);
 
-// ─── his #12: settings ──────────────────────────────────────────────────────
+// ─── the review card's own menu ──────────────────────────────────────────────────
 
-/**
- * *"i want to have a setting screen where i can adjust all the setting that we
- * have"*.
- *
- * **"All the settings we have" has an answer, and it is short.** It is the five
- * rows in `settings` plus the two keys `src/session/settings.ts` resolves — seven
- * — and every one of them is here. That is worth saying because the tempting
- * version of this screen invents preferences: a theme, a font size, an autoplay
- * toggle. There is no autoplay toggle, because decision 29 makes autoplay a
- * property of the CARD (`Reading`) and not of the app; putting a global switch
- * beside it would offer to break the 692 cards whose whole exercise is the silence.
- *
- * ─── EVERY CHANGE SAYS WHEN IT TAKES EFFECT, BECAUSE THEY DIFFER ────────────
- *
- * Two of these apply to the next GRADE and two to the next SESSION, and the
- * difference is not cosmetic — it decides whether he should reload:
- *
- *   `target_retention.default`   next grade. Read per card through
- *                                `deck_target_retention_resolved` at schedule time.
- *   `reverse.default`            next card built. `card_reverse_resolved` is a view.
- *   `new.limit`                  next session. `buildSession` runs once per open.
- *   `session.interleave`         next session, same reason.
- *
- * Rebuilding the session on a settings write was the alternative and it is worse:
- * it reshuffles the plan under a card he is halfway through, which is the same
- * reason `createCard` does not do it either.
- *
- * ─── AND WHAT IT SHOWS THAT IS NOT A SETTING ────────────────────────────────
- *
- * Storage, audio coverage and the versions. He would come here to check them and
- * they lived only in the boot log, which scrolls away the moment the first card
- * lands. The audio number is MEASURED here rather than quoted from the bootstrap
- * script's build-time print — see the worker's `settings`.
- */
-
-/** One control's shape, so the rows are data rather than five copies of a form. */
-interface SettingRow {
-  readonly key: string;
-  readonly label: string;
-  readonly note: string;
-  readonly when: string;
-  readonly control:
-    | { readonly kind: "number"; readonly min: number; readonly max: number; readonly step: number }
-    | { readonly kind: "choice"; readonly options: readonly (readonly [string, string])[] }
-    | { readonly kind: "text"; readonly placeholder: string };
-  /** Shown before the write lands. Absent means write straight away. */
-  readonly confirm?: { readonly title: string; readonly body: string };
-}
-
-const SETTING_ROWS: readonly SettingRow[] = [
-  {
-    key: "new.limit",
-    label: "new cards per day",
-    note:
-      "Decision 12, and decision 15: it is 10 TRACKS a day chosen at random, not 10 " +
-      "cards — forward and reverse are not paired. 0 means due cards only.",
-    when: "next session",
-    control: { kind: "number", min: 0, max: 500, step: 1 },
-  },
-  {
-    key: "session.interleave",
-    label: "where new cards land",
-    note:
-      "spread puts them evenly through the plan. due-first holds them to the end, " +
-      "which means a long day never reaches them.",
-    when: "next session",
-    control: {
-      kind: "choice",
-      options: [
-        ["spread", "spread through the session"],
-        ["new-first", "new cards first"],
-        ["due-first", "due cards first"],
-      ],
-    },
-  },
-  {
-    key: "target_retention.default",
-    label: "target retention",
-    note:
-      "Decision 1, settled by measurement: 0.90 reproduces his realised 69.2 " +
-      "reviews/day, and 0.95 would be 1.9-3.0x that. Per-deck overrides still win. " +
-      "The 365-day cap (decision 1) is what keeps a low value safe.",
-    when: "next grade",
-    control: { kind: "number", min: 0.7, max: 0.97, step: 0.01 },
-    confirm: {
-      title: "Change target retention?",
-      body:
-        "This changes the interval every future grade produces, on every deck that " +
-        "does not override it. It does not touch a single existing due date — " +
-        "decision 14: no one-off respread. So the corpus converges to the new " +
-        "value as cards come up, over weeks, rather than moving today.",
-    },
-  },
-  {
-    key: "reverse.default",
-    label: "reverse reviews, by default",
-    note:
-      "Only reaches decks that resolve `inherit`. Four decks store `on` explicitly " +
-      "(単語 3,702 · 漢字 1,655 · 言葉 146 · 文法 83) and are unaffected either way; " +
-      "日本語 itself is `inherit` with no parent, so this IS the corpus default.",
-    when: "next card built",
-    control: {
-      kind: "choice",
-      options: [
-        ["off", "off — reverse is opt-in per deck"],
-        ["on", "on — every inheriting deck reverses"],
-      ],
-    },
-    confirm: {
-      title: "Turn reverse on by default?",
-      body:
-        "Every deck resolving `inherit` gains a reverse track per card, and each " +
-        "one is a new card he has never seen. No history is destroyed either way " +
-        "— a track turned off goes dormant and keeps its reviews.",
-    },
-  },
-  {
-    key: "timezone.default",
-    label: "timezone",
-    note:
-      "Decides which local date counts as today, which is the only thing that " +
-      "selects the queue. IANA name, e.g. Asia/Tokyo.",
-    when: "next session",
-    control: { kind: "text", placeholder: "Asia/Tokyo" },
-  },
-  {
-    key: "voice.default",
-    label: "default voice",
-    note:
-      "EMPTY is correct and is the shipped value. Every existing clip is addressed " +
-      "by the voice Mochi recorded, so a non-empty default misses all 10,791 " +
-      "speech lookups at once and re-bills the corpus. Set it when regenerating " +
-      "deliberately (his own deferral: after the app is finished), not before.",
-    when: "next clip generated",
-    control: { kind: "text", placeholder: "(empty — use the template's voice)" },
-    confirm: {
-      title: "Set a default voice?",
-      body:
-        "This is the one setting here that costs money. A non-empty value changes " +
-        "the address every speech lookup resolves to, so nothing already on the " +
-        "device answers and every clip is regenerated. He has said audio " +
-        "regeneration happens AFTER the app is finished.",
-    },
-  },
-];
-
-async function openSettings(): Promise<void> {
-  const reply = await ask<"settings">({ kind: "settings" });
-
-  const root = document.createElement("div");
-  root.className = "layer layer-edit layer-settings";
-  root.setAttribute("role", "dialog");
-  root.setAttribute("aria-modal", "true");
-  root.setAttribute("aria-label", "settings");
-
-  const backdrop = document.createElement("div");
-  backdrop.className = "layer-backdrop";
-  backdrop.addEventListener("click", () => closeIfTop(root));
-  root.appendChild(backdrop);
-
-  const panel = document.createElement("div");
-  panel.className = "layer-panel";
-  const head = document.createElement("div");
-  head.className = "layer-head";
-  const title = document.createElement("span");
-  title.textContent = "settings";
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "layer-close";
-  close.setAttribute("aria-label", "close settings");
-  close.textContent = "\u2715";
-  close.addEventListener("click", () => closeIfTop(root));
-  head.append(title, close);
-  panel.appendChild(head);
-
-  const body = document.createElement("div");
-  body.className = "layer-body";
-  panel.appendChild(body);
-  root.appendChild(panel);
-
-  const status = document.createElement("div");
-  status.className = "edit-status";
-  status.setAttribute("aria-live", "polite");
-
-  // A stored value the session could not use. Loud, at the top, and naming both
-  // the text and the substitute — `readSessionSettings` collects these precisely
-  // so that a silently ignored setting is impossible.
-  for (const bad of reply.resolved.rejected) {
-    const warn = document.createElement("p");
-    warn.className = "settings-bad";
-    warn.textContent =
-      `${bad.key} is ${JSON.stringify(bad.value)}, which is not usable — ` +
-      `the session is running on the default instead. Fix or clear it below.`;
-    body.appendChild(warn);
-  }
-
-  // TWO OF THESE KEYS ARE NOT SEEDED, AND A BLANK BOX WOULD LIE ABOUT THEM.
-  //
-  // `new.limit` and `session.interleave` are resolved rather than stored
-  // (`src/session/settings.ts` says why that avoids a SCHEMA_VERSION bump), so on a
-  // database he has never touched they have no row. Rendering "" would show an
-  // empty new-cards box beside a state line reading "10 new/day" — the screen
-  // disagreeing with itself about the same number.
-  //
-  // So an absent row shows the value the session WILL use, and says it is not
-  // stored yet. Typing anything stores it; leaving it alone changes nothing.
-  const effective: Readonly<Record<string, string>> = {
-    "new.limit": String(reply.resolved.newLimit),
-    "session.interleave": reply.resolved.interleave,
-  };
-  // FIRST, AND IT IS THE ONE ROW THAT DOES NOT WRITE TO THE DATABASE. Every
-  // other setting here syncs between his two devices (decision 33); a theme must
-  // not, because the laptop at his desk in the afternoon and the phone in bed at
-  // night are different answers to the same question. See `app/theme.ts`.
-  body.appendChild(themeRow());
-
-  for (const row of SETTING_ROWS) {
-    const stored = reply.values[row.key];
-    body.appendChild(
-      settingRow(row, stored ?? effective[row.key] ?? "", stored === undefined, status),
-    );
-  }
-
-  body.appendChild(settingsState(reply));
-  body.appendChild(status);
-  pushLayer(bareLayer(root));
-  (body.querySelector(".edit-input") as HTMLElement | null)?.focus();
-}
-
-/**
- * The theme picker — the same `.edit-row` shape as the six below it, so it does
- * not read as a different kind of thing, and a plainly different mechanism.
- *
- * `system` is a real choice rather than the absence of one. A phone that turns
- * dark at sunset is a feature he already has, and a two-way switch takes it away
- * the first time he touches it with no way back short of clearing site data.
- */
-function themeRow(): HTMLElement {
-  const wrap = document.createElement("label");
-  wrap.className = "edit-row";
-
-  const label = document.createElement("span");
-  label.className = "edit-label";
-  label.textContent = "theme";
-  const when = document.createElement("i");
-  when.className = "edit-type";
-  when.textContent = "at once · this device only";
-  label.appendChild(when);
-  wrap.appendChild(label);
-
-  const select = document.createElement("select");
-  select.className = "edit-input";
-  for (const value of THEMES) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = themeLabel(value);
-    select.appendChild(option);
-  }
-  select.value = currentTheme;
-  select.addEventListener("change", () => {
-    applyTheme(readTheme(select.value));
-  });
-  wrap.appendChild(select);
-
-  const note = document.createElement("p");
-  note.className = "settings-note";
-  note.textContent =
-    "Both grounds are measured for contrast in every colour this app puts text " +
-    "in — decision 32 ships them as equals rather than one being the real one. " +
-    "This does NOT sync: it is the one preference where his two devices should " +
-    "be allowed to disagree.";
-  wrap.appendChild(note);
-  return wrap;
-}
-
-function settingRow(
-  row: SettingRow,
-  current: string,
-  unstored: boolean,
-  status: HTMLElement,
-): HTMLElement {
-  const wrap = document.createElement("label");
-  wrap.className = "edit-row";
-
-  const label = document.createElement("span");
-  label.className = "edit-label";
-  label.textContent = row.label;
-  const when = document.createElement("i");
-  when.className = "edit-type";
-  when.textContent = unstored ? `${row.when} · default, not stored` : row.when;
-  label.appendChild(when);
-  wrap.appendChild(label);
-
-  let control: HTMLInputElement | HTMLSelectElement;
-  if (row.control.kind === "choice") {
-    const select = document.createElement("select");
-    select.className = "edit-input";
-    for (const [value, text] of row.control.options) {
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = text;
-      select.appendChild(option);
-    }
-    select.value = current;
-    control = select;
-  } else {
-    const input = document.createElement("input");
-    input.className = "edit-input";
-    if (row.control.kind === "number") {
-      input.type = "number";
-      input.min = String(row.control.min);
-      input.max = String(row.control.max);
-      input.step = String(row.control.step);
-      // A phone shows a number pad for this, which is the whole reason `type` is
-      // set rather than validating text — his rule is desktop parity, and a
-      // stepper he cannot use one-handed is not parity.
-    } else {
-      input.type = "text";
-      input.placeholder = row.control.placeholder;
-    }
-    input.value = current;
-    control = input;
-  }
-
-  const commit = (): void => {
-    const value = control.value.trim();
-    if (value === current) return;
-    const write = (): void => {
-      void saveSetting(row.key, value, current, status);
-    };
-    if (row.confirm === undefined) write();
-    else openConfirm(row.confirm.title, row.confirm.body, "change it", write, "normal");
-  };
-  // `change`, not `input`: a number box fires `input` on every keystroke, so
-  // typing "20" over "1" would write 2 and then 20 — two rows in the undo stack
-  // and one of them a value he never chose.
-  control.addEventListener("change", commit);
-  wrap.appendChild(control);
-
-  const note = document.createElement("p");
-  note.className = "settings-note";
-  note.textContent = row.note;
-  wrap.appendChild(note);
-  return wrap;
-}
-
-async function saveSetting(
-  key: string,
-  value: string,
-  before: string,
-  status: HTMLElement,
-): Promise<void> {
-  try {
-    const reply = await ask<"setSetting">({ kind: "setSetting", key, value });
-    status.textContent = reply.describe;
-    say(reply.describe);
-    // His #13's "etc.". A settings change with no way back is the one kind he would
-    // have to repair by remembering what it used to be.
-    pushUndo({
-      describe: reply.describe,
-      run: async () => {
-        await ask<"setSetting">({ kind: "setSetting", key, value: reply.previous ?? before });
-      },
-    });
-  } catch (cause) {
-    status.textContent = (cause as Error).message;
-    say((cause as Error).message, true);
-  }
-}
-
-/** The things he would open settings to CHECK, which are not rows. */
-function settingsState(reply: ReplyFor["settings"]): HTMLElement {
-  const box = document.createElement("div");
-  box.className = "settings-state";
-
-  const mib = (bytes: number | null): string =>
-    bytes === null ? "unknown" : `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
-  const coverage =
-    reply.audio.cardsWithSpeech === 0
-      ? "no speech in this database"
-      : `${reply.audio.cardsThatCanPlay.toLocaleString()} of ` +
-        `${reply.audio.cardsWithSpeech.toLocaleString()} cards with speech can play ` +
-        `(${((100 * reply.audio.cardsThatCanPlay) / reply.audio.cardsWithSpeech).toFixed(1)}%)`;
-
-  const lines: readonly (readonly [string, string])[] = [
-    [
-      "storage",
-      `${reply.storage.persisted ? "persistent" : "NOT persistent — evictable"} · ` +
-        `${mib(reply.storage.usageBytes)} used of ${mib(reply.storage.quotaBytes)}`,
-    ],
-    ["audio on this device", `${coverage} · ${reply.audio.payloads.toLocaleString()} payloads`],
-    ["local reviews", reply.localReviews.toLocaleString()],
-    [
-      "resolved plan",
-      `${reply.resolved.newLimit} new/day, ${reply.resolved.interleave}`,
-    ],
-    ["versions", `schema v${reply.schemaVersion} · sqlite ${reply.sqliteVersion}`],
-  ];
-  for (const [name, text] of lines) {
-    const line = document.createElement("p");
-    line.className = "settings-line";
-    const key = document.createElement("b");
-    key.textContent = name;
-    line.append(key, document.createTextNode(text));
-    box.appendChild(line);
-  }
-
-  // Decision 17. The export lives in the banner too, and belongs here as well:
-  // the banner only appears when persistence was refused, and a backup is
-  // something he should be able to take on a day nothing is wrong.
-  const backup = document.createElement("button");
-  backup.type = "button";
-  backup.className = "sidebar-action";
-  backup.textContent = "export a backup";
-  backup.addEventListener("click", () => void exportBackup());
-  box.appendChild(backup);
-  return box;
-}
-
-/**
- * Every deck operation goes through here, so undo and the error path exist once.
- *
- * The undo is spread from `reply.undo` rather than rebuilt: `restoreArchive`
- * carries the exact card ids the archive flipped, and reconstructing the inverse
- * op instead of replaying the recorded one is the bug that un-archived 234
- * individually-archived cards on a single ctrl+Z.
- */
-async function runDeckOp(request: {
-  op: DeckOp;
-  deckId: string;
-  name?: string;
-  parentId?: string | null;
-}): Promise<void> {
-  try {
-    const reply = await ask<"deckOp">({ kind: "deckOp", ...request });
-    say(reply.describe);
-    if (reply.undo !== null) {
-      const undo = reply.undo;
-      pushUndo({
-        describe: reply.describe,
-        run: async () => {
-          await ask<"deckOp">({
-            kind: "deckOp",
-            op: undo.op,
-            deckId: undo.deckId,
-            ...(undo.name === undefined ? {} : { name: undo.name }),
-            ...(undo.parentId === undefined ? {} : { parentId: undo.parentId }),
-            ...(undo.cardIds === undefined ? {} : { cardIds: undo.cardIds }),
-          });
-          await refreshAfterOp();
-        },
-      });
-    }
-    await refreshAfterOp();
-  } catch (cause) {
-    // The worker refuses a delete that would take cards and a move that would make
-    // a cycle, and both messages explain themselves. Shown as-is.
-    say((cause as Error).message, true);
-  }
-}
-
-/**
- * His #14, in full: *"and also, we need CRUD for decks"*.
- *
- * Every operation the worker supports, each with the sentence that makes it a
- * decision rather than a button. It is a LAYER like everything else, so Escape
- * peels it and the review underneath is untouched.
- *
- * ─── WHAT IS DELIBERATELY NOT HERE ──────────────────────────────────────────
- *
- * Per-deck `reverse` and `target_retention` overrides. Both are real columns with
- * real resolution views, and both change what he is DRILLED on — the line decision
- * 31 draws around what stays his. The workspace defaults are in settings, where a
- * change is one row and obvious; a per-deck override buried in a context menu is
- * how a deck ends up scheduled differently for a reason nobody remembers.
- */
 /**
  * The card's own `⋯` — and it is the DECK menu's pattern rather than a new one.
  *
@@ -4097,179 +3388,7 @@ function openCardMenu(cardId: string, name: string): void {
   (list.firstElementChild as HTMLElement | null)?.focus();
 }
 
-function openDeckMenu(deck: DeckBrief): void {
-  const root = document.createElement("div");
-  root.className = "layer layer-confirm layer-menu";
-  root.setAttribute("role", "dialog");
-  root.setAttribute("aria-modal", "true");
-  root.setAttribute("aria-label", `${deck.path} actions`);
-  const backdrop = document.createElement("div");
-  backdrop.className = "layer-backdrop";
-  backdrop.addEventListener("click", () => closeIfTop(root));
-
-  const panel = document.createElement("div");
-  panel.className = "confirm-panel";
-  const heading = document.createElement("h2");
-  heading.textContent = deck.path;
-  const totals = subtreeCards(deck);
-  const text = document.createElement("p");
-  text.textContent =
-    `${totals.cards.toLocaleString()} card(s) in this deck and everything under it` +
-    (deck.cards === totals.cards ? "" : ` · ${deck.cards.toLocaleString()} directly in it`) +
-    (deck.archived ? " · archived" : "");
-  panel.append(heading, text);
-
-  const list = document.createElement("div");
-  list.className = "menu-list";
-  const item = (label: string, note: string, run: () => void, danger = false): void => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "menu-item";
-    if (danger) button.classList.add("danger");
-    const name = document.createElement("b");
-    name.textContent = label;
-    const why = document.createElement("i");
-    why.textContent = note;
-    button.append(name, why);
-    button.addEventListener("click", () => {
-      closeIfTop(root);
-      run();
-    });
-    list.appendChild(button);
-  };
-
-  item("open", "see its cards in the gallery", () => void openGallery(deck.id));
-
-  item("rename", "the name only — nothing moves", () => {
-    openPrompt("Rename deck", `Currently ${deck.path}.`, "name", deck.name, (name) =>
-      void runDeckOp({ op: "rename", deckId: deck.id, name }),
-    );
-  });
-
-  item("new sub-deck", "empty, inside this one", () => {
-    openPrompt(
-      "New sub-deck",
-      `It goes inside ${deck.name} and starts empty. Reverse is 'inherit', so it ` +
-        `follows whatever ${deck.name} resolves to.`,
-      "name",
-      "",
-      (name) => void runDeckOp({ op: "create", deckId: "", name, parentId: deck.id }),
-    );
-  });
-
-  item("move", "put it under another deck, or at the top", () => openDeckMove(deck));
-
-  item(
-    deck.archived ? "unarchive" : "archive",
-    deck.archived
-      ? "put it and its cards back in the queue"
-      : "this deck AND every card under it stop being scheduled",
-    () => {
-      openConfirm(
-        deck.path,
-        `${deck.archived ? "Unarchiving" : "Archiving"} marks the deck AND every ` +
-          `card in its subtree (${totals.cards.toLocaleString()}), because the review ` +
-          `queue filters on the CARD — two predicates that disagree is worse than one ` +
-          `that is blunt. Undo restores exactly the rows this flips, so cards you ` +
-          `archived by hand keep their state. This is also the answer to your 数字 ` +
-          `question: Mochi has no deck-level archive at all, so a deck you archived ` +
-          `there arrived here unarchived.`,
-        deck.archived ? "unarchive deck" : "archive deck",
-        () => void runDeckOp({ op: deck.archived ? "unarchive" : "archive", deckId: deck.id }),
-        // Undo restores exactly the rows it flipped, and no history is destroyed
-        // either way — an archived track goes dormant, it does not lose its reviews.
-        "normal",
-      );
-    },
-  );
-
-  item(
-    "delete",
-    "only an empty deck — the schema refuses to take cards with it",
-    () => {
-      openConfirm(
-        `Delete ${deck.name}?`,
-        totals.cards > 0
-          ? `It holds ${totals.cards.toLocaleString()} card(s) in its subtree. ` +
-            `\`cards.deck_id\` is ON DELETE RESTRICT, deliberately — deleting a deck ` +
-            `must never silently take four years of cards with it. Move them, or ` +
-            `archive the deck instead.`
-          : `It is empty, so nothing goes with it. There is no undo for a deleted ` +
-            `deck; making it again is one action.`,
-        "delete",
-        () => void runDeckOp({ op: "delete", deckId: deck.id }),
-      );
-    },
-    true,
-  );
-
-  panel.appendChild(list);
-  root.append(backdrop, panel);
-  pushLayer(bareLayer(root));
-  (list.firstElementChild as HTMLElement | null)?.focus();
-}
-
-/**
- * Choose a new parent.
- *
- * The list EXCLUDES the deck and everything under it, because moving a deck into
- * its own descendant makes `deck_ancestry` — a recursive view with no depth bound —
- * loop, and every path, count and inheritance query goes through it. The worker
- * refuses it as well; this stops him getting as far as an error message.
- */
-function openDeckMove(deck: DeckBrief): void {
-  const under = new Set<string>();
-  const walk = (id: string): void => {
-    under.add(id);
-    for (const child of childrenOf(id)) walk(child.id);
-  };
-  walk(deck.id);
-
-  const root = document.createElement("div");
-  root.className = "layer layer-confirm layer-menu";
-  root.setAttribute("role", "dialog");
-  root.setAttribute("aria-modal", "true");
-  const backdrop = document.createElement("div");
-  backdrop.className = "layer-backdrop";
-  backdrop.addEventListener("click", () => closeIfTop(root));
-
-  const panel = document.createElement("div");
-  panel.className = "confirm-panel";
-  const heading = document.createElement("h2");
-  heading.textContent = `Move ${deck.name}`;
-  const text = document.createElement("p");
-  text.textContent =
-    "Its cards and sub-decks come with it. Its own sub-decks are not listed — a " +
-    "deck cannot go inside itself.";
-  panel.append(heading, text);
-
-  const list = document.createElement("div");
-  list.className = "menu-list";
-  const choose = (label: string, parentId: string | null): void => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "menu-item";
-    const name = document.createElement("b");
-    name.textContent = label;
-    button.appendChild(name);
-    button.addEventListener("click", () => {
-      closeIfTop(root);
-      void runDeckOp({ op: "move", deckId: deck.id, parentId });
-    });
-    list.appendChild(button);
-  };
-  choose("the top level", null);
-  for (const candidate of deckIndex) {
-    if (under.has(candidate.id)) continue;
-    if (candidate.id === deck.parentId) continue;
-    choose(candidate.path, candidate.id);
-  }
-
-  panel.appendChild(list);
-  root.append(backdrop, panel);
-  pushLayer(bareLayer(root));
-  (list.firstElementChild as HTMLElement | null)?.focus();
-}
+// ─── boot ────────────────────────────────────────────────────────────────────────
 
 async function boot(): Promise<void> {
   try {
