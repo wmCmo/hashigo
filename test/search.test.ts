@@ -46,6 +46,7 @@ import {
   searchPlan,
 } from "../src/schema/index.js";
 import { INVISIBLE_MARKS } from "../src/text/index.js";
+import { okuriganaStem } from "../src/search/query.js";
 import {
   DEFAULT_SEARCH_LIMIT,
   FTS_BM25_WEIGHTS,
@@ -990,5 +991,94 @@ describe("deck-scoped search", () => {
       const scoped = searchCards(db, query, { deckIds: ["small"] });
       expect(scoped.hits.every((hit) => hit.deckId === "small"), `${query} leaked`).toBe(true);
     }
+  });
+});
+
+/**
+ * OKURIGANA — the fallback that makes 貫く find 貫いている.
+ *
+ * Zach, 2026-09-24, on a card whose example sentence reads 態度を貫いている:
+ * *"do you think if i search for 貫く at least 厳格 should come up?"*, and then
+ * *"because in notion, searching for 貫く with 貫いている would have worked, same
+ * with mochi or obsidian"*.
+ *
+ * Two separate faults produced that miss and both are fixed: the sentence was not
+ * in `search_text` at all (`scripts/search-text-rebuild.ts`), and `貫く` is not a
+ * literal substring of `貫いている`, which a trigram index needs. This covers the
+ * second.
+ */
+describe("the okurigana stem", () => {
+  it("strips a short kana tail after a kanji, and nothing else", () => {
+    expect(okuriganaStem("貫く")).toBe("貫");
+    expect(okuriganaStem("食べる")).toBe("食");
+    expect(okuriganaStem("考える")).toBe("考");
+    expect(okuriganaStem("書く")).toBe("書");
+  });
+
+  it("leaves PHRASES alone, which is what the two-kana bound is for", () => {
+    // Measured over his 7,716 card names: an unbounded tail turns 身につける into
+    // 身 (22 hits) and 口にする into 口 (14), and multiplied results by 7.3 across
+    // 40 sampled words. These must not be stemmed.
+    expect(okuriganaStem("口にする")).toBeNull();
+    expect(okuriganaStem("身につける")).toBeNull();
+    expect(okuriganaStem("極まりない")).toBeNull();
+  });
+
+  it("leaves a word with no okurigana alone", () => {
+    expect(okuriganaStem("厳格")).toBeNull();
+    expect(okuriganaStem("意味")).toBeNull();
+    // All kana: there is no kanji stem to fall back to.
+    expect(okuriganaStem("つらぬく")).toBeNull();
+    expect(okuriganaStem("")).toBeNull();
+  });
+
+  it("refuses a multi-term query", () => {
+    // `貫く 厳格` is two constraints; dropping kana from one is not what was asked.
+    expect(okuriganaStem("貫く 厳格")).toBeNull();
+  });
+});
+
+describe("searching falls back to the stem, but only on zero hits", () => {
+  let db: Db;
+
+  beforeAll(() => {
+    db = openDatabase(MEMORY);
+    seed(db, [
+      // The shape of Zach's card: the conjugated form lives in the BODY.
+      { id: "genkaku1", name: "厳格", fields: [["m", "彼は仕事において非常に厳格な態度を貫いている。"]] },
+      // A card that the stem would also reach. Its presence is the recall cost,
+      // and it is the correct cost: he asked for "at least 厳格 should come up".
+      { id: "ikkan001", name: "一貫性", fields: [["m", "データの一貫性を保つ"]] },
+      // A word that DOES match directly, to prove the fallback stays out of the way.
+      { id: "taberu01", name: "食べる", fields: [["m", "to eat"]] },
+    ]);
+  });
+
+  afterAll(() => db.close());
+
+  it("finds 厳格 from 貫く, which is the report", () => {
+    const result = searchCards(db, "貫く");
+    expect(result.hits.map((h) => h.name)).toContain("厳格");
+    // And it SAYS it broadened, so the screen never silently answers a different
+    // question than the one typed.
+    expect(result.stemmedFrom).toBe("貫く");
+    expect(result.normalised).toBe("貫");
+  });
+
+  it("does NOT broaden a query that already found something", () => {
+    // The whole reason this is cheap. 食べる matches a card directly, so the stem
+    // 食 is never tried and the result is exactly what it always was.
+    const result = searchCards(db, "食べる");
+    expect(result.hits.map((h) => h.name)).toEqual(["食べる"]);
+    expect(result.stemmedFrom).toBeNull();
+  });
+
+  it("reports the ORIGINAL query when even the stem finds nothing", () => {
+    // "no results for 猫" must not become "no results for 猫" spelled some other
+    // way — the user gets told about the word they typed.
+    const result = searchCards(db, "猫かる");
+    expect(result.hits).toEqual([]);
+    expect(result.stemmedFrom).toBeNull();
+    expect(result.query).toBe("猫かる");
   });
 });

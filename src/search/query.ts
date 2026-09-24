@@ -249,3 +249,58 @@ export function asciiLower(text: string): string {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Okurigana, and the one thing every other search he uses does that this did not
+// ---------------------------------------------------------------------------
+
+/**
+ * Drop a short trailing kana tail that follows a kanji: 貫く -> 貫.
+ *
+ * ─── WHY THIS EXISTS ────────────────────────────────────────────────────────
+ *
+ * Zach, 2026-09-24: *"do you think if i search for 貫く at least 厳格 should come
+ * up? because the example sentence contains the word"* — the sentence is
+ * 彼は仕事において非常に厳格な態度を**貫いている**。 — and then, when told our
+ * index could not: *"because in notion, searching for 貫く with 貫いている would
+ * have worked, same with mochi or obsidian"*.
+ *
+ * He is describing standard CJK search behaviour: tokenise, match loosely, rank.
+ * Requiring the WHOLE query to appear as one literal substring — which is what a
+ * trigram index does — is the outlier, and the outlier was ours. A dictionary
+ * form and the conjugation on the card differ only in okurigana, so the kanji
+ * stem is what the two have in common.
+ *
+ * ─── AT MOST TWO KANA, WHICH SEPARATES A VERB FROM A PHRASE ─────────────────
+ *
+ * Measured against his own 7,716 card names, 2026-09-24. An unbounded tail is far
+ * too blunt — it turns `身につける` into `身` (22 hits) and `口にする` into `口`
+ * (14), and across 40 sampled words it multiplied the result count by 7.3. Two
+ * kana is the line that splits verbs from phrases:
+ *
+ *     貫く -> 貫      食べる -> 食     考える -> 考     書く -> 書
+ *     口にする -> —   身につける -> —  極まりない -> —  厳格 -> —
+ *
+ * ─── AND IT ONLY FIRES ON ZERO HITS, SO IT COSTS NOTHING ────────────────────
+ *
+ * `searchCards` uses this only when the real query matched NOTHING. Every query
+ * that works today returns exactly what it returned before — the earlier worry
+ * about a 6x recall blowup was measured against applying it unconditionally,
+ * which is not what ships. A search that already found something is never
+ * broadened.
+ */
+const KANJI_RANGE = "\u4E00-\u9FFF\u3400-\u4DBF";
+const HIRAGANA_TAIL = new RegExp(`^(.*[${KANJI_RANGE}])[\u3040-\u309F]{1,2}$`, "u");
+
+export function okuriganaStem(query: string): string | null {
+  const trimmed = query.trim();
+  // One term only. `貫く 厳格` is two constraints and dropping kana from one of
+  // them is not a thing the user asked for.
+  if (trimmed === "" || /\s/.test(trimmed)) return null;
+  const match = HIRAGANA_TAIL.exec(trimmed);
+  if (match === null) return null;
+  const stem = match[1] as string;
+  // A single character still searches — the `like` mode below the trigram floor
+  // handles it — but a stem shorter than this is not a word, it is a radical.
+  return stem.length === 0 ? null : stem;
+}

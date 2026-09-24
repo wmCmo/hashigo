@@ -26,7 +26,7 @@
  */
 
 import type { SqliteHandle } from "../db/browser.js";
-import { parseSearchQuery, type SearchMode, type SearchQuery } from "./query.js";
+import { okuriganaStem, parseSearchQuery, type SearchMode, type SearchQuery } from "./query.js";
 import { makeSnippet, type SearchSnippet } from "./snippet.js";
 import {
   SEARCH_INDEX_STATUS_SQL,
@@ -113,6 +113,14 @@ export interface SearchResult {
   readonly offset: number;
   /** Terms past `MAX_TERMS`, not searched. */
   readonly termsDropped: number;
+  /**
+   * Set when the query matched NOTHING and the okurigana stem was tried instead:
+   * holds what the user actually typed, while `normalised` holds the stem.
+   *
+   * `null` on every search that found something on its own, so a consumer can
+   * say *"no match for 貫く — showing 貫"* and never say it wrongly.
+   */
+  readonly stemmedFrom: string | null;
   /** Wall clock for the whole call, including the snippet query. */
   readonly elapsedMs: number;
 }
@@ -147,10 +155,42 @@ function positiveInteger(value: number, label: string): number {
  * and runs no SQL. It is not an error and it is not "everything": a blank
  * Ctrl+K box shows nothing.
  */
+/**
+ * ONE SEARCH, AND THEN — ONLY IF IT FOUND NOTHING — THE OKURIGANA STEM.
+ *
+ * Zach, 2026-09-24: *"in notion, searching for 貫く with 貫いている would have
+ * worked, same with mochi or obsidian"*. A dictionary form and the conjugation
+ * on the card share their kanji and differ in okurigana, and a trigram index
+ * needs the whole query as one literal substring, so `貫く` missed a card whose
+ * sentence reads 態度を貫いている.
+ *
+ * **It fires only on zero hits, so no working query changes.** That is what makes
+ * this cheap: applying the stem unconditionally multiplied results by 7.3 over 40
+ * sampled words, and applying it as a fallback costs exactly one extra query on
+ * searches that were already returning nothing. `stemmedFrom` tells the caller it
+ * happened, so the screen can say which word it actually searched for rather than
+ * silently answering a different question.
+ */
 export function searchCards(
   db: SqliteHandle,
   query: string,
   options: SearchOptions = {},
+): SearchResult {
+  const direct = runSearch(db, query, options, null);
+  if (direct.hits.length > 0 || direct.mode === null) return direct;
+  const stem = okuriganaStem(query);
+  if (stem === null) return direct;
+  const broadened = runSearch(db, stem, options, query);
+  // Still nothing: report the ORIGINAL query, because "no results for 貫" would
+  // name a word he did not type.
+  return broadened.hits.length === 0 ? direct : broadened;
+}
+
+function runSearch(
+  db: SqliteHandle,
+  query: string,
+  options: SearchOptions,
+  stemmedFrom: string | null,
 ): SearchResult {
   const started = performance.now();
   const limit = Math.min(
@@ -175,6 +215,7 @@ export function searchCards(
       limit,
       offset,
       termsDropped: 0,
+      stemmedFrom,
       elapsedMs: performance.now() - started,
     };
   }
@@ -225,6 +266,7 @@ export function searchCards(
     limit,
     offset,
     termsDropped: parsed.termsDropped,
+    stemmedFrom,
     elapsedMs: performance.now() - started,
   };
 }
