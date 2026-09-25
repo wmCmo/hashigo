@@ -98,6 +98,7 @@ import { furiganaSupport } from "../render/ruby.js";
 import { accentMarkSupport } from "../render/accent-marks.js";
 import { mathRenderers } from "../render/math.js";
 import { MARKS_FIELD } from "../accent/sentence.js";
+import { fieldWithRole } from "../fields/index.js";
 import { fillTextSlots, textSlots, type TextSlot } from "./text.js";
 import type { RenderDocument, RenderElement } from "../render/dom.js";
 import { shadowingLoop, type ShadowingLoop, type ShadowingSide } from "../render/reveal.js";
@@ -425,7 +426,18 @@ export function mountPrepared<E extends RenderElement>(
   });
   // Filled straight away, unlike furigana: the annotation is a stored field on
   // the card that is already in hand, not a generation that has to be looked up.
-  const annotation = prepared.loaded.values.get(MARKS_FIELD.id) ?? "";
+  //
+  // BY ROLE since stage F, with the fixed id kept as a FALLBACK — and the
+  // fallback is load-bearing, not caution. `app/local-fields.ts` seeds a device
+  // insert-only, so a phone whose seed predates the role carries the old row
+  // (id `ojad`, no role) until its next seed rebuild. He has reported "ojad isn't
+  // here" twice; dropping the fallback in the same release is how that becomes a
+  // third time.
+  const marksField = fieldWithRole(prepared.loaded.template?.fields ?? [], "ojad");
+  const annotation =
+    prepared.loaded.values.get(marksField?.id ?? MARKS_FIELD.id) ??
+    prepared.loaded.values.get(MARKS_FIELD.id) ??
+    "";
   if (annotation !== "") marks.annotateAll(annotation);
 
   // The empty text generators, collected but NOT filled — the page has no

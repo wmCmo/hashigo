@@ -38,6 +38,7 @@
  */
 import { openDatabase } from "../src/db/index.js";
 import { arg, flag } from "../src/cli/args.js";
+import { OJAD_SCOPE } from "../src/accent/marks.js";
 
 /**
  * SCOPED BY TEMPLATE, NOT BY FIELD NAME — Zach's call, 2026-09-13.
@@ -51,10 +52,14 @@ import { arg, flag } from "../src/cli/args.js";
  * declaring an `accent` field. New Vocab's 1,203 cards show the head word
  * unmasked beside its clip, which is a different exercise.
  */
-const TEMPLATES = ["単語", "言葉"] as const;
+const TEMPLATES = OJAD_SCOPE.templates;
 
-/** The field the sentence lives in, within those templates. */
-const SENTENCE_FIELDS = ["例文", "Example"] as const;
+/**
+ * The field the sentence lives in, within those templates. Both lists are
+ * `OJAD_SCOPE` in `src/accent/marks.ts` — one copy, so the body this script
+ * edits and the field `declareField` points at cannot drift into two scopes.
+ */
+const SENTENCE_FIELDS = OJAD_SCOPE.sentenceFields;
 
 /**
  * The annotation line, carrying the sentence line's own blockquote marker.

@@ -217,6 +217,64 @@ const STEPS = [
       ],
     ],
   },
+  /**
+   * DECISION 43'S ANNOTATIONS — MISSING FROM THIS SEQUENCE UNTIL 2026-09-25.
+   *
+   * A rebuild took all 3,719 `ojad` values and both `<ojad>` body insertions with
+   * it, with every invariant above still green: this list ran `cli.ts ojad` (the
+   * 33 hand adjudications, a different thing with a similar name) and none of
+   * the three steps below. `src/template/ast.ts` even claimed the template step
+   * was "part of the documented rebuild sequence". It was not, anywhere.
+   *
+   * The analyser's OUTPUT is the input here, the same fast path as
+   * `accents.jsonl`: `build/sentence-marks.jsonl` survives the `rm` and Python
+   * is only needed when the sentences themselves change. `marks` also declares
+   * the field — with its role and source pointer since stage F.
+   */
+  {
+    name: "accent: ojad per-mora annotations (declare + load)",
+    cmd: `npm exec vite-node src/accent/cli.ts -- marks --db "${DB}" --in build/sentence-marks.jsonl`,
+    invariant: (db) => {
+      if (!existsSync(resolve(ROOT, "build/sentence-marks.jsonl"))) {
+        return "build/sentence-marks.jsonl is missing — run tools/accent_sentence.py first";
+      }
+      const n = db
+        .prepare(
+          "SELECT count(*) n FROM card_field_values v JOIN template_fields f " +
+            "ON f.id = v.field_id AND json_extract(f.options, '$.\"hashigo-role\"') = 'ojad' " +
+            "WHERE v.value <> ''",
+        )
+        .get().n;
+      return n > 0 ? null : "no ojad annotations were written — every example sentence renders bare";
+    },
+    reference: (db) => [
+      [
+        "ojad annotations",
+        db
+          .prepare(
+            "SELECT count(DISTINCT v.card_id) n FROM card_field_values v JOIN template_fields f " +
+              "ON f.id = v.field_id AND json_extract(f.options, '$.\"hashigo-role\"') = 'ojad' " +
+              "WHERE v.value <> ''",
+          )
+          .get().n,
+        3719,
+      ],
+    ],
+  },
+  {
+    name: "local: <ojad> goes under the sentence in 単語 / 言葉",
+    cmd: `npm exec vite-node scripts/ojad-template-apply.ts -- --db "${DB}" --apply`,
+    invariant: (db) => {
+      const bare = db
+        .prepare(
+          "SELECT name FROM templates WHERE name IN ('単語', '言葉') AND instr(content, '<ojad>') = 0",
+        )
+        .all();
+      return bare.length === 0
+        ? null
+        : `${bare.map((row) => row.name).join(", ")} still has no <ojad> — the values exist and render nowhere`;
+    },
+  },
 ];
 
 if (DASHBOARD) {

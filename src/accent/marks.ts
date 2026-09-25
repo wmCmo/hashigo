@@ -28,6 +28,7 @@
  */
 import { loadCard } from "../cards/index.js";
 import type { Db } from "../db/index.js";
+import { fieldWithRole, ROLE_KEY, withRole } from "../fields/index.js";
 import {
   fieldGenerationRequest,
   resolveDescriptorText,
@@ -37,20 +38,49 @@ import { applyReadingOverrides, cleanSentence, MARKS_FIELD, parseAnnotation } fr
 
 export { MARKS_FIELD } from "./sentence.js";
 
-/** Cards that could carry one. The sentence itself is NOT in this query. */
+/**
+ * WHERE THE ANNOTATION IS DECLARED — the one place a name still decides anything.
+ *
+ * Zach's call, 2026-09-13: the reading line belongs on the accent drill and
+ * nowhere else. A field name cannot express that (言葉 calls its sentence
+ * `Example`, exactly as New Vocab does), so the SCOPE is these two templates and
+ * the sentence field is found inside them by name — ONCE, when the field is
+ * declared. `scripts/ojad-template-apply.ts` imports this rather than keeping a
+ * second copy.
+ *
+ * ─── AND WHY THAT IS NOT THE NAME-BINDING FIELDS-AS-MODULES REMOVES ─────────
+ *
+ * The defect was that the PIPELINE found its input by name, in three independent
+ * copies here, so renaming `例文` made `marks` report `0 written` — silence that
+ * read as success. Since stage F the declaration writes what it found into the
+ * data: the ojad field carries `hashigo-role: ojad` and `source_field_id` → the
+ * sentence field. Everything after that — which cards, which sentence, which
+ * field to write — follows the role and the pointer, the way `型` has always
+ * followed `type = 'accent'`. Rename `例文` after declaring and nothing moves.
+ */
+export const OJAD_SCOPE = {
+  templates: ["単語", "言葉"],
+  sentenceFields: ["例文", "Example"],
+} as const;
+
+/**
+ * Cards that could carry one: every live card on a template that declares an
+ * ojad-ROLE field with a source. The sentence itself is NOT in this query.
+ */
 const SENTENCE_CARDS_SQL = `
 SELECT c.id AS cardId
   FROM cards c
-  JOIN templates t ON t.id = c.template_id
   JOIN template_fields f ON f.template_id = c.template_id
- WHERE f.type = 'ai' AND f.name IN ('例文', 'Example')
-   AND t.name IN ('単語', '言葉')
+ WHERE json_extract(f.options, '$."${ROLE_KEY}"') = 'ojad'
+   AND f.source_field_id IS NOT NULL
    AND c.archived = 0
  ORDER BY c.id`;
 
 export interface SentenceRow {
   readonly cardId: string;
   readonly sentence: string;
+  /** The ojad-role field on this card's template — where its annotation goes. */
+  readonly fieldId: string;
 }
 
 export interface ExtractReport {
@@ -92,10 +122,11 @@ export function extractSentences(db: Db): ExtractReport {
   for (const { cardId } of cards) {
     const card = loadCard(db, cardId);
     if (card?.template == null) continue;
-    const field = card.template.fields.find(
-      (candidate) => candidate.type === "ai" && (candidate.name === "例文" || candidate.name === "Example"),
-    );
-    if (field === undefined) continue;
+    // BY ROLE, then by pointer — see `OJAD_SCOPE`. No name is read here.
+    const marks = fieldWithRole(card.template.fields, "ojad");
+    const sourceId = marks?.sourceFieldId ?? null;
+    const field = card.template.fields.find((candidate) => candidate.id === sourceId);
+    if (marks === null || field === undefined) continue;
 
     const context = {
       fields: card.template.fields,
@@ -124,7 +155,7 @@ export function extractSentences(db: Db): ExtractReport {
     // silently end up with no annotation at all.
     const sentence = applyReadingOverrides(cleaned);
     if (sentence !== cleaned) overridden += 1;
-    clean.push({ cardId, sentence });
+    clean.push({ cardId, sentence, fieldId: marks.id });
   }
   return { cards: cards.length, clean, ungenerated, refused, overridden };
 }
@@ -201,7 +232,7 @@ export function loadMarks(
         report.unannotated += 1;
         continue;
       }
-      const result = write.run(row.cardId, MARKS_FIELD.id, marks);
+      const result = write.run(row.cardId, row.fieldId, marks);
       if (result.changes > 0) report.written += 1;
       else report.skipped += 1;
     }
@@ -210,26 +241,60 @@ export function loadMarks(
   return report;
 }
 
-/** Declare the local field on every template that can carry a sentence. */
+/**
+ * Declare the local field on every template in `OJAD_SCOPE`, AND record in the
+ * data what it is for and what it reads — the role and the source pointer.
+ *
+ * Idempotent, and quiet when nothing changes: the UPDATE fires only when the row
+ * differs, so a re-run does not move `updated_at` and hand a sync a false "newer"
+ * row (decision 33's field merge is LWW on that clock since stage C). An existing
+ * row keeps its NAME — he may have renamed OJAD in the editor, and a declaration
+ * is not the place to take that back.
+ */
 export function declareField(db: Db): number {
+  const templateMarks = OJAD_SCOPE.templates.map(() => "?").join(", ");
+  const fieldMarks = OJAD_SCOPE.sentenceFields.map(() => "?").join(", ");
   const templates = db
     .prepare(
-      `SELECT DISTINCT t.id AS id FROM templates t
-         JOIN template_fields f ON f.template_id = t.id
-        WHERE f.name IN ('例文', 'Example') AND t.name IN ('単語', '言葉')`,
+      `SELECT f.template_id AS templateId, f.id AS sentenceId
+         FROM template_fields f
+         JOIN templates t ON t.id = f.template_id
+        WHERE t.name IN (${templateMarks}) AND f.name IN (${fieldMarks}) AND f.type = 'ai'`,
     )
-    .all() as { id: string }[];
-  const declare = db.prepare(
+    .all(...OJAD_SCOPE.templates, ...OJAD_SCOPE.sentenceFields) as {
+    templateId: string;
+    sentenceId: string;
+  }[];
+  const existing = db.prepare(
+    "SELECT options FROM template_fields WHERE template_id = ? AND id = ?",
+  );
+  const insert = db.prepare(
     `INSERT INTO template_fields
        (template_id, id, name, type, source_field_id, options, pos, local)
-     VALUES (?, ?, ?, ?, NULL, '{}', ?, 1)
-     ON CONFLICT (template_id, id) DO UPDATE SET
-       name = excluded.name, type = excluded.type, local = 1,
-       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+  );
+  const update = db.prepare(
+    `UPDATE template_fields
+        SET source_field_id = ?, options = ?, local = 1,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE template_id = ? AND id = ?
+        AND (source_field_id IS NOT ? OR options IS NOT ?)`,
   );
   let declared = 0;
-  for (const template of templates) {
-    declare.run(template.id, MARKS_FIELD.id, MARKS_FIELD.name, MARKS_FIELD.type, "zz-ojad");
+  for (const { templateId, sentenceId } of templates) {
+    const row = existing.get(templateId, MARKS_FIELD.id) as { options: string | null } | undefined;
+    let options: Record<string, unknown> = {};
+    try {
+      options = JSON.parse(row?.options ?? "{}") as Record<string, unknown>;
+    } catch {
+      options = {};
+    }
+    const next = JSON.stringify(withRole(options, "ojad"));
+    if (row === undefined) {
+      insert.run(templateId, MARKS_FIELD.id, MARKS_FIELD.name, MARKS_FIELD.type, sentenceId, next, "zz-ojad");
+    } else {
+      update.run(sentenceId, next, templateId, MARKS_FIELD.id, sentenceId, next);
+    }
     declared += 1;
   }
   return declared;

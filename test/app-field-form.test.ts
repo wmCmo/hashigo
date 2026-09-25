@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   factsLine,
   inputLine,
+  roleLine,
   settingLines,
   undeclaredKeys,
   type FieldFacts,
@@ -211,6 +212,9 @@ describe("over the real 48 fields", () => {
         const accounted = new Set([
           ...lines.map((line) => line.key),
           ...undeclaredKeys(row.type, options).map((extra) => extra.key),
+          // The role is shown on its own line (stage F), so it is accounted for
+          // exactly when that line exists.
+          ...(roleLine(options) === null ? [] : ["hashigo-role"]),
         ]);
         for (const key of Object.keys(options)) {
           expect(accounted.has(key), `${row.type}.${key} is shown nowhere`).toBe(true);
@@ -243,5 +247,15 @@ describe("over the real 48 fields", () => {
     } finally {
       db.close();
     }
+  });
+});
+
+describe("a role is shown as what it is FOR, never as a stranger (stage F)", () => {
+  it("names the ojad role", () => {
+    expect(roleLine({ "hashigo-role": "ojad" })).toMatch(/^Role: ojad — /);
+    expect(roleLine({})).toBeNull();
+  });
+  it("does not list the role key as undeclared", () => {
+    expect(undeclaredKeys("plain", { "hashigo-role": "ojad" })).toEqual([]);
   });
 });

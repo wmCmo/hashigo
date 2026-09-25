@@ -15,7 +15,7 @@ import { moveWithin } from "../src/schema/index.js";
 import { referencedNames } from "../src/template/index.js";
 import { kindOf, settingsOf, type SettingSpec } from "../src/fields/index.js";
 import { isCatalogueVoice, voicesFor } from "../src/generate/voices.js";
-import { factsLine, inputLine, settingLines, undeclaredKeys } from "./field-form.js";
+import { factsLine, inputLine, roleLine, settingLines, undeclaredKeys } from "./field-form.js";
 import { patchOptions, sourceChoices, type FieldState } from "./field-ops.js";
 import { bareLayer, closeIfTop, layers, pushLayer } from "./layers.js";
 import type {
@@ -369,10 +369,18 @@ function templateFieldSettings(
   const nameOf = (id: string): string | null =>
     detail.fields.find((entry) => entry.id === id)?.name ?? null;
   const input = inputLine(field, nameOf);
-  if (lines.length === 0 && extras.length === 0 && input === null) return null;
+  const role = roleLine(options);
+  if (lines.length === 0 && extras.length === 0 && input === null && role === null) return null;
 
   const panel = document.createElement("div");
   panel.className = "tpl-settings";
+
+  if (role !== null) {
+    const line = document.createElement("p");
+    line.className = "tpl-setting-pipe";
+    line.textContent = role;
+    panel.appendChild(line);
+  }
 
   if (input !== null) {
     const pipe = document.createElement("div");

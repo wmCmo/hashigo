@@ -115,6 +115,19 @@ only when set, with `voicesCarried: true` so absence means null — and an older
 carries no voices never clears one. Measured: 数字 → `ja-JP-Neural2-B` silences all 90
 clips until regenerated; an English voice on 数字 reaches nothing.
 
+**STAGE F LANDED 2026-09-25** — `ojad` is bound by ROLE. `declareField` now writes
+`hashigo-role: ojad` and `source_field_id` → the sentence field; `extractSentences`,
+`loadMarks` and the mount follow the role and the pointer, and the names live in ONE
+place, `OJAD_SCOPE` in `src/accent/marks.ts` (his 2026-09-13 scope call, now imported by
+`scripts/ojad-template-apply.ts` instead of copied). Applied to `build/hashigo.db`: both
+fields carry the role, **0 values written, 3,719 unchanged**. Tested over a copy of the real
+database: renaming `例文` after declaring finds every sentence it found before (the old
+code found zero). The mount keeps the fixed-id fallback for devices whose seed predates the
+role. **`npm run rebuild` no longer drops the annotations**: two steps added with
+invariants, and a full scratch rebuild passed all 12. It yields 3,653 rather than 3,719 —
+the 66 are cards whose sentence was generated in the app after the import (1,260 ai blobs),
+which a rebuild from `exports/` cannot have. That is decision 41, not a gap in the steps.
+
 **LEFT, in dependency order.**
 F `ojad` by role + the missing rebuild steps · G `setFieldType`, then `respeak`, then
 `読み`, then **`Reading` last**. The full plan, with the measured argument for each, is at
@@ -201,10 +214,8 @@ instead. **The failure is silent**: rename `例文` and the ojad pipeline report
   made by the FIRST version of `ojad-template-apply`, which keyed on the field name and so
   reached four templates. Nothing removes a field, so they persist. The rebinding in stage
   F ignores them naturally (no role, no source); deleting them is his call.
-* **`npm run rebuild -- --force` silently drops all 3,719 `ojad` values** — `rebuild.mjs`
-  runs `cli.ts ojad` (the 33 hand adjudications) but neither `cli.ts sentences` nor
-  `cli.ts marks` nor `ojad-template-apply`. Every invariant stays green. Fix it with the
-  stage-F commit.
+* ~~`npm run rebuild -- --force` silently drops all 3,719 `ojad` values~~ — **FIXED in
+  stage F**, 2026-09-25.
 * **250 of 17,228 `ai` generations are one character repeated**, 35 to the 128-character
   ceiling; **246 arrived with the 2026-09-08 Mochi import**, so Mochi made them. 習慣's
   ends mid-emoji on a lone high surrogate. Only visible since the wrap fix. Regenerating

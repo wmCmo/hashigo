@@ -308,7 +308,7 @@ describe("loading the annotations is idempotent, and says so", () => {
   }
 
   const lines = [{ text: "SNSが主流です。", ok: true, marks: "えすえぬえ*すが|しゅりゅーで*す_" }];
-  const rows = [{ cardId: "c1", sentence: "SNSが主流です。" }];
+  const rows = [{ cardId: "c1", sentence: "SNSが主流です。", fieldId: MARKS_FIELD.id }];
 
   it("writes once, then reports every unchanged row as unchanged", () => {
     const db = fixture();
@@ -335,6 +335,90 @@ describe("loading the annotations is idempotent, and says so", () => {
       loadMarks(db, lines, rows);
       const moved = [{ text: "SNSが主流です。", ok: true, marks: "えすえぬえす*が|しゅりゅーで*す_" }];
       expect(loadMarks(db, moved, rows)).toMatchObject({ written: 1, skipped: 0 });
+    } finally {
+      db.close();
+    }
+  });
+});
+
+// ─── stage F: the pipeline follows a role, not a name ────────────────────────
+
+import Database from "better-sqlite3";
+import { declareField, extractSentences } from "../src/accent/marks.js";
+import type { Db } from "../src/db/index.js";
+
+/**
+ * The defect fields-as-modules exists for, in its clearest instance: rename
+ * `例文` and `marks` reported `0 written`, which read as success. Over a COPY of
+ * the real database, because the property is about his 3,700 sentences.
+ */
+describe("the ojad pipeline survives a rename once it is declared", () => {
+  function corpusCopy(): Database.Database | null {
+    try {
+      const source = new Database("build/hashigo.db", { readonly: true, fileMustExist: true });
+      const bytes = source.serialize();
+      source.close();
+      bytes[18] = 1; // WAL → rollback journal, or a deserialised buffer will not open
+      bytes[19] = 1;
+      return new Database(bytes);
+    } catch {
+      return null;
+    }
+  }
+
+  it("declares a role and a source pointer, idempotently", () => {
+    const db = corpusCopy();
+    if (db === null) return;
+    try {
+      expect(declareField(db as unknown as Db)).toBe(2);
+      const rows = db
+        .prepare(
+          `SELECT t.name AS template, s.name AS source, f.options AS options, f.updated_at AS clock
+             FROM template_fields f
+             JOIN templates t ON t.id = f.template_id
+             JOIN template_fields s ON s.template_id = f.template_id AND s.id = f.source_field_id
+            WHERE f.id = 'ojad' ORDER BY t.name`,
+        )
+        .all() as { template: string; source: string; options: string; clock: string }[];
+      expect(rows.map((row) => `${row.template}→${row.source}`)).toEqual(["単語→例文", "言葉→Example"]);
+      for (const row of rows) expect(JSON.parse(row.options)).toMatchObject({ "hashigo-role": "ojad" });
+
+      // A re-run moves nothing — including the clock a sync compares.
+      declareField(db as unknown as Db);
+      const again = db
+        .prepare("SELECT updated_at AS clock FROM template_fields WHERE id = 'ojad' ORDER BY template_id")
+        .all() as { clock: string }[];
+      expect(again.map((row) => row.clock).sort()).toEqual(rows.map((row) => row.clock).sort());
+    } finally {
+      db.close();
+    }
+  });
+
+  it("renaming 例文 AFTER declaring changes nothing the pipeline finds", () => {
+    const db = corpusCopy();
+    if (db === null) return;
+    try {
+      declareField(db as unknown as Db);
+      const before = extractSentences(db as unknown as Db);
+      expect(before.clean.length).toBeGreaterThan(3000);
+      db.prepare("UPDATE template_fields SET name = '文例' WHERE name = '例文'").run();
+      const after = extractSentences(db as unknown as Db);
+      // The old code found its input by name and would report ZERO here.
+      expect(after.clean.length).toBe(before.clean.length);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("the role key never reaches a generation identity", () => {
+    const db = corpusCopy();
+    if (db === null) return;
+    try {
+      declareField(db as unknown as Db);
+      const n = (db.prepare("SELECT count(*) AS n FROM blobs WHERE options LIKE '%hashigo-%'").get() as {
+        n: number;
+      }).n;
+      expect(n).toBe(0);
     } finally {
       db.close();
     }

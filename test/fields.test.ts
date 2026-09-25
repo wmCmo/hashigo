@@ -224,6 +224,9 @@ describe("the registry against the real corpus", () => {
         expect(kindOf(row.type), `unknown field type ${row.type}`).not.toBeNull();
         const declared = new Set(settingsOf(row.type).map((spec) => spec.key));
         for (const key of Object.keys(decodeFieldOptions(row.options))) {
+          // A ROLE is declared too — in `src/fields/roles.ts`, not per kind,
+          // because it is what a field with no type of its own is FOR.
+          if (key === ROLE_KEY) continue;
           if (!declared.has(key)) unexplained.add(`${row.type}.${key}`);
         }
       }

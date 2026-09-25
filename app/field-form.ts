@@ -28,7 +28,7 @@
  * every one of them.
  */
 
-import { kindOf, settingsOf, type SettingSpec } from "../src/fields/index.js";
+import { kindOf, roleOf, ROLE_KEY, settingsOf, type SettingSpec } from "../src/fields/index.js";
 
 /** What this needs of a field row. Structural, so `TemplateFieldRow` fits. */
 export interface FieldFacts {
@@ -148,7 +148,27 @@ export function undeclaredKeys(
 ): { key: string; value: string }[] {
   const declared = new Set(settingsOf(type).map((spec) => spec.key));
   return Object.keys(options)
-    .filter((key) => !declared.has(key))
+    // The role has its own line (`roleLine`); listing it again as "not declared
+    // by its kind" would call the one key this project wrote on purpose a stranger.
+    .filter((key) => !declared.has(key) && key !== ROLE_KEY)
     .sort()
     .map((key) => ({ key, value: show(options[key]) ?? "null" }));
+}
+
+/** What a role means, in his terms. One line per role this build knows. */
+const ROLE_MEANING: Readonly<Record<string, string>> = {
+  ojad:
+    "the per-mora pitch accent of the sentence it reads (decision 43) — filled by " +
+    "`accent/cli.ts marks`, found by this role rather than by any field's name",
+  "reading-switch": "decision 29's switch between the produce and identify drills",
+};
+
+/**
+ * The role line, or null. A role is what a field with no generating type of its
+ * own is FOR (`src/fields/roles.ts`); since stage F the ojad pipeline finds its
+ * field by it, so it is worth seeing — and not worth offering as a control.
+ */
+export function roleLine(options: Readonly<Record<string, unknown>>): string | null {
+  const role = roleOf({ options });
+  return role === null ? null : `Role: ${role} — ${ROLE_MEANING[role] ?? "declared by this project"}`;
 }
