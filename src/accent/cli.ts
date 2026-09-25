@@ -17,7 +17,11 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { openDatabase } from "../db/index.js";
 import { accentKey, readingLooksUnanalysed } from "./key.js";
-import { applyOjadAdjudications } from "./ojad.js";
+import {
+  DICTIONARY_ADJUDICATIONS,
+  OJAD_ADJUDICATIONS,
+  applyOjadAdjudications,
+} from "./ojad.js";
 import { accentFor, loadAccents, materialiseAccents, type AccentRow } from "./store.js";
 import { arg, flag } from "../cli/args.js";
 import { respeakCommand } from "./respeak-cli.js";
@@ -156,7 +160,10 @@ async function main(): Promise<number> {
       // The hand-entered adjudications. They land as manual overrides, so they
       // beat both the primary derivation and the cross-check.
       const { applied } = applyOjadAdjudications(db);
-      console.log(`applied ${applied} OJAD adjudication(s) as manual overrides`);
+      console.log(
+        `applied ${applied} adjudication(s) as manual overrides ` +
+          `(${OJAD_ADJUDICATIONS.length} from OJAD, ${DICTIONARY_ADJUDICATIONS.length} from a dictionary)`,
+      );
       return 0;
     }
 

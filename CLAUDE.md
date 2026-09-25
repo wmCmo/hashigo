@@ -241,7 +241,7 @@ npx vite-node src/accent/cli.ts -- words --db build/hashigo.db --out build/head-
 .venv-accent/Scripts/python tools/accent_derive.py --words build/head-words.txt --out build/accents.jsonl
 npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accents.jsonl
 npx vite-node src/accent/cli.ts -- ojad  --db build/hashigo.db     # 33 OJAD adjudications
-npx vite-node src/accent/cli.ts -- queue --db build/hashigo.db     # 57 still disputed
+npx vite-node src/accent/cli.ts -- queue --db build/hashigo.db     # 56 still disputed (2026-09-25)
 python tools/f0.py build/longvowel/*.wav    # F0 in thirds
 # THE DEV SERVER'S BIND ADDRESS IS A TRAP IN BOTH DIRECTIONS. Binding one address
 # family REFUSES the other, and on Windows `localhost` resolves to ::1 FIRST.

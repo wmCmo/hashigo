@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 import {
+  DICTIONARY_ADJUDICATIONS,
   OJAD_ADJUDICATIONS,
   accentLabel,
   OJAD_AMBIGUOUS,
@@ -546,7 +547,8 @@ describe.runIf(haveCorpus)("adjudication against the real database", () => {
           (r) => r.text,
         ),
       );
-      for (const row of OJAD_ADJUDICATIONS) {
+      // The dictionary-cited rows obey exactly the same contract as OJAD's.
+      for (const row of [...OJAD_ADJUDICATIONS, ...DICTIONARY_ADJUDICATIONS]) {
         const resolved = accentFor(db, row.word);
         // Skipped rather than failed when the accent data has not been loaded —
         // that is a manual step needing the Python analyser.

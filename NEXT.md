@@ -104,6 +104,25 @@ instead. **The failure is silent**: rename `例文` and the ojad pipeline report
 
 ### Reported, not fixed
 
+* **27 of the 56 open accent disputes are probably wrong labels on his cards, and the
+  shape is now measured rather than hypothesised.** Zach, 2026-09-25, on his phone: *"I
+  thought 航行 was 平板"* — right: OpenJTalk said 頭高, UniDic 平板, and a dictionary
+  agrees with UniDic (fixed, `DICTIONARY_ADJUDICATIONS` in `src/accent/ojad.ts`). Over
+  the disputes OJAD already settled, **where our probe rule produced a nucleus and UniDic
+  said 平板, OJAD backed UniDic 12 of 14 times**; for every other shape ours won 8 of 13.
+  Still open with that shape, on 23 live cards: いか ずるずる ちょうど なおざり まくる
+  もやもや やかん ベタベタ 低め 嗤う 容れる 専念 市場 当たり前 手すり 敵軍 極まる 白髪
+  空前 背景 脆弱 言い合い 近々 非婚 飾りつけ 高め. **Decision 8 still holds — do not
+  flip them to UniDic in bulk**; each needs a citation, and several are reading-ambiguous
+  (市場 しじょう/いちば, 白髪 しらが/はくはつ, 近々 ちかぢか/きんきん, いか) — those
+  belong with the 6 in `OJAD_AMBIGUOUS`, not in a list of answers. Whether to do the
+  lookups is his call: it changes what he is drilled on.
+* **A corrected `型` does NOT reach a device that already has the old one.** The local
+  fields seed is insert-only (`app/local-fields.ts`), deliberately, so it never takes
+  back his own edits — which also means a fixed label arrives only on a fresh device. On
+  an existing one it is one edit (`e` → `型`). The real fix is decision 33's deferred
+  per-value clock.
+
 * **Two stray `OJAD` fields on his devices** — New Vocab and Polysemy each carry one, with
   no values and no references. Neither `build/hashigo.db` nor the seed has them: they were
   made by the FIRST version of `ojad-template-apply`, which keyed on the field name and so

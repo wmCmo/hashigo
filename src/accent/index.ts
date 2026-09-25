@@ -41,6 +41,7 @@ export {
 } from "./speech.js";
 
 export {
+  DICTIONARY_ADJUDICATIONS,
   OJAD_ADJUDICATIONS,
   OJAD_AMBIGUOUS,
   applyOjadAdjudications,

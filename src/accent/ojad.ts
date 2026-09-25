@@ -103,6 +103,42 @@ export const OJAD_AMBIGUOUS: readonly { readonly word: string; readonly entries:
   { word: "だぶだぶ", entries: "だぶだぶ[な] 0 · だぶだぶ 1" },
 ];
 
+/**
+ * Adjudications from a DICTIONARY, for words OJAD has no entry for — kept apart
+ * from `OJAD_ADJUDICATIONS` so that list never claims a source it did not use.
+ *
+ * OJAD's word search is built from textbook vocabulary, so a word like 航行 simply
+ * is not in it. Each row here names what WAS consulted and when, in `source`,
+ * and that text lands in `accents.note` beside the value.
+ *
+ * ─── WHY THESE ARE WORTH DOING, MEASURED 2026-09-25 ─────────────────────────
+ *
+ * The note on the UniDic rows above called it "a hypothesis about a systematic
+ * bias, not yet a measurement". Measured over the disputes OJAD settled: where
+ * OUR probe rule produced a nucleus and UniDic said 平板, OJAD backed UniDic
+ * **12 times out of 14**; for every other shape of disagreement ours won 8 of 13.
+ * 27 of the 57 still-open disputes have that shape. Decision 8 still stands —
+ * UniDic never resolves on its own — so each one needs a citation, like this.
+ */
+export interface CitedAdjudication extends Adjudication {
+  readonly source: string;
+  readonly looked: string;
+}
+
+export const DICTIONARY_ADJUDICATIONS: readonly CitedAdjudication[] = [
+  // Zach, 2026-09-25, over the card on his phone: "I thought 航行 was 平板". He was
+  // right. OpenJTalk: 頭高 [[4,1]]; UniDic: 平板 [[4,0]]. OJAD: no entry.
+  {
+    word: "航行",
+    reading: "こうこう",
+    accent: 0,
+    type: "平板",
+    backed: "unidic",
+    source: "Weblio 発音欄「(東京) こーこー [kòókóó] (平板型 – [0])」; OJAD has no entry",
+    looked: "2026-09-25",
+  },
+];
+
 /** Apply every adjudication as a manual override. Idempotent. */
 export function applyOjadAdjudications(db: Db): { readonly applied: number } {
   for (const row of OJAD_ADJUDICATIONS) {
@@ -112,5 +148,12 @@ export function applyOjadAdjudications(db: Db): { readonly applied: number } {
       note: `OJAD 2026-08-20, ${row.reading}; backed ${row.backed}`,
     });
   }
-  return { applied: OJAD_ADJUDICATIONS.length };
+  for (const row of DICTIONARY_ADJUDICATIONS) {
+    setManualAccent(db, row.word, {
+      type: row.type,
+      accentType: row.accent,
+      note: `${row.source} (${row.looked}), ${row.reading}; backed ${row.backed}`,
+    });
+  }
+  return { applied: OJAD_ADJUDICATIONS.length + DICTIONARY_ADJUDICATIONS.length };
 }
