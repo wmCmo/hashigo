@@ -237,8 +237,9 @@ const TRANSLATE_SETTINGS: readonly SettingSpec[] = [
     identity: "own",
     editable: true,
     note:
-      "As above. Setting this on a field that has never carried it orphans that " +
-      "field's cached translations.",
+      "As above. Changing it re-addresses the field's translations — and because the " +
+      "store matches generated text by its input alone, cards keep showing the OLD " +
+      "translation until each is generated again. The price says how many.",
   },
 ];
 
@@ -269,11 +270,16 @@ export const FIELD_KINDS: Readonly<Record<FieldType, FieldKind>> = {
         control: "boolean",
         fallback: false,
         identity: "none",
-        editable: true,
+        // READ-ONLY UNTIL SOMETHING READS IT. `truthy()` in `src/review/mode.ts`
+        // and the body's `<<#Field>>` gate both treat absent as false and never
+        // consult this, so a control here would save a value that changes nothing
+        // on screen. It opens when the gate and the mode read it together (stage
+        // G) — separately they would disagree about the same card.
+        editable: false,
         note:
-          "What a card with no value means. On 単語's Reading this decides which " +
-          "exercise 1,882 cards run (decision 29), so it is not cosmetic even though " +
-          "no clip moves.",
+          "What a card with no value means. On 単語's Reading this would decide which " +
+          "exercise 1,882 cards run (decision 29) — and NOTHING READS IT YET: the " +
+          "review screen treats a missing value as no, whatever this says.",
       },
     ],
     convertsTo: { plain: "priced", text: "priced" },

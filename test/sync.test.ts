@@ -593,3 +593,97 @@ describe("every synced mutation moves its row's clock", () => {
     expect(source.match(/"UPDATE (cards|templates) SET [^"]*"/g)?.length ?? 0).toBeGreaterThan(5);
   });
 });
+
+// ─── a field's settings merge by clock too (2026-09-25) ──────────────────────
+
+/**
+ * Stage C of fields-as-modules made a field's options editable. Before it,
+ * `UPSERT_FIELD` overwrote every field row wholesale and stamped `now`, so the
+ * last peer merged won — harmless while nothing could change a setting, and the
+ * body bug of 2026-09-13 in a new place the moment something could. These pin the
+ * same three properties the bodies have: newer wins, older loses, no clock never
+ * wins.
+ */
+describe("a field row merges by clock, not by peer order", () => {
+  function withField(db: Db, options: string, updatedAt: string): void {
+    db.prepare(
+      "INSERT INTO templates (id, name, content, updated_at) VALUES ('t', 'New Vocab', '<<Example>>', ?) " +
+        "ON CONFLICT (id) DO NOTHING",
+    ).run(EPOCH);
+    db.prepare(
+      `INSERT INTO template_fields (template_id, id, name, type, options, pos, updated_at)
+       VALUES ('t', 'f', 'Example', 'speech', ?, 'a', ?)
+       ON CONFLICT (template_id, id) DO UPDATE SET options = excluded.options,
+                                                   updated_at = excluded.updated_at`,
+    ).run(options, updatedAt);
+  }
+  const optionsOf = (db: Db): string =>
+    (db.prepare("SELECT options FROM template_fields WHERE template_id = 't' AND id = 'f'").get() as {
+      options: string;
+    }).options;
+  const clockOf = (db: Db): string =>
+    (db.prepare("SELECT updated_at FROM template_fields WHERE template_id = 't' AND id = 'f'").get() as {
+      updated_at: string;
+    }).updated_at;
+
+  const OLD = '{"voice":"en-US-AIGenerate1Neural"}';
+  const SET = '{"voice":"en-US-Neural2-D"}';
+
+  it("KEEPS a voice set here when a peer carries the older row", () => {
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      withField(phone, OLD, "2026-09-24T09:00:00.000Z");
+      withField(laptop, SET, "2026-09-25T10:00:00.000Z");
+      const report = mergeSync(laptop, exportSync(phone, NOW));
+      expect(optionsOf(laptop)).toBe(SET);
+      expect(clockOf(laptop)).toBe("2026-09-25T10:00:00.000Z");
+      expect(report.fieldsKept).toBe(1);
+      expect(report.fieldsTaken).toBe(0);
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+
+  it("TAKES the newer peer row, WITH the peer's clock", () => {
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      withField(phone, OLD, "2026-09-24T09:00:00.000Z");
+      withField(laptop, SET, "2026-09-25T10:00:00.000Z");
+      const report = mergeSync(phone, exportSync(laptop, NOW));
+      expect(optionsOf(phone)).toBe(SET);
+      // Not `now`: a merge that re-stamps makes this device claim authorship and
+      // win the next sync against an edit made after this one.
+      expect(clockOf(phone)).toBe("2026-09-25T10:00:00.000Z");
+      expect(report.fieldsTaken).toBe(1);
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+
+  it("a peer row with NO clock never wins", () => {
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      withField(phone, OLD, "2026-09-26T09:00:00.000Z");
+      withField(laptop, SET, "2026-09-25T10:00:00.000Z");
+      const payload = exportSync(phone, NOW);
+      const older = {
+        ...payload,
+        archive: {
+          ...payload.archive,
+          localFields: payload.archive.localFields.map(({ updatedAt: _dropped, ...rest }) => rest),
+        },
+      };
+      const report = mergeSync(laptop, older as never);
+      expect(optionsOf(laptop)).toBe(SET);
+      expect(report.fieldsKept).toBe(1);
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+});

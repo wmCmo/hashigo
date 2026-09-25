@@ -11,13 +11,13 @@
  * the editor never learns what "speech" means and a new setting is one registry
  * entry rather than a branch here.
  *
- * ─── READ-ONLY, ON PURPOSE, FOR NOW ─────────────────────────────────────────
+ * ─── THE WORDS, NOT THE WRITES ──────────────────────────────────────────────
  *
- * Writing lands next, behind the price dialog. Showing first is not timidity: an
- * options write is the second most destructive thing in this app after a deck
- * archive, and the deck archive shipped INVERTED because worker SQL nobody could
- * test went out unread. Seeing the real 48 rows on screen is how the shapes get
- * checked before anything can change them.
+ * This file says what a field carries. Changing it is `./field-ops.ts` (the
+ * price and the refusals) and `./template-editor.ts` (the controls), added in
+ * stage C. They were kept apart on purpose: an options write is the second most
+ * destructive thing in this app after a deck archive, and the deck archive
+ * shipped INVERTED because worker SQL nobody could test went out unread.
  *
  * ─── ABSENCE IS A VALUE, AND IT IS SHOWN AS ONE ─────────────────────────────
  *

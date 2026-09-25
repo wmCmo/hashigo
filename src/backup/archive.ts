@@ -196,6 +196,16 @@ export interface ArchivedField {
    * stops `pruneFieldValues` deleting the field's values on the next import.
    */
   readonly local?: boolean;
+  /**
+   * `template_fields.updated_at`, so a MERGE can tell whose settings are newer.
+   *
+   * OPTIONAL for `ArchivedTemplate.updatedAt`'s reason: an older archive is still
+   * a good archive. Added 2026-09-25 when a field's options became editable —
+   * `UPSERT_FIELD` used to overwrite a field wholesale and stamp `now`, so every
+   * device's field clocks read "last synced" and a voice set on the laptop would
+   * have been taken back by whichever peer merged last.
+   */
+  readonly updatedAt?: string;
 }
 
 /**
@@ -363,7 +373,7 @@ SELECT t.card_id AS card_id, t.kind AS kind, t.due_at, t.scheduled_days, t.reps,
  * edited in the app, they have to be archived as one thing — see "TEMPLATES" above.
  */
 const SELECT_FIELDS = `
-SELECT template_id, id, name, type, source_field_id, options, pos, local
+SELECT template_id, id, name, type, source_field_id, options, pos, local, updated_at
   FROM template_fields ORDER BY template_id, pos, id`;
 
 const SELECT_TEMPLATES = `SELECT id, name, content, updated_at FROM templates ORDER BY id`;
@@ -459,6 +469,9 @@ export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive 
       options: r["options"] === null ? null : String(r["options"]),
       pos: String(r["pos"]),
       local: Number(r["local"]) === 1,
+      ...(r["updated_at"] === null || r["updated_at"] === undefined
+        ? {}
+        : { updatedAt: String(r["updated_at"]) }),
     }),
   );
 
@@ -631,13 +644,13 @@ UPDATE card_tracks
  */
 const UPSERT_FIELD = `
 INSERT INTO template_fields
-  (template_id, id, name, type, source_field_id, options, pos, local)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  (template_id, id, name, type, source_field_id, options, pos, local, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')))
 ON CONFLICT (template_id, id) DO UPDATE SET
   name = excluded.name, type = excluded.type,
   source_field_id = excluded.source_field_id, options = excluded.options,
   pos = excluded.pos, local = excluded.local,
-  updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
+  updated_at = excluded.updated_at`;
 
 const DECK_EXISTS = `SELECT 1 FROM decks WHERE id = ? LIMIT 1`;
 
@@ -760,6 +773,7 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
       f.options,
       f.pos,
       (f.local ?? true) ? 1 : 0,
+      f.updatedAt ?? null,
     );
     fieldsUpserted += 1;
   }

@@ -2849,9 +2849,37 @@ body[data-view="review"] .review main {
 }
 
 .tpl-setting-pipe {
+  align-items: center;
   color: var(--ink);
+  display: flex;
+  flex-wrap: wrap;
   font-size: 0.78rem;
+  gap: 6px;
   margin: 0;
+}
+
+/* Stage C's controls sit in the value column, so a setting that became editable
+   occupies exactly the space its read-only line did — no second layout. */
+.tpl-setting-input {
+  font-size: 0.78rem;
+  grid-column: 2;
+  min-width: 0;
+  width: 100%;
+}
+
+.tpl-source {
+  flex: 1 1 12ch;
+  font-size: 0.78rem;
+  min-width: 0;
+}
+
+.tpl-save {
+  align-self: flex-end;
+}
+
+/* The price dialog is several sentences, one per field that moves. */
+.confirm-panel p {
+  white-space: pre-line;
 }
 
 @media (max-width: 640px) {

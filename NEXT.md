@@ -79,8 +79,17 @@ behaviour was bound by field NAME.
 wrap fix) and `7ef2d59` (`#tag`). `src/fields/` is the registry; `app/field-form.ts`
 renders a field's settings from it; `src/template/sides.ts` answers WHERE a field renders.
 
-**LEFT, in dependency order.** C `setFieldOptions` + `setFieldSource` + the price dialog ·
-D the voice catalogue and the middleware honouring it · E card/deck voice overrides ·
+**STAGE C LANDED 2026-09-25** — settings and inputs are editable in the row, each behind a
+price computed over the real cards (`app/field-ops.ts`, `test/app-field-ops.test.ts`).
+Three things it found: (1) a field's `updated_at` was restamped to `now` by every sync
+apply, so the last peer merged won — fields now merge LWW by their own clock like bodies
+do (`src/sync/merge.ts`); (2) the store matches generated TEXT by its input alone, so a
+translation's `to` changing leaves cards showing the OLD translation, not blank — the price
+says "keep showing text made under the PREVIOUS settings"; (3) `boolean-default` is read by
+nothing (`truthy()` and the body gate both treat absent as false), so it stays read-only
+until stage G wires both at once. `voice` is not editable yet — stage D brings the picker.
+
+**LEFT, in dependency order.** D the voice catalogue and the middleware honouring it · E card/deck voice overrides ·
 F `ojad` by role + the missing rebuild steps · G `setFieldType`, then `respeak`, then
 `読み`, then **`Reading` last**. The full plan, with the measured argument for each, is at
 `C:\Users\Zach\.claude\plans\snuggly-meandering-mist.md`.

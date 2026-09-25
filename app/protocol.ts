@@ -35,6 +35,7 @@ import type { Backlink } from "../src/cards/index.js";
 import type { PreparedCard } from "../src/review/index.js";
 import type { Glance } from "../src/dashboard/index.js";
 import type { SessionProgress } from "../src/session/index.js";
+import type { FieldPrice } from "./field-ops.js";
 
 // ─── page → worker ───────────────────────────────────────────────────────────
 
@@ -648,7 +649,9 @@ export type TemplateOp =
   | "renameField"
   | "deleteField"
   | "restoreField"
-  | "orderFields";
+  | "orderFields"
+  | "setFieldOptions"
+  | "setFieldSource";
 
 export interface TemplateOpRequest {
   readonly kind: "templateOp";
@@ -667,6 +670,13 @@ export interface TemplateOpRequest {
   readonly order?: readonly string[];
   /** `restoreField` only: the row a delete removed, put back verbatim. */
   readonly field?: TemplateFieldRow;
+  /**
+   * `setFieldOptions` only: the WHOLE options JSON, not a patch. Whole so undo is
+   * one write of the previous text and the column is never half-changed.
+   */
+  readonly options?: string;
+  /** `setFieldSource` only. Null disconnects the field from any input. */
+  readonly sourceFieldId?: string | null;
 }
 
 export interface TemplateOpMessage {
@@ -684,7 +694,33 @@ export interface TemplateOpMessage {
     readonly fieldId?: string;
     readonly order?: readonly string[];
     readonly field?: TemplateFieldRow;
+    readonly options?: string;
+    readonly sourceFieldId?: string | null;
   } | null;
+}
+
+/**
+ * What a proposed field change would cost, before it is made.
+ *
+ * NOT a `TemplateOp`: it writes nothing, and a read on the undoable channel puts
+ * a no-op on the undo stack. `app/field-ops.ts` carries the reasoning.
+ */
+export interface PriceFieldRequest {
+  readonly kind: "priceField";
+  readonly id: number;
+  readonly templateId: string;
+  readonly fieldId: string;
+  readonly options?: string;
+  readonly sourceFieldId?: string | null;
+}
+
+export interface PriceFieldMessage {
+  readonly kind: "priceField";
+  readonly id: number;
+  readonly price: FieldPrice;
+  /** The price as sentences, for the confirm dialog. */
+  readonly lines: readonly string[];
+  readonly ms: number;
 }
 
 /**
@@ -999,6 +1035,7 @@ export type AppRequest =
   | SetFieldRequest
   | TemplateRequest
   | TemplateOpRequest
+  | PriceFieldRequest
   | GlanceRequest
   | DashboardRequest
   | SettingsRequest
@@ -1235,6 +1272,7 @@ export type AppMessage =
   | SetSettingMessage
   | TemplateMessage
   | TemplateOpMessage
+  | PriceFieldMessage
   | GlanceMessage
   | DashboardMessage
   | ErrorMessage;
@@ -1260,6 +1298,7 @@ export interface ReplyFor {
   readonly dashboard: DashboardMessage;
   readonly template: TemplateMessage;
   readonly templateOp: TemplateOpMessage;
+  readonly priceField: PriceFieldMessage;
   readonly settings: SettingsMessage;
   readonly setSetting: SetSettingMessage;
   readonly decks: DecksMessage;

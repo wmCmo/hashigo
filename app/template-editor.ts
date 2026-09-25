@@ -13,7 +13,9 @@
 import { decodeFieldOptions } from "../src/cards/index.js";
 import { moveWithin } from "../src/schema/index.js";
 import { referencedNames } from "../src/template/index.js";
+import { kindOf, settingsOf, type SettingSpec } from "../src/fields/index.js";
 import { factsLine, inputLine, settingLines, undeclaredKeys } from "./field-form.js";
+import { patchOptions, sourceChoices, type FieldState } from "./field-ops.js";
 import { bareLayer, closeIfTop, layers, pushLayer } from "./layers.js";
 import type {
   TemplateBrief,
@@ -47,9 +49,12 @@ import { pushUndo, refreshAfterOp } from "./ops.js";
  *
  * ─── WHAT IS NOT HERE ───────────────────────────────────────────────────────
  *
- * Changing a field's TYPE, and repointing a generator's source. Both reinterpret
- * every existing value at once — a migration, not a form control — and the worker
- * refuses them rather than this screen hiding them. `templateOp` says why.
+ * Changing a field's TYPE. It reinterprets every existing value at once — a
+ * migration, not a form control — and the worker refuses it rather than this
+ * screen hiding it. `templateOp` says why.
+ *
+ * Repointing a generator's input and editing its settings ARE here since stage C
+ * (2026-09-25), each behind a price computed over the real cards first.
  */
 export function openTemplateEditor(brief: TemplateBrief): void {
   void openTemplateEditorById(brief.id);
@@ -305,7 +310,7 @@ function templateFieldRow(
     true,
   );
 
-  const settings = templateFieldSettings(detail, field);
+  const settings = templateFieldSettings(detail, field, run);
   if (settings !== null) {
     const toggle = document.createElement("button");
     toggle.type = "button";
@@ -330,7 +335,8 @@ function templateFieldRow(
 }
 
 /**
- * What a field carries, unfolded under its own row.
+ * What a field carries, unfolded under its own row — and, since stage C, what can
+ * be CHANGED there.
  *
  * IN THE ROW rather than in a panel beside it or a modal above it — Zach's call,
  * 2026-09-17. `.tpl-field` collapses to one column under 640px already, so a
@@ -341,13 +347,23 @@ function templateFieldRow(
  * Every control here is generated from `settingsOf(field.type)`, so this function
  * knows nothing about speech, prompts or translation directions, and a new
  * setting is a registry entry rather than a branch.
+ *
+ * ─── NOTHING IS WRITTEN WITHOUT ITS PRICE ───────────────────────────────────
+ *
+ * Edits collect into a patch; `save` asks the worker what the patch would cost
+ * (`app/field-ops.ts`), shows it, and only then writes. An untouched control
+ * contributes nothing to the patch, which is what keeps a save from materialising
+ * a default onto a field that never carried one — the 723 translate blobs with no
+ * direction at all.
  */
 function templateFieldSettings(
   detail: TemplateDetail,
   field: TemplateFieldRow,
+  run: TemplateRunner,
 ): HTMLElement | null {
   const options = decodeFieldOptions(field.options);
   const lines = settingLines(field.type, options);
+  const specs = new Map(settingsOf(field.type).map((spec) => [spec.key, spec]));
   const extras = undeclaredKeys(field.type, options);
   const nameOf = (id: string): string | null =>
     detail.fields.find((entry) => entry.id === id)?.name ?? null;
@@ -358,13 +374,35 @@ function templateFieldSettings(
   panel.className = "tpl-settings";
 
   if (input !== null) {
-    const pipe = document.createElement("p");
+    const pipe = document.createElement("div");
     pipe.className = "tpl-setting-pipe";
-    pipe.textContent = input;
+    if (kindOf(field.type)?.input === "source") {
+      pipe.append(...sourcePicker(detail, field, nameOf, run));
+    } else {
+      pipe.textContent = input;
+    }
     panel.appendChild(pipe);
   }
 
+  const patch: Record<string, string | boolean | null> = {};
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "gcard-op tpl-save";
+  save.textContent = "save settings";
+  save.disabled = true;
+  const touch = (key: string, value: string | boolean | null): void => {
+    const was = options[key];
+    const same =
+      (value === null && (was === undefined || was === null || was === "")) ||
+      JSON.stringify(was) === JSON.stringify(value);
+    if (same) delete patch[key];
+    else patch[key] = value;
+    save.disabled = Object.keys(patch).length === 0;
+  };
+
+  let editable = 0;
   for (const line of lines) {
+    const spec = specs.get(line.key);
     const item = document.createElement("div");
     item.className = "tpl-setting";
     if (line.unset) item.classList.add("is-unset");
@@ -373,12 +411,20 @@ function templateFieldSettings(
     label.className = "tpl-setting-label";
     label.textContent = line.label;
 
-    const value = document.createElement("span");
-    value.className = "tpl-setting-value";
-    value.textContent = line.value;
-    // Said in the row rather than only in the note, because "you cannot change
-    // this" is the first thing a reader wants and the last thing a note gives.
-    if (line.readOnly) value.title = "read-only";
+    const control =
+      spec === undefined || line.readOnly ? null : settingControl(spec, options[line.key], touch);
+    let value: HTMLElement;
+    if (control !== null) {
+      editable += 1;
+      value = control;
+    } else {
+      value = document.createElement("span");
+      value.className = "tpl-setting-value";
+      value.textContent = line.value;
+      // Said in the row rather than only in the note, because "you cannot change
+      // this" is the first thing a reader wants and the last thing a note gives.
+      if (line.readOnly) value.title = "read-only";
+    }
 
     const note = document.createElement("p");
     note.className = "tpl-setting-note";
@@ -407,7 +453,185 @@ function templateFieldSettings(
     panel.appendChild(item);
   }
 
+  if (editable > 0) {
+    save.addEventListener("click", () => {
+      const proposed = patchOptions(field.options, patch);
+      void confirmPriced(
+        detail,
+        field,
+        { options: proposed },
+        `Change ${field.name}'s settings?`,
+        () =>
+          void run({
+            op: "setFieldOptions",
+            templateId: detail.id,
+            fieldId: field.id,
+            options: proposed,
+          }),
+      );
+    });
+    panel.appendChild(save);
+  }
+
   return panel;
+}
+
+/**
+ * THE PIPE HE SAID HE COULD NOT MAKE — *"i can't pipe example sentence to speech
+ * here"*. It was in the data all along; this makes it a control.
+ *
+ * Only legal inputs are offered (`sourceChoices`): never the field itself, never
+ * one that already reads from it. A loop is the one mistake the schema's CHECK
+ * cannot see and `fieldText` answers with silence.
+ */
+function sourcePicker(
+  detail: TemplateDetail,
+  field: TemplateFieldRow,
+  nameOf: (id: string) => string | null,
+  run: TemplateRunner,
+): HTMLElement[] {
+  const label = document.createElement("span");
+  label.textContent = "Input: ";
+  const select = document.createElement("select");
+  select.className = "edit-input tpl-source";
+  select.setAttribute("aria-label", `what ${field.name} reads from`);
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "nothing — generates nothing";
+  select.appendChild(none);
+  for (const choice of sourceChoices(detail.fields.map(fieldState), field.id)) {
+    const option = document.createElement("option");
+    option.value = choice.id;
+    option.textContent = choice.name;
+    select.appendChild(option);
+  }
+  select.value = field.sourceFieldId ?? "";
+  select.addEventListener("change", () => {
+    const sourceFieldId = select.value === "" ? null : select.value;
+    // Put the control back until the write lands: a cancelled dialog must not
+    // leave the picker showing an input the field does not have. A saved one
+    // repaints the whole editor from the worker's row anyway.
+    select.value = field.sourceFieldId ?? "";
+    const target = sourceFieldId === null ? "nothing" : (nameOf(sourceFieldId) ?? sourceFieldId);
+    void confirmPriced(
+      detail,
+      field,
+      { sourceFieldId },
+      `${field.name} reads from ${target}?`,
+      () =>
+        void run({
+          op: "setFieldSource",
+          templateId: detail.id,
+          fieldId: field.id,
+          sourceFieldId,
+        }),
+    );
+  });
+  return [label, select];
+}
+
+function fieldState(row: TemplateFieldRow): FieldState {
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    sourceFieldId: row.sourceFieldId,
+    options: row.options,
+  };
+}
+
+/**
+ * One editable control, generated from its spec, or null when this build does
+ * not draw one.
+ *
+ * `voice` is deliberately not drawn here: the stored voices are AZURE names and
+ * the only synthesiser this project owns is Google, so a free-text voice box
+ * would let him save a name that 400s on the next generation. The picker comes
+ * with the catalogue that validates it.
+ */
+function settingControl(
+  spec: SettingSpec,
+  current: unknown,
+  touch: (key: string, value: string | boolean | null) => void,
+): HTMLElement | null {
+  if (!spec.editable || spec.control === "voice") return null;
+  const placeholder = spec.fallback === null ? "not set" : `not set (${String(spec.fallback)})`;
+
+  if (spec.control === "boolean" || spec.control === "enum") {
+    const select = document.createElement("select");
+    select.className = "edit-input tpl-setting-input";
+    select.setAttribute("aria-label", spec.label);
+    const choices =
+      spec.control === "boolean"
+        ? [
+            { value: "true", label: "yes" },
+            { value: "false", label: "no" },
+          ]
+        : (spec.choices ?? []);
+    for (const choice of [{ value: "", label: placeholder }, ...choices]) {
+      const option = document.createElement("option");
+      option.value = choice.value;
+      option.textContent = choice.label;
+      select.appendChild(option);
+    }
+    select.value =
+      typeof current === "boolean" ? String(current) : typeof current === "string" ? current : "";
+    select.addEventListener("change", () => {
+      if (select.value === "") touch(spec.key, null);
+      else if (spec.control === "boolean") touch(spec.key, select.value === "true");
+      else touch(spec.key, select.value);
+    });
+    return select;
+  }
+
+  const box =
+    spec.control === "longtext" ? document.createElement("textarea") : document.createElement("input");
+  box.className = "edit-input tpl-setting-input";
+  box.setAttribute("aria-label", spec.label);
+  if (box instanceof HTMLTextAreaElement) {
+    box.rows = 4;
+    box.spellcheck = false;
+  } else {
+    box.type = "text";
+  }
+  box.placeholder = placeholder;
+  box.value = typeof current === "string" ? current : "";
+  box.addEventListener("input", () => touch(spec.key, box.value.trim() === "" ? null : box.value));
+  return box;
+}
+
+/**
+ * Ask what a change costs, show it, and write only on a yes.
+ *
+ * The tone follows the price: a change that silences nothing is an ordinary
+ * confirm, one that silences clips gets the red button. The sentences are the same
+ * either way — the count is the fact, the colour only repeats it.
+ */
+async function confirmPriced(
+  detail: TemplateDetail,
+  field: TemplateFieldRow,
+  proposal: { readonly options?: string; readonly sourceFieldId?: string | null },
+  title: string,
+  go: () => void,
+): Promise<void> {
+  try {
+    const reply = await ask<"priceField">({
+      kind: "priceField",
+      templateId: detail.id,
+      fieldId: field.id,
+      ...proposal,
+    });
+    const silenced = reply.price.lines.some((line) => line.silenced > 0);
+    openConfirm(
+      title,
+      reply.lines.join("\n\n"),
+      silenced ? "change it anyway" : "change it",
+      go,
+      silenced ? "danger" : "normal",
+    );
+  } catch (cause) {
+    say((cause as Error).message, true);
+  }
 }
 
 function openAddField(detail: TemplateDetail, run: TemplateRunner): void {

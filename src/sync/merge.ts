@@ -167,6 +167,10 @@ export interface MergeReport {
   readonly templatesTaken: number;
   /** Template bodies this device kept, because its own were newer. */
   readonly templatesKept: number;
+  /** Field rows the remote won, by clock. */
+  readonly fieldsTaken: number;
+  /** Field rows this device kept — newer here, or the remote carried no clock. */
+  readonly fieldsKept: number;
   /** Cards in the payload that this device does not have. */
   readonly flagsOrphaned: number;
   /** Decks whose archive flag the remote won, by clock. */
@@ -214,6 +218,46 @@ const RESTORE_TEMPLATE = `
 UPDATE templates
    SET name = ?, content = ?, updated_at = ?
  WHERE id = ?`;
+
+/**
+ * ─── AND FIELDS NEED ONE TOO, SINCE THEIR SETTINGS BECAME EDITABLE ──────────
+ *
+ * 2026-09-25. `applyLocalArchive` upserts every field row wholesale and, until
+ * today, stamped `now` on each one — so every device's field clock read "when I
+ * last synced", and the last peer merged won. Harmless while a field's settings
+ * could not change. The moment a voice or a prompt is editable, a laptop edit is
+ * undone by the phone's older row on the next sync, which is this morning's ojad
+ * bug in a new place.
+ *
+ * Same rule as the bodies: whole-row LWW on the field's own `updated_at`, and a
+ * row with no clock (an older peer) never wins. The name moves with the row,
+ * which is right — a rename bumps both the field and the template body in one
+ * transaction, so the two clocks agree about who wrote last.
+ */
+const SELECT_FIELD_ROWS = `
+SELECT template_id, id, name, type, source_field_id, options, pos, local, updated_at
+  FROM template_fields`;
+
+const RESTORE_FIELD = `
+UPDATE template_fields
+   SET name = ?, type = ?, source_field_id = ?, options = ?, pos = ?, local = ?,
+       updated_at = ?
+ WHERE template_id = ? AND id = ?`;
+
+const SET_FIELD_CLOCK = `
+UPDATE template_fields SET updated_at = ? WHERE template_id = ? AND id = ?`;
+
+interface LocalField {
+  readonly name: string;
+  readonly type: string;
+  readonly sourceFieldId: string | null;
+  readonly options: string;
+  readonly pos: string;
+  readonly local: number;
+  readonly updatedAt: string | null;
+}
+
+const fieldKey = (templateId: string, id: string): string => `${templateId}\u0000${id}`;
 
 const SELECT_TRACK_CLOCKS = `
 SELECT t.card_id AS card_id, t.kind AS kind, t.last_reviewed_at AS last_reviewed_at,
@@ -331,6 +375,19 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
     });
   }
 
+  const localFields = new Map<string, LocalField>();
+  for (const r of db.prepare(SELECT_FIELD_ROWS).all() as Record<string, unknown>[]) {
+    localFields.set(fieldKey(String(r["template_id"]), String(r["id"])), {
+      name: String(r["name"]),
+      type: String(r["type"]),
+      sourceFieldId: r["source_field_id"] === null ? null : String(r["source_field_id"]),
+      options: r["options"] === null ? "{}" : String(r["options"]),
+      pos: String(r["pos"]),
+      local: Number(r["local"]),
+      updatedAt: r["updated_at"] === null ? null : String(r["updated_at"]),
+    });
+  }
+
   const localFlags = new Map<string, string>();
   for (const r of db.prepare(SELECT_CARD_FLAGS).all() as Record<string, unknown>[]) {
     localFlags.set(String(r["card_id"]), String(r["updated_at"]));
@@ -358,6 +415,36 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
     }
     restoreTemplate.run(local.name, local.content, local.updatedAt, incoming.id);
     templatesKept += 1;
+  }
+
+  // ── rule: a field row is LAST WRITE WINS, by its own clock ────────────────
+  //
+  // The apply has written the remote's row. Put the local one back whenever it
+  // is newer or the remote cannot say; otherwise keep the remote's clock with it.
+  let fieldsTaken = 0;
+  let fieldsKept = 0;
+  const restoreField = db.prepare(RESTORE_FIELD);
+  const setFieldClock = db.prepare(SET_FIELD_CLOCK);
+  for (const incoming of remote.archive.localFields) {
+    const local = localFields.get(fieldKey(incoming.templateId, incoming.id));
+    if (local === undefined) continue; // new here: the apply inserted it with its clock
+    if (incoming.updatedAt !== undefined && isNewer(incoming.updatedAt, local.updatedAt)) {
+      setFieldClock.run(incoming.updatedAt, incoming.templateId, incoming.id);
+      fieldsTaken += 1;
+      continue;
+    }
+    restoreField.run(
+      local.name,
+      local.type,
+      local.sourceFieldId,
+      local.options,
+      local.pos,
+      local.local,
+      local.updatedAt,
+      incoming.templateId,
+      incoming.id,
+    );
+    fieldsKept += 1;
   }
 
   // ── rule: scheduler state follows the LAST REVIEW, not the last write ─────
@@ -445,5 +532,7 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
     deckFlagsTaken,
     templatesTaken,
     templatesKept,
+    fieldsTaken,
+    fieldsKept,
   };
 }

@@ -84,9 +84,20 @@ import { archiveSubtree, restoreArchive, scopeToSubtree, scopeToTag } from "./de
 import { suggestCards, type SuggestRow } from "./recent.js";
 import { audioIsStale } from "./seed-freshness.js";
 import { COUNT_HELD, mergeLocalFields, readSeedFields } from "./local-fields.js";
+import {
+  describePrice,
+  optionsRefusal,
+  priceFieldChange,
+  searchReach,
+  sourceRefusal,
+  templateFields,
+  writeFieldOptions,
+  writeFieldSource,
+} from "./field-ops.js";
 
 import type {
   AnswerRequest,
+  PriceFieldRequest,
   BrowseRequest,
   CardOpMessage,
   CardOpRequest,
@@ -2209,6 +2220,31 @@ function templateDetail(db: BrowserDb, templateId: string): TemplateDetail | nul
   };
 }
 
+/** Every card on a template, re-indexed. After a change that moves resolved text. */
+function refreshTemplateSearch(db: BrowserDb, templateId: string): void {
+  const ids = (db.prepare("SELECT id FROM cards WHERE template_id = ?").all(templateId) as {
+    id: string;
+  }[]).map((row) => row.id);
+  refreshSearchText(db, ids);
+}
+
+/** What a proposed field change costs. Writes nothing — see `app/field-ops.ts`. */
+function priceField(request: PriceFieldRequest): void {
+  const db = requireCards();
+  const started = performance.now();
+  const price = priceFieldChange(db, request.templateId, request.fieldId, {
+    ...(request.options === undefined ? {} : { options: request.options }),
+    ...(request.sourceFieldId === undefined ? {} : { sourceFieldId: request.sourceFieldId }),
+  });
+  post({
+    kind: "priceField",
+    id: request.id,
+    price,
+    lines: describePrice(price),
+    ms: Math.round(performance.now() - started),
+  });
+}
+
 function template(request: TemplateRequest): void {
   post({
     kind: "template",
@@ -2245,6 +2281,10 @@ function newFieldId(db: BrowserDb, templateId: string): string {
  *
  * **Deleting a field another field generates from.** The composite foreign key is
  * ON DELETE SET NULL, so it would succeed and quietly leave `Speech` with no input.
+ *
+ * **Settings and inputs ARE writable, since stage C** — `setFieldOptions` and
+ * `setFieldSource`, checked by `app/field-ops.ts` (only editable declared keys,
+ * no loops) and priced by the page before it asks.
  *
  * ─── AND WHAT IT ALLOWS THAT LOOKS RISKIER THAN IT IS ───────────────────────
  *
@@ -2373,7 +2413,7 @@ function templateOp(request: TemplateOpRequest): void {
       );
       db.transaction(() => {
         db.prepare(
-          "UPDATE template_fields SET name = ? WHERE template_id = ? AND id = ?",
+          "UPDATE template_fields SET name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE template_id = ? AND id = ?",
         ).run(name, before.id, target.id);
         db.prepare("UPDATE templates SET content = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(rewritten.body, before.id);
         for (const entry of rewritten.options) {
@@ -2445,6 +2485,47 @@ function templateOp(request: TemplateOpRequest): void {
       break;
     }
 
+    case "setFieldOptions": {
+      const target = field(request.fieldId ?? "");
+      const options = request.options ?? "";
+      const refusal = optionsRefusal(target.type, target.options, options);
+      if (refusal !== null) throw new Error(refusal);
+      if (options === target.options) throw new Error(`${target.name}'s settings did not change`);
+      const fields = templateFields(db, before.id);
+      db.transaction(() => {
+        writeFieldOptions(db, before.id, target.id, options);
+        // `search_text` holds resolved ai/translate text, so re-addressing one of
+        // those changes what these cards are found by.
+        if (searchReach(fields, target.id)) refreshTemplateSearch(db, before.id);
+      })();
+      describe = `changed ${target.name}'s settings on ${before.name}`;
+      undo = { op: "setFieldOptions", templateId: before.id, fieldId: target.id, options: target.options };
+      break;
+    }
+
+    case "setFieldSource": {
+      const target = field(request.fieldId ?? "");
+      const sourceId = request.sourceFieldId ?? null;
+      const fields = templateFields(db, before.id);
+      const refusal = sourceRefusal(fields, target.id, sourceId);
+      if (refusal !== null) throw new Error(refusal);
+      if (sourceId === target.sourceFieldId) throw new Error(`${target.name} already reads from that`);
+      db.transaction(() => {
+        writeFieldSource(db, before.id, target.id, sourceId);
+        if (searchReach(fields, target.id)) refreshTemplateSearch(db, before.id);
+      })();
+      const nameOf = (id: string | null): string =>
+        id === null ? "nothing" : (before.fields.find((entry) => entry.id === id)?.name ?? id);
+      describe = `${target.name} now reads from ${nameOf(sourceId)} (was ${nameOf(target.sourceFieldId)})`;
+      undo = {
+        op: "setFieldSource",
+        templateId: before.id,
+        fieldId: target.id,
+        sourceFieldId: target.sourceFieldId,
+      };
+      break;
+    }
+
     case "orderFields": {
       const order = request.order ?? [];
       const known = new Set(before.fields.map((entry) => entry.id));
@@ -2487,9 +2568,15 @@ function templateOp(request: TemplateOpRequest): void {
  */
 function renumber(db: BrowserDb, templateId: string, order: readonly string[]): void {
   const keys = positionKeys(order.length);
-  const update = db.prepare("UPDATE template_fields SET pos = ? WHERE template_id = ? AND id = ?");
+  // The clock moves only on rows whose position actually changed — decision 33's
+  // field merge is whole-row LWW, and bumping every row on a reorder would let a
+  // move on one device take back a setting edited on the other.
+  const update = db.prepare(
+    `UPDATE template_fields SET pos = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE template_id = ? AND id = ? AND pos IS NOT ?`,
+  );
   order.forEach((fieldId, index) => {
-    update.run(keys[index], templateId, fieldId);
+    update.run(keys[index], templateId, fieldId, keys[index]);
   });
 }
 
@@ -2595,6 +2682,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "templateOp":
           templateOp(request);
+          break;
+        case "priceField":
+          priceField(request);
           break;
         case "settings":
           await settings(request);
