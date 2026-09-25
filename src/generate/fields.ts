@@ -294,8 +294,66 @@ function sourceText(
  * be built. Depth-limited because `source_field_id` is only guaranteed acyclic
  * by a CHECK against self-reference, not against a longer cycle.
  */
+/** An inline text generator inside a stored VALUE: `<ai>…</ai>`, `<translate …>…</translate>`. */
+const INLINE_GENERATOR = /<(ai|translate)(\s[^>]*)?>([\s\S]*?)<\/\1>/g;
+const INLINE_ATTRIBUTE = /([A-Za-z-]+)\s*=\s*"([^"]*)"/g;
+
+/**
+ * A stored value with its inline generators replaced by what they GENERATED —
+ * the text the card shows. Null when one of them has not been generated.
+ *
+ * Zach, 2026-09-25, on New Vocab's `snare`: *"why the error 😭"* — "generate
+ * audio" under a sentence he could read answered "there is nothing to speak
+ * here". The card's `Example Sentence` is a PLAIN field whose value is the
+ * element `<ai>Example sentence of snare</ai>`; the renderer resolves it on
+ * screen, but this function handed the RAW value to the speech field reading
+ * it, so the request's text was the tag. `speakableText` strips unfilled tags,
+ * found nothing left, and the server refused. **28 New Vocab cards**, and each
+ * one's sentence WAS generated (2026-09-08) — only the audio path never looked.
+ * It is also where the 30 clips that recite `<ai>Example sentence of
+ * plectrum</ai>` came from: an earlier fill spoke the tag itself.
+ *
+ * The descriptor is built exactly as `generationDescriptor` in
+ * `src/render/nodes.ts` builds it for the same element — kind from the tag,
+ * `lang`/`voice` lifted out, every other attribute an option, the inner text
+ * raw — so it resolves to the generation the screen is showing, not a near miss.
+ */
+function resolveInlineGenerators(stored: string, context: FieldContext): string | null {
+  if (!stored.includes("<ai") && !stored.includes("<translate")) return stored;
+  if (context.resolveGenerated === undefined) return null;
+  let unresolved = false;
+  const out = stored.replace(INLINE_GENERATOR, (_match, tag: string, attrs: string | undefined, inner: string) => {
+    let lang: string | null = null;
+    let voice: string | null = null;
+    const options: Record<string, string> = {};
+    for (const [, name, value] of (attrs ?? "").matchAll(INLINE_ATTRIBUTE)) {
+      const lower = (name as string).toLowerCase();
+      if (lower === "lang") lang = value === "" ? null : (value as string);
+      else if (lower === "voice") voice = value === "" ? null : (value as string);
+      else options[lower] = value as string;
+    }
+    const produced = context.resolveGenerated?.({
+      kind: tag as BlobKind,
+      text: inner.includes("<") ? renderPlainText(inner) : inner,
+      voice,
+      lang,
+      options,
+      fieldId: "",
+      fieldName: "",
+    });
+    if (produced === null || produced === undefined || produced === "") {
+      unresolved = true;
+      return "";
+    }
+    return produced;
+  });
+  return unresolved ? null : out;
+}
+
 function fieldText(field: GeneratorField, context: FieldContext, depth: number): string | null {
-  const stored = context.values.get(field.id);
+  const raw = context.values.get(field.id);
+  const stored = raw === undefined || raw === "" ? raw : resolveInlineGenerators(raw, context);
+  if (stored === null) return null;
   // DECISION 7 SAYS "THE RENDERED TEXT", AND THIS LINE USED TO SAY "THE STORED
   // VALUE". For every field in the corpus those were the same string, so the
   // difference was invisible until a field gained a display rule.

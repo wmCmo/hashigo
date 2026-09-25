@@ -328,10 +328,13 @@ describe.skipIf(!haveCorpus)("the card loader over the real collection", () => {
       console.log(
         `loader pipeline: ${mounts} speech mounts over ${withMounts.size} cards (expanded ${expanded})`,
       );
+      // 28 fewer since 2026-09-25: New Vocab's inline `<ai>` sentences now need a
+      // text resolver to build their speech request, and this sweep passes none —
+      // see the same note in `test/generate.test.ts`.
       expect({ mounts, cards: withMounts.size, expanded, divergent }).toEqual({
-        mounts: 6_857,
+        mounts: 6_829,
         cards: 5_665,
-        expanded: 10_725,
+        expanded: 10_697,
         divergent: 0,
       });
     } finally {

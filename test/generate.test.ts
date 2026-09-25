@@ -544,10 +544,17 @@ describe.runIf(haveCorpus)("the real export", () => {
           `(expanded ${off.expanded})`,
       );
 
+      // 28 FEWER than before 2026-09-25, and that is the fix. New Vocab's
+      // `Example Sentence` holds `<ai>Example sentence of …</ai>` on 28 cards; its
+      // Example speech used to build a request keyed on THE TAG ITSELF — the
+      // request behind the clips that recite `<ai>…</ai>` aloud. It now resolves
+      // the inline generator first, which needs `resolveGenerated`, and this sweep
+      // passes none, so those 28 are unbuildable here rather than wrong. With a
+      // resolver (the app, `test/app-field-ops.test.ts`) all 28 speak the sentence.
       expect(on).toEqual({
-        mounts: 6_857,
+        mounts: 6_829,
         cards: 5_665,
-        expanded: 10_725,
+        expanded: 10_697,
         divergent: 0,
         noValues: 10,
       });

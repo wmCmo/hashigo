@@ -273,3 +273,51 @@ describe("the price of a deck voice, over the real 数字 cards", () => {
     expect(price.mounts).toBe(0);
   });
 });
+
+// ─── an inline generator inside a source value (2026-09-25, `snare`) ─────────
+
+import { loadCard } from "../src/cards/index.js";
+import { storeTextResolver } from "../src/generate/index.js";
+
+describe("a speech field reading a value that IS an inline generator speaks what it generated", () => {
+  it("snare's Example asks to speak the sentence on screen, not the <ai> tag", () => {
+    if (db === null) return;
+    const card = loadCard(handle(), "mJXRASFH");
+    const field = card?.template?.fields.find((entry) => entry.name === "Example");
+    expect(field).toBeDefined();
+    const request = fieldGenerationRequest(field as never, {
+      fields: card?.template?.fields ?? [],
+      values: card?.values ?? new Map(),
+      resolveGenerated: storeTextResolver(handle()),
+    });
+    // Trimmed: the generation carries leading newlines, and the key trims them
+    // (`normaliseSourceText`), so they cannot split the address.
+    expect(request?.text.trim()).toBe("The poacher set a snare to catch the rabbit.");
+    expect(request?.text).not.toContain("<ai>");
+  });
+
+  it("all 28 New Vocab cards with an inline sentence now build a speakable request", () => {
+    if (db === null) return;
+    const ids = (
+      handle()
+        .prepare(
+          "SELECT card_id FROM card_field_values WHERE field_id = 'HgZKuNXJ' AND value LIKE '%<ai>%'",
+        )
+        .all() as { card_id: string }[]
+    ).map((row) => row.card_id);
+    expect(ids.length).toBe(28);
+    let built = 0;
+    for (const id of ids) {
+      const card = loadCard(handle(), id);
+      const field = card?.template?.fields.find((entry) => entry.name === "Example");
+      if (card === null || field === undefined) continue;
+      const request = fieldGenerationRequest(field as never, {
+        fields: card.template?.fields ?? [],
+        values: card.values,
+        resolveGenerated: storeTextResolver(handle()),
+      });
+      if (request !== null && !request.text.includes("<")) built += 1;
+    }
+    expect(built).toBe(28);
+  });
+});
