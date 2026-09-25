@@ -456,6 +456,14 @@ export function optionsRefusal(type: string, raw: string, proposed: string): str
     if (spec.control === "language" && !/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(String(value))) {
       return `${String(value)} is not a language code (ja, en, en-US …)`;
     }
+    // A voice is a NAME SHAPE check, not a catalogue check, on purpose. The picker
+    // offers only catalogue voices, but UNDO writes the previous options back —
+    // which is an Azure name Mochi stored — and refusing it would make every voice
+    // change irreversible. An off-catalogue name is harmless where it lands:
+    // `synthesisVoice` makes new clips in the fill voice for it, as before stage D.
+    if (spec.control === "voice" && !/^[a-z]{2,3}-[A-Z]{2}-[A-Za-z0-9-]+$/.test(String(value))) {
+      return `${String(value)} is not a voice name (ja-JP-Neural2-C …)`;
+    }
   }
   return null;
 }

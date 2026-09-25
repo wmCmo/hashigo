@@ -47,6 +47,8 @@
  * synthesised plain, for the same reason: no notation beats a guess.
  */
 
+import { FILL_VOICE } from "../generate/speech.js";
+
 /** Small kana bind to the mora before them; `っ` and `ー` are morae of their own. */
 const COMBINING = "ゃゅょャュョぁぃぅぇぉァィゥェォ";
 
@@ -223,8 +225,16 @@ export function pausedSsml(text: string): string | null {
  */
 export const ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 
-/** Settled by measurement 2026-08-20 — see the TTS section of `CLAUDE.md`. */
-export const VOICE = "ja-JP-Neural2-C";
+/**
+ * Settled by measurement 2026-08-20 — see the TTS section of `CLAUDE.md`.
+ *
+ * THE SAME CHARACTERS AS `FILL_VOICE`, BY IMPORT rather than by retyping, since
+ * 2026-09-25. There were two literals of one string, in the module that speaks
+ * and the module that files what was spoken — and `src/cards/audio.ts` already
+ * argues that two copies of a voice name is the drift that makes a cache miss
+ * permanent and silent.
+ */
+export const VOICE = FILL_VOICE;
 
 /** `ja-JP-Neural2-C` → `ja-JP`. Google names every voice `<lang>-<region>-…`. */
 export function languageOf(voice: string): string {

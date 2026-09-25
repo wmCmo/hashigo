@@ -271,3 +271,57 @@ describe("the request itself", () => {
     await expect(synthesise("医療", null, { apiKey: "k", fetch })).rejects.toThrow(/no audioContent/);
   });
 });
+
+// ─── stage D: the voices this project can speak with ─────────────────────────
+
+import {
+  GOOGLE_VOICES,
+  isCatalogueVoice,
+  synthesisVoice,
+  voicesFor,
+} from "../src/generate/voices.js";
+import { FILL_VOICE as GENERATE_FILL } from "../src/generate/speech.js";
+import { VOICE as ACCENT_VOICE } from "../src/accent/speech.js";
+import { optionsRefusal, patchOptions } from "../app/field-ops.js";
+
+describe("the voice catalogue decides what can be SENT, not what can be looked up", () => {
+  it("honours a catalogue voice as asked — the point of the picker", () => {
+    expect(synthesisVoice("en-US-Neural2-J", "en-US")).toBe("en-US-Neural2-J");
+  });
+
+  it("an AZURE name Mochi stored is a lookup key only: the clip is made in the fill voice", () => {
+    expect(isCatalogueVoice("en-US-AIGenerate1Neural")).toBe(false);
+    expect(synthesisVoice("en-US-AIGenerate1Neural", "en-US")).toBe("en-US-Neural2-D");
+    expect(synthesisVoice("ja-JP-NanamiNeural", "ja-JP")).toBe("ja-JP-Neural2-C");
+  });
+
+  it("offers an English field only English voices — the 130-clip bug, made unpickable", () => {
+    const names = voicesFor("en-US").map((entry) => entry.name);
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.every((name) => name.startsWith("en-"))).toBe(true);
+  });
+
+  it("offers Japanese only Neural2 — the family that honours the accent notation", () => {
+    for (const entry of voicesFor("ja-JP")) expect(entry.name).toMatch(/^ja-JP-Neural2-/);
+  });
+
+  it("every catalogue name is Google-shaped and its lang is read off the name", () => {
+    for (const entry of GOOGLE_VOICES) {
+      expect(entry.name.startsWith(`${entry.lang}-`)).toBe(true);
+    }
+  });
+
+  it("the synthesiser and the filer name the SAME voice, by import", () => {
+    expect(ACCENT_VOICE).toBe(GENERATE_FILL);
+  });
+
+  it("undo can put an Azure name back — a voice is shape-checked, not catalogue-checked", () => {
+    const azure = '{"gender":"male","lang":"en-US","voice":"en-US-AIGenerate1Neural"}';
+    const google = patchOptions(azure, { voice: "en-US-Neural2-J" });
+    expect(optionsRefusal("speech", azure, google)).toBeNull();
+    expect(optionsRefusal("speech", google, azure)).toBeNull();
+    expect(optionsRefusal("speech", azure, patchOptions(azure, { voice: "nanami" }))).toMatch(
+      /not a voice name/,
+    );
+  });
+});

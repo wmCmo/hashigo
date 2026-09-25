@@ -2867,6 +2867,22 @@ body[data-view="review"] .review main {
   width: 100%;
 }
 
+.tpl-voice {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.tpl-voice select {
+  flex: 1 1 auto;
+  font-size: 0.78rem;
+  min-width: 0;
+}
+
+.tpl-voice button {
+  white-space: nowrap;
+}
+
 .tpl-source {
   flex: 1 1 12ch;
   font-size: 0.78rem;

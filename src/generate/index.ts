@@ -58,6 +58,15 @@ export {
 } from "./store.js";
 
 export { storeGeneratedSpeech, FILL_VOICE, fillVoiceFor, type SpeechDescriptor } from "./speech.js";
+export {
+  catalogueVoice,
+  GOOGLE_VOICES,
+  isCatalogueVoice,
+  sampleLine,
+  synthesisVoice,
+  voicesFor,
+  type CatalogueVoice,
+} from "./voices.js";
 
 export {
   generateText,

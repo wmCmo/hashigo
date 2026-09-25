@@ -14,6 +14,7 @@ import { decodeFieldOptions } from "../src/cards/index.js";
 import { moveWithin } from "../src/schema/index.js";
 import { referencedNames } from "../src/template/index.js";
 import { kindOf, settingsOf, type SettingSpec } from "../src/fields/index.js";
+import { isCatalogueVoice, voicesFor } from "../src/generate/voices.js";
 import { factsLine, inputLine, settingLines, undeclaredKeys } from "./field-form.js";
 import { patchOptions, sourceChoices, type FieldState } from "./field-ops.js";
 import { bareLayer, closeIfTop, layers, pushLayer } from "./layers.js";
@@ -412,7 +413,14 @@ function templateFieldSettings(
     label.textContent = line.label;
 
     const control =
-      spec === undefined || line.readOnly ? null : settingControl(spec, options[line.key], touch);
+      spec === undefined || line.readOnly
+        ? null
+        : settingControl(
+            spec,
+            options[line.key],
+            touch,
+            typeof options["lang"] === "string" ? options["lang"] : null,
+          );
     let value: HTMLElement;
     if (control !== null) {
       editable += 1;
@@ -541,20 +549,115 @@ function fieldState(row: TemplateFieldRow): FieldState {
 }
 
 /**
+ * THE VOICE PICKER — stage D, and the half of his `<<Example>>` complaint that was
+ * a choice rather than a bug.
+ *
+ * It offers the CATALOGUE voices for the field's own language, never a free-text
+ * box: the stored names are Azure's, and the only synthesiser here is Google, so
+ * a typed name would be a lookup key that makes nothing. The field's current name
+ * stays selectable when it is off-catalogue, labelled as what it is — the voice
+ * Mochi's clips are filed under — so opening the panel never proposes a change.
+ *
+ * `hear it` synthesises one fixed sample line and stores nothing: he picks with
+ * his ear, which is how `ja-JP-Neural2-C` was chosen, instead of naming a voice
+ * to an agent first.
+ */
+function voicePicker(
+  spec: SettingSpec,
+  current: unknown,
+  lang: string | null,
+  touch: (key: string, value: string | boolean | null) => void,
+): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "tpl-setting-input tpl-voice";
+  const select = document.createElement("select");
+  select.className = "edit-input";
+  select.setAttribute("aria-label", spec.label);
+  const recorded = typeof current === "string" && current !== "" ? current : null;
+  if (recorded !== null && !isCatalogueVoice(recorded)) {
+    const option = document.createElement("option");
+    option.value = recorded;
+    option.textContent = `${recorded} — recorded; Mochi's clips are filed under it`;
+    select.appendChild(option);
+  }
+  if (recorded === null) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "not set";
+    select.appendChild(option);
+  }
+  for (const entry of voicesFor(lang)) {
+    const option = document.createElement("option");
+    option.value = entry.name;
+    option.textContent = entry.label;
+    select.appendChild(option);
+  }
+  select.value = recorded ?? "";
+
+  const hear = document.createElement("button");
+  hear.type = "button";
+  hear.className = "gcard-op";
+  hear.textContent = "hear it";
+  const refresh = (): void => {
+    hear.disabled = !isCatalogueVoice(select.value);
+    hear.title = hear.disabled
+      ? "only a voice this project can speak with can be auditioned"
+      : "one sample line, synthesised on the laptop and stored nowhere";
+  };
+  select.addEventListener("change", () => {
+    touch(spec.key, select.value === "" ? null : select.value);
+    refresh();
+  });
+  hear.addEventListener("click", () => void audition(select.value, hear));
+  refresh();
+  wrap.append(select, hear);
+  return wrap;
+}
+
+/** Play one sample line in a catalogue voice. Nothing is stored anywhere. */
+async function audition(voice: string, button: HTMLButtonElement): Promise<void> {
+  button.disabled = true;
+  const label = button.textContent;
+  button.textContent = "…";
+  try {
+    const response = await fetch("/generate/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "speech", preview: true, voice }),
+    });
+    const body = (await response.json().catch(() => ({}))) as {
+      audio?: string;
+      mime?: string;
+      error?: string;
+      text?: string;
+    };
+    if (!response.ok || typeof body.audio !== "string") {
+      throw new Error(body.error ?? `the laptop answered ${response.status}`);
+    }
+    const clip = new Audio(`data:${body.mime ?? "audio/mpeg"};base64,${body.audio}`);
+    clip.preservesPitch = true;
+    await clip.play();
+    say(`${voice}: “${body.text ?? ""}”`);
+  } catch (cause) {
+    say(`could not audition ${voice} — ${(cause as Error).message}`, true);
+  } finally {
+    button.textContent = label;
+    button.disabled = false;
+  }
+}
+
+/**
  * One editable control, generated from its spec, or null when this build does
  * not draw one.
- *
- * `voice` is deliberately not drawn here: the stored voices are AZURE names and
- * the only synthesiser this project owns is Google, so a free-text voice box
- * would let him save a name that 400s on the next generation. The picker comes
- * with the catalogue that validates it.
  */
 function settingControl(
   spec: SettingSpec,
   current: unknown,
   touch: (key: string, value: string | boolean | null) => void,
+  lang: string | null = null,
 ): HTMLElement | null {
-  if (!spec.editable || spec.control === "voice") return null;
+  if (!spec.editable) return null;
+  if (spec.control === "voice") return voicePicker(spec, current, lang, touch);
   const placeholder = spec.fallback === null ? "not set" : `not set (${String(spec.fallback)})`;
 
   if (spec.control === "boolean" || spec.control === "enum") {

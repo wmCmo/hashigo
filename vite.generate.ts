@@ -81,8 +81,11 @@ import { generationIdentity, lookupGeneration } from "./src/blobs/generation.js"
 import { readBlob } from "./src/blobs/db.js";
 import { openDatabase } from "./src/db/index.js";
 import {
+  catalogueVoice,
   fillVoiceFor,
   generateText,
+  sampleLine,
+  synthesisVoice,
   OLLAMA_HOST,
   OLLAMA_MODEL,
   ollamaReachable,
@@ -117,6 +120,14 @@ interface Descriptor {
   readonly lang: string | null;
   readonly voice: string | null;
   readonly options: Readonly<Record<string, string>>;
+  /**
+   * "hear it" in the field editor (stage D). Synthesises ONE fixed sample line
+   * in a catalogue voice and stores NOTHING — the endpoint's other paths all
+   * write into `build/hashigo.db`, which is the system of record, and an
+   * audition is not a clip any card asked for. The text is ignored in favour of
+   * `sampleLine`, so a preview cannot be made to bill an arbitrary essay.
+   */
+  readonly preview: boolean;
 }
 
 function parse(body: string): Descriptor | string {
@@ -131,6 +142,22 @@ function parse(body: string): Descriptor | string {
   if (typeof kind !== "string" || !ALLOWED.has(kind)) {
     return `kind must be one of ${[...ALLOWED].join(", ")}`;
   }
+  const preview = raw["preview"] === true;
+  if (preview) {
+    // The allowlist, applied where a request could otherwise choose what Google
+    // is billed for. See `src/generate/voices.ts`.
+    if (kind !== "speech") return "only speech can be previewed";
+    const asked = catalogueVoice(typeof raw["voice"] === "string" ? raw["voice"] : null);
+    if (asked === null) return "preview needs a voice from the catalogue";
+    return {
+      kind: "speech",
+      text: sampleLine(asked.lang),
+      lang: asked.lang,
+      voice: asked.name,
+      options: {},
+      preview: true,
+    };
+  }
   if (typeof text !== "string" || text.trim() === "") return "text is required";
   if (text.length > MAX_PROMPT) return `text over ${MAX_PROMPT} characters`;
   const options = raw["options"];
@@ -143,6 +170,7 @@ function parse(body: string): Descriptor | string {
       options !== null && typeof options === "object"
         ? (options as Record<string, string>)
         : {},
+    preview: false,
   };
 }
 
@@ -206,9 +234,13 @@ async function speech(
   // PER LANGUAGE since 2026-09-20 — see `fillVoiceFor`. An `en-US` descriptor now
   // falls back to the English voice, not the Japanese one.
   const fillVoice = fillVoiceFor(descriptor.lang);
-  const wanted = descriptor.voice !== null && descriptor.voice !== fillVoice
-    ? [descriptor.voice, fillVoice]
-    : [fillVoice];
+  // STAGE D: a field that names a CATALOGUE voice is spoken in it. Any other name
+  // — every Azure voice Mochi stored — is a lookup key only, and the clip is made
+  // in the language's fill voice exactly as before. `src/generate/voices.ts`.
+  const madeWith = synthesisVoice(descriptor.voice, descriptor.lang);
+  const wanted = [descriptor.voice, madeWith, fillVoice].filter(
+    (voice, index, all): voice is string => voice !== null && all.indexOf(voice) === index,
+  );
   const storeFile = defaultStoreDatabase(CARD_DB);
   if (!existsSync(storeFile)) {
     send(503, { error: `no payload store at ${storeFile}` });
@@ -275,11 +307,13 @@ async function speech(
       });
       return;
     }
-    const bytes = await synthesise(spoken, null, { apiKey: key, voice: fillVoice });
+    const bytes = await synthesise(spoken, null, { apiKey: key, voice: madeWith });
     const hash = storeGeneratedSpeech(
       db,
       opened.store,
-      { text: descriptor.text, lang: descriptor.lang, options: descriptor.options },
+      // `voice` named explicitly: the row records who REALLY spoke, and since
+      // stage D that is no longer always the fill voice.
+      { text: descriptor.text, lang: descriptor.lang, voice: madeWith, options: descriptor.options },
       bytes,
     );
     send(200, {
@@ -287,20 +321,16 @@ async function speech(
       mime: "audio/mpeg",
       audio: Buffer.from(bytes).toString("base64"),
       cached: false,
-      // `FILL_VOICE`, and it is NOT necessarily the right language. Synthesising
-      // an `en-US` text here speaks English through Japanese phonology — the
-      // exact pairing `src/accent/speech.ts` documents 130 existing rows of.
-      // The lookup above now spares the 45 English clips that already exist, so
-      // this arm is reached only for a text nothing has ever spoken. **Choosing
-      // an English fill voice is Zach's call, by ear** — he picked this one that
-      // way — so this reports the mismatch rather than inventing a second voice.
-      voice: fillVoice,
-      // Still reported, because `fillVoiceFor` falls back to Japanese for a
-      // language it has no entry for — so this now means "nobody has chosen a
-      // voice for this language yet", which is the case worth surfacing.
+      // Whoever REALLY spoke: the field's catalogue voice when it names one
+      // (stage D), otherwise the language's fill voice. The device files the
+      // bytes under this, so the row's provenance is true on both ends.
+      voice: madeWith,
+      // Reported because `fillVoiceFor` falls back to Japanese for a language it
+      // has no entry for — so this means "nobody has chosen a voice for this
+      // language yet", which is the case worth surfacing.
       mismatch:
-        descriptor.lang !== null && !descriptor.lang.startsWith(fillVoice.slice(0, 2))
-          ? `spoken by ${fillVoice} although the card says ${descriptor.lang}`
+        descriptor.lang !== null && !descriptor.lang.startsWith(madeWith.slice(0, 2))
+          ? `spoken by ${madeWith} although the card says ${descriptor.lang}`
           : undefined,
     });
   } finally {
@@ -400,6 +430,26 @@ export function generateOnDemand(): Plugin {
         }
         if (!existsSync(CARD_DB)) {
           send(503, { error: `no ${CARD_DB} to store the generation in` });
+          return;
+        }
+
+        if (parsed.preview) {
+          // Before the database is even opened: an audition reads nothing and
+          // writes nothing, and must not be able to.
+          try {
+            const bytes = await synthesise(parsed.text, null, {
+              apiKey: key as string,
+              voice: parsed.voice as string,
+            });
+            send(200, {
+              mime: "audio/mpeg",
+              audio: Buffer.from(bytes).toString("base64"),
+              voice: parsed.voice,
+              text: parsed.text,
+            });
+          } catch (cause) {
+            send(502, { error: (cause as Error).message });
+          }
           return;
         }
 

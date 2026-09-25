@@ -89,7 +89,21 @@ says "keep showing text made under the PREVIOUS settings"; (3) `boolean-default`
 nothing (`truthy()` and the body gate both treat absent as false), so it stays read-only
 until stage G wires both at once. `voice` is not editable yet — stage D brings the picker.
 
-**LEFT, in dependency order.** D the voice catalogue and the middleware honouring it · E card/deck voice overrides ·
+**STAGE D LANDED 2026-09-25** — `src/generate/voices.ts` is the Google catalogue (ja-JP
+Neural2 only, for the accent-notation reason; en-US the four he auditioned plus two female
+Neural2) and the server's allowlist. A field naming a catalogue voice is now SPOKEN in it;
+an Azure name stays a lookup key and new clips use the fill voice, as before. The editor
+has a voice picker scoped to the field's language and a `hear it` that synthesises one fixed
+line and stores nothing (verified: blob count unchanged). `FILL_VOICE` and the synthesiser's
+`VOICE` are one import now. **The English voice pick is no longer blocked on an agent** — he
+picks it per field in the editor. Measured on New Vocab/Example: moving it off
+`en-US-AIGenerate1Neural` silences 530 of 600 sampled cards until they are regenerated,
+because Mochi's clips are filed under the Azure name; the price dialog says so before saving.
+NOT done from the plan: the `{cardId, fieldId}` request shape (the client still sends a
+descriptor; the server validates the voice instead) and widening `audioHashCandidates` (the
+per-language fill fallback already covers it).
+
+**LEFT, in dependency order.** E card/deck voice overrides ·
 F `ojad` by role + the missing rebuild steps · G `setFieldType`, then `respeak`, then
 `読み`, then **`Reading` last**. The full plan, with the measured argument for each, is at
 `C:\Users\Zach\.claude\plans\snuggly-meandering-mist.md`.
