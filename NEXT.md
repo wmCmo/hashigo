@@ -41,6 +41,25 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 > 81 seconds in the worker and says so before running, and the template editor refuses
 > two edits on purpose. **He has still never run any of it on his phone.**
 
+## VERSION — 0.5.0, late alpha (set 2026-09-25)
+
+Zach asked *"what version of hashigo should we be on? have we escape alpha yet?"* —
+nothing had ever been numbered (`0.0.0`, no tags). The history was tagged after the fact,
+local tags only, annotated with what each milestone was:
+
+| tag | commit | milestone |
+|---|---|---|
+| `v0.1.0` | `16afee6` 08-23 | the shell RUNS over the real corpus |
+| `v0.2.0` | `3e2a7bf` 08-26 | all fourteen of `notes/zach-wants.md` carry code |
+| `v0.3.0` | `d03b66c` 09-12 | design brief (decision 32) + sync transport (33) |
+| `v0.4.0` | `e7cd272` 09-13 | decision 41: the final import happened, Hashigo is the system of record |
+| `v0.5.0` | this commit | editor, search index, `[[` create, preview ⇄ editor |
+
+**Beta (0.9) is ALL of these, and none is met today:** fields-as-modules stages C-G
+landed (below); sync carries blobs; it runs without the laptop (decision 49's cloud
+move); one friend has started from an empty database on their own device.
+**1.0:** he could hand a friend the link and explain nothing.
+
 ## FIELDS ARE MODULES — started 2026-09-17, stages A and B landed
 
 Zach, comparing the template editor with Mochi's: *"each field behavior are hardcoded,
