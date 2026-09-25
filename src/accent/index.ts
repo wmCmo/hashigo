@@ -41,11 +41,15 @@ export {
 } from "./speech.js";
 
 export {
+  CARD_ADJUDICATIONS,
   DICTIONARY_ADJUDICATIONS,
   OJAD_ADJUDICATIONS,
   OJAD_AMBIGUOUS,
   applyOjadAdjudications,
+  cardAccentOverrides,
   type Adjudication,
+  type CardAdjudication,
+  type CitedAdjudication,
 } from "./ojad.js";
 
 export {
@@ -53,6 +57,7 @@ export {
   accentLabel,
   loadAccents,
   materialiseAccents,
+  primaryLabelFor,
   setManualAccent,
   type AccentBasis,
   type AccentRow,

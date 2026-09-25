@@ -21,6 +21,7 @@ import {
   DICTIONARY_ADJUDICATIONS,
   OJAD_ADJUDICATIONS,
   applyOjadAdjudications,
+  cardAccentOverrides,
 } from "./ojad.js";
 import { accentFor, loadAccents, materialiseAccents, type AccentRow } from "./store.js";
 import { arg, flag } from "../cli/args.js";
@@ -169,7 +170,7 @@ async function main(): Promise<number> {
 
     if (command === "write") {
       const dryRun = process.argv.includes("--dry-run");
-      const report = materialiseAccents(db, { dryRun });
+      const report = materialiseAccents(db, { dryRun, cardOverrides: cardAccentOverrides() });
       console.log(
         `${dryRun ? "would write" : "wrote"} ${report.written}, unchanged ${report.unchanged}, ` +
           `guarded ${report.guarded} (left EMPTY on purpose), underived ${report.underived}`,

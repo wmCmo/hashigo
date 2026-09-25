@@ -388,20 +388,21 @@ async function applyLocalFields(): Promise<number> {
   if (!(await databaseFilesInOpfs()).includes(FIELDS_DB)) return 0;
   const seed = await openDatabaseBrowser({ filename: FIELDS_DB, applySchema: false });
   try {
-    const { fields, values } = readSeedFields(seed);
+    const { fields, values, corrections } = readSeedFields(seed);
     if (values.length === 0) return 0;
     const have = Number((db.prepare(COUNT_HELD).get() as { n: number }).n);
     // ONE TRANSACTION over both tables, so a boot that dies half way leaves
     // nothing partial — and so a value can never land ahead of the field
     // declaration that makes it render.
-    const report = db.transaction(() => mergeLocalFields(db, fields, values))();
+    const report = db.transaction(() => mergeLocalFields(db, fields, values, corrections))();
     log(
       `  local fields: ${have.toLocaleString()} here, ${values.length.toLocaleString()} served — ` +
         `${report.added.toLocaleString()} taken in` +
+        (report.corrected > 0 ? `, ${report.corrected.toLocaleString()} corrected` : "") +
         (report.differs > 0 ? `, ${report.differs.toLocaleString()} differ and were LEFT ALONE` : ""),
       report.differs > 0 ? "bad" : report.added > 0 ? "good" : undefined,
     );
-    return report.added;
+    return report.added + report.corrected;
   } finally {
     seed.close();
   }

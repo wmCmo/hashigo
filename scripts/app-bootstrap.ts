@@ -105,6 +105,7 @@ import { dirname, resolve } from "node:path";
 import Database from "better-sqlite3";
 
 import { SqliteBlobStore } from "../src/blobs/sqlite.js";
+import { primaryLabelFor } from "../src/accent/store.js";
 import { contentAddress } from "../src/import/blobs.js";
 
 process.stdout.setDefaultEncoding("utf8");
@@ -156,6 +157,7 @@ let genRows = 0;
 let genBytes = 0;
 let fieldRows = 0;
 let fieldValueRows = 0;
+let fieldCorrectionRows = 0;
 
 /** Header bytes 18 and 19: 1 = rollback journal, 2 = WAL. */
 function journalMode(file: string): { write: number; read: number } {
@@ -218,6 +220,30 @@ try {
 }
 
 // ─── 2. the bounded audio subset ─────────────────────────────────────────────
+
+/**
+ * 前回の音声ファイルの同一性。中身が同じなら `created` を引き継ぐ。
+ *
+ * `blob_store_meta.created` は端末が音声を取り直すかどうかの唯一の判断材料で
+ * (`audioIsStale`)、DDL は毎回それを新しく書く。つまり `型` を一つ直すための再実行
+ * でも、彼の電話は 640 MB を取り直していた — 2026-09-25、電車の中で。同一性は中身が
+ * 変わったときにだけ変わるべきなので、収めたハッシュの集合が前回と同じなら前回の
+ * 値に戻す。予算を変えれば集合が変わり、従来どおり取り直しになる。
+ */
+const previousAudio = ((): { created: string; hashes: string } | null => {
+  if (!existsSync(storeOut)) return null;
+  const old = new Database(storeOut, { readonly: true });
+  try {
+    const created = old.prepare("SELECT value FROM blob_store_meta WHERE key = 'created'").pluck().get();
+    if (typeof created !== "string") return null;
+    const hashes = (old.prepare("SELECT hash FROM blob_payloads ORDER BY hash").pluck().all() as string[]).join(",");
+    return { created, hashes };
+  } catch {
+    return null;
+  } finally {
+    old.close();
+  }
+})();
 
 for (const stale of [storeOut, `${storeOut}-wal`, `${storeOut}-shm`]) {
   if (existsSync(stale)) rmSync(stale);
@@ -377,6 +403,11 @@ try {
   for (const [, list] of byCard) if (list.some((hash) => shipped.has(hash))) reachable += 1;
   const total = byCard.size;
 
+  if (previousAudio !== null && previousAudio.hashes === [...shipped].sort().join(",")) {
+    target.prepare("UPDATE blob_store_meta SET value = ? WHERE key = 'created'").run(previousAudio.created);
+    process.stdout.write(`audio   unchanged since ${previousAudio.created} — devices will not re-fetch it\n`);
+  }
+
   // ── THE TEXT GENERATIONS, AS THEIR OWN FILE ─────────────────────────────
   //
   // Zach, 2026-09-16, after a rebuild that delivered new audio and none of the
@@ -504,6 +535,16 @@ try {
         PRIMARY KEY (card_id, field_id)
       );
       CREATE TABLE field_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      -- 端末の値が was のままなら value に置き換える。app/local-fields.ts の見出し
+      -- 「ひとつだけの例外」を参照。
+      DROP TABLE IF EXISTS local_corrections;
+      CREATE TABLE local_corrections (
+        card_id  TEXT NOT NULL,
+        field_id TEXT NOT NULL,
+        was      TEXT NOT NULL,
+        value    TEXT NOT NULL,
+        PRIMARY KEY (card_id, field_id)
+      );
     `);
     const fieldDefs = cardDb
       .prepare(
@@ -531,9 +572,33 @@ try {
     const putValue = fieldsDb.prepare(
       `INSERT INTO local_values (card_id, field_id, value) VALUES (@card_id, @field_id, @value)`,
     );
+    // `型` のうち、OpenJTalk だけなら別のラベルになっていたもの — つまり人の裁定
+    // (語の単位か、カードの単位か) が変えた値。端末がまだ OpenJTalk のラベルを
+    // 持っていれば、それは彼の編集ではないので置き換えてよい。
+    const accentValues = cardDb
+      .prepare(
+        `SELECT v.card_id, v.field_id, v.value, head.value AS head
+           FROM card_field_values v
+           JOIN cards c ON c.id = v.card_id
+           JOIN template_fields f ON f.template_id = c.template_id AND f.id = v.field_id
+           JOIN card_field_values head ON head.card_id = v.card_id AND head.field_id = f.source_field_id
+          WHERE f.local = 1 AND f.type = 'accent'`,
+      )
+      .all() as { card_id: string; field_id: string; value: string; head: string }[];
+    const corrections = accentValues.flatMap((row) => {
+      const was = primaryLabelFor(cardDb, row.head);
+      return was === null || was === row.value
+        ? []
+        : [{ card_id: row.card_id, field_id: row.field_id, was, value: row.value }];
+    });
+    const putCorrection = fieldsDb.prepare(
+      `INSERT INTO local_corrections (card_id, field_id, was, value)
+       VALUES (@card_id, @field_id, @was, @value)`,
+    );
     fieldsDb.transaction(() => {
       for (const row of fieldDefs) putField.run(row);
       for (const row of values) putValue.run(row);
+      for (const row of corrections) putCorrection.run(row);
       // Its own identity, the same shape as `blob_store_meta.created` and
       // `gen_meta.created`, and for the same reason a COUNT would be wrong: he
       // authors values ON the device (`setField`, and decision 29's `Reading`
@@ -546,6 +611,7 @@ try {
     fieldsDb.close();
     fieldRows = fieldDefs.length;
     fieldValueRows = values.length;
+    fieldCorrectionRows = corrections.length;
   }
 
   // ── THE SEED MANIFEST ───────────────────────────────────────────────────
@@ -638,7 +704,7 @@ try {
     `fields  ${fieldsOut}
 ` +
       `        ${statSync(fieldsOut).size.toLocaleString()} bytes on disk · ` +
-      `${fieldRows} local field(s) · ${fieldValueRows.toLocaleString()} value(s)
+      `${fieldRows} local field(s) · ${fieldValueRows.toLocaleString()} value(s) · ${fieldCorrectionRows} correction(s)
 ` +
       `        ojad / 型 / 読み / かな主流 — authored here, in no Mochi export
 `,

@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 import {
+  CARD_ADJUDICATIONS,
   DICTIONARY_ADJUDICATIONS,
   OJAD_ADJUDICATIONS,
   accentLabel,
@@ -337,6 +338,28 @@ describe("materialising <<型>>", () => {
     }
   });
 
+  it("takes a CARD's adjudication over the word's, and touches no other card", () => {
+    // 決定 22 の同形語: 文字列に一つのラベルは正しくない。カード単位の裁定は
+    // そのカードにだけ効き、同じ語の別のカードは語の解決のまま。
+    const db = scratch();
+    try {
+      db.prepare("INSERT INTO cards (id, deck_id, template_id) VALUES ('c4', 'd', 't')").run();
+      db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES ('c4', 'name', '橋')").run();
+      loadAccents(db, [
+        {
+          text: "橋", analyser: "openjtalk", version: "v", probe: "が",
+          phrases: [[2, 2]], type: "尾高", accentType: 2, reading: "ハシ", basis: "probe",
+        },
+      ]);
+      materialiseAccents(db, { cardOverrides: new Map([["c1", { type: "頭高", accentType: 1 }]]) });
+      const kata = db.prepare("SELECT value FROM card_field_values WHERE card_id = ? AND field_id = 'kata'").pluck();
+      expect(kata.get("c1")).toBe("頭高");
+      expect(kata.get("c4")).toBe("尾高");
+    } finally {
+      db.close();
+    }
+  });
+
   it("is idempotent, and a manual override survives re-running it", () => {
     const db = scratch();
     try {
@@ -504,14 +527,31 @@ describe("the OJAD adjudications", () => {
     // まく has THREE different accents across 巻く / 蒔く・撒く / 膜・幕. Picking
     // one would drill a wrong contour on two thirds of its senses, so the
     // ambiguous list and the adjudication list must not overlap.
-    const settled = new Set(OJAD_ADJUDICATIONS.map((a) => a.word));
+    const settled = new Set([...OJAD_ADJUDICATIONS, ...DICTIONARY_ADJUDICATIONS].map((a) => a.word));
     for (const { word } of OJAD_AMBIGUOUS) {
       expect(settled.has(word), `${word} is ambiguous and must not be adjudicated`).toBe(false);
     }
   });
 
+  it("adjudicates by CARD only the words that cannot be settled by word", () => {
+    // カード単位の裁定は決定 22 の同形語のためだけにある。普通の語がここに来たら、
+    // それは語の単位で引用して直すべきものを一枚だけ直している。
+    const ambiguous = new Set(OJAD_AMBIGUOUS.map((a) => a.word));
+    for (const row of CARD_ADJUDICATIONS) {
+      expect(ambiguous.has(row.word), `${row.word} (${row.cardId})`).toBe(true);
+    }
+    expect(new Set(CARD_ADJUDICATIONS.map((r) => r.cardId)).size).toBe(CARD_ADJUDICATIONS.length);
+  });
+
+  it("names a source on every row that is not the first OJAD batch", () => {
+    for (const row of [...DICTIONARY_ADJUDICATIONS, ...CARD_ADJUDICATIONS]) {
+      expect(row.source.length, row.word).toBeGreaterThan(0);
+      expect(row.looked, row.word).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+
   it("keeps type and accent position consistent with each other", () => {
-    for (const row of OJAD_ADJUDICATIONS) {
+    for (const row of [...OJAD_ADJUDICATIONS, ...DICTIONARY_ADJUDICATIONS, ...CARD_ADJUDICATIONS]) {
       if (row.type === "平板") expect(row.accent, row.word).toBe(0);
       else expect(row.accent, row.word).toBeGreaterThan(0);
       if (row.type === "頭高") expect(row.accent, row.word).toBe(1);
@@ -560,6 +600,18 @@ describe.runIf(haveCorpus)("adjudication against the real database", () => {
         // empties: OJAD backed our derivation on 11 words, the cross-check still
         // disagrees with all 11, and they came back as work forever.
         expect(queued.has(row.word), `${row.word} is adjudicated but still queued`).toBe(false);
+      }
+      // カード単位の裁定は、そのカードの `型` に載っている。
+      const kata = db.prepare(
+        `SELECT v.value FROM card_field_values v
+           JOIN cards c ON c.id = v.card_id
+           JOIN template_fields f ON f.template_id = c.template_id AND f.id = v.field_id
+          WHERE v.card_id = ? AND f.type = 'accent'`,
+      ).pluck();
+      for (const row of CARD_ADJUDICATIONS) {
+        const held = kata.get(row.cardId) as string | undefined;
+        if (held === undefined) continue; // そのカードの無いコーパス
+        expect(held.startsWith(row.type), `${row.word} ${row.cardId}`).toBe(true);
       }
     } finally {
       db.close();

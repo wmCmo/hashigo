@@ -104,24 +104,43 @@ instead. **The failure is silent**: rename `例文` and the ojad pipeline report
 
 ### Reported, not fixed
 
-* **27 of the 56 open accent disputes are probably wrong labels on his cards, and the
-  shape is now measured rather than hypothesised.** Zach, 2026-09-25, on his phone: *"I
-  thought 航行 was 平板"* — right: OpenJTalk said 頭高, UniDic 平板, and a dictionary
-  agrees with UniDic (fixed, `DICTIONARY_ADJUDICATIONS` in `src/accent/ojad.ts`). Over
-  the disputes OJAD already settled, **where our probe rule produced a nucleus and UniDic
-  said 平板, OJAD backed UniDic 12 of 14 times**; for every other shape ours won 8 of 13.
-  Still open with that shape, on 23 live cards: いか ずるずる ちょうど なおざり まくる
-  もやもや やかん ベタベタ 低め 嗤う 容れる 専念 市場 当たり前 手すり 敵軍 極まる 白髪
-  空前 背景 脆弱 言い合い 近々 非婚 飾りつけ 高め. **Decision 8 still holds — do not
-  flip them to UniDic in bulk**; each needs a citation, and several are reading-ambiguous
-  (市場 しじょう/いちば, 白髪 しらが/はくはつ, 近々 ちかぢか/きんきん, いか) — those
-  belong with the 6 in `OJAD_AMBIGUOUS`, not in a list of answers. Whether to do the
-  lookups is his call: it changes what he is drilled on.
-* **A corrected `型` does NOT reach a device that already has the old one.** The local
-  fields seed is insert-only (`app/local-fields.ts`), deliberately, so it never takes
-  back his own edits — which also means a fixed label arrives only on a fresh device. On
-  an existing one it is one edit (`e` → `型`). The real fix is decision 33's deferred
-  per-value clock.
+* **THE 56 OPEN ACCENT DISPUTES WERE SWEPT, 2026-09-25 — 26 settled, 30 left, and the
+  30 are named.** Zach, on his phone: *"I thought 航行 was 平板"* (right — OpenJTalk 頭高,
+  UniDic 平板, a dictionary with UniDic), then *"let's 洗い出し all of them that are
+  disagreed"*. Method, so the next sweep does not redo it: OJAD's batch search first
+  (exact headword, the card's own furigana reading), then en.wiktionary's `{{ja-pron}}`
+  **only where `acc_ref` names a dictionary** (DJR · NHK · SMK · ZAJ). All in
+  `src/accent/ojad.ts`, each row with its source. **21 labels changed on live cards**,
+  most toward 平板, which is the bias the earlier note measured.
+
+  **Decision 22 was being violated in the data, and that is the real finding.** Its six
+  homographs were meant to stay unlabelled; `materialiseAccents` wrote OpenJTalk's label
+  on all six, and **four were wrong for the card's own 意味** (いか squid 尾高, どく
+  step-aside 頭高, まく sow 平板, やかん kettle 中高). Now `CARD_ADJUDICATIONS` labels
+  those cards by card id from their 意味 — the path decision 22 names — and the word
+  level still carries nothing. だぶだぶ stays open: OJAD gives な-adj 0 and adverb 1 and
+  his gloss fits both.
+
+  **Still open, and why** (`cli.ts queue`): no citable source — さりげない ずるずる
+  だらけ 敵軍 はえ (Wiktionary has an accent but no `acc_ref`), まみれ もやもや カンカン
+  ニコニコ バタバタ バラン ベタベタ 一足 高め 空前 裏面 極まる; dictionaries list two —
+  根本 転嫁 近々; zero live cards — さあ なおざり 低め; the decision-22 six, which the
+  word level can never close. **And 市場 is HIS**: the furigana says しじょう (平板) and
+  the gloss is JMdict's いちば sense (頭高) — the card contradicts itself on exactly the
+  fact being drilled.
+* **A corrected `型` NOW REACHES a device that has the old one — unless he edited it.**
+  The local fields seed is still insert-only, but carries `local_corrections (was,
+  value)` since 2026-09-25: a device value that still equals the label OpenJTalk would
+  have written is replaced, because it provably is not his edit. His own edits never
+  match `was` and are left alone and counted, as before. **Scoped to `型`** — the only
+  local field with a derivation to compare against. Every other local value that changes
+  on the laptop still needs decision 33's deferred per-value clock.
+* **`app-bootstrap` no longer re-stamps unchanged audio.** `blob_store_meta.created` was
+  rewritten on every run, so rebuilding the seed for one field value pushed a 640 MB
+  re-download to his phone. It now keeps the previous stamp when the shipped hash set is
+  identical. (The 2026-09-25 build differed by two clips `/generate/` had made that
+  night and serves from cache on demand, and the old stamp was restored by hand for
+  that one build — the phone was on a train.)
 
 * **Two stray `OJAD` fields on his devices** — New Vocab and Polysemy each carry one, with
   no values and no references. Neither `build/hashigo.db` nor the seed has them: they were

@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 51 files, 1341 passed, 1 skipped (the FSRS refit, gated). ~55 s.
+npm test                # 51 files, 1346 passed, 1 skipped (the FSRS refit, gated). ~55 s.
                         # MEASURED 2026-09-17, not arithmetic. The 1127 here before it
                         # was 1117 plus ten new tests, added up rather than run — and it
                         # missed 79 tests from the same day. Run the suite or leave it alone.
@@ -241,7 +241,7 @@ npx vite-node src/accent/cli.ts -- words --db build/hashigo.db --out build/head-
 .venv-accent/Scripts/python tools/accent_derive.py --words build/head-words.txt --out build/accents.jsonl
 npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accents.jsonl
 npx vite-node src/accent/cli.ts -- ojad  --db build/hashigo.db     # 33 OJAD adjudications
-npx vite-node src/accent/cli.ts -- queue --db build/hashigo.db     # 56 still disputed (2026-09-25)
+npx vite-node src/accent/cli.ts -- queue --db build/hashigo.db     # 30 still disputed (2026-09-25, after the sweep)
 python tools/f0.py build/longvowel/*.wav    # F0 in thirds
 # THE DEV SERVER'S BIND ADDRESS IS A TRAP IN BOTH DIRECTIONS. Binding one address
 # family REFUSES the other, and on Windows `localhost` resolves to ::1 FIRST.

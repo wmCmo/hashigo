@@ -32,6 +32,19 @@
  * named that gap and deferred it to a schema bump. So `differs` is counted and
  * REPORTED; a value stuck on the device must not look like one in agreement.
  *
+ * ─── ひとつだけの例外: パイプラインが書いた値を、パイプラインが直すとき ──────
+ *
+ * 2026-09-25、`型` の未決 56 件を辞書で裁定したら、彼が既に持っているラベルの
+ * うち 20 枚あまりが変わった。挿入のみでは一枚も届かない。けれど「どちらが新しいか」
+ * に時計が要るのは、端末側が彼の編集かもしれないからで — 端末の値が、裁定の前に
+ * OpenJTalk が書いたラベルと一字一句同じなら、それは彼の編集ではない。
+ *
+ * だから `local_corrections (card_id, field_id, was, value)`: 端末の値が `was` と
+ * 完全に一致するときだけ `value` に置き換える (compare-and-swap)。彼が `e` で
+ * 直した値は `was` と一致しないので触られず、従来どおり `differs` に数えられる。
+ * 上の安全性の議論は一行も緩めていない — 置き換えるのは、彼が書いたのではないと
+ * 証明できる値だけ。
+ *
  * ─── AND WHY THERE IS NO COUNT SHORTCUT ─────────────────────────────────────
  *
  * The first cut skipped the whole step when the device already held as many rows
@@ -78,11 +91,21 @@ export interface LocalValueRow {
   readonly value: string;
 }
 
+/** 端末の値が `was` のままなら `value` に置き換える。ファイル 4 の `local_corrections`。 */
+export interface LocalCorrectionRow {
+  readonly card_id: string;
+  readonly field_id: string;
+  readonly was: string;
+  readonly value: string;
+}
+
 export interface MergeReport {
   /** Values this device did not have, now inserted. */
   readonly added: number;
   /** Values the device holds with DIFFERENT text. Left alone — see the header. */
   readonly differs: number;
+  /** 端末の値が `was` のままだったので、裁定後の値に置き換えたもの。 */
+  readonly corrected: number;
   /** Values whose card is not on this device. 8,958 tombstones make this real. */
   readonly unknownCards: number;
   /** Field definitions inserted. */
@@ -92,6 +115,10 @@ export interface MergeReport {
 const SELECT_FIELDS = `SELECT template_id, id, name, type, source_field_id, options, pos
                          FROM local_fields`;
 const SELECT_VALUES = `SELECT card_id, field_id, value FROM local_values`;
+const SELECT_CORRECTIONS = `SELECT card_id, field_id, was, value FROM local_corrections`;
+// 2026-09-25 より前のファイルにはこの表が無い。無ければ訂正は零件で、それが正しい。
+const HAS_CORRECTIONS = `SELECT 1 AS n FROM sqlite_master
+                          WHERE type = 'table' AND name = 'local_corrections'`;
 
 /** How many local-field values this device already holds. For the boot log. */
 export const COUNT_HELD = `SELECT count(*) AS n FROM card_field_values v
@@ -111,6 +138,7 @@ export function mergeLocalFields(
   db: FieldsDb,
   fields: readonly LocalFieldRow[],
   values: readonly LocalValueRow[],
+  corrections: readonly LocalCorrectionRow[] = [],
 ): MergeReport {
   // THE FIELD DEFINITIONS FIRST. A value whose field the template does not
   // declare renders nothing at all — which is how `ojad` itself would arrive on
@@ -130,7 +158,12 @@ export function mergeLocalFields(
   const heldValue = db.prepare(
     "SELECT value AS v FROM card_field_values WHERE card_id = ? AND field_id = ?",
   );
+  const swap = db.prepare(
+    `UPDATE card_field_values SET value = ?
+      WHERE card_id = ? AND field_id = ? AND value = ?`,
+  );
   const changed = (result: unknown): number => Number((result as { changes?: number }).changes ?? 0);
+  const correctionFor = new Map(corrections.map((c) => [`${c.card_id}|${c.field_id}`, c]));
 
   let fieldCount = 0;
   for (const row of fields) {
@@ -149,6 +182,7 @@ export function mergeLocalFields(
 
   let added = 0;
   let differs = 0;
+  let corrected = 0;
   let unknownCards = 0;
   for (const row of values) {
     // ASKED, not caught. `card_field_values` has a foreign key to `cards`, so a
@@ -163,18 +197,31 @@ export function mergeLocalFields(
       continue;
     }
     const held = heldValue.get(row.card_id, row.field_id) as { v: string } | undefined;
-    if (held !== undefined && held.v !== row.value) differs += 1;
+    if (held === undefined || held.v === row.value) continue;
+    // 訂正は、配られている値そのものへの訂正に限る。`value` が違う訂正は古い
+    // ファイルの残りか作り手の誤りで、どちらにしてもこの行の答えではない。
+    const fix = correctionFor.get(`${row.card_id}|${row.field_id}`);
+    if (fix !== undefined && fix.value === row.value && held.v === fix.was) {
+      corrected += changed(swap.run(fix.value, row.card_id, row.field_id, fix.was));
+      continue;
+    }
+    differs += 1;
   }
-  return { added, differs, unknownCards, fields: fieldCount };
+  return { added, differs, corrected, unknownCards, fields: fieldCount };
 }
 
 /** Read the rows a seed file serves. Separate so the merge can be tested without one. */
 export function readSeedFields(seed: FieldsDb): {
   fields: LocalFieldRow[];
   values: LocalValueRow[];
+  corrections: LocalCorrectionRow[];
 } {
   return {
     fields: seed.prepare(SELECT_FIELDS).all() as LocalFieldRow[],
     values: seed.prepare(SELECT_VALUES).all() as LocalValueRow[],
+    corrections:
+      seed.prepare(HAS_CORRECTIONS).get() === undefined
+        ? []
+        : (seed.prepare(SELECT_CORRECTIONS).all() as LocalCorrectionRow[]),
   };
 }

@@ -191,6 +191,24 @@ export function accentLabel(type: AccentType, accentType: number | null): string
   return type === "中高" && accentType !== null ? `${type} (${accentType})` : type;
 }
 
+/**
+ * 一次解析 (OpenJTalk) だけが言うラベル。人の裁定を無視した値。
+ *
+ * 端末に既にある `型` が「裁定より前にパイプラインが書いたもの」かどうかを見分ける
+ * ために要る — `app/local-fields.ts` の compare-and-swap の `was` がこれ。refused なら
+ * null (その語にラベルは書かれていなかった)。
+ */
+export function primaryLabelFor(db: Db, value: string): string | null {
+  const row = db
+    .prepare(
+      `SELECT type, accent_type FROM accents
+        WHERE text = ? AND analyser = 'openjtalk' AND type IS NOT NULL
+        ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get(accentKey(value)) as { type: AccentType; accent_type: number } | undefined;
+  return row === undefined ? null : accentLabel(row.type, row.accent_type);
+}
+
 // ─── materialising <<型>> ────────────────────────────────────────────────────
 
 export interface MaterialiseReport {
@@ -213,7 +231,17 @@ export interface MaterialiseReport {
  * would be indistinguishable from "not yet derived" on screen, and the whole
  * value of `<<型>>` is that it is visibly wrong when the pipeline is wrong.
  */
-export function materialiseAccents(db: Db, options: { readonly dryRun?: boolean } = {}): MaterialiseReport {
+export function materialiseAccents(
+  db: Db,
+  options: {
+    readonly dryRun?: boolean;
+    /**
+     * カード単位の裁定 (`CARD_ADJUDICATIONS`)。語の解決より先に見る。決定 22 の
+     * 同形語は文字列に一つのラベルが正しくないので、語の単位ではなくここで来る。
+     */
+    readonly cardOverrides?: ReadonlyMap<string, { readonly type: AccentType; readonly accentType: number }>;
+  } = {},
+): MaterialiseReport {
   const fields = db
     .prepare(
       `SELECT f.template_id, f.id AS field_id, f.source_field_id
@@ -250,7 +278,7 @@ export function materialiseAccents(db: Db, options: { readonly dryRun?: boolean 
       .all(field.source_field_id, field.template_id) as { id: string; value: string }[];
 
     for (const card of cards) {
-      const accent = accentFor(db, card.value);
+      const accent = options.cardOverrides?.get(card.id) ?? accentFor(db, card.value);
       if (accent === null) {
         underived += 1;
         continue;

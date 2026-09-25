@@ -606,7 +606,9 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
         // measured), and the gloss the rule existed for is caught by the
         // analyser's own mora count. Nine now annotate; K-pop still fails the
         // count check, correctly. The other 3,710 values are byte-identical.
-        fieldValues: 7_567,
+        // WAS 7,567, +1 on 2026-09-25: 嗤う (アーカイブ済みの一枚) に初めて `型` が
+        // 付いた。OpenJTalk は拒否していて、辞書の裁定 (笑う の項) で 平板 になった。
+        fieldValues: 7_568,
         settings: 4,
         // The 244 individually archived cards. They LOOK like something the export
         // rebuilds and they are not: `UPSERT_CARD` writes `archived` from Mochi, and

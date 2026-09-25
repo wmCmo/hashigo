@@ -136,6 +136,60 @@ describe("merging the local-field seed", () => {
     }
   });
 
+  it("replaces a value ONLY while it still equals what the pipeline wrote before", () => {
+    // 2026-09-25: 辞書の裁定で 20 枚あまりの `型` が変わり、挿入のみでは一枚も
+    // 届かなかった。`was` は裁定前に OpenJTalk が書いたラベル。端末の値がそれと
+    // 一字一句同じなら彼の編集ではない — 置き換えてよいのはその値だけ。
+    const db = fixture();
+    try {
+      mergeLocalFields(db as unknown as FieldsDb, [OJAD], []);
+      db.prepare(
+        "INSERT INTO card_field_values (card_id, field_id, value) VALUES ('c1', 'ojad', '頭高'), ('c2', 'ojad', 'HIS')",
+      ).run();
+      const served = [
+        { card_id: "c1", field_id: "ojad", value: "平板" },
+        { card_id: "c2", field_id: "ojad", value: "平板" },
+      ];
+      const corrections = [
+        { card_id: "c1", field_id: "ojad", was: "頭高", value: "平板" },
+        { card_id: "c2", field_id: "ojad", was: "頭高", value: "平板" },
+      ];
+      const report = mergeLocalFields(db as unknown as FieldsDb, [OJAD], served, corrections);
+      expect(valueOf(db, "c1", "ojad")).toBe("平板");
+      // c2 は 'HIS' — `was` と一致しないので、彼の編集として残る。
+      expect(valueOf(db, "c2", "ojad")).toBe("HIS");
+      expect(report).toMatchObject({ added: 0, corrected: 1, differs: 1 });
+
+      // もう一度走らせても何も起きない: c1 は一致、c2 は相変わらず彼のもの。
+      const again = mergeLocalFields(db as unknown as FieldsDb, [OJAD], served, corrections);
+      expect(again).toMatchObject({ added: 0, corrected: 0, differs: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("ignores a correction that is not to the value being served", () => {
+    // 古いファイルの残りか、作り手の誤り。どちらにしても、配られていない値へ
+    // 書き換える根拠にはならない。
+    const db = fixture();
+    try {
+      mergeLocalFields(db as unknown as FieldsDb, [OJAD], []);
+      db.prepare(
+        "INSERT INTO card_field_values (card_id, field_id, value) VALUES ('c1', 'ojad', '頭高')",
+      ).run();
+      const report = mergeLocalFields(
+        db as unknown as FieldsDb,
+        [OJAD],
+        [{ card_id: "c1", field_id: "ojad", value: "平板" }],
+        [{ card_id: "c1", field_id: "ojad", was: "頭高", value: "尾高" }],
+      );
+      expect(valueOf(db, "c1", "ojad")).toBe("頭高");
+      expect(report).toMatchObject({ corrected: 0, differs: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
   it("has NO count shortcut — equal totals can still hide a difference", () => {
     const db = fixture();
     try {
