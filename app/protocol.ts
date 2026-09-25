@@ -651,7 +651,8 @@ export type TemplateOp =
   | "restoreField"
   | "orderFields"
   | "setFieldOptions"
-  | "setFieldSource";
+  | "setFieldSource"
+  | "setFieldType";
 
 export interface TemplateOpRequest {
   readonly kind: "templateOp";
@@ -664,7 +665,10 @@ export interface TemplateOpRequest {
   readonly content?: string;
   /** Everything that acts on one field. */
   readonly fieldId?: string;
-  /** `addField` only. Validated against the schema CHECK in the worker. */
+  /**
+   * `addField` (validated against the schema CHECK) and `setFieldType` (only a
+   * conversion the registry calls FREE).
+   */
   readonly fieldType?: string;
   /** `orderFields` only: every field id, in the order they should sit. */
   readonly order?: readonly string[];
@@ -696,6 +700,7 @@ export interface TemplateOpMessage {
     readonly field?: TemplateFieldRow;
     readonly options?: string;
     readonly sourceFieldId?: string | null;
+    readonly fieldType?: string;
   } | null;
 }
 

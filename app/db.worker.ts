@@ -53,7 +53,7 @@ import { backlinksOf } from "../src/cards/index.js";
 import { decodeFieldOptions } from "../src/cards/index.js";
 import { cardAudioResolver } from "../src/cards/index.js";
 import { directionForTrackKind } from "../src/cards/index.js";
-import { ACCENT_FIELD_TYPE, READING_FIELD, prepareCard } from "../src/review/index.js";
+import { ACCENT_FIELD_TYPE, READING_FIELD, prepareCard, readingSwitch } from "../src/review/index.js";
 import {
   buildSession,
   readSessionSettings,
@@ -73,7 +73,8 @@ import {
   renameFieldEverywhere,
   sideIndex,
 } from "../src/template/index.js";
-import { positionKeys, FIELD_TYPES } from "../src/schema/index.js";
+import { positionKeys, FIELD_TYPES, type FieldType } from "../src/schema/index.js";
+import { kindOf } from "../src/fields/index.js";
 // The SQL fragments for "live" and "due", from the module that owns them. This
 // query is why that module exists: it used to spell the due comparison with
 // `date()`, which converts an offset timestamp to UTC and made this count 704
@@ -940,15 +941,28 @@ function ungrade(request: UngradeRequest): void {
  * the page, because the page's `readingFieldId` came from a message and a write
  * that lands on 漢字's reading text would destroy data.
  */
+/**
+ * The card's decision-29 switch, found EXACTLY as `cardMode` finds it —
+ * `readingSwitch`, role first and name+type second. Two lookups that disagreed
+ * would let this write a field the mode never reads, and the toggle would do
+ * nothing on screen.
+ */
+function readingFieldOf(db: BrowserDb, cardId: string): { id: string } | undefined {
+  const rows = db
+    .prepare(
+      `SELECT tf.id AS id, tf.name AS name, tf.type AS type, tf.options AS options
+         FROM cards c JOIN template_fields tf ON tf.template_id = c.template_id
+        WHERE c.id = ? ORDER BY tf.pos, tf.id`,
+    )
+    .all(cardId) as { id: string; name: string; type: string; options: string | null }[];
+  return readingSwitch(
+    rows.map((row) => ({ ...row, options: decodeFieldOptions(row.options ?? "{}") })),
+  );
+}
+
 function setReading(request: ReadingRequest): void {
   const db = requireCards();
-  const field = db
-    .prepare(
-      `SELECT tf.id AS id FROM cards c
-         JOIN template_fields tf ON tf.template_id = c.template_id
-        WHERE c.id = ? AND trim(tf.name) = 'Reading' AND tf.type = 'boolean'`,
-    )
-    .get(request.cardId) as { id: string } | undefined;
+  const field = readingFieldOf(db, request.cardId);
   if (field === undefined) {
     throw new Error(
       `card ${request.cardId} has no BOOLEAN field named Reading on its own template, ` +
@@ -2413,7 +2427,11 @@ function templateOp(request: TemplateOpRequest): void {
   const guardReadingField = (target: TemplateFieldRow, verb: string): void => {
     const drills = before.fields.some((entry) => entry.type === ACCENT_FIELD_TYPE);
     if (!drills) return;
-    if (target.name.trim() !== READING_FIELD || target.type !== "boolean") return;
+    // The SAME lookup the mode uses, over this template's rows.
+    const switchField = readingSwitch(
+      before.fields.map((entry) => ({ ...entry, options: decodeFieldOptions(entry.options) })),
+    );
+    if (switchField === undefined || switchField.id !== target.id) return;
     throw new Error(
       `${verb} ${READING_FIELD} on ${before.name} would silently change what these ` +
         `cards DRILL. src/review/mode.ts finds it by name and type to choose ` +
@@ -2607,6 +2625,32 @@ function templateOp(request: TemplateOpRequest): void {
         fieldId: target.id,
         sourceFieldId: target.sourceFieldId,
       };
+      break;
+    }
+
+    case "setFieldType": {
+      // STAGE G, and only the FREE conversions — today that is plain <-> text,
+      // which differ as an editor affordance and nothing else: both store the same
+      // string and render it the same way. Everything the registry prices or
+      // refuses stays refused here, for the reason in this function's header —
+      // a type change reinterprets every stored value at once.
+      const target = field(request.fieldId ?? "");
+      const to = request.fieldType ?? "";
+      const cost = kindOf(target.type)?.convertsTo[to as FieldType];
+      if (cost !== "free") {
+        throw new Error(
+          `${target.name} cannot become ${to} from here — ` +
+            (cost === "priced"
+              ? "that conversion reinterprets its stored values and needs a migration with a diff, not a form control."
+              : "the two kinds do not convert."),
+        );
+      }
+      guardReadingField(target, "retyping");
+      db.prepare(
+        "UPDATE template_fields SET type = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE template_id = ? AND id = ?",
+      ).run(to, before.id, target.id);
+      describe = `${target.name} is now ${kindOf(to)?.label ?? to} (was ${kindOf(target.type)?.label ?? target.type}) — no value changed`;
+      undo = { op: "setFieldType", templateId: before.id, fieldId: target.id, fieldType: target.type };
       break;
     }
 

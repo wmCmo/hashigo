@@ -382,7 +382,8 @@ export function describePrice(price: FieldPrice): string[] {
   }
   if (price.defaulted !== null) {
     out.push(
-      `${price.defaulted.toLocaleString()} card(s) carry no value for this field, so the default decides them.`,
+      `${price.defaulted.toLocaleString()} card(s) carry no value for this field, so the default decides them` +
+        ` — the layout AND the drill: the body's <<#Field>> gate and the review mode read the same rule.`,
     );
   }
   if (out.length === 0) out.push("No generated field reads this one, so no clip or text moves.");

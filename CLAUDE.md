@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 52 files, 1393 passed, 1 skipped (the FSRS refit, gated). ~55 s.
+npm test                # 52 files, 1399 passed, 1 skipped (the FSRS refit, gated). ~55 s.
                         # MEASURED 2026-09-17, not arithmetic. The 1127 here before it
                         # was 1117 plus ten new tests, added up rather than run — and it
                         # missed 79 tests from the same day. Run the suite or leave it alone.
@@ -307,6 +307,7 @@ npx vite-node scripts/accent-field-apply.ts -- --db build/hashigo.db --apply  # 
 npx vite-node src/accent/cli.ts -- write --db build/hashigo.db            # 3,830 型 labels
 npx vite-node src/accent/cli.ts -- marks --db build/hashigo.db --in build/sentence-marks.jsonl  # 3,719 ojad (decision 43)
 npx vite-node scripts/ojad-template-apply.ts -- --db build/hashigo.db --apply   # <ojad> in 単語 / 言葉
+npx vite-node scripts/reading-role-apply.ts -- --db build/hashigo.db --apply    # decision 29's switch, by role
 # LAST, AND AFTER THE DASHBOARD REGENERATE — see the warning below.
 npx vite-node scripts/reverse-dormant-apply.ts -- --db build/hashigo.db --apply  # the 6 forced reverse tracks
 ```

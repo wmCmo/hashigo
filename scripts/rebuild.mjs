@@ -262,6 +262,25 @@ const STEPS = [
     ],
   },
   {
+    /**
+     * Decision 29's switch, declared by ROLE (stage G). The mode still falls back
+     * to name + type, so a rebuild without this renders correctly — but the role
+     * is what survives a rename, and a rebuild that silently dropped it would put
+     * the name back in charge with nothing to say so.
+     */
+    name: "local: 単語's Reading carries the reading-switch role",
+    cmd: `npm exec vite-node scripts/reading-role-apply.ts -- --db "${DB}" --apply`,
+    invariant: (db) => {
+      const n = db
+        .prepare(
+          "SELECT count(*) n FROM template_fields f WHERE f.type = 'boolean' " +
+            "AND json_extract(f.options, '$.\"hashigo-role\"') = 'reading-switch'",
+        )
+        .get().n;
+      return n > 0 ? null : "no boolean carries the reading-switch role — decision 29 is bound by name again";
+    },
+  },
+  {
     name: "local: <ojad> goes under the sentence in 単語 / 言葉",
     cmd: `npm exec vite-node scripts/ojad-template-apply.ts -- --db "${DB}" --apply`,
     invariant: (db) => {

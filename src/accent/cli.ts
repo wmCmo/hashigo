@@ -37,13 +37,19 @@ import { declareField, extractSentences, loadMarks, type AnnotatedLine } from ".
  * 基本情報's Cue — and an unscoped query silently pulls in another template's
  * sentences. That mistake produced a count of 3,668 "misses" earlier in this
  * work when the real number was 189.
+ *
+ * BY DATA since stage G of fields-as-modules: the head word is whatever field the
+ * template's `accent` field reads (`source_field_id`), which is how
+ * `src/accent/store.ts` has always found it. Still template-scoped — by the
+ * accent field's own template — so 基本情報's `name` stays out, and on this corpus
+ * the answer is the same 単語/言葉 `name` fields the literal named.
  */
 const HEAD_WORDS_SQL = `
   SELECT DISTINCT v.value
     FROM card_field_values v
-    JOIN cards c     ON c.id = v.card_id
-    JOIN templates t ON t.id = c.template_id
-   WHERE t.name IN ('単語', '言葉') AND v.field_id = 'name' AND v.value <> ''`;
+    JOIN cards c ON c.id = v.card_id
+    JOIN template_fields a ON a.template_id = c.template_id AND a.type = 'accent'
+   WHERE v.field_id = a.source_field_id AND v.value <> ''`;
 
 interface DerivedLine {
   value: string;

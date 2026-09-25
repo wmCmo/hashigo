@@ -1299,3 +1299,61 @@ describe.skipIf(!HAS_CORPUS)("LaTeX reaches the shipping mount", () => {
     }
   });
 });
+
+// ─── stage G: the switch by role, and the default both halves read ───────────
+
+import { readingSwitch } from "../src/review/index.js";
+import { booleanValue } from "../src/template/resolve.js";
+import { decodeFieldOptions } from "../src/cards/index.js";
+
+describe("decision 29's switch, found by role, agrees with the name on every template", () => {
+  it("role-first and name-only pick the IDENTICAL field on all templates", () => {
+    const db = openDatabase(DB, { readOnly: true, applySchema: false });
+    try {
+      const templates = db.prepare("SELECT id, name FROM templates").all() as { id: string; name: string }[];
+      expect(templates.length).toBeGreaterThan(5);
+      for (const template of templates) {
+        const fields = (
+          db
+            .prepare("SELECT id, name, type, options FROM template_fields WHERE template_id = ? ORDER BY pos, id")
+            .all(template.id) as { id: string; name: string; type: string; options: string | null }[]
+        ).map((row) => ({ ...row, options: decodeFieldOptions(row.options ?? "{}") }));
+        const byName = fields.find((field) => field.name.trim() === "Reading" && field.type === "boolean");
+        expect(readingSwitch(fields)?.id, template.name).toBe(byName?.id);
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  it("a role on a NON-boolean is ignored — 漢字's plain Reading can never become the switch", () => {
+    const fields = [
+      { id: "k", name: "Reading", type: "plain", options: { "hashigo-role": "reading-switch" } },
+    ];
+    expect(readingSwitch(fields)).toBeUndefined();
+  });
+
+  it("the role wins over the name when both exist and point at different booleans", () => {
+    const fields = [
+      { id: "old", name: "Reading", type: "boolean", options: {} },
+      { id: "new", name: "Produce", type: "boolean", options: { "hashigo-role": "reading-switch" } },
+    ];
+    expect(readingSwitch(fields)?.id).toBe("new");
+  });
+});
+
+describe("booleanValue — the one rule the gate and the mode share", () => {
+  it("a stored value always wins, including an explicit false", () => {
+    expect(booleanValue("true", { "boolean-default": false })).toBe(true);
+    expect(booleanValue("false", { "boolean-default": true })).toBe(false);
+  });
+  it("a card with no value takes the field's default", () => {
+    expect(booleanValue(undefined, { "boolean-default": true })).toBe(true);
+    expect(booleanValue("", { "boolean-default": true })).toBe(true);
+    expect(booleanValue(undefined, { "boolean-default": false })).toBe(false);
+  });
+  it("no default means false — which is every card in the corpus today", () => {
+    expect(booleanValue(undefined, {})).toBe(false);
+    expect(booleanValue(undefined, undefined)).toBe(false);
+  });
+});

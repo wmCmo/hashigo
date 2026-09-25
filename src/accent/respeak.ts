@@ -45,11 +45,26 @@ import { normaliseSourceText } from "../blobs/generation.js";
 import { sha256Hex, type BlobStore } from "../blobs/index.js";
 import { accentKey } from "./key.js";
 
-/** The two fields that speak a head word on an accent-labelled template. */
-export const WORD_FIELDS = [
-  { template: "単語", field: "Speech" },
-  { template: "言葉", field: "Speech" },
-] as const;
+/**
+ * THE FIELDS THAT SPEAK A HEAD WORD ON AN ACCENT-LABELLED TEMPLATE — by DATA
+ * since stage G of fields-as-modules, where this was a list of names.
+ *
+ * A speech field is a word field when it reads the SAME source the template's
+ * `accent` field reads: `型` follows `source_field_id` to the head word (the
+ * pattern `src/accent/store.ts` has always used), so any speech field pointing
+ * at that same field is speaking the word the label describes. On this corpus
+ * that is exactly 単語/Speech and 言葉/Speech, as the list said — and New Vocab's
+ * Pronunciation, which also reads its head word, stays out because its template
+ * declares no accent. Honest framing: this is a CLI's scope, not a runtime
+ * binding; nothing on the review path reads it.
+ */
+const WORD_FIELDS_SQL = `
+SELECT tf.id AS fieldId, tf.template_id AS templateId, tf.source_field_id AS sourceId
+  FROM template_fields tf
+  JOIN template_fields a ON a.template_id = tf.template_id AND a.type = 'accent'
+ WHERE tf.type = 'speech'
+   AND tf.source_field_id IS NOT NULL
+   AND tf.source_field_id = a.source_field_id`;
 
 export interface RespeakWord {
   readonly text: string;
@@ -76,15 +91,12 @@ export interface RespeakWord {
  * Neural2-C clip, and the voice flip at the end would silence it.
  */
 export function respeakPlan(db: Db): RespeakWord[] {
-  const fields = db
-    .prepare(
-      `SELECT tf.id AS fieldId, tf.template_id AS templateId
-         FROM template_fields tf
-         JOIN templates t ON t.id = tf.template_id
-        WHERE tf.type = 'speech' AND tf.name = 'Speech'
-          AND t.name IN (${WORD_FIELDS.map(() => "?").join(",")})`,
-    )
-    .all(...WORD_FIELDS.map((f) => f.template)) as { fieldId: string; templateId: string }[];
+  const fields = db.prepare(WORD_FIELDS_SQL).all() as {
+    fieldId: string;
+    templateId: string;
+    sourceId: string;
+  }[];
+  const templateIds = [...new Set(fields.map((field) => field.templateId))];
 
   // TWO NORMALISATIONS, AND THEY ARE NOT THE SAME ONE. Measured on this corpus:
   // six head words carry a U+200E between their characters (`準‎備`, `評‎価`,
@@ -115,11 +127,10 @@ export function respeakPlan(db: Db): RespeakWord[] {
          FROM blob_refs r
          JOIN blobs b ON b.hash = r.blob_hash
          JOIN cards c ON c.id = r.card_id
-         JOIN templates t ON t.id = c.template_id
         WHERE b.kind = 'speech' AND b.source_text IS NOT NULL
-          AND t.name IN (${WORD_FIELDS.map(() => "?").join(",")})`,
+          AND c.template_id IN (${templateIds.map(() => "?").join(",") || "NULL"})`,
     )
-    .all(...WORD_FIELDS.map((f) => f.template)) as {
+    .all(...templateIds) as {
     cardId: string;
     fieldId: string | null;
     refKey: string;
@@ -131,18 +142,19 @@ export function respeakPlan(db: Db): RespeakWord[] {
   }
 
   const words = new Map<string, RespeakWord>();
-  for (const { templateId } of fields) {
-    // `card_field_values` where `field_id = 'name'`, NOT `cards.name`. 25 cards
-    // on these templates are titled "Untitled card" with an empty head word, and
-    // the column would have sent that English string to a Japanese TTS.
+  for (const { templateId, sourceId } of fields) {
+    // The value of the field the speech field READS (its `source_field_id`, the
+    // head word), NOT `cards.name`. 25 cards on these templates are titled
+    // "Untitled card" with an empty head word, and the column would have sent
+    // that English string to a Japanese TTS.
     const rows = db
       .prepare(
         `SELECT v.value AS text
            FROM cards c
-           JOIN card_field_values v ON v.card_id = c.id AND v.field_id = 'name'
+           JOIN card_field_values v ON v.card_id = c.id AND v.field_id = ?
           WHERE c.template_id = ? AND v.value <> ''`,
       )
-      .all(templateId) as { text: string }[];
+      .all(sourceId, templateId) as { text: string }[];
 
     for (const row of rows) {
       const source = normaliseSourceText(row.text);
@@ -280,19 +292,16 @@ export async function respeakWord(
  * is a silent card, and that is the failure this ordering exists to prevent.
  */
 export function adoptVoice(db: Db, voice: string = VOICE): number {
-  const fields = db
-    .prepare(
-      `SELECT tf.template_id AS templateId, tf.id AS fieldId, tf.options AS options
-         FROM template_fields tf
-         JOIN templates t ON t.id = tf.template_id
-        WHERE tf.type = 'speech' AND tf.name = 'Speech'
-          AND t.name IN (${WORD_FIELDS.map(() => "?").join(",")})`,
-    )
-    .all(...WORD_FIELDS.map((f) => f.template)) as {
-    templateId: string;
-    fieldId: string;
-    options: string;
-  }[];
+  // The SAME selection `respeakPlan` made — a flip that reached a different set
+  // of fields from the plan would silence whatever the plan did not regenerate.
+  const words = db.prepare(WORD_FIELDS_SQL).all() as { fieldId: string; templateId: string }[];
+  const readOptions = db.prepare(
+    "SELECT options FROM template_fields WHERE template_id = ? AND id = ?",
+  );
+  const fields = words.map((word) => ({
+    ...word,
+    options: (readOptions.get(word.templateId, word.fieldId) as { options: string }).options,
+  }));
   let changed = 0;
   for (const field of fields) {
     const parsed = JSON.parse(field.options) as Record<string, string>;

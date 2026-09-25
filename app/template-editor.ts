@@ -370,10 +370,14 @@ function templateFieldSettings(
     detail.fields.find((entry) => entry.id === id)?.name ?? null;
   const input = inputLine(field, nameOf);
   const role = roleLine(options);
-  if (lines.length === 0 && extras.length === 0 && input === null && role === null) return null;
+  const retype = typePicker(detail, field, run);
+  if (lines.length === 0 && extras.length === 0 && input === null && role === null && retype === null) {
+    return null;
+  }
 
   const panel = document.createElement("div");
   panel.className = "tpl-settings";
+  if (retype !== null) panel.appendChild(retype);
 
   if (role !== null) {
     const line = document.createElement("p");
@@ -544,6 +548,50 @@ function sourcePicker(
     );
   });
   return [label, select];
+}
+
+/**
+ * THE TYPE, where changing it is free — stage G, and nothing wider.
+ *
+ * The registry prices every conversion (`convertsTo`); only the FREE ones are
+ * offered, which today is plain <-> long text: the same stored string, the same
+ * render, a different editor box. Every other conversion reinterprets the values
+ * already on his cards and stays refused in the worker. Null when this kind has
+ * no free conversion, so most rows show nothing new.
+ */
+function typePicker(
+  detail: TemplateDetail,
+  field: TemplateFieldRow,
+  run: TemplateRunner,
+): HTMLElement | null {
+  const kind = kindOf(field.type);
+  if (kind === null) return null;
+  const free = Object.entries(kind.convertsTo)
+    .filter(([, cost]) => cost === "free")
+    .map(([type]) => type);
+  if (free.length === 0) return null;
+  const line = document.createElement("div");
+  line.className = "tpl-setting-pipe";
+  const label = document.createElement("span");
+  label.textContent = "Type: ";
+  const select = document.createElement("select");
+  select.className = "edit-input tpl-source";
+  select.setAttribute("aria-label", `${field.name}'s type`);
+  for (const type of [field.type, ...free]) {
+    const option = document.createElement("option");
+    option.value = type;
+    option.textContent = kindOf(type)?.label ?? type;
+    select.appendChild(option);
+  }
+  select.value = field.type;
+  select.addEventListener("change", () => {
+    const to = select.value;
+    if (to === field.type) return;
+    // No price: a free conversion moves no value and no clip, by definition.
+    void run({ op: "setFieldType", templateId: detail.id, fieldId: field.id, fieldType: to });
+  });
+  line.append(label, select);
+  return line;
 }
 
 function fieldState(row: TemplateFieldRow): FieldState {
@@ -732,7 +780,11 @@ async function confirmPriced(
       fieldId: field.id,
       ...proposal,
     });
-    const silenced = reply.price.lines.some((line) => line.silenced > 0);
+    // A default that decides cards is RED even though no clip moves: on 単語's
+    // Reading it changes which exercise they run (decision 29), which decision 31
+    // puts on his side of the line — so it is never a quiet confirm.
+    const silenced =
+      reply.price.lines.some((line) => line.silenced > 0) || (reply.price.defaulted ?? 0) > 0;
     openConfirm(
       title,
       reply.lines.join("\n\n"),

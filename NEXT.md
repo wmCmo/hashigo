@@ -60,7 +60,7 @@ landed (below); sync carries blobs; it runs without the laptop (decision 49's cl
 move); one friend has started from an empty database on their own device.
 **1.0:** he could hand a friend the link and explain nothing.
 
-## FIELDS ARE MODULES — started 2026-09-17, stages A and B landed
+## FIELDS ARE MODULES — started 2026-09-17, stages A-G landed 2026-09-25
 
 Zach, comparing the template editor with Mochi's: *"each field behavior are hardcoded,
 they are supposed to be module... this system is not even at 50%"*. His four calls, in
@@ -128,9 +128,39 @@ invariants, and a full scratch rebuild passed all 12. It yields 3,653 rather tha
 the 66 are cards whose sentence was generated in the app after the import (1,260 ai blobs),
 which a rebuild from `exports/` cannot have. That is decision 41, not a gap in the steps.
 
-**LEFT, in dependency order.**
-F `ojad` by role + the missing rebuild steps · G `setFieldType`, then `respeak`, then
-`読み`, then **`Reading` last**. The full plan, with the measured argument for each, is at
+**STAGE G LANDED 2026-09-25 — and with it the stage list is DONE, bar one item skipped on
+purpose.**
+* **`boolean-default` is real.** `booleanValue` in `src/template/resolve.ts` is the ONE rule
+  the body's `<<#Field>>` gate and `src/review/mode.ts` both read, wired together so the
+  layout and the drill cannot disagree. Editable in the row; on 単語's Reading the price says
+  **1,882** cards are decided by it, and the confirm is red (decision 31: what he is drilled on).
+* **Decision 29's switch is found by ROLE** (`readingSwitch`: `hashigo-role: reading-switch`
+  on a boolean, then name+type as the fallback). `setReading` and the rename guard use the
+  same helper. `scripts/reading-role-apply.ts` wrote the role on 単語's Reading in
+  `build/hashigo.db` and is a rebuild step. **Census unchanged: 693 / 3,177 / 3,870**, and a
+  test pins that role and name pick the same field on every template. Two injected faults in
+  the lookup turned 1 and 8 tests red; autoplay in `enter()` still turns **20** red.
+* **`setFieldType`, FREE conversions only** — plain <-> long text. Everything priced or
+  refused stays refused in the worker.
+* **`respeak` and `accent/cli.ts words` select by data**: speech fields reading the same
+  source as the template's accent field; head words via the accent field's pointer. Both
+  measured identical to the old literals (3,851 words, 3,768 with clips).
+* **SKIPPED: `読み` / `かな主流` `source_field_id`.** Giving a PLAIN field a source pointer
+  contradicts the registry (`input: none` — `sourceRefusal` refuses exactly that) and would
+  make the editor say "単語 feeds 読み", which is false: 読み is typed by hand. The script is
+  already id-keyed and かな主流 renders nowhere (decision 28). Nothing is bound by its name.
+
+**Still name-keyed, and why:** `OJAD_SCOPE` (his 2026-09-13 scope call, declaration only),
+`reading-role-apply` / `accent-field-apply` / `reading-apply` (one-time declarations that
+write what they find into the data), `scripts/generate-examples.ts` (a batch script, not
+touched). The fallbacks in `mode.ts` and `mount.ts` retire once every device has a seed
+built after 2026-09-25.
+
+**NOT DONE FROM THE PLAN:** the `{cardId, fieldId}` generation request (stage D validates
+the voice server-side instead), and priced type conversions (only free ones exist).
+
+**LEFT, in dependency order.** Nothing from the stage list. The original plan, with the
+measured argument for each stage, is at
 `C:\Users\Zach\.claude\plans\snuggly-meandering-mist.md`.
 
 ### The name-keyed bindings — the map, and why it is written down

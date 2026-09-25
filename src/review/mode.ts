@@ -86,6 +86,8 @@
  */
 
 import type { LoadedCard } from "../cards/index.js";
+import { fieldWithRole } from "../fields/index.js";
+import { booleanValue } from "../template/resolve.js";
 import type { RenderElement } from "../render/dom.js";
 import type { ShadowingSide } from "../render/reveal.js";
 
@@ -127,11 +129,26 @@ export interface CardMode {
   readonly reading: boolean;
 }
 
-/** `card_field_values.value` is TEXT; the importer writes `"true"` / `"false"`. */
-function truthy(value: string | undefined): boolean {
-  if (value === undefined) return false;
-  const text = value.trim();
-  return text !== "" && text !== "false";
+/**
+ * THE SWITCH, FOUND BY ROLE FIRST AND BY NAME AND TYPE SECOND — stage G.
+ *
+ * `hashigo-role: reading-switch` is what a template declares when it wants this
+ * field to decide decision 29's two modes. The name+type test is kept as the
+ * fallback, and it is not caution: a device whose seed predates the role carries
+ * the old row, and the moment role and name disagree 693 cards change which
+ * exercise they run. `test/review.test.ts` pins that both answers pick the
+ * identical field on every template, and that the census does not move.
+ *
+ * The role must sit on a BOOLEAN — a role on anything else is ignored, for the
+ * same reason the name test carries the type: 漢字 has a plain `Reading` over
+ * 1,662 cards.
+ */
+export function readingSwitch<F extends { name: string; type: string; options?: Readonly<Record<string, unknown>> | undefined }>(
+  fields: readonly F[],
+): F | undefined {
+  const byRole = fieldWithRole(fields, "reading-switch");
+  if (byRole !== null && byRole.type === "boolean") return byRole;
+  return fields.find((field) => field.name.trim() === READING_FIELD && field.type === "boolean");
 }
 
 /**
@@ -143,11 +160,13 @@ export function cardMode(loaded: LoadedCard): CardMode {
   const accentDrill = fields.some((field) => field.type === ACCENT_FIELD_TYPE);
   // The type check is the point — see note 1 in this file's header. 漢字 holds
   // 1,662 cards under a plain field of the same name.
-  const reading = fields.find(
-    (field) => field.name.trim() === READING_FIELD && field.type === "boolean",
-  );
+  const reading = readingSwitch(fields);
   const readingFieldId = reading === undefined ? null : reading.id;
-  const isReading = readingFieldId === null ? false : truthy(loaded.values.get(readingFieldId));
+  // `booleanValue`, the SAME rule the body's `<<#Reading>>` gate reads — so a
+  // field's `boolean-default` moves the layout and the mode together or not at
+  // all.
+  const isReading =
+    reading === undefined ? false : booleanValue(loaded.values.get(reading.id), reading.options);
   return {
     // `produce` is the fail-safe: it is the mode that plays nothing on entry, so
     // an unrecognised template stays silent rather than starting to autoplay.

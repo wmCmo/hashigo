@@ -229,10 +229,35 @@ export function isTruthy(value: string | undefined): boolean {
   return text !== "" && text !== "false";
 }
 
+/**
+ * A BOOLEAN FIELD'S VALUE ON A CARD, WITH ITS DEFAULT — the one rule the body's
+ * `<<#Field>>` gate and `src/review/mode.ts` both read.
+ *
+ * `boolean-default` was decorative until stage G of fields-as-modules: both
+ * places treated a missing value as false whatever the field said, so the option
+ * could not be offered as a control without saving a value that changed nothing.
+ * It is wired into BOTH at once, through this, because wiring one would let the
+ * body show the produce layout while the mode ran the identify drill on the same
+ * card — decision 29's two halves disagreeing.
+ *
+ * A stored value always wins, including an explicit "false". Only a card with no
+ * value (absent or empty) takes the default. On 単語's `Reading` the default is
+ * `false`, so nothing moves until he changes it.
+ */
+export function booleanValue(
+  value: string | undefined,
+  options: Readonly<Record<string, unknown>> | undefined,
+): boolean {
+  if (value !== undefined && value.trim() !== "") return isTruthy(value);
+  return options?.["boolean-default"] === true;
+}
+
 interface Lookup {
   readonly value: (name: string) => string | undefined;
   readonly type: (name: string) => string | undefined;
   readonly known: (name: string) => boolean;
+  /** `booleanValue` for the named field — the gate's question. */
+  readonly flag: (name: string) => boolean;
 }
 
 function lookupFor(template: TemplateInput, card: CardInput): Lookup {
@@ -259,6 +284,10 @@ function lookupFor(template: TemplateInput, card: CardInput): Lookup {
     },
     type: (name) => resolve(name)?.type,
     known: (name) => resolve(name) !== undefined,
+    flag: (name) => {
+      const field = resolve(name);
+      return field === undefined ? false : booleanValue(values.get(field.id), field.options);
+    },
   };
 }
 
@@ -302,7 +331,7 @@ function gateSections(
       i += 1;
       continue;
     }
-    const truthy = isTruthy(lookup.value(marker.name));
+    const truthy = lookup.flag(marker.name);
     const keep = marker.sigil === "^" ? !truthy : truthy;
     if (keep) {
       out.push(...gateSections(lines.slice(i + 1, close), tokens, lookup, warnings));

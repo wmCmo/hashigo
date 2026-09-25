@@ -49,6 +49,7 @@ export {
   READING_FIELD,
   cardMode,
   promptsOnEntry,
+  readingSwitch,
   reviewModeFor,
   type CardMode,
   type ReviewMode,
