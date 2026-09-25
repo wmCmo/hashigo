@@ -114,6 +114,7 @@ import {
 import { openPalette } from "./palette.js";
 import { provideShell } from "./shell.js";
 import { line, mib, say } from "./ui.js";
+import { openVoiceDialog } from "./voice-dialog.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import {
   attachInput,
@@ -3369,6 +3370,12 @@ function openCardMenu(cardId: string, name: string): void {
       ? "put it back in the queue — its reviews were never touched"
       : "it stops being scheduled. Nothing is deleted and undo puts it back",
     () => void runCardOp(currentArchived ? "unarchive" : "archive", cardId),
+  );
+
+  // Stage E. A preference about NEW clips, priced before it is set — see
+  // `./voice-dialog.ts`. Below the flags because it is rarer than they are.
+  item("voice", "which voice this card's new clips are made in", () =>
+    openVoiceDialog("card", cardId, name),
   );
 
   item(

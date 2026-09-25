@@ -80,14 +80,24 @@ import { positionKeys, FIELD_TYPES } from "../src/schema/index.js";
 // where the scheduler counted 646.
 import { dueOnOrBefore, liveTrack } from "../src/scheduler/index.js";
 
-import { archiveSubtree, restoreArchive, scopeToSubtree, scopeToTag } from "./deck-scope.js";
+import {
+  archiveSubtree,
+  restoreArchive,
+  scopeToSubtree,
+  scopeToTag,
+  subtreeDeckIds,
+} from "./deck-scope.js";
+import { isCatalogueVoice } from "../src/generate/voices.js";
 import { suggestCards, type SuggestRow } from "./recent.js";
 import { audioIsStale } from "./seed-freshness.js";
 import { COUNT_HELD, mergeLocalFields, readSeedFields } from "./local-fields.js";
 import {
   describePrice,
+  describeVoicePrice,
   optionsRefusal,
   priceFieldChange,
+  priceVoiceChange,
+  resolvedVoices,
   searchReach,
   sourceRefusal,
   templateFields,
@@ -98,6 +108,7 @@ import {
 import type {
   AnswerRequest,
   PriceFieldRequest,
+  VoiceRequest,
   BrowseRequest,
   CardOpMessage,
   CardOpRequest,
@@ -2228,6 +2239,79 @@ function refreshTemplateSearch(db: BrowserDb, templateId: string): void {
   refreshSearchText(db, ids);
 }
 
+/**
+ * A voice override on a card or a deck, priced and optionally written. See
+ * `VoiceRequest` in `./protocol.ts`.
+ *
+ * `after` is MEASURED, not predicted: the write is made inside a savepoint, every
+ * covered card's resolved voice is read back through `card_voice_resolved`, and
+ * the savepoint is rolled back. So clearing a deck's override is priced as
+ * whatever its parent then supplies, which is the inheritance rule the view owns
+ * and this does not re-implement.
+ */
+function voiceOp(request: VoiceRequest): void {
+  const db = requireCards();
+  if (request.voice !== null && !isCatalogueVoice(request.voice)) {
+    throw new Error(
+      `${request.voice} is not a voice this project can speak with — an override exists to make new clips`,
+    );
+  }
+  const table = request.target === "card" ? "cards" : "decks";
+  const row = db.prepare(`SELECT name, voice FROM ${table} WHERE id = ?`).get(request.targetId) as
+    | { name: string; voice: string | null }
+    | undefined;
+  if (row === undefined) throw new Error(`no ${request.target} ${request.targetId}`);
+  const previous = row.voice === null || row.voice.trim() === "" ? null : row.voice;
+
+  let cardIds: string[];
+  if (request.target === "card") {
+    cardIds = [request.targetId];
+  } else {
+    const decks = subtreeDeckIds(db, request.targetId);
+    const read = db.prepare("SELECT id FROM cards WHERE deck_id = ? ORDER BY id");
+    cardIds = decks.flatMap((deckId) => (read.all(deckId) as { id: string }[]).map((r) => r.id));
+  }
+
+  const write = (): void => {
+    db.prepare(
+      `UPDATE ${table} SET voice = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`,
+    ).run(request.voice, request.targetId);
+  };
+  const before = resolvedVoices(db, cardIds);
+  db.exec("SAVEPOINT voice_price");
+  let after: Map<string, string | null>;
+  try {
+    write();
+    after = resolvedVoices(db, cardIds);
+  } finally {
+    db.exec("ROLLBACK TO voice_price");
+    db.exec("RELEASE voice_price");
+  }
+  const price = priceVoiceChange(
+    db,
+    cardIds,
+    (id) => before.get(id) ?? null,
+    (id) => after.get(id) ?? null,
+  );
+  if (!request.dry) write();
+
+  const what = request.target === "card" ? `card ${row.name}` : `deck ${row.name}`;
+  post({
+    kind: "voice",
+    id: request.id,
+    target: request.target,
+    targetId: request.targetId,
+    voice: request.voice,
+    previous,
+    price,
+    lines: describeVoicePrice(price, request.voice),
+    describe:
+      request.voice === null
+        ? `${what} inherits its voice again`
+        : `${what} now speaks new clips in ${request.voice}`,
+  });
+}
+
 /** What a proposed field change costs. Writes nothing — see `app/field-ops.ts`. */
 function priceField(request: PriceFieldRequest): void {
   const db = requireCards();
@@ -2685,6 +2769,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "priceField":
           priceField(request);
+          break;
+        case "voice":
+          voiceOp(request);
           break;
         case "settings":
           await settings(request);

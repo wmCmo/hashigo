@@ -103,7 +103,19 @@ NOT done from the plan: the `{cardId, fieldId}` request shape (the client still 
 descriptor; the server validates the voice instead) and widening `audioHashCandidates` (the
 per-language fill fallback already covers it).
 
-**LEFT, in dependency order.** E card/deck voice overrides ·
+**STAGE E LANDED 2026-09-25** — `voice` in the card `⋯` menu and the deck menu
+(`app/voice-dialog.ts`), priced live as he picks: the worker makes the write inside a
+savepoint, reads every covered card's voice back through `card_voice_resolved`, rolls back,
+and prices that — so a clear that lets a parent deck's voice through is priced as exactly
+that. The override reaches **speech in its own language only** (`FieldContext.voiceOverride`
+in `src/generate/fields.ts`), so a Japanese voice on a deck never re-voices a New Vocab
+card's English clip. Catalogue voices only, because an override exists to make new clips.
+It SYNCS: `cards.voice` / `decks.voice` ride the flag rows under the same LWW clock, present
+only when set, with `voicesCarried: true` so absence means null — and an older peer that
+carries no voices never clears one. Measured: 数字 → `ja-JP-Neural2-B` silences all 90
+clips until regenerated; an English voice on 数字 reaches nothing.
+
+**LEFT, in dependency order.**
 F `ojad` by role + the missing rebuild steps · G `setFieldType`, then `respeak`, then
 `読み`, then **`Reading` last**. The full plan, with the measured argument for each, is at
 `C:\Users\Zach\.claude\plans\snuggly-meandering-mist.md`.

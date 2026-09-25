@@ -123,6 +123,23 @@ export interface FieldContext {
    * available, and the request is then unbuildable rather than wrong.
    */
   readonly resolveGenerated?: (request: FieldGenerationRequest) => string | null;
+  /**
+   * The card's inherited voice override (`card_voice_resolved`), or null/absent
+   * for "the field's own". Stage E of fields-as-modules.
+   *
+   * Applied to SPEECH only, and only to a field of the SAME LANGUAGE as the
+   * voice: a card on New Vocab carries an English field, and a Japanese override
+   * set on its parent deck must not re-voice it — the 130-clip defect again,
+   * arriving by inheritance. A field with no language is left alone for the same
+   * reason: nothing can say the override fits it.
+   */
+  readonly voiceOverride?: string | null;
+}
+
+/** `en-US-Neural2-J` and `en` → true. Compares the language, not the region. */
+function sameLanguage(voice: string, lang: string | null): boolean {
+  if (lang === null || lang === "") return false;
+  return voice.slice(0, 2).toLowerCase() === lang.slice(0, 2).toLowerCase();
 }
 
 /** A request in the shape `generationIdentity` takes, plus its provenance. */
@@ -200,11 +217,15 @@ export function fieldGenerationRequest(
 
   const voice = options["voice"];
   const lang = options["lang"];
+  const fieldLang = typeof lang === "string" && lang !== "" ? lang : null;
+  const override = context.voiceOverride ?? null;
+  const overridden =
+    field.type === "speech" && override !== null && override !== "" && sameLanguage(override, fieldLang);
   return {
     kind,
     text,
-    voice: typeof voice === "string" && voice !== "" ? voice : null,
-    lang: typeof lang === "string" && lang !== "" ? lang : null,
+    voice: overridden ? override : typeof voice === "string" && voice !== "" ? voice : null,
+    lang: fieldLang,
     options: keyOptions(options),
     fieldId: field.id,
     fieldName: field.name,

@@ -687,3 +687,55 @@ describe("a field row merges by clock, not by peer order", () => {
     }
   });
 });
+
+describe("a voice override travels with the card's clock (stage E)", () => {
+  const voiceOf = (db: Db, id: string): string | null =>
+    (db.prepare("SELECT voice FROM cards WHERE id = ?").get(id) as { voice: string | null }).voice;
+
+  it("a voice set on the laptop reaches the phone", () => {
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      laptop
+        .prepare("UPDATE cards SET voice = 'ja-JP-Neural2-B', updated_at = ? WHERE id = 'c0'")
+        .run(NOW);
+      const report = mergeSync(phone, exportSync(laptop, NOW));
+      expect(voiceOf(phone, "c0")).toBe("ja-JP-Neural2-B");
+      expect(report.flagsTaken).toBeGreaterThanOrEqual(1);
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+
+  it("a CLEARED voice travels too — absence means null when the payload says voices are carried", () => {
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      phone.prepare("UPDATE cards SET voice = 'ja-JP-Neural2-B' WHERE id = 'c0'").run();
+      laptop.prepare("UPDATE cards SET voice = NULL, updated_at = ? WHERE id = 'c0'").run(NOW);
+      mergeSync(phone, exportSync(laptop, NOW));
+      expect(voiceOf(phone, "c0")).toBeNull();
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+
+  it("an OLDER peer that carries no voices never clears one", () => {
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      phone.prepare("UPDATE cards SET voice = 'ja-JP-Neural2-B' WHERE id = 'c0'").run();
+      laptop.prepare("UPDATE cards SET archived = 1, updated_at = ? WHERE id = 'c0'").run(NOW);
+      const { voicesCarried: _dropped, ...older } = exportSync(laptop, NOW);
+      mergeSync(phone, older as never);
+      expect(voiceOf(phone, "c0")).toBe("ja-JP-Neural2-B");
+      // …while the flag it DID carry still lands.
+      expect((phone.prepare("SELECT archived FROM cards WHERE id = 'c0'").get() as { archived: number }).archived).toBe(1);
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+});

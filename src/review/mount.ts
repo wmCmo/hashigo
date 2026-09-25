@@ -80,6 +80,7 @@ import {
   directionForTrackKind,
   knownTagsFor,
   linkNamesFor,
+  cardContext,
   loadCard,
   renderLoadedCard,
   type LinkNames,
@@ -306,10 +307,15 @@ export function prepareCard(options: PrepareOptions): PreparedCard | null {
   // without it and nothing raises when they are missing.
   const resolveGenerated =
     options.resolveGenerated === undefined ? storeTextResolver(db) : options.resolveGenerated;
+  // Stage E: a card or deck voice override, inherited through the views. Read
+  // here rather than joined into `loadCard` — `src/cards/load.ts` measured the
+  // join at 23 ms a card and this query alone at 0.01 ms.
+  const voiceOverride = cardContext(db, cardId)?.voice ?? null;
   const bound = expandGeneratorFields(rendered.sides, {
     fields: loaded.template?.fields ?? [],
     values: loaded.values,
     ...(resolveGenerated === null ? {} : { resolveGenerated }),
+    voiceOverride,
   });
 
   return {

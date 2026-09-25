@@ -213,3 +213,63 @@ describe("a text field's price says when the change does not take effect", () =>
     expect(describePrice(price).join(" ")).toMatch(/PREVIOUS settings/);
   });
 });
+
+// ─── stage E: voice overrides ────────────────────────────────────────────────
+
+import { fieldGenerationRequest } from "../src/generate/index.js";
+import { priceVoiceChange, resolvedVoices } from "../app/field-ops.js";
+
+describe("an override reaches speech in its OWN language only", () => {
+  const fields = [
+    { id: "w", name: "Word", type: "plain" },
+    { id: "ja", name: "Speech", type: "speech", sourceFieldId: "w", options: { voice: "ja-JP-NanamiNeural", lang: "ja-JP" } },
+    { id: "en", name: "Example", type: "speech", sourceFieldId: "w", options: { voice: "en-US-AIGenerate1Neural", lang: "en-US" } },
+    { id: "nolang", name: "Mystery", type: "speech", sourceFieldId: "w", options: {} },
+    { id: "tr", name: "Translate", type: "translate", sourceFieldId: "w", options: { from: "ja", to: "en" } },
+  ];
+  const context = (voiceOverride: string | null) => ({
+    fields,
+    values: new Map([["w", "橋"]]),
+    voiceOverride,
+  });
+  const voiceOf = (id: string, override: string | null) =>
+    fieldGenerationRequest(fields.find((f) => f.id === id) as never, context(override))?.voice;
+
+  it("re-voices the Japanese field", () => {
+    expect(voiceOf("ja", "ja-JP-Neural2-B")).toBe("ja-JP-Neural2-B");
+  });
+  it("leaves the English field on the same card alone — the 130-clip defect, by inheritance", () => {
+    expect(voiceOf("en", "ja-JP-Neural2-B")).toBe("en-US-AIGenerate1Neural");
+  });
+  it("leaves a field with no language alone — nothing says the voice fits it", () => {
+    expect(voiceOf("nolang", "ja-JP-Neural2-B")).toBeNull();
+  });
+  it("never touches a text kind", () => {
+    expect(voiceOf("tr", "ja-JP-Neural2-B")).toBeNull();
+  });
+  it("with no override, the field's recorded voice stands — an untouched database is a no-op", () => {
+    expect(voiceOf("ja", null)).toBe("ja-JP-NanamiNeural");
+  });
+});
+
+describe("the price of a deck voice, over the real 数字 cards", () => {
+  it("moving 数字 to another voice silences its clips until regenerated, and says how many", () => {
+    if (db === null) return;
+    const ids = (handle().prepare("SELECT id FROM cards WHERE template_id = ?").all(SUUJI) as {
+      id: string;
+    }[]).map((row) => row.id);
+    const before = resolvedVoices(handle(), ids);
+    const price = priceVoiceChange(handle(), ids, (id) => before.get(id) ?? null, () => "ja-JP-Neural2-B");
+    expect(price.mounts).toBeGreaterThan(50);
+    expect(price.silenced).toBeGreaterThan(50);
+  });
+
+  it("an English voice on 数字 reaches nothing — its speech is Japanese", () => {
+    if (db === null) return;
+    const ids = (handle().prepare("SELECT id FROM cards WHERE template_id = ?").all(SUUJI) as {
+      id: string;
+    }[]).map((row) => row.id);
+    const price = priceVoiceChange(handle(), ids, () => null, () => "en-US-Neural2-J");
+    expect(price.mounts).toBe(0);
+  });
+});

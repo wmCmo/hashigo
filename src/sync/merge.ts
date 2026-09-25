@@ -119,6 +119,13 @@ export interface CardFlags {
   readonly archived: boolean;
   readonly pinned: boolean;
   readonly updatedAt: string;
+  /**
+   * `cards.voice` — the per-card override of stage E. PRESENT ONLY WHEN SET, so
+   * 7,716 rows do not each carry `"voice":null`; `SyncPayload.voicesCarried`
+   * says that absence means null rather than "an older peer that knows nothing
+   * of voices". Same clock as the flags: `setVoice` bumps `cards.updated_at`.
+   */
+  readonly voice?: string;
 }
 
 /**
@@ -139,6 +146,8 @@ export interface DeckFlags {
   readonly deckId: string;
   readonly archived: boolean;
   readonly updatedAt: string;
+  /** `decks.voice`, present only when set — see `CardFlags.voice`. */
+  readonly voice?: string;
 }
 
 /** What one device sends the other. */
@@ -150,6 +159,12 @@ export interface SyncPayload {
   readonly cardFlags: readonly CardFlags[];
   /** Every deck's archive flag. OPTIONAL — a payload from before this existed. */
   readonly deckFlags?: readonly DeckFlags[];
+  /**
+   * True when the flags carry voices, so a flag row with no `voice` means NULL.
+   * Absent on a payload from before stage E, whose rows say nothing about voice —
+   * and "I cannot say" must never clear an override somebody set.
+   */
+  readonly voicesCarried?: true;
 }
 
 export interface MergeReport {
@@ -178,7 +193,7 @@ export interface MergeReport {
 }
 
 const SELECT_CARD_FLAGS = `
-SELECT id AS card_id, archived, pinned, updated_at
+SELECT id AS card_id, archived, pinned, updated_at, voice
   FROM cards
  ORDER BY id`;
 
@@ -276,13 +291,27 @@ UPDATE cards
    SET archived = ?, pinned = ?, updated_at = ?
  WHERE id = ?`;
 
+/** The same row, carrying the voice too — only when the payload says it does. */
+const SET_CARD_FLAGS_AND_VOICE = `
+UPDATE cards
+   SET archived = ?, pinned = ?, voice = ?, updated_at = ?
+ WHERE id = ?`;
+
 const CARD_EXISTS = `SELECT 1 FROM cards WHERE id = ? LIMIT 1`;
 
 const SELECT_DECK_FLAGS = `
-SELECT id AS deck_id, archived, updated_at FROM decks ORDER BY id`;
+SELECT id AS deck_id, archived, updated_at, voice FROM decks ORDER BY id`;
 
 const SET_DECK_FLAGS = `
 UPDATE decks SET archived = ?, updated_at = ? WHERE id = ?`;
+
+const SET_DECK_FLAGS_AND_VOICE = `
+UPDATE decks SET archived = ?, voice = ?, updated_at = ? WHERE id = ?`;
+
+/** A stored voice, or undefined for "none" — so the payload omits the key. */
+function voiceOf(raw: unknown): string | undefined {
+  return typeof raw === "string" && raw.trim() !== "" ? raw : undefined;
+}
 
 interface LocalTrack {
   readonly lastReviewedAt: string | null;
@@ -316,6 +345,7 @@ export function exportSync(db: SqliteHandle, createdAt: string): SyncPayload {
       archived: Number(r["archived"]) === 1,
       pinned: Number(r["pinned"]) === 1,
       updatedAt: String(r["updated_at"]),
+      ...(voiceOf(r["voice"]) === undefined ? {} : { voice: voiceOf(r["voice"]) as string }),
     }),
   );
   const deckFlags = (db.prepare(SELECT_DECK_FLAGS).all() as Record<string, unknown>[]).map(
@@ -323,6 +353,7 @@ export function exportSync(db: SqliteHandle, createdAt: string): SyncPayload {
       deckId: String(r['deck_id']),
       archived: Number(r['archived']) === 1,
       updatedAt: String(r['updated_at']),
+      ...(voiceOf(r["voice"]) === undefined ? {} : { voice: voiceOf(r["voice"]) as string }),
     }),
   );
   return {
@@ -330,6 +361,7 @@ export function exportSync(db: SqliteHandle, createdAt: string): SyncPayload {
     archive: exportLocalArchive(db, createdAt),
     cardFlags,
     deckFlags,
+    voicesCarried: true,
   };
 }
 
@@ -480,6 +512,7 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
   let flagsOrphaned = 0;
   const exists = db.prepare(CARD_EXISTS);
   const setFlags = db.prepare(SET_CARD_FLAGS);
+  const setFlagsAndVoice = db.prepare(SET_CARD_FLAGS_AND_VOICE);
   for (const incoming of remote.cardFlags) {
     const localClock = localFlags.get(incoming.cardId);
     if (localClock === undefined) {
@@ -495,12 +528,22 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
       flagsKept += 1;
       continue;
     }
-    setFlags.run(
-      incoming.archived ? 1 : 0,
-      incoming.pinned ? 1 : 0,
-      incoming.updatedAt,
-      incoming.cardId,
-    );
+    if (remote.voicesCarried === true) {
+      setFlagsAndVoice.run(
+        incoming.archived ? 1 : 0,
+        incoming.pinned ? 1 : 0,
+        incoming.voice ?? null,
+        incoming.updatedAt,
+        incoming.cardId,
+      );
+    } else {
+      setFlags.run(
+        incoming.archived ? 1 : 0,
+        incoming.pinned ? 1 : 0,
+        incoming.updatedAt,
+        incoming.cardId,
+      );
+    }
     flagsTaken += 1;
   }
 
@@ -514,11 +557,21 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
     localDecks.set(String(r["deck_id"]), String(r["updated_at"]));
   }
   const setDeck = db.prepare(SET_DECK_FLAGS);
+  const setDeckAndVoice = db.prepare(SET_DECK_FLAGS_AND_VOICE);
   for (const incoming of remote.deckFlags ?? []) {
     const localClock = localDecks.get(incoming.deckId);
     if (localClock === undefined) continue; // a deck this device does not have
     if (!isNewer(incoming.updatedAt, localClock)) continue;
-    setDeck.run(incoming.archived ? 1 : 0, incoming.updatedAt, incoming.deckId);
+    if (remote.voicesCarried === true) {
+      setDeckAndVoice.run(
+        incoming.archived ? 1 : 0,
+        incoming.voice ?? null,
+        incoming.updatedAt,
+        incoming.deckId,
+      );
+    } else {
+      setDeck.run(incoming.archived ? 1 : 0, incoming.updatedAt, incoming.deckId);
+    }
     deckFlagsTaken += 1;
   }
 

@@ -550,3 +550,132 @@ export function searchReach(
   const reached = [...(target === undefined ? [] : [target]), ...consumersOf(fields, fieldId)];
   return reached.some((field) => field.type === "ai" || field.type === "translate");
 }
+
+// ─── stage E: a voice override on a card or a deck ───────────────────────────
+
+/** What moving these cards to another voice costs, over their speech fields. */
+export interface VoicePrice {
+  /** Cards the override would cover. */
+  readonly cards: number;
+  /** Cards actually priced (sampled above the limit). */
+  readonly checked: number;
+  /** Speech mounts on the checked cards whose language the voice matches. */
+  readonly mounts: number;
+  readonly resolvesNow: number;
+  readonly resolvesAfter: number;
+  readonly silenced: number;
+  readonly gained: number;
+}
+
+const CARD_TEMPLATE = `SELECT template_id FROM cards WHERE id = ?`;
+const CARD_VOICE = `SELECT voice FROM card_voice_resolved WHERE card_id = ?`;
+
+/** The voice each card resolves to through the views, right now. */
+export function resolvedVoices(db: SqliteHandle, cardIds: readonly string[]): Map<string, string | null> {
+  const read = db.prepare(CARD_VOICE);
+  const out = new Map<string, string | null>();
+  for (const cardId of cardIds) {
+    const voice = (read.get(cardId) as { voice: string | null } | undefined)?.voice ?? null;
+    out.set(cardId, voice === null || voice.trim() === "" ? null : voice.trim());
+  }
+  return out;
+}
+
+/**
+ * What an override costs, before it is set. `before` and `after` are the voice
+ * each card RESOLVES to through the inheritance views on either side of the
+ * change — the worker measures `after` by making the write inside a savepoint and
+ * rolling it back, so a clear that lets a grandparent deck's voice through is
+ * priced as exactly that.
+ *
+ * A clip is addressed by the voice that made it, so moving a card's speech to a
+ * new voice silences every clip it has in the old one until each is generated
+ * again — deliberately, see `src/cards/audio.ts`. This counts that first.
+ */
+export function priceVoiceChange(
+  db: SqliteHandle,
+  cardIds: readonly string[],
+  before: (cardId: string) => string | null,
+  after: (cardId: string) => string | null,
+  limit = 600,
+): VoicePrice {
+  const cards = sample(cardIds, limit);
+  const fieldsOf = new Map<string, GeneratorField[]>();
+  const readTemplate = db.prepare(CARD_TEMPLATE);
+  const readValues = db.prepare(VALUES);
+  const resolveGenerated = (request: FieldGenerationRequest): string | null =>
+    resolveDescriptorText(db, request);
+
+  let mounts = 0;
+  let now = 0;
+  let later = 0;
+  let lost = 0;
+  let won = 0;
+  for (const cardId of cards) {
+    const templateId = (readTemplate.get(cardId) as { template_id: string | null } | undefined)
+      ?.template_id;
+    if (templateId === null || templateId === undefined) continue;
+    let fields = fieldsOf.get(templateId);
+    if (fields === undefined) {
+      fields = templateFields(db, templateId).map(asGenerator);
+      fieldsOf.set(templateId, fields);
+    }
+    const speech = fields.filter((field) => field.type === "speech");
+    if (speech.length === 0) continue;
+    const values = new Map<string, string>();
+    for (const row of readValues.all(cardId) as { field_id: string; value: string }[]) {
+      values.set(row.field_id, row.value);
+    }
+    const current = before(cardId);
+    const next = after(cardId);
+    const beforeContext: FieldContext = { fields, values, resolveGenerated, voiceOverride: current };
+    const afterContext: FieldContext = { fields, values, resolveGenerated, voiceOverride: next };
+    for (const field of speech) {
+      const requestBefore = fieldGenerationRequest(field, beforeContext);
+      const requestAfter = fieldGenerationRequest(field, afterContext);
+      if (requestBefore?.voice === requestAfter?.voice) continue; // the override does not reach it
+      mounts += 1;
+      const wasOk = resolution(db, requestBefore) !== "none";
+      const isOk = resolution(db, requestAfter) !== "none";
+      if (wasOk) now += 1;
+      if (isOk) later += 1;
+      if (wasOk && !isOk) lost += 1;
+      if (!wasOk && isOk) won += 1;
+    }
+  }
+  return {
+    cards: cardIds.length,
+    checked: cards.length,
+    mounts,
+    resolvesNow: now,
+    resolvesAfter: later,
+    silenced: lost,
+    gained: won,
+  };
+}
+
+/** The voice price as sentences. Pure, so a test can read it. */
+export function describeVoicePrice(price: VoicePrice, voice: string | null): string[] {
+  const scale =
+    price.checked === price.cards ? "" : ` (sampled ${price.checked} of ${price.cards.toLocaleString()} cards)`;
+  if (price.mounts === 0) {
+    return [
+      voice === null
+        ? `Nothing changes: no speech on these cards was using this override${scale}.`
+        : `Nothing changes: no speech field on these cards is in ${voice.slice(0, 5)}${scale}. ` +
+          `An override only reaches speech in its own language.`,
+    ];
+  }
+  const lines = [
+    `${price.mounts.toLocaleString()} speech clip(s) would be asked for in ${voice ?? "the voice above"}${scale}: ` +
+      `${price.resolvesNow} → ${price.resolvesAfter} play.`,
+  ];
+  if (price.silenced > 0) {
+    lines.push(
+      `${price.silenced} STOP playing until each is generated again — the old clips stay in the ` +
+        `store under the voice that made them, and "generate audio" on the card fills it in the new one.`,
+    );
+  }
+  if (price.gained > 0) lines.push(`${price.gained} start playing: clips in that voice already exist.`);
+  return lines;
+}

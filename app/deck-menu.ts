@@ -12,6 +12,7 @@ import { pushUndo, refreshAfterOp } from "./ops.js";
 import { childrenOf, deckIndex, subtreeCards } from "./sidebar.js";
 import { openConfirm, openPrompt, say } from "./ui.js";
 import { ask } from "./worker-client.js";
+import { openVoiceDialog } from "./voice-dialog.js";
 
 /**
  * Every deck operation goes through here, so undo and the error path exist once.
@@ -132,6 +133,13 @@ export function openDeckMenu(deck: DeckBrief): void {
   });
 
   item("move", "put it under another deck, or at the top", () => openDeckMove(deck));
+
+  // Stage E — the per-deck voice. Unlike reverse and retention (see the header)
+  // it changes how a card SOUNDS, not what he is drilled on, and it is priced
+  // before it is set.
+  item("voice", "which voice new clips in this deck are made in", () =>
+    openVoiceDialog("deck", deck.id, deck.path),
+  );
 
   item(
     deck.archived ? "unarchive" : "archive",

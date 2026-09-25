@@ -35,7 +35,7 @@ import type { Backlink } from "../src/cards/index.js";
 import type { PreparedCard } from "../src/review/index.js";
 import type { Glance } from "../src/dashboard/index.js";
 import type { SessionProgress } from "../src/session/index.js";
-import type { FieldPrice } from "./field-ops.js";
+import type { FieldPrice, VoicePrice } from "./field-ops.js";
 
 // ─── page → worker ───────────────────────────────────────────────────────────
 
@@ -700,6 +700,41 @@ export interface TemplateOpMessage {
 }
 
 /**
+ * A voice override on one card or one deck — stage E of fields-as-modules.
+ *
+ * ONE request for both the price and the write: `dry: true` measures and writes
+ * nothing, `dry: false` writes. The worker computes the price either way, so the
+ * reply to the write carries the same numbers the dialog showed. Undo is the same
+ * request with `voice` set back to `previous`.
+ *
+ * `voice` must be a catalogue voice or null (inherit): an override exists to make
+ * NEW clips, and only a voice this project can speak with can make one.
+ */
+export type VoiceTarget = "card" | "deck";
+
+export interface VoiceRequest {
+  readonly kind: "voice";
+  readonly id: number;
+  readonly target: VoiceTarget;
+  readonly targetId: string;
+  readonly voice: string | null;
+  readonly dry: boolean;
+}
+
+export interface VoiceMessage {
+  readonly kind: "voice";
+  readonly id: number;
+  readonly target: VoiceTarget;
+  readonly targetId: string;
+  readonly voice: string | null;
+  /** The override the row carried before — what undo writes back. */
+  readonly previous: string | null;
+  readonly price: VoicePrice;
+  readonly lines: readonly string[];
+  readonly describe: string;
+}
+
+/**
  * What a proposed field change would cost, before it is made.
  *
  * NOT a `TemplateOp`: it writes nothing, and a read on the undoable channel puts
@@ -1036,6 +1071,7 @@ export type AppRequest =
   | TemplateRequest
   | TemplateOpRequest
   | PriceFieldRequest
+  | VoiceRequest
   | GlanceRequest
   | DashboardRequest
   | SettingsRequest
@@ -1273,6 +1309,7 @@ export type AppMessage =
   | TemplateMessage
   | TemplateOpMessage
   | PriceFieldMessage
+  | VoiceMessage
   | GlanceMessage
   | DashboardMessage
   | ErrorMessage;
@@ -1299,6 +1336,7 @@ export interface ReplyFor {
   readonly template: TemplateMessage;
   readonly templateOp: TemplateOpMessage;
   readonly priceField: PriceFieldMessage;
+  readonly voice: VoiceMessage;
   readonly settings: SettingsMessage;
   readonly setSetting: SetSettingMessage;
   readonly decks: DecksMessage;
