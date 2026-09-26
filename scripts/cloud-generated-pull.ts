@@ -28,6 +28,7 @@ import { existsSync } from "node:fs";
 import { defaultStoreDatabase, openBlobStoreDatabase } from "../src/blobs/index.js";
 import { openDatabase } from "../src/db/index.js";
 import { storeDescriptorText, storeGeneratedSpeech } from "../src/generate/index.js";
+import { retireBlob } from "../src/blobs/retire.js";
 import type { BlobKind } from "../src/schema/index.js";
 
 interface GeneratedRecord {
@@ -39,6 +40,8 @@ interface GeneratedRecord {
   readonly createdAt: string;
   readonly audio?: string;
   readonly output?: string;
+  /** A redo: the clip this one supersedes (`src/blobs/retire.ts`). */
+  readonly replaces?: string;
 }
 
 const apply = process.argv.includes("--apply");
@@ -62,6 +65,7 @@ const opened = apply ? openBlobStoreDatabase(defaultStoreDatabase(dbPath), { mus
 let filedSpeech = 0;
 let filedText = 0;
 let already = 0;
+let retired = 0;
 let gone = 0;
 try {
   for (const key of listing.keys) {
@@ -79,6 +83,10 @@ try {
         console.log(`  would file  ${label}  (${record.voice}, ${bytes.length} bytes)`);
         continue;
       }
+      // A REDO retires the clip it replaces first, the same rule the device
+      // applied — or the laptop database keeps serving the misread clip into
+      // every seed rebuild.
+      if (record.replaces !== undefined && retireBlob(db, record.replaces)) retired += 1;
       const before = db.prepare("SELECT count(*) AS n FROM blobs").get() as { n: number };
       storeGeneratedSpeech(
         db,
@@ -113,7 +121,10 @@ try {
 }
 
 if (apply) {
-  console.log(`filed ${filedSpeech} clip(s) and ${filedText} text(s) · ${already} already here · ${gone} gone`);
+  console.log(
+    `filed ${filedSpeech} clip(s) and ${filedText} text(s) · ${retired} replaced clip(s) retired · ` +
+      `${already} already here · ${gone} gone`,
+  );
 } else {
   console.log("nothing written — pass --apply");
 }

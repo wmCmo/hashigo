@@ -932,6 +932,38 @@ export interface StoreClipRequest {
   };
   /** base64 mp3. */
   readonly audio: string;
+  /**
+   * REDO (2026-09-26): the clip this one replaces, retired before the new one is
+   * filed so the card stops finding it. See `src/blobs/retire.ts`.
+   */
+  readonly retire?: string;
+}
+
+/**
+ * What a redo needs to know about one clip on one card: which stored clip the
+ * card plays now, and how to read the card's word so Google does not misread it
+ * again (`<sub>` in `src/accent/speech.ts`).
+ */
+export interface RedoInfoRequest {
+  readonly kind: "redoInfo";
+  readonly id: number;
+  readonly cardId: string;
+  readonly request: {
+    readonly text: string;
+    readonly lang: string | null;
+    readonly voice: string | null;
+    readonly options: Readonly<Record<string, string>>;
+  };
+}
+
+export interface RedoInfoMessage {
+  readonly kind: "redoInfo";
+  readonly id: number;
+  /** The clip the card plays now, or null when it has none on this device. */
+  readonly hash: string | null;
+  /** The voice that made it, for the confirm dialog. */
+  readonly voice: string | null;
+  readonly readings: readonly { readonly base: string; readonly alias: string }[];
 }
 
 export interface StoreGenerationRequest {
@@ -958,6 +990,8 @@ export interface StoreClipMessage {
   readonly id: number;
   /** The content address it landed at. Null when the worker declined to store it. */
   readonly hash: string | null;
+  /** A redo that came back byte-for-byte the clip it was meant to replace. */
+  readonly same?: boolean;
 }
 
 export interface StoreGenerationMessage {
@@ -1066,6 +1100,7 @@ export type AppRequest =
   | BacklinksRequest
   | StoreGenerationRequest
   | StoreClipRequest
+  | RedoInfoRequest
   | DecksRequest
   | BrowseRequest
   | CreateCardRequest
@@ -1297,6 +1332,7 @@ export type AppMessage =
   | BacklinksMessage
   | StoreGenerationMessage
   | StoreClipMessage
+  | RedoInfoMessage
   | ResetMessage
   | LogMessage
   | FetchingMessage
@@ -1335,6 +1371,7 @@ export interface ReplyFor {
   readonly backlinks: BacklinksMessage;
   readonly storeGeneration: StoreGenerationMessage;
   readonly storeClip: StoreClipMessage;
+  readonly redoInfo: RedoInfoMessage;
   readonly setField: SetFieldMessage;
   readonly glance: GlanceMessage;
   readonly dashboard: DashboardMessage;

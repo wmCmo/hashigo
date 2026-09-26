@@ -189,10 +189,16 @@ export interface GenerationRequest {
 
 // ─── the cache lookup ────────────────────────────────────────────────────────
 
+// `clips.retired` (2026-09-26): hashes discarded with "redo a clip", kept in the
+// free `settings` table because a blob's own row may never change — see
+// `./retire.ts`. The list is short (one entry per redo) and COALESCE makes an
+// absent row the empty list, so every existing lookup is unchanged until a redo.
 const LOOKUP_SQL = `
 SELECT hash FROM blobs
  WHERE kind = ? AND source_text = ? AND voice IS ? AND lang IS ? AND options = ?
    AND byte_size > 0
+   AND hash NOT IN (
+     SELECT value FROM json_each(COALESCE((SELECT value FROM settings WHERE key = 'clips.retired'), '[]')))
  ORDER BY hash LIMIT 1`;
 
 /**

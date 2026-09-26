@@ -157,6 +157,7 @@
     "spike:check": "tsc --noEmit --strict --exactOptionalPropertyTypes --noUncheckedIndexedAccess --target ES2023 --module nodenext --moduleResolution nodenext --lib ES2023,DOM,DOM.Iterable --skipLibCheck spike/contract-compat.ts"
   },
   "dependencies": {
+    "@phosphor-icons/core": "^2.1.1",
     "@sqlite.org/sqlite-wasm": "3.53.0-build1",
     "better-sqlite3": "^12.6.0"
   },

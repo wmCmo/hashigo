@@ -103,6 +103,7 @@ import {
   type LocalArchive,
 } from "../backup/index.js";
 import type { SqliteHandle } from "../db/browser.js";
+import { retiredHashes, writeRetired } from "../blobs/retire.js";
 
 /** Bumped only for a change a peer could not otherwise survive. */
 export const SYNC_VERSION = 1;
@@ -165,6 +166,13 @@ export interface SyncPayload {
    * and "I cannot say" must never clear an override somebody set.
    */
   readonly voicesCarried?: true;
+  /**
+   * Clips this device RETIRED with "redo a clip" (2026-09-26) — `src/blobs/retire.ts`.
+   * Merging retires them here too, so a discarded clip stops playing on every
+   * device, not only the one that redid it. Monotonic: a merge never un-retires.
+   * Absent on an older peer, which simply retires nothing.
+   */
+  readonly retiredClips?: readonly string[];
 }
 
 export interface MergeReport {
@@ -190,6 +198,8 @@ export interface MergeReport {
   readonly flagsOrphaned: number;
   /** Decks whose archive flag the remote won, by clock. */
   readonly deckFlagsTaken: number;
+  /** Clips the peer had retired that this device was still playing. */
+  readonly clipsRetired: number;
 }
 
 const SELECT_CARD_FLAGS = `
@@ -362,6 +372,7 @@ export function exportSync(db: SqliteHandle, createdAt: string): SyncPayload {
     cardFlags,
     deckFlags,
     voicesCarried: true,
+    retiredClips: retiredHashes(db),
   };
 }
 
@@ -419,6 +430,10 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
       updatedAt: r["updated_at"] === null ? null : String(r["updated_at"]),
     });
   }
+
+  // Read BEFORE the apply: the backup writes `settings` rows wholesale, which
+  // would replace this device's retired list with the peer's.
+  const localRetired = retiredHashes(db);
 
   const localFlags = new Map<string, string>();
   for (const r of db.prepare(SELECT_CARD_FLAGS).all() as Record<string, unknown>[]) {
@@ -575,8 +590,15 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
     deckFlagsTaken += 1;
   }
 
+  // ── clips a peer discarded with "redo a clip" ────────────────────────────
+  // A UNION of both lists, written once. Monotonic: a merge never un-retires.
+  const union = new Set([...localRetired, ...(remote.retiredClips ?? [])]);
+  const clipsRetired = [...union].filter((hash) => !localRetired.includes(hash) && /^[0-9a-f]{64}$/.test(hash)).length;
+  writeRetired(db, union);
+
   return {
     applied,
+    clipsRetired,
     trackStateTaken,
     trackStateKept,
     flagsTaken,

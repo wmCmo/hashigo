@@ -739,3 +739,38 @@ describe("a voice override travels with the card's clock (stage E)", () => {
     }
   });
 });
+
+describe("a retired clip stays retired across a sync, in both directions (redo a clip)", () => {
+  const A = "a".repeat(64);
+  const B = "b".repeat(64);
+
+  it("merges the two devices' lists as a UNION — neither side's redo is lost", async () => {
+    const { retiredHashes, retireBlob } = await import("../src/blobs/retire.js");
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      retireBlob(laptop, A);
+      retireBlob(phone, B);
+      const report = mergeSync(phone, exportSync(laptop, NOW));
+      expect(retiredHashes(phone)).toEqual([A, B]);
+      expect(report.clipsRetired).toBe(1);
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+
+  it("a peer that has retired nothing does not un-retire anything here", async () => {
+    const { retiredHashes, retireBlob } = await import("../src/blobs/retire.js");
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      retireBlob(phone, A);
+      mergeSync(phone, exportSync(laptop, NOW));
+      expect(retiredHashes(phone)).toEqual([A]);
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+});

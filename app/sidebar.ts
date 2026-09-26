@@ -8,6 +8,7 @@
  * list, and an import cannot be assigned to, so the owner stays the only writer.
  */
 
+import { icon, setIcon, type IconName } from "./icons.js";
 import type { DeckBrief, TemplateBrief } from "./protocol.js";
 import type { SyncStatus } from "./sync-client.js";
 import { openDashboard } from "./dashboard.js";
@@ -321,6 +322,7 @@ sidebarToggle.addEventListener("click", () => {
   if (document.body.classList.contains("sidebar-open")) closeSidebar();
   else openSidebar();
 });
+setIcon(el("sidebarclose"), "x");
 el("sidebarclose").addEventListener("click", closeSidebar);
 el("sidebarscrim").addEventListener("click", closeSidebar);
 el("dashboardlink").addEventListener("click", () => void openDashboard());
@@ -368,6 +370,17 @@ const syncDotText = el("syncdottext");
 const syncDetail = el("syncdetail");
 let syncStatus: SyncStatus = initialStatus();
 
+/** Which icon each state wears. Filled means "fine"; the glyph inside says the rest. */
+const SYNC_ICON: Readonly<Record<string, IconName>> = {
+  ok: "cloud-check-fill",
+  stale: "cloud-check",
+  never: "cloud-slash",
+  failed: "cloud-x",
+  offline: "cloud-warning",
+  behind: "cloud-arrow-down",
+  syncing: "arrows-clockwise",
+};
+
 function paintSync(): void {
   const label =
     syncStatus.state === "syncing"
@@ -386,6 +399,15 @@ function paintSync(): void {
   const shown =
     syncStatus.state === "ok" && isStale(syncStatus) ? "stale" : syncStatus.state;
   syncDot.dataset["state"] = shown;
+  // AN ICON PER STATE, so the SHAPE says it (2026-09-26). "Synced" and "failed"
+  // were both filled circles — green and red — and in his phone's black-and-white
+  // bedroom mode they were the same dot. Colour still repeats the meaning; it no
+  // longer carries it alone.
+  const glyph = syncDot.querySelector("i");
+  if (glyph !== null && glyph.dataset["icon"] !== shown) {
+    glyph.dataset["icon"] = shown;
+    glyph.replaceChildren(icon(SYNC_ICON[shown] ?? "cloud-slash"));
+  }
   syncDot.title = label;
   syncDot.setAttribute("aria-label", label);
   syncDotText.textContent = label;

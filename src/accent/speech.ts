@@ -195,11 +195,38 @@ function escapeXml(text: string): string {
  * mode-2 card (decision 29) the clip IS the question, so a longer tail is dead
  * time before he can answer.
  */
-export function pausedSsml(text: string): string | null {
+/**
+ * A word and how to say it — `<sub alias="ひなた">日向</sub>`.
+ *
+ * Zach, 2026-09-26: *"the audio of 日向 example sentence read it as みゅー"*. Google
+ * made that clip itself (`ja-JP-Neural2-C`), and Google answers the same input
+ * with the same audio, so asking again would repeat the misreading. The card
+ * already knows the word's reading (`読み`, or the derived accent's reading),
+ * and SSML's `<sub>` tells the voice to speak THAT for the written word. The
+ * sentence keeps its kanji; only what is said changes.
+ */
+export interface Reading {
+  readonly base: string;
+  readonly alias: string;
+}
+
+export function pausedSsml(text: string, readings: readonly Reading[] = []): string | null {
+  const usable = readings
+    .filter((reading) => reading.base !== "" && reading.alias !== "" && text.includes(reading.base))
+    .sort((a, b) => b.base.length - a.base.length);
   const characters = [...text];
   let out = "";
   let broke = false;
   for (let i = 0; i < characters.length; i += 1) {
+    // A reading starting here wins, longest first, and is emitted whole.
+    const ahead = characters.slice(i).join("");
+    const reading = usable.find((entry) => ahead.startsWith(entry.base));
+    if (reading !== undefined) {
+      out += `<sub alias="${escapeXml(reading.alias)}">${escapeXml(reading.base)}</sub>`;
+      i += [...reading.base].length - 1;
+      broke = true;
+      continue;
+    }
     const ch = characters[i] as string;
     out += escapeXml(ch);
     // Anything after this that is not more punctuation or space — otherwise the
@@ -248,6 +275,8 @@ export interface SynthesiseOptions {
   /** `mp3` matches every existing clip and the store's sniffing. */
   readonly encoding?: "MP3" | "LINEAR16";
   readonly fetch?: typeof globalThis.fetch;
+  /** How to say particular words in a sentence (`<sub>`). Ignored for an annotated word. */
+  readonly readings?: readonly Reading[];
 }
 
 /**
@@ -269,7 +298,7 @@ export async function synthesise(
   request: SpeechRequest | null,
   options: SynthesiseOptions,
 ): Promise<Uint8Array> {
-  const paused = request === null ? pausedSsml(text) : null;
+  const paused = request === null ? pausedSsml(text, options.readings ?? []) : null;
   const input =
     request !== null
       ? { ssml: speechSsml(request) }

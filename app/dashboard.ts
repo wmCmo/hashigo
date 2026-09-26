@@ -9,6 +9,7 @@ import type { GlanceDeck } from "../src/dashboard/index.js";
 import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
 import type { ReplyFor } from "./protocol.js";
 import { closeSidebar } from "./sidebar.js";
+import { setIcon } from "./icons.js";
 import { say } from "./ui.js";
 import { ask } from "./worker-client.js";
 
@@ -58,7 +59,7 @@ export async function openDashboard(): Promise<void> {
   close.type = "button";
   close.className = "layer-close";
   close.setAttribute("aria-label", "close the dashboard");
-  close.textContent = "✕";
+  setIcon(close, "x");
   close.addEventListener("click", () => closeIfTop(root));
   head.append(title, close);
   panel.appendChild(head);
@@ -429,7 +430,7 @@ async function buildDashboard(): Promise<void> {
   close.type = "button";
   close.className = "layer-close";
   close.setAttribute("aria-label", "close the dashboard");
-  close.textContent = "✕";
+  setIcon(close, "x");
   close.addEventListener("click", () => closeIfTop(root));
   head.append(title, ops, close);
   panel.appendChild(head);

@@ -89,6 +89,8 @@ import {
   subtreeDeckIds,
 } from "./deck-scope.js";
 import { isCatalogueVoice } from "../src/generate/voices.js";
+import { retireBlob, unretireBlob } from "../src/blobs/retire.js";
+import { audioHashCandidates } from "../src/cards/audio.js";
 import { suggestCards, type SuggestRow } from "./recent.js";
 import { audioIsStale } from "./seed-freshness.js";
 import { COUNT_HELD, mergeLocalFields, readSeedFields } from "./local-fields.js";
@@ -109,6 +111,7 @@ import {
 import type {
   AnswerRequest,
   PriceFieldRequest,
+  RedoInfoRequest,
   VoiceRequest,
   BrowseRequest,
   CardOpMessage,
@@ -1998,11 +2001,69 @@ function storeClip(request: StoreClipRequest): void {
     const binary = atob(request.audio);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    // Retire FIRST, so the card stops finding the old clip whatever happens next.
+    if (request.retire !== undefined) retireBlob(db, request.retire);
     hash = storeGeneratedSpeech(db, store, request.slot, bytes);
   } catch (cause) {
     log(`could not cache the clip: ${(cause as Error).message}`, "bad");
   }
-  post({ kind: "storeClip", id: request.id, hash });
+  // Google answered with the very clip being discarded: put it back rather than
+  // leave the card with nothing, and say so.
+  const same = request.retire !== undefined && hash === request.retire;
+  if (same && hash !== null) unretireBlob(db, hash);
+  post({ kind: "storeClip", id: request.id, hash, ...(same ? { same: true } : {}) });
+}
+
+/**
+ * What a redo needs — see `RedoInfoRequest`.
+ *
+ * The HASH is the first candidate the card would actually play: the same list
+ * `audioHashCandidates` builds for a mount, filtered to rows whose payload is on
+ * this device. The READING is the card's own: `読み` when it has one (decision
+ * 10: an explicit reading beats the head word), else the derived accent's
+ * reading of the head word, which is what the `ojad` line already used — it read
+ * 日向 as ひなた where Google did not.
+ */
+function redoInfo(request: RedoInfoRequest): void {
+  const db = requireCards();
+  const candidates = audioHashCandidates(db, request.cardId, {
+    origin: "generator",
+    request: { kind: "speech", ...request.request },
+  });
+  const present = candidates.find((hash) => store?.has(hash) ?? false) ?? candidates[0] ?? null;
+  const voice =
+    present === null
+      ? null
+      : ((db.prepare("SELECT voice FROM blobs WHERE hash = ?").get(present) as { voice: string | null } | undefined)
+          ?.voice ?? null);
+
+  // The head word: whatever the template's accent field reads, else `name`.
+  const head = db
+    .prepare(
+      `SELECT v.value AS value FROM cards c
+         LEFT JOIN template_fields a ON a.template_id = c.template_id AND a.type = 'accent'
+         JOIN card_field_values v ON v.card_id = c.id AND v.field_id = COALESCE(a.source_field_id, 'name')
+        WHERE c.id = ? LIMIT 1`,
+    )
+    .get(request.cardId) as { value: string } | undefined;
+  const yomi = db
+    .prepare(
+      `SELECT v.value AS value FROM card_field_values v
+         JOIN cards c ON c.id = v.card_id
+         JOIN template_fields f ON f.template_id = c.template_id AND f.id = v.field_id
+        WHERE v.card_id = ? AND trim(f.name) = '読み' AND trim(v.value) <> '' LIMIT 1`,
+    )
+    .get(request.cardId) as { value: string } | undefined;
+  const base = head?.value.replace(/[\u200b-\u200f\ufeff]/g, "").trim() ?? "";
+  let alias = yomi?.value.trim() ?? "";
+  if (alias === "" && base !== "") {
+    const row = db.prepare("SELECT reading FROM accents WHERE text = ? AND reading IS NOT NULL LIMIT 1").get(base) as
+      | { reading: string }
+      | undefined;
+    alias = row?.reading ?? "";
+  }
+  const readings = base !== "" && alias !== "" && base !== alias ? [{ base, alias }] : [];
+  post({ kind: "redoInfo", id: request.id, hash: present, voice, readings });
 }
 
 function backup(request: BackupRequest): void {
@@ -2810,6 +2871,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "templateOp":
           templateOp(request);
+          break;
+        case "redoInfo":
+          redoInfo(request);
           break;
         case "priceField":
           priceField(request);

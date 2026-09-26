@@ -115,6 +115,7 @@ import { openPalette } from "./palette.js";
 import { provideShell } from "./shell.js";
 import { line, mib, say } from "./ui.js";
 import { openVoiceDialog } from "./voice-dialog.js";
+import { icon, setIcon } from "./icons.js";
 import { cloudHeaders, cloudUrl, IN_CLOUD, SERVER_NAME } from "./cloud.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import {
@@ -193,6 +194,10 @@ const revealWord = el("revealword");
 const forgotButton = el<HTMLButtonElement>("forgot");
 const rememberedButton = el<HTMLButtonElement>("remembered");
 const replayButton = el<HTMLButtonElement>("replay");
+// Phosphor Light in place of the text glyphs the markup ships with (app/icons.ts).
+// The buttons keep their aria-labels; the icons are aria-hidden.
+setIcon(replayButton, "play");
+setIcon(el<HTMLButtonElement>("sidebartoggle"), "list");
 const readingButton = el<HTMLButtonElement>("readingtoggle");
 const doneView = el("done");
 const doneText = el("donetext");
@@ -1450,7 +1455,9 @@ function mountClipButtons(card: MountedCard<HTMLElement>): void {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "clip";
-      button.textContent = "▶";
+      // Both weights, and CSS shows the Fill one while `data-clip="playing"` —
+      // the "on" state is the same icon filled (app/icons.ts).
+      button.append(icon("play"), icon("play-fill"));
       // The clip's own alt text — the word, or the sentence. Never shown: the
       // line beside it already says this, and repeating it would be noise on a
       // card whose whole job is to be read.
@@ -1877,6 +1884,164 @@ async function requestClip(
 }
 
 /**
+ * "REDO A CLIP" — discard a clip on this card and make a new one.
+ *
+ * Zach, 2026-09-26: *"the audio of 日向 example sentence read it as みゅー、、、 i need
+ * a way to discard that audio and regenerate it"*. That clip was made by Google
+ * itself, and Google answers the same input with the same audio, so a plain
+ * "again" would repeat the misreading. A redo therefore:
+ *
+ *   1. asks the worker which clip the card plays now and how the CARD reads its
+ *      word (`読み`, else the derived reading — what the ojad line already used);
+ *   2. asks the Worker for a NEW clip (`force`), with that reading as SSML
+ *      `<sub>` so the voice says ひなた for 日向;
+ *   3. files it with `retire` — the old clip stops matching any lookup but keeps
+ *      its bytes (`src/blobs/retire.ts`), and sync and the laptop pull carry the
+ *      retirement everywhere else;
+ *   4. redraws the card, because a clip that has played once stays attached to
+ *      its button and would otherwise keep playing the old audio.
+ *
+ * In the card menu rather than beside every clip: the review screen stays as it
+ * was (decision 36's one control per clip), and a redo is a rare, deliberate act.
+ */
+function openRedoDialog(card: MountedCard<HTMLElement>): void {
+  const clips = card.result.media
+    .map((mount) => ({ mount, address: audioAddress(card.result, mount) }))
+    .filter(
+      (entry): entry is { mount: typeof entry.mount; address: Extract<NonNullable<typeof entry.address>, { origin: "generator" }> } =>
+        entry.address !== null && entry.address.origin === "generator" && entry.address.request.kind === "speech",
+    );
+
+  const root = document.createElement("div");
+  root.className = "layer layer-confirm layer-menu";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.setAttribute("aria-label", "redo a clip");
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+  const panel = document.createElement("div");
+  panel.className = "confirm-panel";
+  const heading = document.createElement("h2");
+  heading.textContent = "Redo a clip";
+  const text = document.createElement("p");
+  text.textContent =
+    clips.length === 0
+      ? "This card has no generated clips to redo."
+      : "The old clip is retired, not deleted, and the new one is told how this card reads its word.";
+  panel.append(heading, text);
+
+  const list = document.createElement("div");
+  list.className = "menu-list";
+  for (const { mount, address } of clips) {
+    const request = address.request;
+    const row = document.createElement("div");
+    row.className = "redo-row";
+    const label = document.createElement("span");
+    label.className = "redo-text";
+    label.textContent = request.text.replace(/\s+/g, " ").trim().slice(0, 80);
+    const play = document.createElement("button");
+    play.type = "button";
+    play.className = "clip";
+    play.setAttribute("aria-label", `play ${mount.alt}`);
+    play.append(icon("play"), icon("play-fill"));
+    play.addEventListener("click", () => {
+      const side = card.loop.sides.find((entry) => entry.index === mount.side);
+      side?.play(mount, { unmask: false });
+    });
+    const redo = document.createElement("button");
+    redo.type = "button";
+    redo.className = "gcard-op";
+    redo.append(icon("arrows-clockwise"), document.createTextNode(" redo"));
+    redo.addEventListener("click", () => void redoClip(card, request, redo));
+    row.append(play, label, redo);
+    list.appendChild(row);
+  }
+  panel.appendChild(list);
+  root.append(backdrop, panel);
+  layerHost.appendChild(root);
+  document.body.classList.add("layered");
+  registerLayer(bareLayer(root));
+}
+
+async function redoClip(
+  card: MountedCard<HTMLElement>,
+  request: { text: string; lang: string | null; voice: string | null; options: Readonly<Record<string, string>> },
+  button: HTMLButtonElement,
+): Promise<void> {
+  const info = await ask<"redoInfo">({
+    kind: "redoInfo",
+    cardId: card.cardId,
+    request: { text: request.text, lang: request.lang, voice: request.voice, options: request.options },
+  });
+  const reading = info.readings[0];
+  const confirmText = button.dataset["armed"] === "yes";
+  if (!confirmText) {
+    // Two presses, the second one saying what will happen — one line, in place,
+    // rather than a dialog over the dialog.
+    button.dataset["armed"] = "yes";
+    button.replaceChildren(
+      icon("arrows-clockwise"),
+      document.createTextNode(
+        reading === undefined ? " discard + redo?" : ` discard, redo reading ${reading.base} as ${reading.alias}?`,
+      ),
+    );
+    return;
+  }
+  button.disabled = true;
+  button.replaceChildren(document.createTextNode("speaking…"));
+  const attempt = await askLaptop(
+    {
+      kind: "speech",
+      text: request.text,
+      lang: request.lang,
+      voice: request.voice,
+      options: request.options,
+      force: true,
+      readings: info.readings,
+      ...(info.hash === null ? {} : { replaces: info.hash }),
+    },
+    CLIP_TIMEOUT_MS,
+  );
+  if ("failure" in attempt) {
+    say(attempt.failure, true);
+    button.disabled = false;
+    button.replaceChildren(icon("arrows-clockwise"), document.createTextNode(" redo"));
+    delete button.dataset["armed"];
+    return;
+  }
+  const raw = await attempt.response.text();
+  let body: { audio?: string; voice?: string; error?: string } = {};
+  try {
+    body = raw === "" ? {} : (JSON.parse(raw) as typeof body);
+  } catch {
+    /* the status is the story */
+  }
+  if (!attempt.response.ok || typeof body.audio !== "string") {
+    say(body.error ?? `${SERVER_NAME} said ${attempt.response.status}`, true);
+    button.disabled = false;
+    button.replaceChildren(icon("arrows-clockwise"), document.createTextNode(" redo"));
+    delete button.dataset["armed"];
+    return;
+  }
+  const stored = await ask<"storeClip">({
+    kind: "storeClip",
+    slot: { text: request.text, lang: request.lang, voice: body.voice ?? null, options: request.options },
+    audio: body.audio,
+    ...(info.hash === null ? {} : { retire: info.hash }),
+  });
+  closeIfTop(button.closest(".layer") as HTMLElement);
+  if (stored.same === true) {
+    say("Google gave back the same clip, so it was kept. The misreading needs a different voice or wording.", true);
+    return;
+  }
+  say(`redone in ${body.voice ?? "the fill voice"}${reading === undefined ? "" : ` — ${reading.base} read as ${reading.alias}`}`);
+  // Redraw, so the card plays the new clip rather than the one still attached
+  // to its button.
+  await showCardAt();
+}
+
+/**
  * Ask the laptop for one generation, then put it everywhere it belongs.
  *
  * ─── TWO WRITES, AND THE ONE THAT SURVIVES IS ON THE LAPTOP ─────────────────
@@ -2196,6 +2361,7 @@ el("backup").addEventListener("click", () => void exportBackup());
  * how a toggle starts lying.
  */
 const moreButton = el<HTMLButtonElement>("opmore");
+setIcon(moreButton, "dots-three");
 
 /**
  * THE TWO STATES STILL HAVE TO BE READABLE WITHOUT OPENING ANYTHING.
@@ -2721,7 +2887,7 @@ async function openPreview(cardId: string): Promise<void> {
   close.type = "button";
   close.className = "layer-close";
   close.setAttribute("aria-label", "close this preview");
-  close.textContent = "✕";
+  setIcon(close, "x");
   close.addEventListener("click", () => closeIfTop(root));
   // EVERY operation as a control, not only as a key — his standing rule, and a
   // preview is where he browses on the phone. Built empty and filled by
@@ -3036,7 +3202,7 @@ function openEditorFor(
   close.type = "button";
   close.className = "layer-close";
   close.setAttribute("aria-label", "close the editor");
-  close.textContent = "✕";
+  setIcon(close, "x");
   close.addEventListener("click", () => closeIfTop(root));
   head.append(title, close);
   panel.appendChild(head);
@@ -3380,6 +3546,13 @@ function openCardMenu(cardId: string, name: string): void {
   item("voice", "which voice this card's new clips are made in", () =>
     openVoiceDialog("card", cardId, name),
   );
+
+  // Only for the card actually on the review screen — the dialog plays and redoes
+  // the MOUNTED clips, and the menu can also be opened for a card that is not.
+  if (mounted !== null && mounted.cardId === cardId) {
+    const card = mounted;
+    item("redo a clip", "discard a clip that sounds wrong and make a new one", () => openRedoDialog(card));
+  }
 
   item(
     "delete",

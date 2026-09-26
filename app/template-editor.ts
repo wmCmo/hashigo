@@ -29,6 +29,7 @@ import { loadDecks } from "./sidebar.js";
 import { openConfirm, say } from "./ui.js";
 import { ask } from "./worker-client.js";
 import { pushUndo, refreshAfterOp } from "./ops.js";
+import { setIcon } from "./icons.js";
 
 /**
  * *"where can i edit my template? there should be a modal for editing template and
@@ -89,7 +90,7 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
   close.type = "button";
   close.className = "layer-close";
   close.setAttribute("aria-label", "close the template editor");
-  close.textContent = "✕";
+  setIcon(close, "x");
   close.addEventListener("click", () => closeIfTop(root));
   head.append(title, close);
   panel.appendChild(head);
@@ -286,8 +287,10 @@ function templateFieldRow(
     ops.appendChild(element);
   };
 
-  button("↑", "move up", () => step(-1));
-  button("↓", "move down", () => step(1));
+  button("", "move up", () => step(-1));
+  setIcon(ops.lastElementChild as HTMLElement, "arrow-up");
+  button("", "move down", () => step(1));
+  setIcon(ops.lastElementChild as HTMLElement, "arrow-down");
   button(
     "delete",
     field.dependents.length > 0 ? `${field.dependents.join(", ")} generate from this` : "remove it",

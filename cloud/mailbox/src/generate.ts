@@ -71,6 +71,15 @@ interface Descriptor {
   readonly voice: string | null;
   readonly options: Readonly<Record<string, string>>;
   readonly preview: boolean;
+  /**
+   * REDO (2026-09-26): make a new clip even when one is stored — the stored one is
+   * the clip he is discarding.
+   */
+  readonly force: boolean;
+  /** How to say particular words (`<sub>`), from the card's own reading. */
+  readonly readings: readonly { readonly base: string; readonly alias: string }[];
+  /** The hash of the clip this one supersedes, so the laptop can retire it too. */
+  readonly replaces: string | null;
 }
 
 /** What `gen:<key>` holds — enough for the laptop to file it exactly. */
@@ -87,6 +96,8 @@ export interface GeneratedRecord {
   readonly mime?: string;
   /** Text kinds only. */
   readonly output?: string;
+  /** A redo: the clip it superseded. `scripts/cloud-generated-pull.ts` retires it. */
+  readonly replaces?: string;
 }
 
 export function parse(raw: unknown): Descriptor | string {
@@ -100,7 +111,17 @@ export function parse(raw: unknown): Descriptor | string {
     if (kind !== "speech") return "only speech can be previewed";
     const asked = catalogueVoice(typeof body["voice"] === "string" ? body["voice"] : null);
     if (asked === null) return "preview needs a voice from the catalogue";
-    return { kind: "speech", text: sampleLine(asked.lang), lang: asked.lang, voice: asked.name, options: {}, preview: true };
+    return {
+      kind: "speech",
+      text: sampleLine(asked.lang),
+      lang: asked.lang,
+      voice: asked.name,
+      options: {},
+      preview: true,
+      force: false,
+      readings: [],
+      replaces: null,
+    };
   }
   const text = body["text"];
   if (typeof text !== "string" || text.trim() === "") return "text is required";
@@ -113,7 +134,27 @@ export function parse(raw: unknown): Descriptor | string {
     voice: typeof body["voice"] === "string" ? body["voice"] : null,
     options: options !== null && typeof options === "object" ? (options as Record<string, string>) : {},
     preview: false,
+    force: body["force"] === true,
+    readings: parseReadings(body["readings"]),
+    replaces:
+      typeof body["replaces"] === "string" && /^[0-9a-f]{64}$/.test(body["replaces"]) ? body["replaces"] : null,
   };
+}
+
+/** At most a few short readings — this is one card's word, not a pronunciation dictionary. */
+function parseReadings(raw: unknown): { base: string; alias: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(
+      (entry): entry is { base: string; alias: string } =>
+        entry !== null &&
+        typeof entry === "object" &&
+        typeof (entry as { base?: unknown }).base === "string" &&
+        typeof (entry as { alias?: unknown }).alias === "string",
+    )
+    .map((entry) => ({ base: entry.base.trim(), alias: entry.alias.trim() }))
+    .filter((entry) => entry.base !== "" && entry.alias !== "" && entry.base.length <= 40 && entry.alias.length <= 80)
+    .slice(0, 5);
 }
 
 function keyFor(descriptor: Descriptor, voice: string | null): string {
@@ -179,9 +220,10 @@ export async function generate(
     }
 
     // The card's own voice, then the voice this would be made in, then the fill —
-    // the laptop's order, over the clips THIS side has made.
+    // the laptop's order, over the clips THIS side has made. Skipped on a REDO:
+    // the stored clip is the one being discarded.
     const fill = fillVoiceFor(descriptor.lang);
-    for (const voice of [descriptor.voice, madeWith, fill].filter(
+    for (const voice of (descriptor.force ? [] : [descriptor.voice, madeWith, fill]).filter(
       (entry, index, all): entry is string => entry !== null && all.indexOf(entry) === index,
     )) {
       const hit = await read(env, keyFor(descriptor, voice));
@@ -203,7 +245,7 @@ export async function generate(
         },
       ];
     }
-    const bytes = await speak(spoken, null, { apiKey: key, voice: madeWith });
+    const bytes = await speak(spoken, null, { apiKey: key, voice: madeWith, readings: descriptor.readings });
     const audio = toBase64(bytes);
     const record: GeneratedRecord = {
       kind: "speech",
@@ -214,6 +256,7 @@ export async function generate(
       createdAt: new Date().toISOString(),
       audio,
       mime: "audio/mpeg",
+      ...(descriptor.replaces === null ? {} : { replaces: descriptor.replaces }),
     };
     await env.MAILBOX.put(keyFor(descriptor, madeWith), JSON.stringify(record));
     return [

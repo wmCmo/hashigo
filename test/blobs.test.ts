@@ -2077,3 +2077,50 @@ describe("LOCATION_PATTERN — the gate that keeps absolute paths out of the DB"
     expect(LOCATION_PATTERN.test(text)).toBe(false);
   });
 });
+
+// ─── retiring a clip (2026-09-26, "redo a clip") ─────────────────────────────
+
+import { retireBlob, retiredHashes, unretireBlob } from "../src/blobs/retire.js";
+import { lookupGeneration as findClip, generationIdentity as idOf } from "../src/blobs/generation.js";
+import { pausedSsml } from "../src/accent/speech.js";
+import { MEMORY as MEM, openDatabase as openDb } from "../src/db/index.js";
+
+describe("a retired clip stops playing, keeps its bytes, and can come back", () => {
+  it("retire → no lookup finds it; unretire → found again with its voice intact", () => {
+    const db = openDb(MEM);
+    try {
+      const identity = idOf({ kind: "speech", text: "日向は美しいビーチで有名です。", voice: "ja-JP-Neural2-C", lang: "ja-JP", options: {} });
+      db.prepare(
+        "INSERT INTO blobs (hash, kind, mime, byte_size, source_text, voice, lang, options, bytes) VALUES (?, 'speech', 'audio/mpeg', 3, ?, ?, ?, ?, x'010203')",
+      ).run("a".repeat(64), identity.sourceText, identity.voice, identity.lang, identity.options);
+      expect(findClip(db, identity)).toBe("a".repeat(64));
+
+      expect(retireBlob(db, "a".repeat(64))).toBe(true);
+      expect(findClip(db, identity)).toBeNull();
+      expect(retiredHashes(db)).toEqual(["a".repeat(64)]);
+      expect(retireBlob(db, "a".repeat(64))).toBe(false); // idempotent
+      expect((db.prepare("SELECT bytes FROM blobs").get() as { bytes: Uint8Array }).bytes.length).toBe(3);
+
+      expect(unretireBlob(db, "a".repeat(64))).toBe(true);
+      expect(findClip(db, identity)).toBe("a".repeat(64));
+      // The clip's own row never changed — decision 4's immutability holds.
+      expect((db.prepare("SELECT voice FROM blobs").get() as { voice: string }).voice).toBe("ja-JP-Neural2-C");
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("telling Google how to read a word — SSML <sub>", () => {
+  it("wraps the card's word with its reading, and keeps the written kanji", () => {
+    expect(pausedSsml("日向は美しいビーチで有名です。", [{ base: "日向", alias: "ひなた" }])).toBe(
+      '<speak><sub alias="ひなた">日向</sub>は美しいビーチで有名です。</speak>',
+    );
+  });
+  it("escapes what it inserts", () => {
+    expect(pausedSsml("x日向", [{ base: "日向", alias: 'a"<b' }])).toBe('<speak>x<sub alias="a&quot;&lt;b">日向</sub></speak>');
+  });
+  it("with no reading and no pause it is still plain text, as before", () => {
+    expect(pausedSsml("日向は美しいビーチで有名です。")).toBeNull();
+  });
+});

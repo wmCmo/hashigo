@@ -200,3 +200,36 @@ describe("generation on the Worker answers like the laptop, and keeps what it ma
     expect(response.status).toBe(401);
   });
 });
+
+describe("a REDO on the Worker makes a new clip, with the card's reading", () => {
+  it("force skips the stored clip, passes the reading to the voice, and records what it replaces", async () => {
+    const e = { ...env(), GOOGLE_TTS_SECRET: "g" };
+    const seen: unknown[] = [];
+    const speak = async (_text: string, _request: unknown, options: unknown): Promise<Uint8Array> => {
+      seen.push(options);
+      return new Uint8Array([seen.length, 1, 2, 3]);
+    };
+    const base = { kind: "speech", text: "日向は美しいビーチで有名です。", lang: "ja-JP", voice: "ja-JP-Neural2-C", options: {} };
+    await generate(parse(base) as never, e, { synthesise: speak as never });
+    const [, cached] = await generate(parse(base) as never, e, { synthesise: speak as never });
+    expect(cached).toMatchObject({ cached: true });
+
+    const old = "c".repeat(64);
+    const [status, redone] = await generate(
+      parse({ ...base, force: true, readings: [{ base: "日向", alias: "ひなた" }], replaces: old }) as never,
+      e,
+      { synthesise: speak as never },
+    );
+    expect(status).toBe(200);
+    expect(redone).toMatchObject({ cached: false });
+    expect(seen).toHaveLength(2); // the redo reached the voice; the repeat did not
+    expect(seen[1]).toMatchObject({ readings: [{ base: "日向", alias: "ひなた" }] });
+    const record = JSON.parse([...e.MAILBOX.data.values()][0]?.value ?? "{}") as { replaces?: string };
+    expect(record.replaces).toBe(old);
+  });
+
+  it("drops readings and replaces that are not the right shape", () => {
+    const parsed = parse({ kind: "speech", text: "x", readings: [{ base: "a".repeat(41), alias: "b" }, "junk"], replaces: "nope" });
+    expect(parsed).toMatchObject({ readings: [], replaces: null });
+  });
+});
