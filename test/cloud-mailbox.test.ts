@@ -122,3 +122,81 @@ describe("CORS, because the app is served from the laptop and this from workers.
     expect(response.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 });
+
+// ─── /generate/ on the Worker ────────────────────────────────────────────────
+
+import { generate, parse } from "../cloud/mailbox/src/generate.js";
+
+describe("generation on the Worker answers like the laptop, and keeps what it makes", () => {
+  const fakeSpeech = async (): Promise<Uint8Array> => new Uint8Array([0xff, 0xfb, 1, 2, 3]);
+  let calls = 0;
+  const countedSpeech = async (): Promise<Uint8Array> => {
+    calls += 1;
+    return fakeSpeech();
+  };
+
+  it("makes a clip in the field's catalogue voice, keeps it, and answers the second press from KV", async () => {
+    calls = 0;
+    const e = { ...env(), GOOGLE_TTS_SECRET: "g" };
+    const request = parse({ kind: "speech", text: "日向", lang: "ja-JP", voice: "ja-JP-Neural2-B", options: {} });
+    expect(typeof request).not.toBe("string");
+    const [status, body] = await generate(request as never, e, { synthesise: countedSpeech });
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ cached: false, voice: "ja-JP-Neural2-B", mime: "audio/mpeg" });
+    expect([...e.MAILBOX.data.keys()].filter((k) => k.startsWith("gen:"))).toHaveLength(1);
+
+    const [, again] = await generate(request as never, e, { synthesise: countedSpeech });
+    expect(again).toMatchObject({ cached: true });
+    expect(calls).toBe(1); // the second press billed nothing
+  });
+
+  it("an AZURE voice Mochi stored is spoken in the language's fill voice, and the record says who spoke", async () => {
+    const e = { ...env(), GOOGLE_TTS_SECRET: "g" };
+    const request = parse({ kind: "speech", text: "snare", lang: "en-US", voice: "en-US-AIGenerate1Neural", options: { gender: "male" } });
+    const [, body] = await generate(request as never, e, { synthesise: fakeSpeech });
+    expect(body).toMatchObject({ voice: "en-US-Neural2-D" });
+    const stored = JSON.parse([...e.MAILBOX.data.values()][0]?.value ?? "{}") as { voice: string; options: unknown };
+    expect(stored.voice).toBe("en-US-Neural2-D");
+    expect(stored.options).toEqual({ gender: "male" });
+  });
+
+  it("refuses to speak a raw generator tag — the snare bug, on this side too", async () => {
+    const e = { ...env(), GOOGLE_TTS_SECRET: "g" };
+    const request = parse({ kind: "speech", text: "<ai>Example sentence of snare</ai>", lang: "en-US", voice: null, options: {} });
+    const [status] = await generate(request as never, e, { synthesise: fakeSpeech });
+    expect(status).toBe(422);
+  });
+
+  it("a preview stores nothing", async () => {
+    const e = { ...env(), GOOGLE_TTS_SECRET: "g" };
+    const [status] = await generate(parse({ kind: "speech", preview: true, voice: "en-US-Neural2-J" }) as never, e, { synthesise: fakeSpeech });
+    expect(status).toBe(200);
+    expect(e.MAILBOX.data.size).toBe(0);
+  });
+
+  it("text is generated once and then served from KV", async () => {
+    let asked = 0;
+    const e = { ...env(), ANTHROPIC_API_KEY: "a" };
+    const write = async (): Promise<string> => {
+      asked += 1;
+      return "☀️🌳";
+    };
+    const request = parse({ kind: "ai", text: "Describe a word 日向 using emojis only", lang: null, voice: null, options: {} });
+    const [, first] = await generate(request as never, e, { generateText: write });
+    const [, second] = await generate(request as never, e, { generateText: write });
+    expect(first).toMatchObject({ text: "☀️🌳", cached: false });
+    expect(second).toMatchObject({ text: "☀️🌳", cached: true });
+    expect(asked).toBe(1);
+  });
+
+  it("says which secret is missing rather than failing somewhere inside", async () => {
+    const [status, body] = await generate(parse({ kind: "speech", text: "x", lang: "ja-JP", voice: null, options: {} }) as never, env());
+    expect(status).toBe(503);
+    expect(body).toMatchObject({ error: expect.stringContaining("GOOGLE_TTS_SECRET") });
+  });
+
+  it("the route needs the key like everything else", async () => {
+    const response = await handle(request("POST", "/generate/", { body: "{}", token: null }), env());
+    expect(response.status).toBe(401);
+  });
+});

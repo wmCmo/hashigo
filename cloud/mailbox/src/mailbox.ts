@@ -41,6 +41,8 @@
  * tens of writes.
  */
 
+import { GEN_PREFIX, generate, parse, type GenerateEnv } from "./generate.js";
+
 export interface KvLike {
   get(key: string, type: "text"): Promise<string | null>;
   put(key: string, value: string, options?: { metadata?: unknown }): Promise<void>;
@@ -51,7 +53,7 @@ export interface KvLike {
   }>;
 }
 
-export interface Env {
+export interface Env extends GenerateEnv {
   readonly MAILBOX: KvLike;
   readonly MAILBOX_TOKEN: string;
   /** Comma-separated origins allowed to call this from a browser. */
@@ -77,7 +79,7 @@ function corsHeaders(request: Request, env: Env): Record<string, string> {
   if (!allowed.includes(origin)) return {};
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "GET, PUT, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Authorization, Content-Type",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
@@ -142,8 +144,55 @@ export async function handle(request: Request, env: Env): Promise<Response> {
       headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", ...cors },
     });
   }
-  if (!url.pathname.startsWith("/sync/")) return json(404, { error: "not found" }, cors);
+  const known =
+    url.pathname.startsWith("/sync/") ||
+    url.pathname === "/generate/" ||
+    url.pathname.startsWith("/generated/");
+  if (!known) return json(404, { error: "not found" }, cors);
   if (!authorised(request, env)) return json(401, { error: "unauthorised" }, cors);
+
+  // ── generation (./generate.ts) ─────────────────────────────────────────────
+  if (url.pathname === "/generate/") {
+    if (request.method.toUpperCase() !== "POST") return json(405, { error: "POST only" }, cors);
+    const text = await request.text();
+    if (text.length > 64 * 1024) return json(413, { error: "body too large" }, cors);
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return json(400, { error: "body is not JSON" }, cors);
+    }
+    const parsed = parse(raw);
+    if (typeof parsed === "string") return json(400, { error: parsed }, cors);
+    try {
+      const [status, body] = await generate(parsed, env);
+      return json(status, body, cors);
+    } catch (cause) {
+      // The message, not the stack: it reaches a phone as one line of status.
+      return json(502, { error: (cause as Error).message }, cors);
+    }
+  }
+
+  // ── what was generated here, for the laptop to file (scripts/cloud-generated-pull.ts)
+  if (url.pathname === "/generated/") {
+    const keys: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await env.MAILBOX.list({ prefix: GEN_PREFIX, ...(cursor === undefined ? {} : { cursor }) });
+      for (const key of page.keys) keys.push(key.name.slice(GEN_PREFIX.length));
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor !== undefined);
+    return json(200, { keys }, cors);
+  }
+  if (url.pathname.startsWith("/generated/")) {
+    const id = decodeURIComponent(url.pathname.slice("/generated/".length));
+    if (!/^[A-Za-z0-9:_-]{1,200}$/.test(id)) return json(400, { error: "bad key" }, cors);
+    const body = await env.MAILBOX.get(`${GEN_PREFIX}${id}`, "text");
+    if (body === null) return json(404, { error: "no such generation" }, cors);
+    return new Response(body, {
+      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...cors },
+    });
+  }
 
   const rest = url.pathname.slice("/sync/".length);
   const method = request.method.toUpperCase();

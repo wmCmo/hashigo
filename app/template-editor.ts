@@ -17,6 +17,7 @@ import { kindOf, settingsOf, type SettingSpec } from "../src/fields/index.js";
 import { isCatalogueVoice, voicesFor } from "../src/generate/voices.js";
 import { factsLine, inputLine, roleLine, settingLines, undeclaredKeys } from "./field-form.js";
 import { patchOptions, sourceChoices, type FieldState } from "./field-ops.js";
+import { cloudHeaders, cloudUrl } from "./cloud.js";
 import { bareLayer, closeIfTop, layers, pushLayer } from "./layers.js";
 import type {
   TemplateBrief,
@@ -676,9 +677,9 @@ async function audition(voice: string, button: HTMLButtonElement): Promise<void>
   const label = button.textContent;
   button.textContent = "…";
   try {
-    const response = await fetch("/generate/", {
+    const response = await fetch(cloudUrl("/generate/"), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: cloudHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ kind: "speech", preview: true, voice }),
     });
     const body = (await response.json().catch(() => ({}))) as {

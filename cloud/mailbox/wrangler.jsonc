@@ -3,6 +3,8 @@
   "name": "hashigo-mailbox",
   "main": "src/mailbox.ts",
   "compatibility_date": "2026-09-01",
+  // `Buffer`, which `src/accent/speech.ts` uses to decode Google's audio.
+  "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   // No per-version preview URLs: one public address for a mailbox of his history.
   "preview_urls": false,

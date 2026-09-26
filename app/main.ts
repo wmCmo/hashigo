@@ -115,6 +115,7 @@ import { openPalette } from "./palette.js";
 import { provideShell } from "./shell.js";
 import { line, mib, say } from "./ui.js";
 import { openVoiceDialog } from "./voice-dialog.js";
+import { cloudHeaders, cloudUrl, IN_CLOUD, SERVER_NAME } from "./cloud.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import {
   attachInput,
@@ -1643,9 +1644,9 @@ async function askLaptop(
     controller.abort();
   }, timeoutMs);
   try {
-    const response = await fetch(GENERATE_ENDPOINT, {
+    const response = await fetch(cloudUrl(GENERATE_ENDPOINT), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: cloudHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -1657,8 +1658,10 @@ async function askLaptop(
     // one thing both spellings agree on.
     return {
       failure: timedOut
-        ? `the laptop did not answer in ${waited}s — it may be asleep, or off the tailnet. Press again to retry.`
-        : `could not reach the laptop: ${(cause as Error).message}`,
+        ? IN_CLOUD
+          ? `Cloudflare did not answer in ${waited}s — this device may be offline. Press again to retry.`
+          : `the laptop did not answer in ${waited}s — it may be asleep, or off the tailnet. Press again to retry.`
+        : `could not reach ${SERVER_NAME}: ${(cause as Error).message}`,
     };
   } finally {
     // Or a 120 s text budget keeps the page awake for two minutes after a reply.
@@ -1834,7 +1837,7 @@ async function requestClip(
           (response.status === 404 || response.status === 405
             ? "this server has no /generate/ — it started before the endpoint existed. " +
               "On the laptop: npx kill-port 4274, then npm run phone"
-            : `the laptop said ${response.status} ${response.statusText}`),
+            : `${SERVER_NAME} said ${response.status} ${response.statusText}`),
         true,
       );
       button.disabled = false;
@@ -1859,7 +1862,7 @@ async function requestClip(
     // voice and one Google just made in Japanese sound different and cost
     // different things, and until now the screen said neither.
     if (body.mismatch !== undefined) say(body.mismatch, true);
-    else if (body.cached === true) say(`already on the laptop — ${body.voice ?? "fill voice"}`);
+    else if (body.cached === true) say(`already on ${SERVER_NAME} — ${body.voice ?? "fill voice"}`);
     // Re-ask for the bytes, now that both stores have them.
     // `ShadowingSide.play` takes the MOUNT, not a reason — it is the per-clip
     // control decision 36 added, and `{ unmask: false }` is `prompt()`'s
@@ -1867,7 +1870,7 @@ async function requestClip(
     const side = card.loop.sides.find((entry) => entry.index === mount.side);
     side?.play(mount, { unmask: false });
   } catch (cause) {
-    say(`could not reach the laptop to generate: ${(cause as Error).message}`, true);
+    say(`could not reach ${SERVER_NAME} to generate: ${(cause as Error).message}`, true);
     button.disabled = false;
     button.textContent = was;
   }
@@ -1950,7 +1953,7 @@ async function requestGeneration(
         (response.status === 404 || response.status === 405
           ? "this server has no /generate/ — it started before the endpoint existed. " +
             "On the laptop: npx kill-port 4274, then npm run phone"
-          : `the laptop said ${response.status} ${response.statusText}`);
+          : `${SERVER_NAME} said ${response.status} ${response.statusText}`);
       say(reason, true);
       button.disabled = false;
       button.textContent = was;
@@ -1972,7 +1975,7 @@ async function requestGeneration(
     card.fillText(card.textSlots.map((s) => (s === slot ? body.text! : null)));
     if (card === mounted) scaleSides(card);
   } catch (cause) {
-    say(`could not reach the laptop to generate: ${(cause as Error).message}`, true);
+    say(`could not reach ${SERVER_NAME} to generate: ${(cause as Error).message}`, true);
     button.disabled = false;
     button.textContent = was;
   }

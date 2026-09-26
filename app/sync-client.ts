@@ -1,4 +1,3 @@
-/// <reference types="vite/client" />
 /**
  * Stage 11's transport, page side. Decision 33.
  *
@@ -25,37 +24,13 @@
  * a name kept inside the thing that can go missing tells you nothing afterwards.
  */
 
-/**
- * WHERE THE MAILBOX IS — the laptop, or Cloudflare (2026-09-26).
- *
- * Set at BUILD time from `.env` (`VITE_MAILBOX_URL`, `VITE_MAILBOX_TOKEN`), so the
- * phone needs no setting and no pasted secret. Empty means the laptop's own
- * `/sync/` on the same origin, exactly as before — which is what every test and
- * every build without the two lines still gets.
- *
- * The move happened because his apartment wifi drops every tunnel packet over
- * ~1,208 bytes, so a laptop mailbox reached over Tailscale cannot sync from home.
- * `cloud/mailbox/` answers the same four requests from `*.workers.dev`, plain
- * HTTPS over the internet, and needs a bearer token because the tailnet is no
- * longer the lock.
- *
- * The token is in the bundle, and the bundle is only ever served over the
- * tailnet. It grants read/write to one mailbox of study payloads and nothing
- * billable — not the same thing decision 18 keeps out of the client.
- */
-const MAILBOX_BASE = (import.meta.env["VITE_MAILBOX_URL"] as string | undefined)?.replace(/\/+$/, "") ?? "";
-const MAILBOX_TOKEN = (import.meta.env["VITE_MAILBOX_TOKEN"] as string | undefined) ?? "";
+import { cloudHeaders, cloudUrl, IN_CLOUD } from "./cloud.js";
 
-/** True when sync goes to Cloudflare rather than the laptop. */
-export const MAILBOX_IN_CLOUD = MAILBOX_BASE !== "";
-
-function mailboxUrl(path: string): string {
-  return `${MAILBOX_BASE}${path}`;
-}
-
-function mailboxHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  return MAILBOX_TOKEN === "" ? extra : { ...extra, Authorization: `Bearer ${MAILBOX_TOKEN}` };
-}
+// Where the mailbox is — the laptop or Cloudflare — lives in `./cloud.ts`, shared
+// with generation. `MAILBOX_IN_CLOUD` keeps its name for existing callers.
+export const MAILBOX_IN_CLOUD = IN_CLOUD;
+const mailboxUrl = cloudUrl;
+const mailboxHeaders = cloudHeaders;
 
 const DEVICE_KEY = "hashigo.sync.deviceId";
 const LAST_KEY = "hashigo.sync.lastSyncedAt";
