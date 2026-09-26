@@ -41,6 +41,37 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 > 81 seconds in the worker and says so before running, and the template editor refuses
 > two edits on purpose. **He has still never run any of it on his phone.**
 
+## CLOUD — the app runs from Cloudflare (2026-09-26)
+
+**Why:** his apartment wifi drops every Tailscale tunnel packet over ~1,208 bytes (measured
+with DF pings; small `/ping` answered, TLS handshakes and assets vanished). Windows will not
+take the Tailscale adapter below 1,280 for IPv6, and `TS_DEBUG_MTU=1200` stopped Tailscale
+from starting at all (reverted). Decision 49 had already retired "no cloud".
+
+**What runs where:**
+
+| | where | notes |
+|---|---|---|
+| app + seed + sync + generate | `https://hashigo.titan-zp4.workers.dev` (`cloud/app/`) | one origin; passphrase once per device → signed HttpOnly cookie; everything but `/ping` `/unlock` locked |
+| sync + generate for the TAILNET build | `https://hashigo-mailbox.titan-zp4.workers.dev` (`cloud/mailbox/`) | bearer token baked into the tailnet bundle only; same KV |
+| mailbox payloads, generations | KV `1d33ef525a084e5b852fb5cb78f72311` | `payload:<device>`, `gen:<key>` |
+| seed files | R2 `hashigo-seed` | 674 MB audio store is ONE object via R2 multipart |
+
+**Secrets** (Worker secret store only): `MAILBOX_TOKEN`, `GOOGLE_TTS_SECRET`,
+`ANTHROPIC_API_KEY`, and on `hashigo` also `UNLOCK_HASH` + `COOKIE_KEY`. `.env` holds
+`VITE_MAILBOX_URL`, `VITE_MAILBOX_TOKEN` and `HASHIGO_UNLOCK_PASSPHRASE` (for him to read).
+
+**Updating the cloud app:** `npm run app:build:cloud`, then `npx wrangler@4 deploy` in
+`cloud/app/`. **New seed:** `npm run app:bootstrap` then `npx vite-node
+scripts/cloud-seed-upload.ts` (manifest last). **Cloud generations into the laptop DB:**
+`npx vite-node scripts/cloud-generated-pull.ts -- --apply`, before any seed rebuild.
+
+**Traps paid for:** stitching seed parts inside a Worker hit the free plan's CPU cap and cut
+the download at 108 MB with no Content-Length — serve single R2 objects only. Vitest reads
+`.env`, so the suite pins the two `VITE_MAILBOX_*` vars empty (`vitest.config.ts`). The
+cloud build must use `--mode cloud` (`.env.cloud` empties the key) — a default build bakes
+the mailbox token in.
+
 ## VERSION — 0.5.0, late alpha (set 2026-09-25)
 
 Zach asked *"what version of hashigo should we be on? have we escape alpha yet?"* —
