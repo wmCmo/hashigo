@@ -28,6 +28,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -140,6 +141,88 @@ export function seedFile(url: string): string | undefined {
   const file = resolve(ASSET_DIR, name);
   // Belt and braces: the pattern already forbids a separator, and this proves it.
   return file.startsWith(ASSET_DIR) ? file : undefined;
+}
+
+/**
+ * A MISSING BUILD ASSET IS A 404, NOT THE PAGE — Zach, 2026-09-26, sending a
+ * screenshot of the app as bare black-on-white HTML: a giant unstyled ladder, the
+ * boot sentence, and nothing running. *"is something wrong with the server or is
+ * it my client"*.
+ *
+ * Both, and this is the server half. Vite's preview answers ANY unknown path
+ * with the SPA fallback — `index.html`, status 200 — and that includes a hashed
+ * asset that no longer exists: measured, `/assets/index-OLDHASH.css` came back
+ * `200 text/html`. So a page from an earlier build asked for its stylesheet and
+ * got a web page, which the browser silently ignores as CSS, and its module
+ * script got HTML too, so the app never started. No error said so. It is the
+ * same shape as the 2026-09-13 mailbox and the 2026-09-16 seed-file fallback,
+ * one directory over.
+ *
+ * A 404 fails the way a missing file should: the service worker's network-first
+ * fetch falls back to its cached copy, and anything else sees a real error.
+ */
+function missingAssetsAre404(): Plugin {
+  const assets = resolve(root, "build/app-dist/assets");
+  const handler = (
+    request: { url?: string | undefined },
+    response: { statusCode: number; setHeader(name: string, value: string): void; end(body?: string): void },
+    next: () => void,
+  ): void => {
+    const path = (request.url ?? "").split("?")[0] ?? "";
+    if (!path.startsWith("/assets/")) {
+      next();
+      return;
+    }
+    const name = path.slice("/assets/".length);
+    // One segment only, so nothing here can be walked outside the directory.
+    if (name === "" || name.includes("/") || name.includes("\\") || name.includes("..")) {
+      next();
+      return;
+    }
+    if (existsSync(resolve(assets, decodeURIComponent(name)))) {
+      next();
+      return;
+    }
+    response.statusCode = 404;
+    response.setHeader("Content-Type", "text/plain; charset=utf-8");
+    response.setHeader("Cache-Control", "no-store");
+    response.end(`no such build asset: ${name} — this page is from an older build; reload`);
+  };
+  return {
+    name: "hashigo-missing-assets-are-404",
+    // Preview only: the dev server serves modules from source, not /assets/.
+    configurePreviewServer(server) {
+      server.middlewares.use(handler as never);
+    },
+  };
+}
+
+/**
+ * KEEP RECENT BUILDS' ASSETS, and this is the client half of the same report.
+ *
+ * `emptyOutDir: true` deleted every hashed file on every build, and four builds
+ * in one day meant any page opened before the last one — from the browser's own
+ * cache, or the service worker's — referenced files that were gone. Now the
+ * directory is not emptied, so an older page keeps working until it reloads, and
+ * files older than `KEEP_DAYS` are pruned after each build so it does not grow
+ * without bound. Every hashed file is small next to the 640 MB of audio.
+ */
+const KEEP_DAYS = 14;
+
+function keepRecentAssets(): Plugin {
+  return {
+    name: "hashigo-keep-recent-assets",
+    apply: "build",
+    closeBundle() {
+      const assets = resolve(root, "build/app-dist/assets");
+      if (!existsSync(assets)) return;
+      const cutoff = Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000;
+      for (const name of readdirSync(assets)) {
+        const file = resolve(assets, name);
+        if (statSync(file).mtimeMs < cutoff) rmSync(file, { force: true });
+      }
+    },
+  };
 }
 
 /**
@@ -431,7 +514,14 @@ export default defineConfig({
    *   icons/*.png            referenced by that JSON, by absolute path
    */
   publicDir: "public",
-  plugins: [serveAppDatabases(), syncMailbox(), generateOnDemand(), serviceWorkerPrecache()],
+  plugins: [
+    missingAssetsAre404(),
+    keepRecentAssets(),
+    serveAppDatabases(),
+    syncMailbox(),
+    generateOnDemand(),
+    serviceWorkerPrecache(),
+  ],
   // NO `define` HERE ANY MORE. It injected `__SCHEMA_VERSION_FROM_NODE__`, parsed out
   // of `src/schema/index.ts` with a regex, for a reader that does not exist: nothing
   // in `app/` ever named the global, and `src/db/browser.ts` imports the real
@@ -477,7 +567,9 @@ export default defineConfig({
   },
   build: {
     outDir: "../build/app-dist",
-    emptyOutDir: true,
+    // FALSE since 2026-09-26 — see `keepRecentAssets`. A build that wiped the
+    // directory deleted the very files an already-open page still asks for.
+    emptyOutDir: false,
     // A readable stack beats a few KB. Sourcemaps stay OFF: Vite emits the client
     // and worker chunks into one assets/ directory and their .map names collide,
     // which prints a warning nobody should have to chase.
