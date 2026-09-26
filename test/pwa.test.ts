@@ -82,15 +82,33 @@ describe("the service worker never caches a database", () => {
     expect(sw).toMatch(/headers\.has\("range"\)/);
   });
 
-  it("is network-first, so a build can never get stuck behind a stale shell", () => {
-    const fetchHandler = sw.slice(sw.indexOf('addEventListener("fetch"'));
-    const networkAt = fetchHandler.indexOf("await fetch(request)");
-    const cacheAt = fetchHandler.indexOf("caches.match(request)");
+  it("is network-first for the SHELL, so a build can never get stuck behind a stale page", () => {
+    // Since 2026-09-26 the network wait has a deadline (a wifi that swallows
+    // packets froze the app on a bare page), but the shell still ASKS the
+    // network before it reads the cache.
+    const body = sw.slice(sw.indexOf("async function networkFirst"));
+    const networkAt = body.indexOf("fetch(request)");
+    const cacheAt = body.indexOf("fromCache(request)");
     expect(networkAt).toBeGreaterThan(-1);
     expect(cacheAt).toBeGreaterThan(-1);
     expect(networkAt, "the network attempt must come before the cache fallback").toBeLessThan(
       cacheAt,
     );
+  });
+
+  it("is cache-first ONLY for hashed /assets/ — never for index.html", () => {
+    const handler = sw.slice(sw.indexOf('addEventListener("fetch"'));
+    expect(handler).toMatch(/url\.pathname\.startsWith\("\/assets\/"\)\s*\?\s*assetFirst\(request\)\s*:\s*networkFirst\(request\)/);
+  });
+
+  it("gives the network a deadline, then serves what the phone already has", () => {
+    expect(sw).toMatch(/const NETWORK_WAIT_MS = \d+;/);
+    expect(sw).toMatch(/Promise\.race\(\[network, deadline\]\)/);
+  });
+
+  it("never serves a cached /assets/ entry that is HTML — the old fallback poisoned those", () => {
+    const body = sw.slice(sw.indexOf("async function assetFirst"));
+    expect(body.slice(0, body.indexOf("\n}\n"))).toMatch(/isHtml\(cached\)/);
   });
 
   it("precaches per-URL rather than atomically, so one 404 cannot void the lot", () => {

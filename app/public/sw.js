@@ -140,6 +140,86 @@ self.addEventListener("message", (event) => {
   if (event.data === "skip-waiting") self.skipWaiting();
 });
 
+/*
+ * ─── A NETWORK THAT HANGS MUST NOT HANG THE APP — Zach, 2026-09-26 ──────────
+ *
+ * *"when i turn the wifi off and reload it comes instantly, but when i use this
+ * apartment's wifi, everything stucks"*. The request log showed it exactly: on
+ * mobile data every file arrived in ~10 s; on that wifi NOTHING reached the
+ * laptop. And the page sat there bare, because network-first only falls back
+ * when the network FAILS, and a network that swallows packets never fails — it
+ * just never answers. A local-first app was waiting on the network to show
+ * files it already had.
+ *
+ * Two changes, and they keep the reason network-first exists:
+ *
+ *   /assets/*   CACHE-FIRST. Vite hashes every name there, so a name never
+ *               changes content: serving the stored copy cannot be stale. This
+ *               is the part the note above was not about — its worry is
+ *               `index.html`, which is not hashed.
+ *   everything  still NETWORK-FIRST, but with a deadline. After `NETWORK_WAIT_MS`
+ *               the stored copy is served and the fetch keeps going in the
+ *               background to refresh it. With nothing stored, it waits for the
+ *               network as before — there is nothing better to show.
+ *
+ * A stored /assets/ entry that is HTML is refused and dropped: until 2026-09-26
+ * the server answered a missing asset with the page itself, status 200, and a
+ * copy cached then must not be served as a stylesheet for ever.
+ */
+const NETWORK_WAIT_MS = 3000;
+
+function keep(request, response) {
+  // Opaque and error responses are not worth keeping, and caching a 404 shell
+  // is how an app serves its own error page offline forever.
+  if (!response.ok || response.type !== "basic") return;
+  const copy = response.clone();
+  void caches.open(VERSION).then((cache) => cache.put(request, copy));
+}
+
+function isHtml(response) {
+  return (response.headers.get("content-type") ?? "").includes("text/html");
+}
+
+async function assetFirst(request) {
+  const cached = await caches.match(request);
+  if (cached !== undefined && !isHtml(cached)) return cached;
+  if (cached !== undefined) void caches.open(VERSION).then((cache) => cache.delete(request));
+  const response = await fetch(request);
+  if (!isHtml(response)) keep(request, response);
+  return response;
+}
+
+async function fromCache(request) {
+  const cached = await caches.match(request);
+  if (cached !== undefined) return cached;
+  // A navigation that misses the cache still gets the shell — the app is a
+  // single page, so any route it owns is served by the same document.
+  if (request.mode === "navigate") return caches.match("/");
+  return undefined;
+}
+
+async function networkFirst(request) {
+  const network = fetch(request).then((response) => {
+    keep(request, response);
+    return response;
+  });
+  const deadline = new Promise((resolve) => setTimeout(() => resolve("late"), NETWORK_WAIT_MS));
+  try {
+    const first = await Promise.race([network, deadline]);
+    if (first !== "late") return first;
+    const stored = await fromCache(request);
+    if (stored !== undefined) {
+      network.catch(() => undefined); // keeps refreshing the cache; nobody waits on it
+      return stored;
+    }
+    return await network;
+  } catch (networkError) {
+    const stored = await fromCache(request);
+    if (stored !== undefined) return stored;
+    throw networkError;
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
@@ -153,27 +233,6 @@ self.addEventListener("fetch", (event) => {
   if (request.headers.has("range")) return;
 
   event.respondWith(
-    (async () => {
-      try {
-        const response = await fetch(request);
-        // Opaque and error responses are not worth keeping, and caching a 404
-        // shell is how an app serves its own error page offline forever.
-        if (response.ok && response.type === "basic") {
-          const copy = response.clone();
-          void caches.open(VERSION).then((cache) => cache.put(request, copy));
-        }
-        return response;
-      } catch (networkError) {
-        const cached = await caches.match(request);
-        if (cached !== undefined) return cached;
-        // A navigation that misses the cache still gets the shell — the app is
-        // a single page, so any route it owns is served by the same document.
-        if (request.mode === "navigate") {
-          const shell = await caches.match("/");
-          if (shell !== undefined) return shell;
-        }
-        throw networkError;
-      }
-    })(),
+    url.pathname.startsWith("/assets/") ? assetFirst(request) : networkFirst(request),
   );
 });
