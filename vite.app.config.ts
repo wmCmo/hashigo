@@ -181,25 +181,41 @@ function requestLog(): Plugin {
         response: { statusCode: number; getHeader(name: string): unknown; on(event: string, fn: () => void): void },
         next: () => void,
       ) => {
-        response.on("finish", () => {
-          const path = (request.url ?? "").split("?")[0];
-          const ua = request.headers["user-agent"] ?? "";
-          const who = /Android/.test(ua) ? "android" : /Windows/.test(ua) ? "windows" : "other";
-          const line = [
-            new Date().toISOString(),
-            who,
-            request.method,
-            path,
-            response.statusCode,
-            String(response.getHeader("content-type") ?? "-"),
-            request.headers["sec-fetch-dest"] ?? "-",
-            request.headers["service-worker"] === "script" ? "sw-script" : "",
-          ].join(" ");
+        const path = (request.url ?? "").split("?")[0];
+        const ua = request.headers["user-agent"] ?? "";
+        const who = /Android/.test(ua) ? "android" : /Windows/.test(ua) ? "windows" : "other";
+        // The CLIENT's tailnet address, which `tailscale serve` passes on — the
+        // socket peer is always its own 127.0.0.1 proxy. `100.x` is IPv4,
+        // `fd7a:…` is IPv6, and the two had different packet-size limits on the
+        // apartment wifi (2026-09-26), so which one a request rode matters.
+        const via = request.headers["x-forwarded-for"] ?? "-";
+        const write = (line: string): void => {
           try {
             appendFileSync(file, `${line}\n`);
           } catch {
             /* a log must never break a request */
           }
+        };
+        const started = Date.now();
+        // A START line as well as a finish line: a request that stalls
+        // mid-response never finishes, and a log written only on finish cannot
+        // see the one request that matters.
+        write([new Date(started).toISOString(), who, "start", request.method, path, via].join(" "));
+        response.on("finish", () => {
+          write(
+            [
+              new Date().toISOString(),
+              who,
+              request.method,
+              path,
+              response.statusCode,
+              String(response.getHeader("content-type") ?? "-"),
+              request.headers["sec-fetch-dest"] ?? "-",
+              request.headers["service-worker"] === "script" ? "sw-script" : "",
+              via,
+              `${Date.now() - started}ms`,
+            ].join(" "),
+          );
         });
         next();
       }) as never);
@@ -580,6 +596,11 @@ function syncMailbox(): Plugin {
 
 export default defineConfig({
   root: "app",
+  // `.env` lives at the REPO root, beside the API keys `vite.generate.ts` reads.
+  // Vite only ever hands the page variables prefixed `VITE_` — here the sync
+  // mailbox's address and key (`app/sync-client.ts`) — so the Anthropic and
+  // Google keys in the same file never reach the bundle.
+  envDir: root,
   /**
    * `app/public/` — the PWA's three unhashable files.
    *

@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 /**
  * Stage 11's transport, page side. Decision 33.
  *
@@ -23,6 +24,38 @@
  * `localStorage` rather than the database, for the same reason that receipt is —
  * a name kept inside the thing that can go missing tells you nothing afterwards.
  */
+
+/**
+ * WHERE THE MAILBOX IS — the laptop, or Cloudflare (2026-09-26).
+ *
+ * Set at BUILD time from `.env` (`VITE_MAILBOX_URL`, `VITE_MAILBOX_TOKEN`), so the
+ * phone needs no setting and no pasted secret. Empty means the laptop's own
+ * `/sync/` on the same origin, exactly as before — which is what every test and
+ * every build without the two lines still gets.
+ *
+ * The move happened because his apartment wifi drops every tunnel packet over
+ * ~1,208 bytes, so a laptop mailbox reached over Tailscale cannot sync from home.
+ * `cloud/mailbox/` answers the same four requests from `*.workers.dev`, plain
+ * HTTPS over the internet, and needs a bearer token because the tailnet is no
+ * longer the lock.
+ *
+ * The token is in the bundle, and the bundle is only ever served over the
+ * tailnet. It grants read/write to one mailbox of study payloads and nothing
+ * billable — not the same thing decision 18 keeps out of the client.
+ */
+const MAILBOX_BASE = (import.meta.env["VITE_MAILBOX_URL"] as string | undefined)?.replace(/\/+$/, "") ?? "";
+const MAILBOX_TOKEN = (import.meta.env["VITE_MAILBOX_TOKEN"] as string | undefined) ?? "";
+
+/** True when sync goes to Cloudflare rather than the laptop. */
+export const MAILBOX_IN_CLOUD = MAILBOX_BASE !== "";
+
+function mailboxUrl(path: string): string {
+  return `${MAILBOX_BASE}${path}`;
+}
+
+function mailboxHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return MAILBOX_TOKEN === "" ? extra : { ...extra, Authorization: `Bearer ${MAILBOX_TOKEN}` };
+}
 
 const DEVICE_KEY = "hashigo.sync.deviceId";
 const LAST_KEY = "hashigo.sync.lastSyncedAt";
@@ -134,16 +167,22 @@ export function initialStatus(): SyncStatus {
  * refused connection, no route, TLS. It is deliberately NOT narrowed further:
  * distinguishing them is not possible from here and would not change the action.
  */
-async function reach(url: string, init?: RequestInit): Promise<Response> {
+async function reach(path: string, init: RequestInit = {}): Promise<Response> {
   try {
-    return await fetch(url, init);
+    return await fetch(mailboxUrl(path), {
+      ...init,
+      headers: mailboxHeaders((init.headers as Record<string, string> | undefined) ?? {}),
+    });
   } catch (cause) {
     if (cause instanceof TypeError) {
       // NO EM DASH: `paintSync` renders this as `sync failed — <detail>`, and a
       // second one in the detail makes the line read as three fragments.
       throw new Error(
-        `could not reach the laptop. This device may be off the tailnet; ` +
-          `open Tailscale, reconnect, then sync again.`,
+        MAILBOX_IN_CLOUD
+          ? `could not reach the sync mailbox on Cloudflare. This device may be ` +
+            `offline; sync again once it has internet.`
+          : `could not reach the laptop. This device may be off the tailnet; ` +
+            `open Tailscale, reconnect, then sync again.`,
       );
     }
     throw cause;
@@ -179,6 +218,9 @@ async function reach(url: string, init?: RequestInit): Promise<Response> {
  */
 async function mailboxJson(url: string): Promise<unknown> {
   const response = await reach(url, { cache: "no-store" });
+  if (response.status === 401) {
+    throw new Error(`the mailbox refused this device's key (401) — rebuild with the key in .env`);
+  }
   if (!response.ok) throw new Error(`${url} answered ${response.status}`);
   // Read as TEXT and parse here rather than trusting `response.json()`, so the
   // failure can say what actually came back. Checking `content-type` instead
