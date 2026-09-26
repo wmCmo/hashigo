@@ -23,6 +23,7 @@
  * into the build output on every `vite build` costs seconds and gains nothing.
  */
 import {
+  appendFileSync,
   createReadStream,
   existsSync,
   mkdirSync,
@@ -161,6 +162,51 @@ export function seedFile(url: string): string | undefined {
  * A 404 fails the way a missing file should: the service worker's network-first
  * fetch falls back to its cached copy, and anything else sees a real error.
  */
+/**
+ * ONE LINE PER REQUEST, to `build/phone-requests.log` — preview only.
+ *
+ * Added 2026-09-26 when his phone rendered the app unstyled while every check
+ * from the laptop (headers, types, the tailnet URL itself) came back right. The
+ * laptop cannot see what the PHONE asked for and got; this can. Path, status,
+ * content type, and whether a service worker made the request — no bodies, no
+ * query strings, nothing from the mailbox payloads.
+ */
+function requestLog(): Plugin {
+  const file = resolve(root, "build/phone-requests.log");
+  return {
+    name: "hashigo-request-log",
+    configurePreviewServer(server) {
+      server.middlewares.use(((
+        request: { url?: string; method?: string; headers: Record<string, string | undefined> },
+        response: { statusCode: number; getHeader(name: string): unknown; on(event: string, fn: () => void): void },
+        next: () => void,
+      ) => {
+        response.on("finish", () => {
+          const path = (request.url ?? "").split("?")[0];
+          const ua = request.headers["user-agent"] ?? "";
+          const who = /Android/.test(ua) ? "android" : /Windows/.test(ua) ? "windows" : "other";
+          const line = [
+            new Date().toISOString(),
+            who,
+            request.method,
+            path,
+            response.statusCode,
+            String(response.getHeader("content-type") ?? "-"),
+            request.headers["sec-fetch-dest"] ?? "-",
+            request.headers["service-worker"] === "script" ? "sw-script" : "",
+          ].join(" ");
+          try {
+            appendFileSync(file, `${line}\n`);
+          } catch {
+            /* a log must never break a request */
+          }
+        });
+        next();
+      }) as never);
+    },
+  };
+}
+
 function missingAssetsAre404(): Plugin {
   const assets = resolve(root, "build/app-dist/assets");
   const handler = (
@@ -515,6 +561,7 @@ export default defineConfig({
    */
   publicDir: "public",
   plugins: [
+    requestLog(),
     missingAssetsAre404(),
     keepRecentAssets(),
     serveAppDatabases(),
