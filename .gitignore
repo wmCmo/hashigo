@@ -99,3 +99,6 @@ app/fonts/*
 !app/fonts/zenkaku-med.woff2
 !app/fonts/zenmaru-med.woff2
 build/fonts-src/
+
+# Wrangler state for cloud/ (local dev store, cached tokens)
+.wrangler/
