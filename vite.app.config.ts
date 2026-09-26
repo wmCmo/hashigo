@@ -207,6 +207,45 @@ function requestLog(): Plugin {
   };
 }
 
+/**
+ * `/ping` — the smallest thing the phone can ask the laptop for. Plain text, no
+ * app, no database, no service worker (it bypasses `/ping` too), no cache.
+ *
+ * Zach, 2026-09-26, when the phone could not reach the laptop on the apartment
+ * wifi and every test ran through the whole app: *"can we simplify to see the
+ * real problem? like we would test from the most basic case if it even works,
+ * then we slowly build the layer on top"*. This is the bottom rung: if `/ping`
+ * answers, the network, DNS and TLS are fine and anything wrong is above them.
+ */
+function ping(): Plugin {
+  const handler = (
+    request: { url?: string | undefined; headers: Record<string, string | undefined> },
+    response: { statusCode: number; setHeader(name: string, value: string): void; end(body?: string): void },
+    next: () => void,
+  ): void => {
+    if ((request.url ?? "").split("?")[0] !== "/ping") {
+      next();
+      return;
+    }
+    response.statusCode = 200;
+    response.setHeader("Content-Type", "text/plain; charset=utf-8");
+    response.setHeader("Cache-Control", "no-store");
+    response.end(
+      `hashigo laptop answered at ${new Date().toISOString()}\n` +
+        `you asked for host: ${request.headers["host"] ?? "?"}\n`,
+    );
+  };
+  return {
+    name: "hashigo-ping",
+    configureServer(server) {
+      server.middlewares.use(handler as never);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handler as never);
+    },
+  };
+}
+
 function missingAssetsAre404(): Plugin {
   const assets = resolve(root, "build/app-dist/assets");
   const handler = (
@@ -562,6 +601,7 @@ export default defineConfig({
   publicDir: "public",
   plugins: [
     requestLog(),
+    ping(),
     missingAssetsAre404(),
     keepRecentAssets(),
     serveAppDatabases(),

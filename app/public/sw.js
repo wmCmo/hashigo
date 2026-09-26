@@ -228,6 +228,8 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (NEVER_CACHE.has(url.pathname)) return;
   if (isMailbox(url.pathname)) return;
+  // The diagnostic rung (vite.app.config.ts → ping()). Always live, never stored.
+  if (url.pathname === "/ping") return;
   if (isDevPlumbing(url.pathname, url.search)) return;
   // A ranged request is a media seek. Let the browser own it.
   if (request.headers.has("range")) return;
