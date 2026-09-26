@@ -311,11 +311,15 @@ function missingAssetsAre404(): Plugin {
 const KEEP_DAYS = 14;
 
 function keepRecentAssets(): Plugin {
+  let outDir = resolve(root, "build/app-dist");
   return {
     name: "hashigo-keep-recent-assets",
     apply: "build",
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir);
+    },
     closeBundle() {
-      const assets = resolve(root, "build/app-dist/assets");
+      const assets = resolve(outDir, "assets");
       if (!existsSync(assets)) return;
       const cutoff = Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000;
       for (const name of readdirSync(assets)) {
@@ -594,6 +598,18 @@ function syncMailbox(): Plugin {
   };
 }
 
+/**
+ * TWO BUILDS FROM ONE CONFIG (2026-09-26): the default one the laptop serves over
+ * the tailnet, and `--mode cloud`, which Cloudflare serves (`cloud/app/`).
+ *
+ * The cloud build reads `.env.cloud`, which empties `VITE_MAILBOX_URL` and
+ * `VITE_MAILBOX_TOKEN`: there the app, the mailbox and generation share ONE
+ * origin, so sync and generate are same-origin requests authorised by the
+ * unlock cookie — and no key is baked into a bundle anyone on the internet can
+ * download. It builds into its own directory so the two never overwrite each other.
+ */
+const CLOUD = process.argv.includes("--mode") && process.argv[process.argv.indexOf("--mode") + 1] === "cloud";
+
 export default defineConfig({
   root: "app",
   // `.env` lives at the REPO root, beside the API keys `vite.generate.ts` reads.
@@ -674,7 +690,7 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
-    outDir: "../build/app-dist",
+    outDir: CLOUD ? "../build/app-cloud-dist" : "../build/app-dist",
     // FALSE since 2026-09-26 — see `keepRecentAssets`. A build that wiped the
     // directory deleted the very files an already-open page still asks for.
     emptyOutDir: false,

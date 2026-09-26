@@ -1,0 +1,32 @@
+{
+  // Hashigo on Cloudflare — the app, the seed, sync and generation from ONE
+  // origin. See src/app.ts. The name is the address (hashigo.<account>.workers.dev)
+  // and the phone keeps its database per address, so it is chosen once.
+  "name": "hashigo",
+  "main": "src/app.ts",
+  "compatibility_date": "2026-09-01",
+  // `Buffer`, which `src/accent/speech.ts` uses to decode Google's audio.
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    // `npm run app:build:cloud` — the bundle with NO key in it.
+    "directory": "../../build/app-cloud-dist",
+    "binding": "ASSETS",
+    // Every request goes through the lock first, files included.
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  },
+  "kv_namespaces": [
+    // The SAME mailbox the tailnet build syncs with, so both builds see one
+    // set of payloads during the move.
+    { "binding": "MAILBOX", "id": "1d33ef525a084e5b852fb5cb78f72311" }
+  ],
+  "r2_buckets": [{ "binding": "SEED", "bucket_name": "hashigo-seed" }],
+  "vars": {
+    // Same-origin now; kept so the mailbox code's CORS stays well-defined.
+    "ALLOWED_ORIGINS": "https://hashigo.titan-zp4.workers.dev"
+  }
+  // SECRETS, set with `wrangler secret put`, never written here:
+  //   UNLOCK_HASH, COOKIE_KEY, MAILBOX_TOKEN, GOOGLE_TTS_SECRET, ANTHROPIC_API_KEY
+}

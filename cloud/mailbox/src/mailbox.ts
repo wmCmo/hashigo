@@ -132,7 +132,12 @@ async function listPeers(env: Env): Promise<{ deviceId: string; bytes: number; u
   return peers;
 }
 
-export async function handle(request: Request, env: Env): Promise<Response> {
+/**
+ * `preAuthorised` is for the app Worker (`cloud/app/`), which serves this from
+ * its own origin and has already checked the unlock cookie. The bearer token
+ * still works either way.
+ */
+export async function handle(request: Request, env: Env, preAuthorised = false): Promise<Response> {
   const cors = corsHeaders(request, env);
   const url = new URL(request.url);
 
@@ -149,7 +154,7 @@ export async function handle(request: Request, env: Env): Promise<Response> {
     url.pathname === "/generate/" ||
     url.pathname.startsWith("/generated/");
   if (!known) return json(404, { error: "not found" }, cors);
-  if (!authorised(request, env)) return json(401, { error: "unauthorised" }, cors);
+  if (!preAuthorised && !authorised(request, env)) return json(401, { error: "unauthorised" }, cors);
 
   // ── generation (./generate.ts) ─────────────────────────────────────────────
   if (url.pathname === "/generate/") {
