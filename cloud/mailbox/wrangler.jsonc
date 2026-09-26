@@ -4,9 +4,11 @@
   "main": "src/mailbox.ts",
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
+  // No per-version preview URLs: one public address for a mailbox of his history.
+  "preview_urls": false,
   "kv_namespaces": [
-    // Filled in by `wrangler kv namespace create MAILBOX` on first deploy.
-    { "binding": "MAILBOX", "id": "REPLACE_WITH_KV_ID" }
+    // Created 2026-09-26 with `wrangler kv namespace create MAILBOX`.
+    { "binding": "MAILBOX", "id": "1d33ef525a084e5b852fb5cb78f72311" }
   ],
   "vars": {
     // Where the app is served from. The laptop's tailnet name, and the two

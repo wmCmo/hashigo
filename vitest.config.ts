@@ -125,6 +125,13 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     root: ".",
+    // THE SUITE MUST NOT DEPEND ON HIS `.env`. Since 2026-09-26 the real `.env`
+    // carries the Cloudflare mailbox's address and key, and Vitest loads `VITE_`
+    // variables from it — so `app/sync-client.ts` aimed every test at
+    // `*.workers.dev` instead of the local `/sync/` routes the tests mock, and
+    // six of them failed with 404. Empty here means "the laptop mailbox", which
+    // is what the tests describe.
+    env: { VITE_MAILBOX_URL: "", VITE_MAILBOX_TOKEN: "" },
     // ─── A WORKTREE INSIDE THE REPO IS NOT PART OF THIS SUITE ────────────────
     //
     // The desktop app puts a spawned session's git worktree under
