@@ -33,6 +33,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -610,6 +611,26 @@ function syncMailbox(): Plugin {
  */
 const CLOUD = process.argv.includes("--mode") && process.argv[process.argv.indexOf("--mode") + 1] === "cloud";
 
+/**
+ * 起動画面と設定に出す版（`app/version.ts`）。package.json の版と、ビルドした commit。
+ * git が無い・失敗したときは commit を空にする — 版が出ないよりまし。
+ */
+function buildInfo(): { version: string; build: string } {
+  const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { version: string };
+  const git = (...args: string[]): string =>
+    execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  let build = "";
+  try {
+    build = git("rev-parse", "--short", "HEAD");
+    // Tracked changes only: an untracked scratch file does not make the build differ.
+    if (git("status", "--porcelain", "--untracked-files=no") !== "") build += "-dirty";
+  } catch {
+    build = "";
+  }
+  return { version: pkg.version, build };
+}
+const BUILD_INFO = buildInfo();
+
 export default defineConfig({
   root: "app",
   // `.env` lives at the REPO root, beside the API keys `vite.generate.ts` reads.
@@ -646,7 +667,12 @@ export default defineConfig({
     generateOnDemand(),
     serviceWorkerPrecache(),
   ],
-  // NO `define` HERE ANY MORE. It injected `__SCHEMA_VERSION_FROM_NODE__`, parsed out
+  // The build's version, for `app/version.ts` — the only `define` here.
+  define: {
+    __APP_VERSION__: JSON.stringify(BUILD_INFO.version),
+    __APP_BUILD__: JSON.stringify(BUILD_INFO.build),
+  },
+  // NO SCHEMA `define` HERE ANY MORE. It injected `__SCHEMA_VERSION_FROM_NODE__`, parsed out
   // of `src/schema/index.ts` with a regex, for a reader that does not exist: nothing
   // in `app/` ever named the global, and `src/db/browser.ts` imports the real
   // `SCHEMA_VERSION` rather than a copy. `vite.config.ts` keeps it — `spike/` does

@@ -117,6 +117,7 @@ import { line, mib, say } from "./ui.js";
 import { openVoiceDialog } from "./voice-dialog.js";
 import { hydrateIcons, icon, opIcon, prependIcon, setIcon, type IconName } from "./icons.js";
 import { cloudHeaders, cloudUrl, IN_CLOUD, SERVER_NAME } from "./cloud.js";
+import { versionLabel } from "./version.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import {
   attachInput,
@@ -197,6 +198,7 @@ const replayButton = el<HTMLButtonElement>("replay");
 // Phosphor Light for every `data-icon` in the markup (app/icons.ts). The buttons
 // keep their aria-labels and their words; the icons are aria-hidden.
 hydrateIcons();
+el("bootversion").textContent = versionLabel();
 const readingButton = el<HTMLButtonElement>("readingtoggle");
 const doneView = el("done");
 const doneText = el("donetext");

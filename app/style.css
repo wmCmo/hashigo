@@ -288,14 +288,18 @@
   letter-spacing: 0.005em;
 }
 
-/* Under ~24px the brief turns WONK off — a leaning `h` is charm at 56px and
-   noise at 16px — and drops tracking back to zero. */
+/* The small wordmark (header, rail) is the SAME locked instance as the boot
+   screen's. Zach, 2026-09-27: *"the logo font doesn't follow the design spec, but
+   the one on the loading screen does"*. It used to be `opsz 16, wght 620, WONK 0`
+   on a claim that the brief turns WONK off under ~24px — a claim recorded nowhere
+   the repo can check (DECISIONS.md 32 names one instance only), and at opsz 16
+   Fraunces is a different, chunkier cut, which is what he saw. */
 .wordmark-ui {
   font-family: var(--display);
-  font-weight: 620;
+  font-weight: 650;
   font-optical-sizing: none;
-  font-variation-settings: "opsz" 16, "wght" 620, "SOFT" 100, "WONK" 0;
-  letter-spacing: 0;
+  font-variation-settings: "opsz" 144, "wght" 650, "SOFT" 100, "WONK" 1;
+  letter-spacing: 0.005em;
 }
 
 /* Visible keyboard focus, everywhere, at the brief's values. The only vermilion
@@ -381,6 +385,15 @@ body {
 .boot-lockup .wordmark {
   font-size: 46px;
   line-height: 1;
+}
+
+/* Which build this is — so "did the reload pick up the deploy" is a glance, not a
+   guess. Quiet: it is a fact to check, not something to read every boot. */
+.boot-version {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  margin: -14px 0 22px;
 }
 
 /* ─── THE SEED DOWNLOAD, DRAWN — Zach's design, 2026-09-16 ──────────────────

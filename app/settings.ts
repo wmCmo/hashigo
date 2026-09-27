@@ -12,6 +12,7 @@ import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
 import { pushUndo } from "./ops.js";
 import { THEMES, readTheme, themeLabel } from "./theme.js";
 import { openConfirm, say } from "./ui.js";
+import { versionLabel } from "./version.js";
 import { ask } from "./worker-client.js";
 
 /**
@@ -410,7 +411,7 @@ function settingsState(reply: ReplyFor["settings"]): HTMLElement {
       "resolved plan",
       `${reply.resolved.newLimit} new/day, ${reply.resolved.interleave}`,
     ],
-    ["versions", `schema v${reply.schemaVersion} · sqlite ${reply.sqliteVersion}`],
+    ["versions", `app ${versionLabel()} · schema v${reply.schemaVersion} · sqlite ${reply.sqliteVersion}`],
   ];
   for (const [name, text] of lines) {
     const line = document.createElement("p");
