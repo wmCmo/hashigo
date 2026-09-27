@@ -8,7 +8,7 @@
  * list, and an import cannot be assigned to, so the owner stays the only writer.
  */
 
-import { icon, setIcon, type IconName } from "./icons.js";
+import { icon, prependIcon, setIcon, type IconName } from "./icons.js";
 import type { DeckBrief, TemplateBrief } from "./protocol.js";
 import type { SyncStatus } from "./sync-client.js";
 import { openDashboard } from "./dashboard.js";
@@ -156,7 +156,8 @@ function paintTree(total: number): void {
   const add = document.createElement("button");
   add.type = "button";
   add.className = "tree-add";
-  add.textContent = "+ new top-level deck";
+  add.textContent = "new top-level deck";
+  prependIcon(add, "plus");
   add.addEventListener("click", () => {
     openPrompt("New deck", "It starts empty, at the top level, with reverse set to inherit.",
       "name", "", (name) => void runDeckOp({ op: "create", deckId: "", name, parentId: null }));
@@ -200,7 +201,7 @@ function deckNode(deck: DeckBrief, depth: number): HTMLElement {
   more.setAttribute("role", "button");
   more.tabIndex = 0;
   more.setAttribute("aria-label", `actions for ${deck.name}`);
-  more.textContent = "\u22ef";
+  setIcon(more, "dots-three");
   const openMenu = (event: Event): void => {
     event.stopPropagation();
     event.preventDefault();
@@ -214,7 +215,8 @@ function deckNode(deck: DeckBrief, depth: number): HTMLElement {
 
   row.addEventListener("click", (event) => {
     const hit = event.target as HTMLElement;
-    if (hit.classList.contains("tree-twist") || hit.classList.contains("tree-more")) return;
+    // アイコンの SVG が target になるので、クラスではなく祖先で見る。
+    if (hit.closest(".tree-twist, .tree-more") !== null) return;
     void openGallery(deck.id);
   });
   // Kept as an accelerator, now that it is not the only route.
@@ -246,7 +248,7 @@ function navRow(
   const twist = document.createElement("span");
   twist.className = "tree-twist";
   if (twistFor !== null) {
-    twist.textContent = expanded.has(twistFor) ? "▾" : "▸";
+    setIcon(twist, expanded.has(twistFor) ? "caret-down" : "caret-right");
     twist.addEventListener("click", (event) => {
       // His #5: TOGGLABLE. Stop the click reaching the row, or opening a deck and
       // collapsing it would be the same gesture.
@@ -322,7 +324,6 @@ sidebarToggle.addEventListener("click", () => {
   if (document.body.classList.contains("sidebar-open")) closeSidebar();
   else openSidebar();
 });
-setIcon(el("sidebarclose"), "x");
 el("sidebarclose").addEventListener("click", closeSidebar);
 el("sidebarscrim").addEventListener("click", closeSidebar);
 el("dashboardlink").addEventListener("click", () => void openDashboard());
@@ -404,8 +405,8 @@ function paintSync(): void {
   // bedroom mode they were the same dot. Colour still repeats the meaning; it no
   // longer carries it alone.
   const glyph = syncDot.querySelector("i");
-  if (glyph !== null && glyph.dataset["icon"] !== shown) {
-    glyph.dataset["icon"] = shown;
+  if (glyph !== null && glyph.dataset["shown"] !== shown) {
+    glyph.dataset["shown"] = shown;
     glyph.replaceChildren(icon(SYNC_ICON[shown] ?? "cloud-slash"));
   }
   syncDot.title = label;

@@ -11,6 +11,7 @@ import { shell } from "./shell.js";
 import { closeSidebar, deckIndex } from "./sidebar.js";
 import { ask } from "./worker-client.js";
 import { confirmDelete, openEditorById, runCardOp } from "./ops.js";
+import { opIcon, prependIcon } from "./icons.js";
 
 /**
  * *"once you click the deck, what happens? the main screen goes to the card
@@ -158,6 +159,8 @@ function galleryCard(hit: BrowseHit): HTMLElement {
     button.className = "gcard-op";
     if (label === "delete") button.classList.add("danger");
     button.textContent = label;
+    const glyph = opIcon(label);
+    if (glyph !== null) prependIcon(button, glyph);
     button.addEventListener("click", run);
     bar.appendChild(button);
   }

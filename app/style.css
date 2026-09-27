@@ -1316,6 +1316,45 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   height: 100%;
   width: 100%;
 }
+/* 文言の前に立つアイコン（app/icons.ts の prependIcon）。 */
+.ic-lead {
+  margin-right: 0.45em;
+}
+
+/* `data-icon-on` の二つ入り: 「入」の状態だけ塗りを見せる。色ではなく形で状態を示す
+   のは同期アイコンと同じ理由 — 就寝モードの白黒でも読めること。 */
+.ic-on {
+  display: none;
+}
+
+.on > .ic-on,
+.arm > .ic-on,
+[aria-pressed="true"] > .ic-on {
+  display: inline-flex;
+}
+
+.on > .ic-off,
+.arm > .ic-off,
+[aria-pressed="true"] > .ic-off {
+  display: none;
+}
+
+/* メニューの行: アイコンの列、その右に名前と説明の二段。 */
+.menu-item.has-icon {
+  column-gap: 10px;
+  display: grid;
+  grid-template-columns: 1.25em 1fr;
+}
+
+.menu-item.has-icon > .ic {
+  grid-row: 1 / span 2;
+  margin-top: 0.05em;
+}
+
+.menu-item.has-icon > b,
+.menu-item.has-icon > i {
+  grid-column: 2;
+}
 
 /* The clip button carries both weights; the Fill one is the "playing" state —
    the same icon filled, which reads on a black-and-white screen. */

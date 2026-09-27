@@ -121,7 +121,7 @@
              bottom-right for his right thumb, and a drawer under that thumb would
              be opened by accident mid-card. -->
         <button id="sidebartoggle" class="sidebartoggle" type="button"
-                aria-controls="sidebar" aria-expanded="false" aria-label="browse the collection">☰</button>
+                aria-controls="sidebar" aria-expanded="false" aria-label="browse the collection" data-icon="list"></button>
         <!-- Decision 32's mark, in the two-rung small construction: below 24px
              the three-rung one collapses. The top rung is the ONE vermilion on
              this screen — everything else that used to be an accent is indigo. -->
@@ -196,17 +196,15 @@
              the app being stuck. A dead-end state has to name its exit. -->
         <div id="peek" class="peek" role="status" hidden>
           <span id="peektext"></span>
-          <button id="peekback" class="peek-back" type="button">back to your card</button>
+          <button id="peekback" class="peek-back" type="button" data-icon="arrow-u-up-left">back to your card</button>
         </div>
-        <button id="readingtoggle" class="readingtoggle" hidden></button>
+        <button id="readingtoggle" class="readingtoggle" type="button" aria-pressed="false" data-icon="toggle-left" data-icon-on="toggle-right-fill" hidden><span class="op-label">Reading</span></button>
       </main>
 
       <!-- Round, bottom RIGHT: he reviews one-handed with his right hand, and a
            native <audio controls> puts play at the far left of a full-width strip,
            which is the worst corner for that thumb. -->
-      <button id="replay" class="replay" type="button" aria-label="play the clip again">
-        &#9654;
-      </button>
+      <button id="replay" class="replay" type="button" aria-label="play the clip again" data-icon="play"></button>
 
       <!-- ONE FIXED FOOTER, AND IT IS THE FIX FOR A REAL BUG.
            These two rows used to be separately `position: fixed`, each with its
@@ -231,10 +229,10 @@
            of the menu — it is the safety net, and putting the thing you reach
            for when something already went wrong behind two taps is backwards. -->
       <div class="ops">
-        <button id="prevcard" class="op" type="button" aria-label="previous card">←</button>
-        <button id="opmore" class="op" type="button" aria-label="card actions">⋯</button>
-        <button id="opundo" class="op" type="button" aria-label="undo">undo<span class="kbd-inline"> ⌃z</span></button>
-        <button id="nextcard" class="op" type="button" aria-label="next card">→</button>
+        <button id="prevcard" class="op" type="button" aria-label="previous card" data-icon="caret-left"></button>
+        <button id="opmore" class="op" type="button" aria-label="card actions" data-icon="dots-three"></button>
+        <button id="opundo" class="op" type="button" aria-label="undo" data-icon="arrow-counter-clockwise">undo<span class="kbd-inline"> ⌃z</span></button>
+        <button id="nextcard" class="op" type="button" aria-label="next card" data-icon="caret-right"></button>
       </div>
 
       <!-- The shadowing controls, 2026-09-12. Below the operation row because he
@@ -253,13 +251,13 @@
            left alone. -->
       <div id="shadowbar" class="shadowbar">
         <button id="oploop" class="op" type="button" aria-pressed="false"
-                aria-label="loop the clip">loop<span class="kbd-inline"> l</span></button>
+                aria-label="loop the clip" data-icon="repeat" data-icon-on="repeat-fill"><span class="op-label">loop</span><span class="kbd-inline"> l</span></button>
         <button id="opspeed" class="op" type="button"
-                aria-label="playback speed">1×<span class="kbd-inline"> s</span></button>
+                aria-label="playback speed" data-icon="gauge"><span class="op-label">1×</span><span class="kbd-inline"> s</span></button>
         <button id="oprecord" class="op" type="button"
-                aria-label="record your voice">record<span class="kbd-inline"> m</span></button>
+                aria-label="record your voice" data-icon="microphone" data-icon-on="microphone-fill"><span class="op-label">record</span><span class="kbd-inline"> m</span></button>
         <button id="optake" class="op" type="button" hidden
-                aria-label="play your recording">your take<span class="kbd-inline"> ⇧m</span></button>
+                aria-label="play your recording" data-icon="headphones"><span class="op-label">your take</span><span class="kbd-inline"> ⇧m</span></button>
       </div>
 
       <!-- THE STEPPER GOES LAST, AND THAT IS A MISTAP FIX. Zach, 2026-09-13:
@@ -274,8 +272,8 @@
            `undo` is one button away in the row above. -->
       <div id="bar" class="bar">
         <div id="grades" class="grades">
-          <button id="forgot" class="no" type="button">forgot<span class="kbd">f</span></button>
-          <button id="remembered" class="ok" type="button">
+          <button id="forgot" class="no" type="button" data-icon="x">forgot<span class="kbd">f</span></button>
+          <button id="remembered" class="ok" type="button" data-icon="check">
             remembered<span class="kbd">j</span>
           </button>
         </div>
@@ -293,7 +291,7 @@
     <!-- His #6. A view, not a layer: a gallery is somewhere you stay. -->
     <section id="gallery" class="gallery">
       <header class="gallery-head">
-        <button id="galleryback" class="gallery-back" type="button">← review</button>
+        <button id="galleryback" class="gallery-back" type="button" data-icon="arrow-left">review</button>
         <span id="gallerytitle" class="gallery-title"></span>
         <span id="gallerycount" class="gallery-count"></span>
       </header>
@@ -324,7 +322,7 @@
            focusable="false"></svg>
       <h2>done</h2>
       <p id="donetext"></p>
-      <button id="backup" type="button">export backup</button>
+      <button id="backup" type="button" data-icon="download-simple">export backup</button>
     </section>
 
     <!-- His request 5, the browsing half. `create` is deliberately absent and
@@ -353,26 +351,26 @@
       </div>
       <div class="sidebar-head">
         <span>browse</span>
-        <button id="sidebarclose" class="layer-close" type="button" aria-label="close">✕</button>
+        <button id="sidebarclose" class="layer-close" type="button" aria-label="close" data-icon="x"></button>
       </div>
       <!-- His #4: NO card list here. 10,000+ cards do not belong in a 330px
            drawer; finding one is Ctrl+K's job and seeing a set is the gallery's. -->
       <button id="palettebutton" class="sidebar-action" type="button">
-        search cards <span class="kbd-inline">ctrl+k</span>
+        <span class="sa-label" data-icon="magnifying-glass">search cards</span> <span class="kbd-inline">ctrl+k</span>
       </button>
       <!-- His standing rule: every 操作 on the desktop exists on mobile. The
            header dot is the glance; this row is the control and the detail. -->
       <button id="synclink" class="sidebar-action sidebar-action-sync" type="button">
-        <span>sync now</span>
+        <span class="sa-label" data-icon="arrows-clockwise">sync now</span>
         <i id="syncdetail" class="sidebar-action-note"></i>
       </button>
-      <button id="dashboardlink" class="sidebar-action" type="button">dashboard</button>
-      <button id="settingslink" class="sidebar-action" type="button">settings</button>
+      <button id="dashboardlink" class="sidebar-action" type="button"><span class="sa-label" data-icon="chart-bar">dashboard</span></button>
+      <button id="settingslink" class="sidebar-action" type="button"><span class="sa-label" data-icon="gear-six">settings</span></button>
       <!-- Hidden until the browser actually offers an install. A control that
            cannot work is worse than no control — the same rule the sourceless
            <audio> element is hidden under. `app/install.ts` says why. -->
       <button id="installapp" class="sidebar-action sidebar-action-install" type="button" hidden>
-        install on this device
+        <span class="sa-label" data-icon="download-simple">install on this device</span>
         <i id="installnote" class="sidebar-action-note"></i>
       </button>
       <div id="decklist" class="deck-list"></div>

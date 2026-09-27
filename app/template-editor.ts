@@ -29,7 +29,7 @@ import { loadDecks } from "./sidebar.js";
 import { openConfirm, say } from "./ui.js";
 import { ask } from "./worker-client.js";
 import { pushUndo, refreshAfterOp } from "./ops.js";
-import { setIcon } from "./icons.js";
+import { prependIcon, setIcon } from "./icons.js";
 
 /**
  * *"where can i edit my template? there should be a modal for editing template and
@@ -170,7 +170,8 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
     const add = document.createElement("button");
     add.type = "button";
     add.className = "tree-add";
-    add.textContent = "+ add a field";
+    add.textContent = "add a field";
+    prependIcon(add, "plus");
     add.addEventListener("click", () => openAddField(detail, run));
     body.appendChild(add);
 
@@ -314,19 +315,21 @@ function templateFieldRow(
     },
     true,
   );
+  prependIcon(ops.lastElementChild as HTMLElement, "trash");
 
   const settings = templateFieldSettings(detail, field, run);
   if (settings !== null) {
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "gcard-op";
-    toggle.textContent = "⌄";
+    setIcon(toggle, "caret-down");
     toggle.title = "what this field carries";
+    toggle.setAttribute("aria-label", "what this field carries");
     toggle.setAttribute("aria-expanded", "false");
     toggle.addEventListener("click", () => {
       const open = settings.hidden;
       settings.hidden = !open;
-      toggle.textContent = open ? "⌃" : "⌄";
+      setIcon(toggle, open ? "caret-up" : "caret-down");
       toggle.setAttribute("aria-expanded", String(open));
     });
     ops.insertBefore(toggle, ops.firstChild);
@@ -658,6 +661,7 @@ function voicePicker(
   hear.type = "button";
   hear.className = "gcard-op";
   hear.textContent = "hear it";
+  prependIcon(hear, "speaker-high");
   const refresh = (): void => {
     hear.disabled = !isCatalogueVoice(select.value);
     hear.title = hear.disabled
@@ -677,7 +681,7 @@ function voicePicker(
 /** Play one sample line in a catalogue voice. Nothing is stored anywhere. */
 async function audition(voice: string, button: HTMLButtonElement): Promise<void> {
   button.disabled = true;
-  const label = button.textContent;
+  const label = [...button.childNodes];
   button.textContent = "…";
   try {
     const response = await fetch(cloudUrl("/generate/"), {
@@ -701,7 +705,7 @@ async function audition(voice: string, button: HTMLButtonElement): Promise<void>
   } catch (cause) {
     say(`could not audition ${voice} — ${(cause as Error).message}`, true);
   } finally {
-    button.textContent = label;
+    button.replaceChildren(...label);
     button.disabled = false;
   }
 }

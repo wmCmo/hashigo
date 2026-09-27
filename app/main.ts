@@ -115,7 +115,7 @@ import { openPalette } from "./palette.js";
 import { provideShell } from "./shell.js";
 import { line, mib, say } from "./ui.js";
 import { openVoiceDialog } from "./voice-dialog.js";
-import { icon, setIcon } from "./icons.js";
+import { hydrateIcons, icon, opIcon, prependIcon, setIcon, type IconName } from "./icons.js";
 import { cloudHeaders, cloudUrl, IN_CLOUD, SERVER_NAME } from "./cloud.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import {
@@ -194,10 +194,9 @@ const revealWord = el("revealword");
 const forgotButton = el<HTMLButtonElement>("forgot");
 const rememberedButton = el<HTMLButtonElement>("remembered");
 const replayButton = el<HTMLButtonElement>("replay");
-// Phosphor Light in place of the text glyphs the markup ships with (app/icons.ts).
-// The buttons keep their aria-labels; the icons are aria-hidden.
-setIcon(replayButton, "play");
-setIcon(el<HTMLButtonElement>("sidebartoggle"), "list");
+// Phosphor Light for every `data-icon` in the markup (app/icons.ts). The buttons
+// keep their aria-labels and their words; the icons are aria-hidden.
+hydrateIcons();
 const readingButton = el<HTMLButtonElement>("readingtoggle");
 const doneView = el("done");
 const doneText = el("donetext");
@@ -984,10 +983,11 @@ async function showCardAt(): Promise<void> {
   }
 
   readingButton.hidden = card.mode.readingFieldId === null;
-  readingButton.textContent = card.mode.reading ? "Reading → false" : "Reading → true";
+  paintReadingButton(card.mode.reading);
 
   setState("prompt");
   revealWord.textContent = "reveal";
+  prependIcon(revealButton, "eye");
   // The mode-aware entry. On a produce card this plays nothing; on an identify
   // card it asks the question and leaves every cloze masked.
   for (const position of prompt) card.enter(position);
@@ -1274,6 +1274,7 @@ function settleReveal(card: MountedCard<HTMLElement>): void {
   } else {
     setState("revealing");
     revealWord.textContent = `next · ${steps.length - stepIndex}`;
+    prependIcon(revealButton, "arrow-down");
   }
   paintReplay(drill === null ? "none" : replayState);
 }
@@ -2323,6 +2324,17 @@ async function grade(remembered: boolean): Promise<void> {
   }
 }
 
+/**
+ * `Reading` をスイッチの形で見せる。以前は「Reading → true」と押した後の値を文字で
+ * 書いていたが、スイッチは今の値を示す — 塗りのトグルが true、線のトグルが false。
+ */
+function paintReadingButton(value: boolean): void {
+  readingButton.setAttribute("aria-pressed", String(value));
+  readingButton.title = value
+    ? "Reading = true — press to make it false"
+    : "Reading = false — press to make it true";
+}
+
 /** Decision 29's audit loop, without leaving the session. */
 async function flipReading(): Promise<void> {
   const card = mounted;
@@ -2331,7 +2343,7 @@ async function flipReading(): Promise<void> {
   readingButton.disabled = true;
   try {
     await ask<"reading">({ kind: "reading", cardId: currentCardId, value });
-    readingButton.textContent = value ? "Reading → false" : "Reading → true";
+    paintReadingButton(value);
     // The change takes effect on the card's NEXT appearance, not mid-reveal:
     // re-mounting now would re-render the thing he is looking at underneath him.
     hintLine.textContent = `Reading = ${value} — takes effect next time this card comes up`;
@@ -2361,7 +2373,6 @@ el("backup").addEventListener("click", () => void exportBackup());
  * how a toggle starts lying.
  */
 const moreButton = el<HTMLButtonElement>("opmore");
-setIcon(moreButton, "dots-three");
 
 /**
  * THE TWO STATES STILL HAVE TO BE READABLE WITHOUT OPENING ANYTHING.
@@ -2476,15 +2487,20 @@ function savePlayback(): void {
   paintShadowbar();
 }
 
+/** ボタンの文言の span。先頭はアイコンなので `firstChild` ではもう届かない。 */
+function opLabel(button: HTMLElement): HTMLElement {
+  return button.querySelector<HTMLElement>(".op-label") ?? button;
+}
+
 function paintShadowbar(): void {
   loopButton.classList.toggle("on", playbackState.loop);
   loopButton.setAttribute("aria-pressed", String(playbackState.loop));
-  speedButton.firstChild!.textContent = speedLabel(playbackState.rate);
+  opLabel(speedButton).textContent = speedLabel(playbackState.rate);
   // Normal speed is the ABSENCE of a setting, so it does not light up.
   speedButton.classList.toggle("on", playbackState.rate !== 1);
 
   const labels = takeLabels(takeState);
-  recordButton.firstChild!.textContent = labels.record;
+  opLabel(recordButton).textContent = labels.record;
   recordButton.disabled = labels.recordDisabled;
   recordButton.classList.toggle("arm", takeState === "recording");
   recordButton.title =
@@ -2492,7 +2508,7 @@ function paintShadowbar(): void {
       ? "no microphone here — the permission was refused, or this browser has none"
       : "record yourself saying it, then play both back";
   takeButton.hidden = labels.take === null;
-  if (labels.take !== null) takeButton.firstChild!.textContent = labels.take;
+  if (labels.take !== null) opLabel(takeButton).textContent = labels.take;
 }
 
 /**
@@ -3053,6 +3069,8 @@ function paintLayerOps(layer: Layer, host: HTMLElement): void {
     if (on) button.classList.add("on");
     if (label === "delete") button.classList.add("danger");
     button.textContent = label;
+    const glyph = opIcon(label);
+    if (glyph !== null) prependIcon(button, glyph);
     button.addEventListener("click", run);
     host.appendChild(button);
   }
@@ -3498,16 +3516,22 @@ function openCardMenu(cardId: string, name: string): void {
 
   const list = document.createElement("div");
   list.className = "menu-list";
-  const item = (label: string, note: string, run: () => void, danger = false): void => {
+  const item = (
+    glyph: IconName,
+    label: string,
+    note: string,
+    run: () => void,
+    danger = false,
+  ): void => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "menu-item";
+    button.className = "menu-item has-icon";
     if (danger) button.classList.add("danger");
     const bold = document.createElement("b");
     bold.textContent = label;
     const why = document.createElement("i");
     why.textContent = note;
-    button.append(bold, why);
+    button.append(icon(glyph), bold, why);
     button.addEventListener("click", () => {
       closeIfTop(root);
       run();
@@ -3525,15 +3549,17 @@ function openCardMenu(cardId: string, name: string): void {
   // `openEditorById` rather than `openEditorFor` with a card already in hand:
   // that is the same call `e` makes, so the two cannot drift into different
   // editors — see `openEditor`.
-  item("edit", "the fields, the template, the deck", () => void openEditorById(cardId));
+  item("pencil-simple", "edit", "the fields, the template, the deck", () => void openEditorById(cardId));
 
   item(
+    currentPinned ? "push-pin-slash" : "push-pin",
     currentPinned ? "unpin" : "pin",
     currentPinned ? "stop keeping it near the top" : "keep it near the top of a search",
     () => void runCardOp(currentPinned ? "unpin" : "pin", cardId),
   );
 
   item(
+    currentArchived ? "box-arrow-up" : "archive",
     currentArchived ? "unarchive" : "archive",
     currentArchived
       ? "put it back in the queue — its reviews were never touched"
@@ -3543,7 +3569,7 @@ function openCardMenu(cardId: string, name: string): void {
 
   // Stage E. A preference about NEW clips, priced before it is set — see
   // `./voice-dialog.ts`. Below the flags because it is rarer than they are.
-  item("voice", "which voice this card's new clips are made in", () =>
+  item("speaker-high", "voice", "which voice this card's new clips are made in", () =>
     openVoiceDialog("card", cardId, name),
   );
 
@@ -3551,10 +3577,11 @@ function openCardMenu(cardId: string, name: string): void {
   // the MOUNTED clips, and the menu can also be opened for a card that is not.
   if (mounted !== null && mounted.cardId === cardId) {
     const card = mounted;
-    item("redo a clip", "discard a clip that sounds wrong and make a new one", () => openRedoDialog(card));
+    item("arrows-clockwise", "redo a clip", "discard a clip that sounds wrong and make a new one", () => openRedoDialog(card));
   }
 
   item(
+    "trash",
     "delete",
     "the card, its fields, its links and ALL of its review history",
     () => confirmDelete(cardId, name),

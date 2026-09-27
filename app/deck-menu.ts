@@ -13,6 +13,7 @@ import { childrenOf, deckIndex, subtreeCards } from "./sidebar.js";
 import { openConfirm, openPrompt, say } from "./ui.js";
 import { ask } from "./worker-client.js";
 import { openVoiceDialog } from "./voice-dialog.js";
+import { icon, type IconName } from "./icons.js";
 
 /**
  * Every deck operation goes through here, so undo and the error path exist once.
@@ -96,16 +97,22 @@ export function openDeckMenu(deck: DeckBrief): void {
 
   const list = document.createElement("div");
   list.className = "menu-list";
-  const item = (label: string, note: string, run: () => void, danger = false): void => {
+  const item = (
+    glyph: IconName,
+    label: string,
+    note: string,
+    run: () => void,
+    danger = false,
+  ): void => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "menu-item";
+    button.className = "menu-item has-icon";
     if (danger) button.classList.add("danger");
     const name = document.createElement("b");
     name.textContent = label;
     const why = document.createElement("i");
     why.textContent = note;
-    button.append(name, why);
+    button.append(icon(glyph), name, why);
     button.addEventListener("click", () => {
       closeIfTop(root);
       run();
@@ -113,15 +120,15 @@ export function openDeckMenu(deck: DeckBrief): void {
     list.appendChild(button);
   };
 
-  item("open", "see its cards in the gallery", () => void openGallery(deck.id));
+  item("folder-open", "open", "see its cards in the gallery", () => void openGallery(deck.id));
 
-  item("rename", "the name only — nothing moves", () => {
+  item("pencil-simple-line", "rename", "the name only — nothing moves", () => {
     openPrompt("Rename deck", `Currently ${deck.path}.`, "name", deck.name, (name) =>
       void runDeckOp({ op: "rename", deckId: deck.id, name }),
     );
   });
 
-  item("new sub-deck", "empty, inside this one", () => {
+  item("folder-plus", "new sub-deck", "empty, inside this one", () => {
     openPrompt(
       "New sub-deck",
       `It goes inside ${deck.name} and starts empty. Reverse is 'inherit', so it ` +
@@ -132,16 +139,17 @@ export function openDeckMenu(deck: DeckBrief): void {
     );
   });
 
-  item("move", "put it under another deck, or at the top", () => openDeckMove(deck));
+  item("arrows-out-cardinal", "move", "put it under another deck, or at the top", () => openDeckMove(deck));
 
   // Stage E — the per-deck voice. Unlike reverse and retention (see the header)
   // it changes how a card SOUNDS, not what he is drilled on, and it is priced
   // before it is set.
-  item("voice", "which voice new clips in this deck are made in", () =>
+  item("speaker-high", "voice", "which voice new clips in this deck are made in", () =>
     openVoiceDialog("deck", deck.id, deck.path),
   );
 
   item(
+    deck.archived ? "box-arrow-up" : "archive",
     deck.archived ? "unarchive" : "archive",
     deck.archived
       ? "put it and its cards back in the queue"
@@ -166,6 +174,7 @@ export function openDeckMenu(deck: DeckBrief): void {
   );
 
   item(
+    "trash",
     "delete",
     "only an empty deck — the schema refuses to take cards with it",
     () => {
