@@ -2363,6 +2363,9 @@ replayButton.addEventListener("click", () => {
 });
 readingButton.addEventListener("click", () => void flipReading());
 el("backup").addEventListener("click", () => void exportBackup());
+// Chromium はインストール済みのアプリに永続化を許す。起動時に一度断られていても、
+// 入れた直後にもう一度頼めば次の起動を待たずに警告が消える。
+window.addEventListener("appinstalled", () => void checkPersistence());
 
 /**
  * The two toggles say which way they go — his #6 lists "archive, pin" beside each

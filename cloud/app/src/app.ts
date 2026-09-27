@@ -244,6 +244,25 @@ async function multipart(request: Request, env: AppEnv, url: URL): Promise<Respo
 
 // ─── routing ─────────────────────────────────────────────────────────────────
 
+/**
+ * 鍵の外に置くもの — アプリとして入れるのに要るファイルだけ。
+ *
+ * 2026-09-27、Edge でも Samsung Internet でも「アプリとしてインストール」が出なかった。
+ * ブラウザは manifest を Cookie なしで取りに来る（仕様で credentials は omit、
+ * `crossorigin="use-credentials"` を付けない限り）ので、鍵の中にあると 401 が返り、
+ * manifest のないページはインストールできない。アイコンも同じ。`sw.js` も外に
+ * 出す — 更新確認で 401 を受けるとサービスワーカーが古いまま残る道がひとつ減る。
+ *
+ * どれも中身は汎用のコードと画像で、カードも復習履歴も含まない。種（R2）と
+ * mailbox には届かない: ここは ASSETS だけを返す。
+ */
+const PUBLIC_FILES = new Set(["/manifest.webmanifest", "/sw.js"]);
+const PUBLIC_DIRS = ["/icons/", "/brand/"];
+
+export function isPublicAsset(pathname: string): boolean {
+  return PUBLIC_FILES.has(pathname) || PUBLIC_DIRS.some((dir) => pathname.startsWith(dir));
+}
+
 export async function handleApp(request: Request, env: AppEnv): Promise<Response> {
   const url = new URL(request.url);
   if (url.pathname === "/ping") {
@@ -251,6 +270,7 @@ export async function handleApp(request: Request, env: AppEnv): Promise<Response
   }
   if (url.pathname === "/unlock") return unlock(request, env);
   if (url.pathname.startsWith("/admin/multipart/")) return multipart(request, env, url);
+  if (request.method === "GET" && isPublicAsset(url.pathname)) return env.ASSETS.fetch(request);
 
   if (!(await unlocked(request, env))) {
     // A page navigation is sent to the lock; anything else is a plain 401, so a

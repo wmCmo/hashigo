@@ -118,6 +118,17 @@ describe("nothing behind the lock without the cookie", () => {
     expect(await unlocked(get("/", good), { ...e, COOKIE_KEY: "rotated" })).toBe(false);
   });
 
+  it("the install files are open — the browser fetches the manifest without cookies", async () => {
+    const e = env({ "hashigo-app.db": "sqlite" });
+    for (const path of ["/manifest.webmanifest", "/sw.js", "/icons/icon-192.png", "/brand/favicon.svg"]) {
+      expect((await handleApp(get(path), e)).status, path).toBe(200);
+    }
+    // 鍵の外はこの四種類だけ。似た名前でも種と mailbox には届かない。
+    for (const path of ["/icons/../hashigo-app.db", "/iconsx/a.png", "/sync/", "/"]) {
+      expect((await handleApp(get(path), e)).status, path).toBe(401);
+    }
+  });
+
   it("/ping and /unlock stay open, and say nothing about what is stored", async () => {
     expect(await (await handleApp(get("/ping"), env())).text()).toBe("hashigo is up\n");
     expect((await handleApp(get("/unlock", undefined, "text/html"), env())).status).toBe(200);
