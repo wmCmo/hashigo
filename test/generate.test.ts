@@ -1007,6 +1007,42 @@ describe("a clip this project synthesised", () => {
     db.close();
   });
 
+  /**
+   * 2026-09-27, 基本情報の一枚（DP5xe66N）。「generate audio」を押すとクラウドが
+   * `cached` で答え、保存もされたのに、ボタンがまた出る — 永遠に。
+   *
+   * 声は同じ（Neural2-C）で、文も同じ。違うのは中身だけ: ノートPCが 09-17 に
+   * 作った 26a267…（端末の種には行だけで中身なし）と、クラウドの 6b9f06…。
+   * 上の 09-16 の修正は「次の声」を試したが、同じ声の二つ目の行は試さなかった。
+   */
+  it("plays the second row of the SAME identity when only its bytes are on the device", () => {
+    const { db, store } = speechFixture();
+    const text = "浮動小数点数において、指数（**Exponent**）はその基数を何乗するかを示す数である。";
+    const address = {
+      origin: "generator",
+      request: { kind: "speech", text, voice: null, lang: "ja-JP", options: {} },
+    } as const;
+    // The seed's row: fill voice, byte_size set, NO payload — and it sorts first.
+    db.prepare(
+      `INSERT INTO blobs (hash, kind, mime, byte_size, source_text, voice, lang, options, refcount)
+       VALUES (?, 'speech', 'audio/mpeg', 167232, ?, 'ja-JP-Neural2-C', 'ja-JP', '{}', 1)`,
+    ).run("0".repeat(64), text);
+    expect(cardAudioResolver(db, "someCard", { store })(address)).toBeNull();
+
+    // What "generate audio" files: the same identity, different bytes.
+    const bytes = new Uint8Array([0x49, 0x44, 0x33, 9, 9, 9]);
+    const fresh = storeGeneratedSpeech(db, store, { text, lang: "ja-JP", options: {} }, bytes);
+    expect(fresh > "0".repeat(64)).toBe(true);
+
+    // The preferred row is unchanged; the one that PLAYS is the one with bytes.
+    expect(resolveAudioHash(db, "someCard", address)).toBe("0".repeat(64));
+    expect(audioHashCandidates(db, "someCard", address)).toEqual(["0".repeat(64), fresh]);
+    const played = cardAudioResolver(db, "someCard", { store })(address);
+    expect(played?.hash).toBe(fresh);
+    expect(played?.bytes).toEqual(bytes);
+    db.close();
+  });
+
   it("is still silent, loudly, when NEITHER hash has bytes", () => {
     const { db } = speechFixture();
     const text = "どこにも音がない";

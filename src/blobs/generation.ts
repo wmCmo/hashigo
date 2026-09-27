@@ -255,3 +255,35 @@ export function lookupGeneration(
   return row?.hash ?? null;
 }
 
+const LOOKUP_ALL_SQL = LOOKUP_SQL.replace(/\s+LIMIT 1$/, "");
+const LOOKUPS_ALL = new WeakMap<SqliteHandle, { all(...params: readonly unknown[]): unknown[] }>();
+
+/**
+ * 同じ生成の身元を持つ行を、すべて `lookupGeneration` と同じ順で。先頭は常に
+ * `lookupGeneration` の答えと同じ。
+ *
+ * 2026-09-27、基本情報の一枚で「generate audio」を何度押しても鳴らなかった。
+ * 同じ文・同じ声の行が二つあり（ノートPCが 09-17 に作った 26a267… と、クラウドが
+ * 作った 6b9f06…。Google の出力は長い文だと毎回同じとは限らない）、端末の種には
+ * 前者の行だけがあって音の中身がなかった。`LIMIT 1` の答えは hash 順で必ず前者に
+ * なるので、押すたびに後者を保存しても誰も後者を引かなかった。
+ *
+ * 行があることと鳴らせることは端末では別の問いで、その答えは中身を持っている
+ * 側（`cardAudioResolver`）にしか出せない。だからここは一つに絞らず候補を返す。
+ */
+export function lookupGenerations(db: SqliteHandle, identity: GenerationIdentity): string[] {
+  let statement = LOOKUPS_ALL.get(db);
+  if (statement === undefined) {
+    statement = db.prepare(LOOKUP_ALL_SQL);
+    LOOKUPS_ALL.set(db, statement);
+  }
+  const rows = statement.all(
+    identity.kind,
+    identity.sourceText,
+    identity.voice,
+    identity.lang,
+    identity.options,
+  ) as Array<{ hash: string }>;
+  return rows.map((row) => row.hash);
+}
+

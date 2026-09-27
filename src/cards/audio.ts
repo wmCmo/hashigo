@@ -62,7 +62,7 @@
 
 import type { BlobStore } from "../blobs/store.js";
 import { BlobMissingError } from "../blobs/store.js";
-import { generationIdentity, lookupGeneration } from "../blobs/generation.js";
+import { generationIdentity, lookupGenerations } from "../blobs/generation.js";
 import { readBlob } from "../blobs/db.js";
 import type { SqliteHandle } from "../db/browser.js";
 import type { AudioAddress } from "../render/audio.js";
@@ -202,17 +202,21 @@ export function audioHashCandidates(
     lang: request.lang,
     options: request.options,
   });
-  const hit = lookupGeneration(db, asked);
-  const found = hit === null ? [] : [hit];
+  // EVERY row under the identity, not the first — 2026-09-27. Two rows can share
+  // one identity (two syntheses of the same line gave different bytes), and a
+  // device may hold the payload of only the one that sorts SECOND. See
+  // `lookupGenerations`. The first entry is unchanged, so `resolveAudioHash`
+  // answers exactly what it did.
+  const found = lookupGenerations(db, asked);
   // Speech only, and only when the card asked for some OTHER voice. See above.
   // PER LANGUAGE since 2026-09-20 — an English card falling back to the Japanese
   // fill voice is what made 130 English clips audible in Japanese. `ja` still
   // resolves to the same constant, so no Japanese clip changes address.
   const fillVoice = fillVoiceFor(asked.lang);
   if (request.kind !== "speech" || asked.voice === fillVoice) return found;
-  const fill = lookupGeneration(db, { ...asked, voice: fillVoice });
-  if (fill === null || fill === hit) return found;
-  found.push(fill);
+  for (const fill of lookupGenerations(db, { ...asked, voice: fillVoice })) {
+    if (!found.includes(fill)) found.push(fill);
+  }
   return found;
 }
 

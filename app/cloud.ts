@@ -22,7 +22,10 @@ const BASE = (import.meta.env["VITE_MAILBOX_URL"] as string | undefined)?.replac
 const TOKEN = (import.meta.env["VITE_MAILBOX_TOKEN"] as string | undefined) ?? "";
 
 /** True when sync and generation go to Cloudflare rather than the laptop. */
-export const IN_CLOUD = BASE !== "";
+// `--mode cloud` too (2026-09-27): that build is served BY Cloudflare and talks to
+// its own origin, so its BASE is "" and the URL alone called it "the laptop" —
+// "already on the laptop", and a failed sync told him to open Tailscale.
+export const IN_CLOUD = BASE !== "" || import.meta.env.MODE === "cloud";
 
 /** The name to put in a message: "the laptop" or "Cloudflare". */
 export const SERVER_NAME = IN_CLOUD ? "Cloudflare" : "the laptop";
