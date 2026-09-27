@@ -419,6 +419,8 @@ let drill: ShadowingSide<HTMLElement> | null = null;
 /** His reveal order, as a plan. See `./review-steps.ts`. */
 let steps: RevealStep[] = [];
 let stepIndex = 0;
+/** True while `remountAfterEdit` redraws the card: the entry asks nothing aloud. */
+let quietEntry = false;
 /**
  * Whether the clip the replay button points at is actually on this device.
  *
@@ -989,8 +991,9 @@ async function showCardAt(): Promise<void> {
   revealWord.textContent = "reveal";
   prependIcon(revealButton, "eye");
   // The mode-aware entry. On a produce card this plays nothing; on an identify
-  // card it asks the question and leaves every cloze masked.
-  for (const position of prompt) card.enter(position);
+  // card it asks the question and leaves every cloze masked. 編集後の描き直し
+  // （`remountAfterEdit`）では鳴らさない — 保存しただけで音が出るのはおかしい。
+  if (!quietEntry) for (const position of prompt) card.enter(position);
 
   // THE HINT DESCRIBES THE SCREEN, NOT THE CARD'S MODE, and that distinction has
   // now been a live bug TWICE.
@@ -1176,7 +1179,11 @@ function reveal(): void {
  * returns the CLOZE: the side has been read, and the answer that just appeared in
  * the middle of it is the only part that moved.
  */
-function runStep(card: MountedCard<HTMLElement>, step: RevealStep): HTMLElement | null {
+function runStep(
+  card: MountedCard<HTMLElement>,
+  step: RevealStep,
+  silent = false,
+): HTMLElement | null {
   const side = card.loop.side(step.position);
   if (side === null) return null;
   if (step.show) {
@@ -1186,8 +1193,8 @@ function runStep(card: MountedCard<HTMLElement>, step: RevealStep): HTMLElement 
     card.loop.enter(step.position);
   }
   const mount = step.cloze === null ? undefined : side.clozes[step.cloze];
-  if (mount !== undefined) side.revealCloze(mount, "caller");
-  else side.reveal("caller");
+  if (mount !== undefined) side.revealCloze(mount, "caller", { silent });
+  else side.reveal("caller", { silent });
   // `revealed` on a side means every cloze on it is shown, which is when its clip
   // sounds — so this is exactly "the clip he just heard".
   if (side.revealed && side.audio.length > 0) drill = side;
@@ -3311,9 +3318,9 @@ function openEditorFor(
               await refreshAfterOp();
             },
           });
-          // The card in front of him is NOT re-rendered. Re-mounting mid-edit
-          // would move the thing he is typing into; the change applies the next
-          // time the card is shown, and the status line says so.
+          // The card in front of him is NOT re-rendered while the editor is open —
+          // re-mounting mid-edit would move the thing he is typing into. Closing
+          // the editor redraws it (`remountAfterEdit`).
         })
         .catch((cause: Error) => {
           if (saved === next) saved = before;
@@ -3412,6 +3419,7 @@ function openEditorFor(
       // Saves first, and the worker answers in order — so the preview asked for
       // next is rendered from the saved text, never the stale one.
       flushFields();
+      void remountAfterEdit(card.cardId);
       if (!showPreview) return;
       // A preview of this card still underneath (it can only get there by some
       // path that stacked) would now show old text; close it before opening fresh.
@@ -3457,6 +3465,43 @@ function openEditorFor(
     },
     { capture: true },
   );
+}
+
+/**
+ * 編集を閉じたら、復習中のカードを保存後の内容で描き直す。Zach, 2026-09-27:
+ * *"when i review and i edit the card … and i close the edit modal, the card
+ * rendering doesn't update until i refresh"*.
+ *
+ * 以前は意図的に描き直さなかった（編集中に描き直すと打っている場所が動く）。
+ * それは編集が開いている間の話で、閉じた後は理由がない。
+ *
+ * 見た目の位置は保つ: 歩き（reveal の段）をどこまで進めていたかを覚えておき、
+ * 描き直した後に同じ段まで黙って進める。音は一切鳴らさない — mode 2 の問いも、
+ * 段の最後で鳴るクリップも。聞き直すなら再生ボタンがある。編集で段の数が減って
+ * いたら、ある分だけ進める。
+ *
+ * `ask` は worker が順番に答えるので、直前の blur で送った保存より後に
+ * `next` が処理され、描き直しは必ず保存後の内容になる（プレビューと同じ理屈）。
+ */
+async function remountAfterEdit(cardId: string): Promise<void> {
+  if (currentCardId !== cardId || reviewView.hidden) return;
+  const walked = stepIndex;
+  const scroll = window.scrollY;
+  quietEntry = true;
+  try {
+    await showCardAt();
+  } finally {
+    quietEntry = false;
+  }
+  const card = mounted;
+  if (card === null || currentCardId !== cardId) return;
+  while (stepIndex < Math.min(walked, steps.length)) {
+    const step = steps[stepIndex]!;
+    stepIndex += 1;
+    runStep(card, step, true);
+  }
+  if (walked > 0) settleReveal(card);
+  window.scrollTo({ top: scroll });
 }
 
 /**
