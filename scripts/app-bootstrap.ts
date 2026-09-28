@@ -107,6 +107,7 @@ import Database from "better-sqlite3";
 import { SqliteBlobStore } from "../src/blobs/sqlite.js";
 import { primaryLabelFor } from "../src/accent/store.js";
 import { contentAddress } from "../src/import/blobs.js";
+import { measureAudio, mib } from "./audio-gc-core.js";
 
 process.stdout.setDefaultEncoding("utf8");
 
@@ -120,6 +121,37 @@ const flag = (name: string, fallback: string): string => {
 const cardSource = resolve(flag("db", "build/hashigo.db"));
 const storeSource = resolve(flag("store", `${flag("db", "build/hashigo.db")}.blobs.db`));
 const outDir = resolve(flag("out", "build/app"));
+
+/**
+ * 種を作る前に、どこからも届かない音声が残っていないかを見る — 2026-09-28。
+ *
+ * 片付けは `scripts/audio-gc.ts` で、ここは測るだけ（同じ `measureAudio`）。残っていれば
+ * 種を作らずに止まる: 種はノートPCの行を全部運ぶので、ここを通った孤児は全端末に
+ * 広がる。2026-09-28 に見つかったのは 834 行と行のない中身 3,692 件、合わせて 66.7 MiB
+ * で、どれも誰も気付かないまま溜まっていた。
+ *
+ * 全端末の同期 payload を読むので mailbox に届く必要がある。オフラインで種を
+ * 作るときは `--allow-orphans` で飛ばせる（そう言って飛ばす）。
+ */
+if (argv.includes("--allow-orphans")) {
+  console.log("audio check SKIPPED (--allow-orphans) — unreached clips may ship to every device");
+} else {
+  const audit = await measureAudio({ db: cardSource, storeDb: storeSource, graceDays: 14 });
+  const left = audit.plan.doomed.length + audit.rowless.length;
+  if (left > 0) {
+    console.error(
+      `refusing to build a seed: ${audit.plan.doomed.length} unreached clip(s) and ` +
+        `${audit.rowless.length} payload(s) with no row (${mib(audit.doomedBytes + audit.rowlessBytes)}).\n` +
+        `  npx vite-node scripts/audio-gc.ts             # see them\n` +
+        `  npx vite-node scripts/audio-gc.ts -- --apply  # archive and remove, then run this again`,
+    );
+    process.exit(1);
+  }
+  console.log(
+    `audio check: nothing unreached across ${audit.sources.length} device payload(s) · ` +
+      `${audit.plan.kept.recent} recent clip(s) kept for unsynced devices`,
+  );
+}
 /**
  * 200 MiB — and the number is a measurement, not a round figure.
  *

@@ -66,6 +66,15 @@ from starting at all (reverted). Decision 49 had already retired "no cloud".
 scripts/cloud-seed-upload.ts` (manifest last). **Cloud generations into the laptop DB:**
 `npx vite-node scripts/cloud-generated-pull.ts -- --apply`, before any seed rebuild.
 
+**The seed-rebuild order, in full:** pull (above) → `npx vite-node scripts/audio-gc.ts --
+--apply` → `npm run app:bootstrap` → `scripts/cloud-seed-upload.ts`. **Bootstrap refuses**
+while any clip is unreached by every device or any payload has no row — the check merges
+every device's mailbox payload first, because edits made on a device exist nowhere else
+(measured 2026-09-28: 2 clips reachable only that way). First run removed 834 superseded
+clips + 3,692 row-less payloads, 66.7 MiB, archived to `build/audio-gc/removed-*.db`.
+Row-less payloads come from `rm build/hashigo.db` rebuilds: the store is a separate file
+and keeps the bytes of rows the rebuild dropped.
+
 **Traps paid for:** stitching seed parts inside a Worker hit the free plan's CPU cap and cut
 the download at 108 MB with no Content-Length — serve single R2 objects only. Vitest reads
 `.env`, so the suite pins the two `VITE_MAILBOX_*` vars empty (`vitest.config.ts`). The
