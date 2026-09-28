@@ -460,6 +460,15 @@ right**: it holds his verbatim reasoning and this quotes it.
    from the current run, and `git reset --hard` over work that was never committed.
    Reverting is the safe direction and it is the reason he gave for trusting this at all.
 
+   **AMENDED 2026-09-28 — PUSHING IS NOW AUTHORISED, AND THE REMOTE EXISTS.** He asked
+   for a private repo on the `wmCmo` GitHub account (*"use wmcmo gh account, not
+   zach-ct"*), it is `https://github.com/wmCmo/hashigo`, and then: *"yeah push as you
+   go"*. So a commit that passes the gates is pushed to `origin main` as part of making
+   it — tags too, with `git push origin --tags`. **Still NOT authorised:** force-pushing,
+   rewriting pushed history, and pushing from the `zach-ct` account. Before a push that
+   adds a new tracked file, remember what `.gitignore` is for: `.env`, `build/`,
+   `exports/` and the databases never go up.
+
 25. **New cards carry a `New Card` label, and it is PER TRACK — not per card.**
    Decided 2026-08-23, from how Mochi already does it: *"on mochi flashcard, if the
    card is new, you get the label `New Card`, and the label is per side, so for
