@@ -34,6 +34,13 @@
  * 状態を色に頼らず形で示すのは同期アイコンと同じ理由 — 就寝モードは白黒。
  */
 
+// The deck line's chips (new card, reversed, …) set their text at 10px, where
+// Light's hairline strokes go faint — the same reason `dots-three` is Regular.
+import arrowsLeftRight from "@phosphor-icons/core/assets/regular/arrows-left-right.svg?raw";
+import calendarBlank from "@phosphor-icons/core/assets/regular/calendar-blank.svg?raw";
+import clock from "@phosphor-icons/core/assets/regular/clock.svg?raw";
+import repeatOnce from "@phosphor-icons/core/assets/regular/repeat-once.svg?raw";
+import sparkle from "@phosphor-icons/core/assets/regular/sparkle.svg?raw";
 import archive from "@phosphor-icons/core/assets/light/archive-light.svg?raw";
 import arrowCounterClockwise from "@phosphor-icons/core/assets/light/arrow-counter-clockwise-light.svg?raw";
 import arrowDown from "@phosphor-icons/core/assets/light/arrow-down-light.svg?raw";
@@ -85,6 +92,11 @@ import x from "@phosphor-icons/core/assets/light/x-light.svg?raw";
 
 const ICONS = {
   archive,
+  "arrows-left-right": arrowsLeftRight,
+  "calendar-blank": calendarBlank,
+  clock,
+  "repeat-once": repeatOnce,
+  sparkle,
   "arrow-counter-clockwise": arrowCounterClockwise,
   "arrow-down": arrowDown,
   "arrow-left": arrowLeft,

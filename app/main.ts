@@ -939,8 +939,8 @@ async function showCardAt(): Promise<void> {
     if (!revealed) reveal();
   });
   deckLine.replaceChildren(document.createTextNode(reply.deckPath));
-  if (reply.isNew) deckLine.appendChild(tag("new card", "newtag"));
-  if (reply.reask) deckLine.appendChild(tag("again · not graded", "reasktag"));
+  if (reply.isNew) deckLine.appendChild(tag("new card", "newtag", "sparkle"));
+  if (reply.reask) deckLine.appendChild(tag("again · not graded", "reasktag", "repeat-once"));
   // His request 6, and it is not decoration. A reversed track shows the SAME card
   // with its sides permuted, so without the label a card that looks familiar and
   // reads backwards is indistinguishable from one he has genuinely forgotten.
@@ -952,7 +952,7 @@ async function showCardAt(): Promise<void> {
   // — 単語 3,702 · 漢字 1,655 · 言葉 146 · 文法 83 — their children inherit it
   // (81 more), and 9 cards carry a per-card override. Everything else, 数字
   // included, resolves to off.
-  if (reply.card.direction === "reverse") deckLine.appendChild(tag("reversed", "reversetag"));
+  if (reply.card.direction === "reverse") deckLine.appendChild(tag("reversed", "reversetag", "arrows-left-right"));
   // HOW LATE IT IS — Zach, 2026-09-17: *"it would be helpful to see that this
   // track was due 5 days ago"*. Last in the row, because it is the only tag that
   // changes every day and the three before it are properties of the card.
@@ -964,7 +964,7 @@ async function showCardAt(): Promise<void> {
   // more force, since being behind is the thing he is currently FIXING.
   const late = overdueLabel(reply.overdueDays);
   if (late !== null) {
-    const chip = tag(late, "latetag");
+    const chip = tag(late, "latetag", "clock");
     chip.title = overdueTitle(reply.overdueDays, reply.dueAt);
     deckLine.appendChild(chip);
   }
@@ -979,7 +979,7 @@ async function showCardAt(): Promise<void> {
   // say how long it has been, which is the thing he asked for.
   const seen = lastSeenLabel(reply.lastReviewedAt);
   if (seen !== null) {
-    const chip = tag(seen, "seentag");
+    const chip = tag(seen, "seentag", "calendar-blank");
     // Says what the date means: bare, beside `due 17 days ago`, it could be read
     // as a second due date.
     chip.title = lastSeenTitle(reply.lastReviewedAt) ?? "";
@@ -1130,10 +1130,13 @@ async function showSessionCard(): Promise<void> {
   await showCardAt();
 }
 
-function tag(text: string, className: string): HTMLElement {
+function tag(text: string, className: string, glyph?: IconName): HTMLElement {
   const span = document.createElement("span");
   span.className = className;
   span.textContent = text;
+  // 2026-09-28: *"the new card and the reversed tag would also be easier to see
+  // with the icons"*. The words stay; the shape is what the eye finds first.
+  if (glyph !== undefined) prependIcon(span, glyph);
   return span;
 }
 

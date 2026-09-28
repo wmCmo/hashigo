@@ -653,9 +653,16 @@ body {
   width: 100%;
 }
 
+/* A wrapping row with a GAP, not chips with `margin-left`: once the chips carry
+   icons (2026-09-28) the row wraps on a phone, and a margin indented every chip
+   that started a new line. The gap spaces them the same on either line. */
 .deck {
+  align-items: center;
   color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
   font-size: 12px;
+  gap: 6px 10px;
   margin-bottom: 22px;
 }
 
@@ -671,7 +678,6 @@ body {
   display: inline-block;
   font-size: 10px;
   letter-spacing: 0.04em;
-  margin-left: 10px;
   padding: 2px 7px;
   vertical-align: 1px;
 }
