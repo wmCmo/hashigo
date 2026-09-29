@@ -61,6 +61,69 @@ interface PeerRow {
   readonly deviceId: string;
   readonly bytes: number;
   readonly updatedAt: string;
+  /** sha256 of the peer's stored payload; absent on payloads older than 2026-09-29. */
+  readonly sha?: string;
+}
+
+/**
+ * WHICH VERSION OF EACH PEER THIS DEVICE HAS ALREADY MERGED — 2026-09-29.
+ *
+ * Zach: *"everytime i hit the sync button, how much data does it consume?"* —
+ * measured, ~4.2 MB: every press downloaded all eight other payloads (~2.3 MB
+ * compressed) whether or not they had changed, and uploaded 1.9 MB uncompressed.
+ *
+ * So a peer is fetched only when the listing's `sha` differs from the one
+ * recorded here — and the recorded one is the hash of the bytes this device
+ * actually MERGED (the `X-Payload-Sha` of that download), never the listing's.
+ * KV is eventually consistent for up to a minute; recording the listing's hash
+ * could mark new data as merged while the download returned the old bytes. This
+ * way either lag costs one extra download, never a missed one.
+ *
+ * `localStorage`, beside the device id — and FORGOTTEN whenever the database is
+ * replaced (`forgetMergedPeers`, called from boot): a record that outlived the
+ * data it describes would skip every peer for ever on a freshly seeded device.
+ */
+const MERGED_KEY = "hashigo.sync.merged";
+
+function readMerged(): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(MERGED_KEY) ?? "{}");
+    return parsed !== null && typeof parsed === "object" ? (parsed as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeMerged(merged: Record<string, string>): void {
+  try {
+    localStorage.setItem(MERGED_KEY, JSON.stringify(merged));
+  } catch {
+    /* storage off: every peer is fetched next time, which is only slower */
+  }
+}
+
+/** The database was replaced or is new: nothing here has merged anything yet. */
+export function forgetMergedPeers(): void {
+  try {
+    localStorage.removeItem(MERGED_KEY);
+  } catch {
+    /* nothing to forget */
+  }
+}
+
+/**
+ * The upload, gzipped when the mailbox is the Worker (which decodes
+ * `X-Payload-Encoding`). The laptop's dev mailbox gets it plain, as before.
+ */
+async function uploadBody(json: string): Promise<{ body: BodyInit; headers: Record<string, string> }> {
+  if (!MAILBOX_IN_CLOUD || typeof CompressionStream === "undefined") {
+    return { body: json, headers: { "Content-Type": "application/json" } };
+  }
+  const gzipped = new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"));
+  return {
+    body: await new Response(gzipped).blob(),
+    headers: { "Content-Type": "application/json", "X-Payload-Encoding": "gzip" },
+  };
 }
 
 /** `^[a-z0-9][a-z0-9-]{5,63}$` — the mailbox validates this too. */
@@ -192,6 +255,11 @@ async function reach(path: string, init: RequestInit = {}): Promise<Response> {
  * half, for every other way a mailbox can be absent.
  */
 async function mailboxJson(url: string): Promise<unknown> {
+  return (await mailboxPayload(url)).payload;
+}
+
+/** `mailboxJson`, plus the `X-Payload-Sha` the mailbox sent with it (null if none). */
+async function mailboxPayload(url: string): Promise<{ payload: unknown; sha: string | null }> {
   const response = await reach(url, { cache: "no-store" });
   if (response.status === 401) {
     throw new Error(`the mailbox refused this device's key (401) — rebuild with the key in .env`);
@@ -200,9 +268,10 @@ async function mailboxJson(url: string): Promise<unknown> {
   // Read as TEXT and parse here rather than trusting `response.json()`, so the
   // failure can say what actually came back. Checking `content-type` instead
   // would be one more thing to be wrong about a server we do not control.
+  const sha = response.headers.get("X-Payload-Sha");
   const body = await response.text();
   try {
-    return JSON.parse(body) as unknown;
+    return { payload: JSON.parse(body) as unknown, sha };
   } catch {
     const looksLikePage = /^\s*<!doctype|^\s*<html/i.test(body);
     throw new Error(
@@ -251,11 +320,15 @@ export async function syncNow(ports: SyncPorts): Promise<SyncOutcome> {
   // peer on an older build, or a half-written file, would do the same. Each
   // peer is merged on its own and a failure is carried out rather than thrown.
   const failures: string[] = [];
+  const merged = readMerged();
   for (const peer of peers) {
     if (peer.deviceId === self) continue;
+    // Unchanged since this device last merged it: nothing new to take.
+    if (peer.sha !== undefined && merged[peer.deviceId] === peer.sha) continue;
     try {
-      const payload = await mailboxJson(`/sync/${peer.deviceId}`);
+      const { payload, sha } = await mailboxPayload(`/sync/${peer.deviceId}`);
       const report = await ports.mergePayload(payload);
+      if (sha !== null) merged[peer.deviceId] = sha;
       reviewsAdded += report.reviewsAdded;
       flagsTaken += report.flagsTaken;
       trackStateTaken += report.trackStateTaken;
@@ -267,12 +340,11 @@ export async function syncNow(ports: SyncPorts): Promise<SyncOutcome> {
     }
   }
 
+  // Only after the loop, and only the peers that merged: a failure is retried next time.
+  writeMerged(merged);
+
   const mine = await ports.exportPayload();
-  const put = await reach(`/sync/${self}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: mine.json,
-  });
+  const put = await reach(`/sync/${self}`, { method: "PUT", ...(await uploadBody(mine.json)) });
   if (!put.ok) throw new Error(`the mailbox refused this device's payload (${put.status})`);
 
   writeLastSynced(new Date().toISOString());
@@ -418,11 +490,7 @@ export function isStale(status: SyncStatus, now: Date = new Date()): boolean {
 export async function pushNow(ports: SyncPorts): Promise<number> {
   const self = deviceId();
   const mine = await ports.exportPayload();
-  const put = await reach(`/sync/${self}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: mine.json,
-  });
+  const put = await reach(`/sync/${self}`, { method: "PUT", ...(await uploadBody(mine.json)) });
   if (!put.ok) throw new Error(`the mailbox refused this device's payload (${put.status})`);
   writeLastPushed(new Date().toISOString());
   return mine.bytes;

@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
+
 import { describe, expect, it } from "vitest";
 
 import { handle, type Env, type KvLike } from "../cloud/mailbox/src/mailbox.js";
@@ -18,6 +21,10 @@ function memoryKv(): KvLike & { readonly data: Map<string, { value: string; meta
     data,
     async get(key) {
       return data.get(key)?.value ?? null;
+    },
+    async getWithMetadata(key) {
+      const entry = data.get(key);
+      return { value: entry?.value ?? null, metadata: entry?.metadata ?? null };
     },
     async put(key, value, options) {
       data.set(key, { value, metadata: options?.metadata });
@@ -78,6 +85,67 @@ describe("the Cloudflare mailbox is a drop-in for the laptop one", () => {
     expect((await handle(request("PUT", "/sync/dev-1665859d9737", { body: "<!doctype html>" }), e)).status).toBe(400);
     expect((await handle(request("GET", "/sync/dev-0000000000"), e)).status).toBe(404);
     expect((await handle(request("DELETE", "/sync/dev-1665859d9737"), e)).status).toBe(405);
+  });
+});
+
+describe("an unchanged payload can be skipped, and the upload can be compressed — 2026-09-29", () => {
+  const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
+
+  it("the listing and the download carry the same sha256 of the stored bytes", async () => {
+    const e = env();
+    const payload = JSON.stringify({ syncVersion: 1, note: "橋と箸" });
+    await handle(request("PUT", "/sync/dev-1665859d9737", { body: payload }), e);
+    const list = (await (await handle(request("GET", "/sync/"), e)).json()) as { peers: { sha?: string }[] };
+    expect(list.peers[0]?.sha).toBe(sha(payload));
+    const got = await handle(request("GET", "/sync/dev-1665859d9737"), e);
+    expect(got.headers.get("X-Payload-Sha")).toBe(sha(payload));
+  });
+
+  it("a payload stored before hashes existed is served with no hash, so devices download it", async () => {
+    const e = env();
+    e.MAILBOX.data.set("payload:dev-1665859d9737", { value: "{}", metadata: { bytes: 2, updatedAt: "2026-09-13T00:00:00Z" } });
+    const got = await handle(request("GET", "/sync/dev-1665859d9737"), e);
+    expect(got.status).toBe(200);
+    expect(got.headers.get("X-Payload-Sha")).toBeNull();
+  });
+
+  it("a gzipped upload is stored as the plain JSON, hashed as the plain JSON", async () => {
+    const e = env();
+    const payload = JSON.stringify({ syncVersion: 1, reviews: Array.from({ length: 200 }, (_, i) => ({ i, note: "橋" })) });
+    const zipped = gzipSync(Buffer.from(payload));
+    const put = await handle(
+      new Request("https://hashigo-mailbox.example.workers.dev/sync/dev-1665859d9737", {
+        method: "PUT",
+        headers: { Origin: ORIGIN, Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json", "X-Payload-Encoding": "gzip" },
+        body: zipped,
+      }),
+      e,
+    );
+    expect(put.status).toBe(200);
+    expect(zipped.length).toBeLessThan(payload.length / 5);
+    const got = await handle(request("GET", "/sync/dev-1665859d9737"), e);
+    expect(await got.text()).toBe(payload);
+    expect(got.headers.get("X-Payload-Sha")).toBe(sha(payload));
+  });
+
+  it("a body that claims gzip and is not is refused, and nothing is written", async () => {
+    const e = env();
+    const put = await handle(
+      new Request("https://hashigo-mailbox.example.workers.dev/sync/dev-1665859d9737", {
+        method: "PUT",
+        headers: { Origin: ORIGIN, Authorization: `Bearer ${TOKEN}`, "X-Payload-Encoding": "gzip" },
+        body: "{\"not\":\"gzip\"}",
+      }),
+      e,
+    );
+    expect(put.status).toBe(400);
+    expect(e.MAILBOX.data.size).toBe(0);
+  });
+
+  it("the browser may send the encoding header and read the hash header cross-origin", async () => {
+    const response = await handle(request("OPTIONS", "/sync/", { token: null }), env());
+    expect(response.headers.get("Access-Control-Allow-Headers")).toMatch(/X-Payload-Encoding/);
+    expect(response.headers.get("Access-Control-Expose-Headers")).toMatch(/X-Payload-Sha/);
   });
 });
 

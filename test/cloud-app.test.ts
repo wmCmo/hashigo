@@ -39,6 +39,9 @@ function env(objects: Record<string, Uint8Array | string> = {}): AppEnv {
       async get() {
         return null;
       },
+      async getWithMetadata() {
+        return { value: null, metadata: null };
+      },
       async put() {},
       async list() {
         return { keys: [], list_complete: true };

@@ -118,6 +118,7 @@ import { openVoiceDialog } from "./voice-dialog.js";
 import { hydrateIcons, icon, opIcon, prependIcon, setIcon, type IconName } from "./icons.js";
 import { cloudHeaders, cloudUrl, IN_CLOUD, SERVER_NAME } from "./cloud.js";
 import { versionLabel } from "./version.js";
+import { forgetMergedPeers } from "./sync-client.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import {
   attachInput,
@@ -3658,6 +3659,10 @@ async function boot(): Promise<void> {
     if (await maybeReset()) return;
     line("opening the database…", "step");
     const opened = await ask<"open">({ kind: "open", reimport: false });
+    // A database that was not already here (or was just downloaded) has merged
+    // nothing, whatever `localStorage` remembers — so the next sync pulls every
+    // peer in full. See `forgetMergedPeers`.
+    if (!opened.cardsWerePresent || opened.imported > 0) forgetMergedPeers();
     line(
       `sqlite ${opened.sqliteVersion} · schema v${opened.schemaVersion} · ` +
         `${opened.cards.toLocaleString()} cards · ${opened.reviews.toLocaleString()} reviews · ` +

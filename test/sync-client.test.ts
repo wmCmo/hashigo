@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   agoLabel,
+  forgetMergedPeers,
   isStale,
   peersNewerThan,
   sinceLabel,
@@ -29,15 +30,29 @@ const NOW = new Date("2026-09-12T12:00:00.000Z");
  * body as text and parses it itself, so that an answer which is NOT JSON can be
  * described instead of reaching him as a parser error.
  */
-function json(body: unknown): { ok: boolean; status: number; text: () => Promise<string> } {
-  return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+function json(
+  body: unknown,
+  sha: string | null = null,
+): { ok: boolean; status: number; headers: Headers; text: () => Promise<string> } {
+  const headers = new Headers(sha === null ? {} : { "X-Payload-Sha": sha });
+  return { ok: true, status: 200, headers, text: async () => JSON.stringify(body) };
 }
 
-function fakeMailbox(files: Record<string, unknown>): void {
+/**
+ * `shas.listed` is what the listing says each peer's hash is; `shas.served` is the
+ * hash that comes back WITH the download. They differ when KV lags — the case the
+ * skip rule has to survive. `downloads` counts GETs per peer.
+ */
+function fakeMailbox(
+  files: Record<string, unknown>,
+  shas: { listed?: Record<string, string>; served?: Record<string, string> } = {},
+): { downloads: Map<string, number> } {
   const store = new Map<string, string>([["hashigo.sync.deviceId", "dev-selftest01"]]);
+  const downloads = new Map<string, number>();
   vi.stubGlobal("localStorage", {
     getItem: (k: string): string | null => store.get(k) ?? null,
     setItem: (k: string, v: string): void => void store.set(k, v),
+    removeItem: (k: string): void => void store.delete(k),
   });
   vi.stubGlobal("fetch", async (url: string, init?: { method?: string }) => {
     if ((init?.method ?? "GET") !== "GET") {
@@ -49,13 +64,16 @@ function fakeMailbox(files: Record<string, unknown>): void {
           deviceId,
           bytes: 1,
           updatedAt: NOW.toISOString(),
+          ...(shas.listed?.[deviceId] === undefined ? {} : { sha: shas.listed[deviceId] }),
         })),
       });
     }
     const id = url.slice("/sync/".length);
-    if (!(id in files)) return { ok: false, status: 404, text: async () => "" };
-    return json(files[id]);
+    downloads.set(id, (downloads.get(id) ?? 0) + 1);
+    if (!(id in files)) return { ok: false, status: 404, headers: new Headers(), text: async () => "" };
+    return json(files[id], shas.served?.[id] ?? null);
   });
+  return { downloads };
 }
 
 const ports = (onMerge: (p: unknown) => void): SyncPorts => ({
@@ -95,6 +113,62 @@ describe("one bad peer does not stop the sync", () => {
     const outcome = await syncNow(ports((p) => seen.push(p)));
     expect(seen).toHaveLength(1);
     expect(outcome.peersMerged).toBe(1);
+  });
+});
+
+describe("an unchanged peer is not downloaded again — 2026-09-29", () => {
+  // Measured before this: every press downloaded all eight peers (~2.3 MB) whether
+  // or not they had changed.
+  it("skips a peer whose listed hash is the one this device last merged", async () => {
+    const shas = { listed: { "dev-bbb": "h1" }, served: { "dev-bbb": "h1" } };
+    const box = fakeMailbox({ "dev-bbb": { ok: true } }, shas);
+    await syncNow(ports(() => undefined));
+    await syncNow(ports(() => undefined));
+    expect(box.downloads.get("dev-bbb")).toBe(1);
+  });
+
+  it("downloads again when the peer's hash changes", async () => {
+    const shas = { listed: { "dev-bbb": "h1" }, served: { "dev-bbb": "h1" } };
+    const box = fakeMailbox({ "dev-bbb": { ok: true } }, shas);
+    await syncNow(ports(() => undefined));
+    shas.listed["dev-bbb"] = "h2";
+    shas.served["dev-bbb"] = "h2";
+    await syncNow(ports(() => undefined));
+    expect(box.downloads.get("dev-bbb")).toBe(2);
+  });
+
+  it("records the hash of what it MERGED, not what the listing claimed — a lagging read is retried", async () => {
+    // KV lag: the listing already says h2, the download still returns h1's bytes.
+    const shas = { listed: { "dev-bbb": "h2" }, served: { "dev-bbb": "h1" } };
+    const box = fakeMailbox({ "dev-bbb": { ok: true } }, shas);
+    await syncNow(ports(() => undefined));
+    await syncNow(ports(() => undefined));
+    // Recording h2 would have skipped the second sync and lost h2 until the next change.
+    expect(box.downloads.get("dev-bbb")).toBe(2);
+  });
+
+  it("a peer with no hash (an old payload) is always downloaded", async () => {
+    const box = fakeMailbox({ "dev-bbb": { ok: true } });
+    await syncNow(ports(() => undefined));
+    await syncNow(ports(() => undefined));
+    expect(box.downloads.get("dev-bbb")).toBe(2);
+  });
+
+  it("a failed merge is not recorded, so the next sync tries that peer again", async () => {
+    const shas = { listed: { "dev-aaa": "h1" }, served: { "dev-aaa": "h1" } };
+    const box = fakeMailbox({ "dev-aaa": { bad: true } }, shas);
+    await syncNow(ports(() => undefined));
+    await syncNow(ports(() => undefined));
+    expect(box.downloads.get("dev-aaa")).toBe(2);
+  });
+
+  it("forgetting (a new or replaced database) makes every peer download again", async () => {
+    const shas = { listed: { "dev-bbb": "h1" }, served: { "dev-bbb": "h1" } };
+    const box = fakeMailbox({ "dev-bbb": { ok: true } }, shas);
+    await syncNow(ports(() => undefined));
+    forgetMergedPeers();
+    await syncNow(ports(() => undefined));
+    expect(box.downloads.get("dev-bbb")).toBe(2);
   });
 });
 
@@ -153,6 +227,7 @@ describe("a mailbox that answers with a page", () => {
     vi.stubGlobal("fetch", async () => ({
       ok: true,
       status: 200,
+      headers: new Headers(),
       text: async () =>
         ['<!doctype html>', '<html lang="ja">', "  <head>", "    <title>梯子</title>"].join("\n"),
     }));
@@ -183,6 +258,7 @@ describe("a mailbox that answers with a page", () => {
     vi.stubGlobal("fetch", async () => ({
       ok: true,
       status: 200,
+      headers: new Headers(),
       text: async () =>
         ["502 Bad Gateway", "", "the tunnel is up but nothing is behind it"].join("\n"),
     }));

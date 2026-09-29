@@ -45,6 +45,8 @@ import { GEN_PREFIX, generate, parse, type GenerateEnv } from "./generate.js";
 
 export interface KvLike {
   get(key: string, type: "text"): Promise<string | null>;
+  /** The value AND its metadata from one entry — so a hash in the metadata describes these bytes. */
+  getWithMetadata(key: string, type: "text"): Promise<{ value: string | null; metadata: unknown }>;
   put(key: string, value: string, options?: { metadata?: unknown }): Promise<void>;
   list(options?: { prefix?: string; cursor?: string }): Promise<{
     keys: { name: string; metadata?: unknown }[];
@@ -71,6 +73,33 @@ const PREFIX = "payload:";
 interface PayloadMeta {
   readonly bytes: number;
   readonly updatedAt: string;
+  /**
+   * sha256 of the stored JSON, hex — 2026-09-29. A device merges a peer only when
+   * this differs from the hash it last merged, so an unchanged peer costs a line of
+   * the listing instead of a 1.9 MB download. Absent on payloads written before
+   * then, and absent means "download it".
+   */
+  readonly sha?: string;
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * The request body as text — gunzipped when the device says it compressed it.
+ *
+ * `X-Payload-Encoding`, not `Content-Encoding`: whether the runtime decodes a
+ * request body on its own is not something this code wants to depend on, and a
+ * header of our own means the decode happens exactly once, here. A payload
+ * gzips 1.9 MB → ~0.33 MB, and the upload is the half nothing else compressed.
+ */
+async function requestText(request: Request): Promise<string> {
+  if ((request.headers.get("X-Payload-Encoding") ?? "").toLowerCase() !== "gzip") return request.text();
+  if (request.body === null) return "";
+  const plain = request.body.pipeThrough(new DecompressionStream("gzip"));
+  return new Response(plain).text();
 }
 
 function corsHeaders(request: Request, env: Env): Record<string, string> {
@@ -80,7 +109,8 @@ function corsHeaders(request: Request, env: Env): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Payload-Encoding",
+    "Access-Control-Expose-Headers": "X-Payload-Sha",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
@@ -114,8 +144,8 @@ function authorised(request: Request, env: Env): boolean {
   return env.MAILBOX_TOKEN !== "" && token !== "" && sameSecret(token, env.MAILBOX_TOKEN);
 }
 
-async function listPeers(env: Env): Promise<{ deviceId: string; bytes: number; updatedAt: string }[]> {
-  const peers: { deviceId: string; bytes: number; updatedAt: string }[] = [];
+async function listPeers(env: Env): Promise<{ deviceId: string; bytes: number; updatedAt: string; sha?: string }[]> {
+  const peers: { deviceId: string; bytes: number; updatedAt: string; sha?: string }[] = [];
   let cursor: string | undefined;
   do {
     const page = await env.MAILBOX.list({ prefix: PREFIX, ...(cursor === undefined ? {} : { cursor }) });
@@ -125,6 +155,7 @@ async function listPeers(env: Env): Promise<{ deviceId: string; bytes: number; u
         deviceId: key.name.slice(PREFIX.length),
         bytes: typeof meta.bytes === "number" ? meta.bytes : 0,
         updatedAt: typeof meta.updatedAt === "string" ? meta.updatedAt : new Date(0).toISOString(),
+        ...(typeof meta.sha === "string" ? { sha: meta.sha } : {}),
       });
     }
     cursor = page.list_complete ? undefined : page.cursor;
@@ -209,17 +240,28 @@ export async function handle(request: Request, env: Env, preAuthorised = false):
   }
 
   if (method === "GET") {
-    const body = await env.MAILBOX.get(`${PREFIX}${rest}`, "text");
+    const { value: body, metadata } = await env.MAILBOX.getWithMetadata(`${PREFIX}${rest}`, "text");
     if (body === null) return json(404, { error: `no payload from ${rest}` }, cors);
+    const sha = (metadata as Partial<PayloadMeta> | null)?.sha;
     return new Response(body, {
-      headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...cors },
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-store",
+        ...(typeof sha === "string" ? { "X-Payload-Sha": sha } : {}),
+        ...cors,
+      },
     });
   }
 
   if (method === "PUT" || method === "POST") {
     const declared = Number(request.headers.get("Content-Length") ?? "0");
     if (declared > MAX_BYTES) return json(413, { error: `payload over ${MAX_BYTES} bytes` }, cors);
-    const body = await request.text();
+    let body: string;
+    try {
+      body = await requestText(request);
+    } catch {
+      return json(400, { error: "body said gzip and did not decompress" }, cors);
+    }
     const bytes = new TextEncoder().encode(body).length;
     if (bytes > MAX_BYTES) return json(413, { error: `payload over ${MAX_BYTES} bytes` }, cors);
     try {
@@ -227,9 +269,9 @@ export async function handle(request: Request, env: Env, preAuthorised = false):
     } catch {
       return json(400, { error: "body is not JSON" }, cors);
     }
-    const meta: PayloadMeta = { bytes, updatedAt: new Date().toISOString() };
+    const meta: PayloadMeta = { bytes, updatedAt: new Date().toISOString(), sha: await sha256Hex(body) };
     await env.MAILBOX.put(`${PREFIX}${rest}`, body, { metadata: meta });
-    return json(200, { deviceId: rest, bytes }, cors);
+    return json(200, { deviceId: rest, bytes, sha: meta.sha }, cors);
   }
 
   return json(405, { error: `${method} not allowed on /sync/` }, cors);
