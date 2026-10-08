@@ -3847,6 +3847,34 @@ input[data-answer="incorrect"] {
 .hashigo-mora-head {
   color: var(--accent-head);
   font-weight: 600;
+  position: relative;
+}
+
+/* 下がり目の鉤 — 色に頼らない第二の手がかり。Zach, 2026-10-08, スクリーンショット
+   付きで: *"when my phone is on bedtime mode you cant tell the accent text color
+   apart from each other"*. Android のおやすみモードは画面をグレースケールにする。
+   --accent-head と --muted は輝度がほぼ同じ（ライト 1.04:1・ダーク 1.27:1、下の
+   devoiced のコメント参照）なので、色だけの印はそこで消える。600 の太さも、細い
+   読みの行では見分けにならなかった。無声化は輪があるので生き残っていた — 頭だけが
+   一つの経路しか持っていなかった。
+
+   形は辞書の「＼」/ NHK の下がり目：高い所から落ちる鉤を、モーラの右肩に一つ。
+   彼が断ったのは段々の高低線（*"we don't need line"*）で、これは線ではなく一点の
+   印。ピッチが落ちるのは頭の「後」なので、縦棒は次のモーラとの境に掛かる。
+   absolute なので行の幅も高さも動かさない — line-height 1.9 の余白に収まる。
+   currentColor なので、色が見える画面では今まで通り朱色。 */
+.hashigo-mora-head::after {
+  /* 2px で top が -0.28em：1.5px・-0.12em では細すぎ、次のモーラの無声化の輪
+     （しました の し）の肩と重なった。輪より上に浮かせる。 */
+  border-right: 2px solid currentColor;
+  border-top: 2px solid currentColor;
+  content: "";
+  height: 0.45em;
+  pointer-events: none;
+  position: absolute;
+  right: -0.1em;
+  top: -0.28em;
+  width: 0.34em;
 }
 
 /* DEVOICED: the vowel is whispered away. 5.7% of morae.
