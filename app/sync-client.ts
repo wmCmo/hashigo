@@ -57,7 +57,7 @@ export interface SyncOutcome {
   readonly failures: readonly string[];
 }
 
-interface PeerRow {
+export interface PeerRow {
   readonly deviceId: string;
   readonly bytes: number;
   readonly updatedAt: string;
@@ -259,8 +259,14 @@ async function mailboxJson(url: string): Promise<unknown> {
 }
 
 /** `mailboxJson`, plus the `X-Payload-Sha` the mailbox sent with it (null if none). */
-async function mailboxPayload(url: string): Promise<{ payload: unknown; sha: string | null }> {
-  const response = await reach(url, { cache: "no-store" });
+async function mailboxPayload(
+  url: string,
+  options: { signal?: AbortSignal; onBytes?: (received: number) => void } = {},
+): Promise<{ payload: unknown; sha: string | null }> {
+  const response = await reach(url, {
+    cache: "no-store",
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  });
   if (response.status === 401) {
     throw new Error(`the mailbox refused this device's key (401) — rebuild with the key in .env`);
   }
@@ -269,7 +275,7 @@ async function mailboxPayload(url: string): Promise<{ payload: unknown; sha: str
   // failure can say what actually came back. Checking `content-type` instead
   // would be one more thing to be wrong about a server we do not control.
   const sha = response.headers.get("X-Payload-Sha");
-  const body = await response.text();
+  const body = await readText(response, options.onBytes);
   try {
     return { payload: JSON.parse(body) as unknown, sha };
   } catch {
@@ -283,6 +289,159 @@ async function mailboxPayload(url: string): Promise<{ payload: unknown; sha: str
           `"${body.slice(0, 40).replace(/\s+/g, " ")}…"`,
     );
   }
+}
+
+/**
+ * 本文をストリームで読み、受け取ったバイト数を逐一知らせる。
+ *
+ * 数えるのは「展開後」のバイト。Worker は gzip（Content-Encoding）で送り、
+ * ブラウザが展開してから body に流すので、ここで見えるのは展開後の長さ — そして
+ * 一覧の `bytes` も展開後（保存されている JSON の長さ）なので、二つは同じ単位で
+ * 割り算できる。Content-Length は圧縮後なので使わない（決定 6：単位を名乗る）。
+ */
+async function readText(response: Response, onBytes?: (received: number) => void): Promise<string> {
+  // `== null`：body の無い Response（古いブラウザ、テストの偽物）は丸ごと読む。
+  if (onBytes === undefined || response.body == null) return await response.text();
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    text += decoder.decode(value, { stream: true });
+    onBytes(received);
+  }
+  return text + decoder.decode();
+}
+
+// ─── 同期の進み具合と、あと何秒か — Zach, 2026-10-09 ─────────────────────────
+//
+// *"if I'm on a train and I want to review it it would take so much time without
+// knowing how long it would take"*.
+//
+// 種のダウンロードの ETA（`sync-climb.ts` の `readout`）は使えない。あれは 15 秒の
+// 標本を待ってから出す設計で、同期は全体でそれより短いことが多い。しかも同期の
+// 大半はバイトの無いマージ（ワーカー内のトランザクション）で、速度から推定でき
+// ない。だから見積もりは「前回この端末で測った速さ」から出す：マージは展開後
+// 1 バイトあたり何 ms、送信（書き出し＋PUT）は何 ms。初回だけは見積もりが無く、
+// 画面はそう言う（"estimating"）。作り話の数字は出さない。
+
+export type SyncStage = "checking" | "downloading" | "merging" | "sending";
+
+export interface SyncProgress {
+  readonly stage: SyncStage;
+  /** 1-based, among the peers that changed. 0 while checking or sending. */
+  readonly peer: number;
+  /** Peers that changed since this device last merged them. */
+  readonly peers: number;
+  /** Uncompressed bytes downloaded so far, across every changed peer. */
+  readonly received: number;
+  /** Uncompressed bytes to download in all, from the listing. */
+  readonly total: number;
+  /** Seconds left, from the last run's measured speeds; null on a first run. */
+  readonly etaSeconds: number | null;
+}
+
+export interface SyncOptions {
+  readonly onProgress?: (progress: SyncProgress) => void;
+  readonly signal?: AbortSignal;
+}
+
+/** What the last completed run measured on THIS device. */
+export interface SyncTiming {
+  /** Merge time per uncompressed payload byte. */
+  readonly mergeMsPerByte: number | null;
+  /** Download speed in uncompressed bytes per ms. */
+  readonly downBytesPerMs: number | null;
+  /** Export + upload, which does not scale with the peers. */
+  readonly sendMs: number | null;
+}
+
+const TIMING_KEY = "hashigo.sync.timing";
+const NO_TIMING: SyncTiming = { mergeMsPerByte: null, downBytesPerMs: null, sendMs: null };
+
+export function readTiming(): SyncTiming {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(TIMING_KEY) ?? "null");
+    if (parsed === null || typeof parsed !== "object") return NO_TIMING;
+    const t = parsed as Record<string, unknown>;
+    const num = (v: unknown): number | null =>
+      typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+    return {
+      mergeMsPerByte: num(t["mergeMsPerByte"]),
+      downBytesPerMs: num(t["downBytesPerMs"]),
+      sendMs: num(t["sendMs"]),
+    };
+  } catch {
+    return NO_TIMING;
+  }
+}
+
+function writeTiming(timing: SyncTiming): void {
+  try {
+    localStorage.setItem(TIMING_KEY, JSON.stringify(timing));
+  } catch {
+    /* the next run just has no estimate */
+  }
+}
+
+/**
+ * Seconds left, or null when any part of what is left has never been measured.
+ *
+ * Pure, so the arithmetic is testable. A partial estimate (download known, merge
+ * not) is NOT returned: it would be the short half of the truth, which is the
+ * number that makes him miss a train.
+ */
+export function syncEta(
+  timing: SyncTiming,
+  left: { readonly downloadBytes: number; readonly mergeBytes: number; readonly send: boolean },
+  liveDownBytesPerMs: number | null = null,
+): number | null {
+  const down = liveDownBytesPerMs ?? timing.downBytesPerMs;
+  let ms = 0;
+  if (left.downloadBytes > 0) {
+    if (down === null) return null;
+    ms += left.downloadBytes / down;
+  }
+  if (left.mergeBytes > 0) {
+    if (timing.mergeMsPerByte === null) return null;
+    ms += left.mergeBytes * timing.mergeMsPerByte;
+  }
+  if (left.send) {
+    if (timing.sendMs === null) return null;
+    ms += timing.sendMs;
+  }
+  return ms / 1000;
+}
+
+/** The listing, alone — a directory read with no payload bodies. */
+export async function listPeers(signal?: AbortSignal): Promise<PeerRow[]> {
+  const response = await mailboxPayload("/sync/", signal === undefined ? {} : { signal });
+  return (response.payload as { peers: PeerRow[] }).peers;
+}
+
+/**
+ * 一つの版を名指す鍵。sha があればそれ、無ければ「上げた時刻＋大きさ」。
+ *
+ * 2026-10-09 に実測：クラウドの mailbox の 6 枠のうち sha を持つのは使っている 2 台
+ * だけで、9 月 26〜28 日に最後に上げた 4 枠は sha 導入（2026-09-29）より古い。
+ * 「sha が無ければ必ず取る」規則のせいで、同期のたびにその 4 枠（展開後 ~7.4 MB）
+ * を落としてマージし直していた — 中身は一か月変わっていないのに。時刻と大きさは
+ * mailbox が上げ直すたびに変わるので、版の名前として十分。
+ */
+export function versionOf(peer: PeerRow): string {
+  return peer.sha ?? `t:${peer.updatedAt}|${peer.bytes}`;
+}
+
+/** The peers whose payload this device has not merged yet. */
+export function changedPeers(peers: readonly PeerRow[]): PeerRow[] {
+  const self = deviceId();
+  const merged = readMerged();
+  return peers.filter(
+    (peer) => peer.deviceId !== self && merged[peer.deviceId] !== versionOf(peer),
+  );
 }
 
 export interface SyncPorts {
@@ -304,15 +463,50 @@ export interface SyncPorts {
  * device reading the mailbox would get a stale picture. Pulling first means the
  * payload this device leaves behind is the merged one.
  */
-export async function syncNow(ports: SyncPorts): Promise<SyncOutcome> {
+export async function syncNow(
+  ports: SyncPorts,
+  options: SyncOptions & { readonly listing?: readonly PeerRow[]; readonly push?: boolean } = {},
+): Promise<SyncOutcome> {
   const self = deviceId();
+  const { onProgress, signal } = options;
+  const timing = readTiming();
 
-  const { peers } = (await mailboxJson("/sync/")) as { peers: PeerRow[] };
+  // 一覧を既に持っている呼び出し側（起動時）は二度聞かない。
+  const peers = options.listing ?? (await listPeers(signal));
+  const todo = changedPeers(peers);
+  const total = todo.reduce((sum, peer) => sum + peer.bytes, 0);
 
   let reviewsAdded = 0;
   let flagsTaken = 0;
   let trackStateTaken = 0;
   let peersMerged = 0;
+
+  // 進み具合。ダウンロード速度は今回の実測を優先し、無ければ前回の値。
+  let downloaded = 0;
+  let mergedBytes = 0;
+  let downMs = 0;
+  let mergeMs = 0;
+  let liveRate: number | null = null;
+  const report = (stage: SyncStage, peer: number): void => {
+    if (onProgress === undefined) return;
+    onProgress({
+      stage,
+      peer,
+      peers: todo.length,
+      received: downloaded,
+      total,
+      etaSeconds: syncEta(
+        timing,
+        {
+          downloadBytes: total - downloaded,
+          mergeBytes: total - mergedBytes,
+          send: options.push !== false,
+        },
+        liveRate,
+      ),
+    });
+  };
+  report("checking", 0);
 
   // ONE BAD PEER MUST NOT STOP THE SYNC. Found by leaving a hand-written test
   // payload in the mailbox: its archive was `{}`, the merge threw, and the whole
@@ -321,19 +515,47 @@ export async function syncNow(ports: SyncPorts): Promise<SyncOutcome> {
   // peer is merged on its own and a failure is carried out rather than thrown.
   const failures: string[] = [];
   const merged = readMerged();
-  for (const peer of peers) {
-    if (peer.deviceId === self) continue;
-    // Unchanged since this device last merged it: nothing new to take.
-    if (peer.sha !== undefined && merged[peer.deviceId] === peer.sha) continue;
+  for (const [index, peer] of todo.entries()) {
+    const before = downloaded;
     try {
-      const { payload, sha } = await mailboxPayload(`/sync/${peer.deviceId}`);
-      const report = await ports.mergePayload(payload);
+      const downFrom = performance.now();
+      // 最初のバイトの前に言う — 繋がるまでの間も「何を待っているか」は分かる。
+      report("downloading", index + 1);
+      const { payload, sha } = await mailboxPayload(`/sync/${peer.deviceId}`, {
+        ...(signal === undefined ? {} : { signal }),
+        onBytes: (received) => {
+          downloaded = before + received;
+          const elapsed = downMs + (performance.now() - downFrom);
+          if (elapsed > 300) liveRate = downloaded / elapsed;
+          report("downloading", index + 1);
+        },
+      });
+      downloaded = before + peer.bytes;
+      downMs += performance.now() - downFrom;
+      // 中止はダウンロードの間だけ効く。マージはワーカーのトランザクションで、
+      // 途中で止めても待つ時間は減らない — 始まったら終わらせる方が正直。
+      signal?.throwIfAborted();
+      report("merging", index + 1);
+      const mergeFrom = performance.now();
+      const result = await ports.mergePayload(payload);
+      mergeMs += performance.now() - mergeFrom;
+      mergedBytes += peer.bytes;
+      // sha があれば「マージした中身」の sha（KV の遅れ対策、上の MERGED_KEY 参照）。
+      // 無い古い枠は一覧の鍵で — そういう枠はもう書き換えられないので遅れは起きない。
       if (sha !== null) merged[peer.deviceId] = sha;
-      reviewsAdded += report.reviewsAdded;
-      flagsTaken += report.flagsTaken;
-      trackStateTaken += report.trackStateTaken;
+      else if (peer.sha === undefined) merged[peer.deviceId] = versionOf(peer);
+      reviewsAdded += result.reviewsAdded;
+      flagsTaken += result.flagsTaken;
+      trackStateTaken += result.trackStateTaken;
       peersMerged += 1;
     } catch (error) {
+      // 中止は「一つの端末の失敗」ではない — 呼び出し側まで投げる。
+      if (signal?.aborted === true) {
+        writeMerged(merged);
+        throw error;
+      }
+      downloaded = before + peer.bytes;
+      mergedBytes += peer.bytes;
       failures.push(
         `${peer.deviceId}: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -343,9 +565,31 @@ export async function syncNow(ports: SyncPorts): Promise<SyncOutcome> {
   // Only after the loop, and only the peers that merged: a failure is retried next time.
   writeMerged(merged);
 
-  const mine = await ports.exportPayload();
-  const put = await reach(`/sync/${self}`, { method: "PUT", ...(await uploadBody(mine.json)) });
-  if (!put.ok) throw new Error(`the mailbox refused this device's payload (${put.status})`);
+  // 起動時は送らない（`push: false`）。受け取る側は「最初のカードの前」に済ませる
+  // 必要があるが、送る側は彼を待たせる理由が無い — 起動後に裏で `pushNow` が送る。
+  let sendMs = timing.sendMs;
+  let pushedBytes = 0;
+  if (options.push !== false) {
+    report("sending", 0);
+    const sendFrom = performance.now();
+    const mine = await ports.exportPayload();
+    const put = await reach(`/sync/${self}`, { method: "PUT", ...(await uploadBody(mine.json)) });
+    if (!put.ok) throw new Error(`the mailbox refused this device's payload (${put.status})`);
+    sendMs = performance.now() - sendFrom;
+    pushedBytes = mine.bytes;
+    writeLastPushed(new Date().toISOString());
+  }
+
+  // 次回の見積もりのために、今回測れた分だけ書き換える。測れなかった項目
+  // （変わった端末が無かった回のマージ等）は前回の値を残す。
+  writeTiming({
+    mergeMsPerByte: mergedBytes > 0 && mergeMs > 0 ? mergeMs / mergedBytes : timing.mergeMsPerByte,
+    // 速すぎて測れなかった回も記録する（1 ms で割る）— 記録しないと、速い回線では
+    // ダウンロード速度が永遠に「未測定」になり、見積もりも永遠に出ない。実際に
+    // ローカルの mailbox でそうなった。
+    downBytesPerMs: downloaded > 0 ? downloaded / Math.max(1, downMs) : timing.downBytesPerMs,
+    sendMs,
+  });
 
   writeLastSynced(new Date().toISOString());
   return {
@@ -353,7 +597,7 @@ export async function syncNow(ports: SyncPorts): Promise<SyncOutcome> {
     flagsTaken,
     trackStateTaken,
     peersMerged,
-    pushedBytes: mine.bytes,
+    pushedBytes,
     failures,
   };
 }

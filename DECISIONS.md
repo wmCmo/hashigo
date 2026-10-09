@@ -2120,6 +2120,53 @@ right**: it holds his verbatim reasoning and this quotes it.
     generation) is cheap now and expensive to unpick later. It is also adjacent to
     open-sourcing, which is still deferred until after development.
 
+50. **THE APP PULLS ON THE BOOT SCREEN, BEFORE THE FIRST CARD — AND SAYS HOW LONG.**
+    Zach, 2026-10-09: *"if I'm on a train and I want to review it it would take so
+    much time without knowing how long it would take"*, then his own better answer:
+    *"when you open the app and it has not been synced it won't let you go through
+    … what's the point of having the first waiting page if you have to go inside
+    the app and tap the sync button again"*.
+
+    **Why the pull was manual, and why that reason does not reach the boot
+    screen.** `sidebar.ts` kept the pull off every automatic path for two reasons
+    (2026-09-14): a merge freezes the review screen ~8 s, and a merge moves what is
+    due under a card he is holding. Before the first card neither can happen. So
+    `syncAtBoot` pulls there, and then sends `replan` — the session is built ONCE at
+    `open`, so a merge after it left already-answered cards in the plan, which is the
+    2026-09-14 duplicate exactly. Measured on a fresh device against the local
+    mailbox: plan 1,832 at open, **1,331 after the merge** of 610 grades. The worker
+    refuses `replan` once anything is graded.
+
+    **The PUSH stays off the boot path** (`push: false`) — nothing about sending
+    needs to happen before he reviews. `pushAfterBoot` sends after the first card,
+    and only when this device has grades the mailbox does not (*"how much data does
+    it consume?"*, 2026-09-29). Merged-in grades are stored `source = 'local'` too,
+    so the count is carried across a merge (`carryPushedCount`) or every merging boot
+    would upload ~350 KB for nothing.
+
+    **"Won't let you through" has three exits, and they are the local-first
+    floor, not a softening.** `navigator.onLine` false → straight in. The listing
+    unanswered in 8 s or unreachable → straight in, and the boot log says so. A
+    download with no bytes for `STALL_AFTER_MS` → "open without syncing". Once a
+    MERGE has started there is no exit: it is one worker transaction, and leaving
+    the screen saves no time because the worker answers nothing until it commits.
+    Decision 45 refused an escape for the SEED because the local copy is the stale
+    thing; for sync the local copy is a working database, and locking him out of it
+    on a dead train is the failure this app exists to not have.
+
+    **The ETA comes from the LAST run on this device**, not from the live rate
+    `readout` uses for the seed — that waits 15 s for a stable sample, and a sync
+    is mostly merge, which has no bytes. `hashigo.sync.timing` holds merge ms per
+    byte, download bytes per ms and send ms; a part never measured makes the whole
+    estimate null ("first sync timed on this device"), never a short half-truth.
+    Seen working: "about 5 s left" on the second run.
+
+    **A defect fell out of measuring it.** Of the six slots in the cloud mailbox,
+    four (last written 26-28 Sep) predate `X-Payload-Sha`, and the skip rule said
+    "no sha → always download". So EVERY sync re-fetched and re-merged ~7.4 MB of
+    payloads unchanged for a month — likely most of the wait he was asking about.
+    `versionOf()` names a hashless payload by `updatedAt|bytes`.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

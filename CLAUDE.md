@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 55 files, 1454 passed, 1 skipped (the FSRS refit, gated). ~55 s.
+npm test                # 55 files, 1464 passed, 1 skipped (the FSRS refit, gated). ~55 s.
                         # MEASURED 2026-09-17, not arithmetic. The 1127 here before it
                         # was 1117 plus ten new tests, added up rather than run — and it
                         # missed 79 tests from the same day. Run the suite or leave it alone.
@@ -989,6 +989,19 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     its merits. **Friends is a DIRECTION, not a decision** — recorded so the next
     architecture choice does not take a single-user shortcut blind. See
     `DECISIONS.md` 49.
+
+50. **THE APP PULLS ON THE BOOT SCREEN, BEFORE THE FIRST CARD, AND SAYS HOW LONG.**
+    Zach, 2026-10-09: *"what's the point of having the first waiting page if you
+    have to go inside the app and tap the sync button again"*. The pull was manual
+    because a merge freezes a card mid-review and moves what is due under it; neither
+    can happen before the first card. `syncAtBoot` pulls, then `replan` (the session
+    is built once at `open` — measured 1,832 → 1,331 after a 610-grade merge). The
+    push stays OFF the boot path. **Not a lockout:** offline, an unanswered listing
+    (8 s) or a stalled download all open with the local database — decision 45's
+    no-escape rule was for the SEED, whose local copy is the stale thing. ETA from the
+    LAST run's measured speeds, null until every part has been timed. **Fixed on the
+    way:** 4 of 6 cloud slots predate `X-Payload-Sha` and were re-downloaded and
+    re-merged on EVERY sync (~7.4 MB). See `DECISIONS.md` 50.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

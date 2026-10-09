@@ -31,12 +31,15 @@ export function mib(bytes: number): string {
 }
 
 /** One place the app says what just happened, on every surface. */
-export function say(text: string, bad = false): void {
+export function say(text: string, bad = false, stay = false): void {
   const strip = el("say");
   strip.textContent = text;
   strip.classList.toggle("bad", bad);
   strip.hidden = false;
   window.clearTimeout(sayTimer);
+  // `stay`：続きのある知らせ（同期の進み具合）。マージは 8 秒ほど何も言わない
+  // ので、4 秒で消すと待っている途中で画面から消える。次の `say` が片付ける。
+  if (stay) return;
   sayTimer = window.setTimeout(() => {
     strip.hidden = true;
   }, 4000);

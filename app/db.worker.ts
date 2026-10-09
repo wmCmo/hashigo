@@ -143,6 +143,7 @@ import type {
   GeneratedTextRequest,
   SyncExportRequest,
   SyncMergeRequest,
+  ReplanRequest,
   LogLevel,
   NextRequest,
   OpenRequest,
@@ -1868,7 +1869,25 @@ function syncExport(request: SyncExportRequest): void {
     // UTF-8 bytes, not `.length` — decision 6, name the basis. This payload is
     // mostly Japanese and `.length` counts UTF-16 code units.
     bytes: new TextEncoder().encode(json).length,
+    localReviews: Number(
+      (db.prepare("SELECT count(*) AS n FROM reviews WHERE source = 'local'").get() as {
+        n: number;
+      }).n,
+    ),
   });
+}
+
+/**
+ * `open` が組んだ計画を、起動時の同期の後に組み直す。`ReplanRequest` 参照。
+ * 採点が一つでもあれば拒む — ページ側の約束を、ここでも守らせる。
+ */
+function replan(request: ReplanRequest): void {
+  const db = requireCards();
+  if (answers.length > 0) {
+    throw new Error("refusing to replan a session that has already been graded");
+  }
+  session = buildSession(db);
+  post({ kind: "replan", id: request.id, planned: session.progress().planned });
 }
 
 function syncMerge(request: SyncMergeRequest): void {
@@ -2844,6 +2863,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "syncMerge":
           syncMerge(request);
+          break;
+        case "replan":
+          replan(request);
           break;
         case "preview":
           preview(request);

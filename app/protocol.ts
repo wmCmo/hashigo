@@ -839,6 +839,24 @@ export interface SyncExportRequest {
   readonly id: number;
 }
 
+/**
+ * 今日の計画を組み直す。起動時の同期が他の端末の採点を取り込んだ後、最初の
+ * カードを出す前にだけ送る。計画は `open` で一度組まれるので、その後のマージは
+ * 既に答えたカードを計画に残したままにする — 端末を跨いで同じカードを二度聞かれ
+ * る、2026-09-14 の重複そのもの。採点が一つでも済んだセッションには送らない
+ * （組み直すと手元のカードの下で due が動く）。
+ */
+export interface ReplanRequest {
+  readonly kind: "replan";
+  readonly id: number;
+}
+
+export interface ReplannedMessage {
+  readonly kind: "replan";
+  readonly id: number;
+  readonly planned: number;
+}
+
 export interface SyncMergeRequest {
   readonly kind: "syncMerge";
   readonly id: number;
@@ -1096,6 +1114,7 @@ export type AppRequest =
   | BackupRequest
   | SyncExportRequest
   | SyncMergeRequest
+  | ReplanRequest
   | PreviewRequest
   | BacklinksRequest
   | StoreGenerationRequest
@@ -1297,6 +1316,8 @@ export interface SyncExportMessage {
   /** The payload, already JSON text — the page only has to POST it. */
   readonly json: string;
   readonly bytes: number;
+  /** この書き出しに入っているこの端末の採点の数。起動時に「送り残し」を判断する。 */
+  readonly localReviews: number;
 }
 
 export interface SyncMergeMessage {
@@ -1345,6 +1366,7 @@ export type AppMessage =
   | BackupMessage
   | SyncExportMessage
   | SyncMergeMessage
+  | ReplannedMessage
   | SettingsMessage
   | SetSettingMessage
   | TemplateMessage
@@ -1366,6 +1388,7 @@ export interface ReplyFor {
   readonly generatedText: GeneratedTextMessage;
   readonly syncExport: SyncExportMessage;
   readonly syncMerge: SyncMergeMessage;
+  readonly replan: ReplannedMessage;
   readonly reset: ResetMessage;
   readonly preview: PreviewMessage;
   readonly backlinks: BacklinksMessage;

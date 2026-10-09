@@ -19,16 +19,19 @@ import { installOrigin, registerServiceWorker, watchForInstall } from "./install
 import { buildNewCardForm, fillNewCardChoices } from "./palette.js";
 import {
   agoLabel,
+  changedPeers,
   initialStatus,
   isStale,
   lastPushedAt,
+  listPeers,
   peersNewerThan,
   pushNow,
   sinceLabel,
   syncNow,
+  type SyncProgress,
 } from "./sync-client.js";
 import { openTemplateEditor } from "./template-editor.js";
-import { openPrompt, say } from "./ui.js";
+import { mib, openPrompt, say } from "./ui.js";
 import { ask } from "./worker-client.js";
 import { refreshAfterOp } from "./ops.js";
 import { openDeckMenu, runDeckOp } from "./deck-menu.js";
@@ -423,9 +426,13 @@ function paintSync(): void {
   syncDetail.textContent = sent === null ? label : `${label} · grades sent ${sent}`;
 }
 
+let lastExportedCount: number | undefined;
+
 const syncPorts = {
   async exportPayload(): Promise<{ json: string; bytes: number }> {
     const reply = await ask<"syncExport">({ kind: "syncExport" });
+    // 送れたと分かってから `rememberPushedCount` に渡す — 書き出した時点ではない。
+    lastExportedCount = reply.localReviews;
     return { json: reply.json, bytes: reply.bytes };
   },
   async mergePayload(payload: unknown): Promise<{
@@ -442,12 +449,43 @@ const syncPorts = {
   },
 };
 
+/**
+ * 手動同期の進み具合を、どの画面にも出る一行（`say`）で言う。Zach, 2026-10-09:
+ * *"when you click the cloud icon to sync … so you know how long it would take"*。
+ * 雲のアイコンは回るだけで、何秒待つのかは言わなかった。
+ */
+export function syncProgressText(progress: SyncProgress): string {
+  const eta = progress.etaSeconds === null ? "" : ` · ${secondsLeft(progress.etaSeconds)}`;
+  switch (progress.stage) {
+    case "checking":
+      return "syncing · checking the other devices…";
+    case "downloading":
+      return (
+        `syncing · downloading ${progress.peer} of ${progress.peers} · ` +
+        `${mib(progress.received)} of ${mib(progress.total)}${eta}`
+      );
+    case "merging":
+      return `syncing · merging ${progress.peer} of ${progress.peers}${eta}`;
+    case "sending":
+      return `syncing · sending this device's grades${eta}`;
+  }
+}
+
+/** 秒の粒度で言う — 同期は分単位にならない。 */
+export function secondsLeft(seconds: number): string {
+  const s = Math.max(1, Math.round(seconds));
+  return s < 60 ? `about ${s} s left` : `about ${Math.round(s / 60)} min left`;
+}
+
 async function runSync(): Promise<void> {
   if (syncStatus.state === "syncing") return;
   syncStatus = { ...syncStatus, state: "syncing", detail: null };
   paintSync();
   try {
-    const outcome = await syncNow(syncPorts);
+    const outcome = await syncNow(syncPorts, {
+      onProgress: (progress) => say(syncProgressText(progress), false, true),
+    });
+    rememberPushedCount(lastExportedCount);
     syncStatus = {
       state: "ok",
       lastSyncedAt: new Date().toISOString(),
@@ -477,6 +515,168 @@ async function runSync(): Promise<void> {
     };
     paintSync();
     say(`sync failed — ${syncStatus.detail ?? ""}`, true);
+  }
+}
+
+/**
+ * 起動時の同期 — Zach, 2026-10-09。
+ *
+ * *"when you open the app and it has not been synced it won't let you go through
+ * the page at all … what's the point of having the first waiting page if you have
+ * to go inside the app and tap the sync button again"*。
+ *
+ * ─── 受け取るのは最初のカードの前、送るのは後 ────────────────────────────────
+ *
+ * 手動同期が自動化されなかった理由は二つで、どちらも「カードの途中」の話だった：
+ * マージ中は 8 秒画面が固まる、そしてマージで due が手元のカードの下で動く。起動
+ * 画面ではどちらも起きない — まだカードが無い。だからここで引き、終わったら計画を
+ * 組み直す（`replan`）。`open` が組んだ計画のままだと、電話で答えたカードをまた
+ * 聞かれる。2026-09-14 の重複と同じもの。
+ *
+ * 送る方（書き出し＋PUT）は待たせない。`pushAfterBoot` が最初のカードの後に送る。
+ *
+ * ─── 圏外なら止めない ────────────────────────────────────────────────────────
+ *
+ * 彼の言葉どおり「先に進ませない」のは、届く mailbox があって新しい採点がある時
+ * だけ。電車で圏外なら、手元のデータで復習できるのがローカルファーストの意味で、
+ * 起動画面で永遠に待たせたら app が使えない。だから：
+ *   - `navigator.onLine` が false → すぐ通す
+ *   - 一覧が `LIST_TIMEOUT_MS` で返らない／届かない → 通す（起動ログにそう書く）
+ *   - ダウンロードが止まった（`STALL_AFTER_MS`）→ 「同期せずに開く」を出す
+ * マージが始まったら終わるまで待つ。トランザクションの途中で離れても、ワーカー
+ * はそれを終えるまで次の要求を処理しないので、待つ時間は一秒も減らない。
+ */
+const LIST_TIMEOUT_MS = 8_000;
+
+export type BootSyncResult =
+  | { readonly kind: "offline" }
+  | { readonly kind: "unreachable"; readonly detail: string }
+  | { readonly kind: "current" }
+  | { readonly kind: "skipped" }
+  | { readonly kind: "merged"; readonly reviewsAdded: number; readonly peers: number; readonly failures: readonly string[] };
+
+export async function syncAtBoot(hooks: {
+  readonly onProgress: (progress: SyncProgress) => void;
+  readonly signal: AbortSignal;
+}): Promise<BootSyncResult> {
+  if (navigator.onLine === false) {
+    syncStatus = { ...syncStatus, state: "offline" };
+    paintSync();
+    return { kind: "offline" };
+  }
+  let listing;
+  const timeout = new AbortController();
+  const timer = window.setTimeout(() => timeout.abort(), LIST_TIMEOUT_MS);
+  const stopListing = (): void => timeout.abort();
+  hooks.signal.addEventListener("abort", stopListing);
+  try {
+    listing = await listPeers(timeout.signal);
+  } catch (error) {
+    if (hooks.signal.aborted) return { kind: "skipped" };
+    const detail = timeout.signal.aborted
+      ? `no answer from the mailbox in ${LIST_TIMEOUT_MS / 1000} s`
+      : error instanceof Error
+        ? error.message
+        : String(error);
+    syncStatus = { ...syncStatus, state: "offline", detail };
+    paintSync();
+    return { kind: "unreachable", detail };
+  } finally {
+    window.clearTimeout(timer);
+    hooks.signal.removeEventListener("abort", stopListing);
+  }
+
+  if (changedPeers(listing).length === 0) {
+    // 一覧の sha が全部、ここで既にマージしたものと一致した — 受け取る物は無い。
+    // それは「同期済み」の受け取る半分そのものなので、そう表示する。
+    await refreshBehind();
+    paintSync();
+    return { kind: "current" };
+  }
+
+  syncStatus = { ...syncStatus, state: "syncing", detail: null };
+  paintSync();
+  try {
+    const outcome = await syncNow(syncPorts, {
+      listing,
+      push: false,
+      onProgress: hooks.onProgress,
+      signal: hooks.signal,
+    });
+    syncStatus = {
+      state: "ok",
+      lastSyncedAt: new Date().toISOString(),
+      detail: null,
+      peers: outcome.peersMerged,
+    };
+    paintSync();
+    // まだ一枚も採点していないので、組み直しても誰の手元も動かない。
+    if (outcome.reviewsAdded > 0 || outcome.flagsTaken > 0 || outcome.trackStateTaken > 0) {
+      await ask<"replan">({ kind: "replan" });
+    }
+    return {
+      kind: "merged",
+      reviewsAdded: outcome.reviewsAdded,
+      peers: outcome.peersMerged,
+      failures: outcome.failures,
+    };
+  } catch (error) {
+    if (hooks.signal.aborted) {
+      syncStatus = { ...syncStatus, state: syncStatus.lastSyncedAt === null ? "never" : "ok" };
+      await refreshBehind();
+      paintSync();
+      return { kind: "skipped" };
+    }
+    const detail = error instanceof Error ? error.message : String(error);
+    syncStatus = { ...syncStatus, state: "failed", detail };
+    paintSync();
+    return { kind: "unreachable", detail };
+  }
+}
+
+/**
+ * 起動後、最初のカードが出てから — 前回送れなかった採点があれば送る。
+ *
+ * 毎回は送らない。彼は通信量を気にしている（*"how much data does it consume?"*,
+ * 2026-09-29）、一回 ~350 KB。送る理由があるのは、この端末の採点が最後に送った
+ * 時から増えた時だけで、それは採点の数で分かる。圏外の電車で採点した分は、次に
+ * 開いた時ここで出ていく。
+ */
+const PUSHED_COUNT_KEY = "hashigo.sync.pushedLocalReviews";
+
+/**
+ * 起動時のマージで入ってきた採点は「送り残し」ではない — 持ち主の端末の payload に
+ * 既にある。だが `source = 'local'` で数えるので数は増える（実測：0 → 610）。
+ * マージ前に送り残しが無かったなら、マージ後の数をそのまま「送った数」にする。
+ */
+export function carryPushedCount(before: number, added: number): void {
+  if (added === 0) return;
+  try {
+    if (localStorage.getItem(PUSHED_COUNT_KEY) === String(before)) {
+      localStorage.setItem(PUSHED_COUNT_KEY, String(before + added));
+    }
+  } catch {
+    /* 分からなければ一度余計に送るだけ */
+  }
+}
+
+export function pushAfterBoot(localReviews: number): void {
+  let sent: string | null = null;
+  try {
+    sent = localStorage.getItem(PUSHED_COUNT_KEY);
+  } catch {
+    /* 分からなければ送る */
+  }
+  if (sent === String(localReviews)) return;
+  void pushGrades();
+}
+
+function rememberPushedCount(count: number | undefined): void {
+  if (count === undefined) return;
+  try {
+    localStorage.setItem(PUSHED_COUNT_KEY, String(count));
+  } catch {
+    /* 次の起動でもう一度送るだけ */
   }
 }
 
@@ -535,6 +735,7 @@ async function pushGrades(): Promise<void> {
   pushing = true;
   try {
     await pushNow(syncPorts);
+    rememberPushedCount(lastExportedCount);
     // WE ARE ALREADY TALKING TO THE MAILBOX, so ask the one question the push
     // cannot answer: has anyone else left newer work in it? A listing, not a
     // merge — no payload bodies, nothing applied, nothing on screen moves. This

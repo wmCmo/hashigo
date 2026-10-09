@@ -77,6 +77,7 @@ import {
   restFrame,
   rungMix,
   slotY,
+  STALL_AFTER_MS,
   type Phase,
   type Rung,
   type Sample,
@@ -107,10 +108,15 @@ import {
 import {
   closeSidebar,
   fillSidebar,
+  carryPushedCount,
   openSidebar,
+  pushAfterBoot,
   railStanding,
   schedulePush,
+  secondsLeft,
+  syncAtBoot,
 } from "./sidebar.js";
+import type { SyncProgress } from "./sync-client.js";
 import { openPalette } from "./palette.js";
 import { provideShell } from "./shell.js";
 import { line, mib, say } from "./ui.js";
@@ -3654,6 +3660,126 @@ function openCardMenu(cardId: string, name: string): void {
 
 // ─── boot ────────────────────────────────────────────────────────────────────────
 
+// ─── 起動時の同期を、種と同じ画面で — Zach, 2026-10-09 ──────────────────────
+//
+// 理由と規則は `sidebar.ts` の `syncAtBoot`。ここは画面の半分だけ。
+//
+// 種のダウンロードと同じ要素（はしごの動き、段階、バー、残り時間、止まった時の
+// 一文）を使う。二つ目の待ち画面を作らないのは、彼にとってどちらも「開く前に
+// 待つもの」で、違う顔をしている理由が無いから。GATE_MS も同じ — 変わった端末が
+// 無い普通の起動では、一覧を聞くだけで何も見せずに通る。
+const STAGE_WORDS: Readonly<Record<SyncProgress["stage"], string>> = {
+  checking: "Checking your other devices",
+  downloading: "Getting grades from your other devices",
+  merging: "Merging them into this device",
+  sending: "Sending this device's grades",
+};
+const bootSkip = el("bootskip");
+
+/** 取り込んだ採点の数を返す（`carryPushedCount` が使う）。 */
+async function bootSync(): Promise<number> {
+  const abort = new AbortController();
+  const startedAt = performance.now();
+  let latest: SyncProgress | null = null;
+  let lastBytesAt = startedAt;
+  let lastReceived = 0;
+  // バーは戻らない。見積もりは段階ごとに出し直すので、そのまま描くと揺れる。
+  let shownFraction = 0;
+
+  const paint = (): void => {
+    if (climbShownAt === null) return;
+    const now = performance.now();
+    const progress = latest;
+    const stage = progress?.stage ?? "checking";
+    bootPhase.textContent =
+      stage === "downloading" || stage === "merging"
+        ? `${STAGE_WORDS[stage]} · ${progress?.peer ?? 0} of ${progress?.peers ?? 0}`
+        : STAGE_WORDS[stage];
+    const eta = progress?.etaSeconds ?? null;
+    let fraction: number | null = null;
+    if (eta !== null) {
+      const elapsed = (now - startedAt) / 1000;
+      fraction = elapsed / (elapsed + eta);
+    } else if (stage === "downloading" && progress !== null && progress.total > 0) {
+      fraction = progress.received / progress.total;
+    }
+    if (fraction !== null) shownFraction = Math.max(shownFraction, Math.min(1, fraction));
+    bootBar.classList.toggle("sweep", fraction === null);
+    bootFill.style.width = fraction === null ? "" : `${(shownFraction * 100).toFixed(1)}%`;
+    bootGot.textContent =
+      progress === null || progress.total === 0
+        ? ""
+        : `${mib(progress.received)} of ${mib(progress.total)}`;
+    bootRate.textContent = "";
+    bootEta.textContent =
+      eta !== null
+        ? secondsLeft(eta)
+        : stage === "merging"
+          ? "first sync timed on this device — the next one will say how long"
+          : "";
+    // 止まったかどうかはバイトで決める（`readout` と同じ規則）。マージ中はバイト
+    // が来ないのが正常なので、そこでは言わない。
+    const stalled = stage !== "merging" && now - lastBytesAt >= STALL_AFTER_MS;
+    bootStall.hidden = !stalled;
+    bootSkip.hidden = !stalled;
+    if (stalled) {
+      bootStall.textContent =
+        "Nothing has arrived for a while. The connection may have dropped — you can " +
+        "open with what is on this device and sync later.";
+    }
+  };
+
+  const gate = window.setTimeout(() => {
+    startClimb();
+    paint();
+  }, GATE_MS);
+  const ticker = window.setInterval(paint, 1000);
+  const skip = (): void => abort.abort();
+  bootSkip.addEventListener("click", skip);
+
+  try {
+    const result = await syncAtBoot({
+      signal: abort.signal,
+      onProgress: (progress) => {
+        if (progress.received !== lastReceived || progress.stage !== latest?.stage) {
+          lastReceived = progress.received;
+          lastBytesAt = performance.now();
+        }
+        latest = progress;
+        paint();
+      },
+    });
+    switch (result.kind) {
+      case "offline":
+        line("offline — opening with what is on this device; sync when you have signal", "step");
+        break;
+      case "unreachable":
+        line(`could not sync (${result.detail}) — opening with what is on this device`, "bad");
+        break;
+      case "skipped":
+        line("sync skipped — opening with what is on this device", "step");
+        break;
+      case "current":
+        line("sync: nothing new from your other devices", "good");
+        break;
+      case "merged":
+        line(
+          `sync: ${result.reviewsAdded.toLocaleString()} grade(s) in from ${result.peers} device(s)`,
+          result.failures.length > 0 ? "bad" : "good",
+        );
+        for (const failure of result.failures) line(failure, "bad");
+        return result.reviewsAdded;
+    }
+    return 0;
+  } finally {
+    window.clearTimeout(gate);
+    window.clearInterval(ticker);
+    bootSkip.removeEventListener("click", skip);
+    bootSkip.hidden = true;
+    bootStall.hidden = true;
+  }
+}
+
 async function boot(): Promise<void> {
   try {
     if (await maybeReset()) return;
@@ -3679,6 +3805,8 @@ async function boot(): Promise<void> {
     // overwritten by the "not persistent" one.
     checkEviction(opened);
     await checkPersistence();
+    const merged = await bootSync();
+    carryPushedCount(opened.localReviews, merged);
     // The climb stops with the screen it lives on, and the mark goes back to the
     // form `index.html` authored. A `requestAnimationFrame` loop left running
     // behind a hidden section is a wake-up every frame for the life of the
@@ -3690,6 +3818,8 @@ async function boot(): Promise<void> {
     // it. Below that it is still a drawer and fills when it opens.
     if (railStanding.matches) fillSidebar();
     await showSessionCard();
+    // 送り残しは最初のカードの後、裏で。`pushAfterBoot` 参照。
+    pushAfterBoot(opened.localReviews + merged);
   } catch (cause) {
     line(String((cause as Error).message), "bad");
     line("nothing was written. Fix the above and reload.", "bad");

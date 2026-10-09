@@ -19,8 +19,11 @@ import {
   isStale,
   peersNewerThan,
   sinceLabel,
+  syncEta,
   syncNow,
   type SyncPorts,
+  type SyncProgress,
+  versionOf,
 } from "../app/sync-client.js";
 
 const NOW = new Date("2026-09-12T12:00:00.000Z");
@@ -147,11 +150,20 @@ describe("an unchanged peer is not downloaded again — 2026-09-29", () => {
     expect(box.downloads.get("dev-bbb")).toBe(2);
   });
 
-  it("a peer with no hash (an old payload) is always downloaded", async () => {
+  it("a peer with no hash (an old payload) is downloaded once, not on every sync — 2026-10-09", async () => {
+    // 実測：クラウドの 6 枠のうち 4 枠が sha 導入前のもので、同期のたびに ~7.4 MB を
+    // 落としてマージし直していた。版の名前は「上げた時刻＋大きさ」で足りる。
     const box = fakeMailbox({ "dev-bbb": { ok: true } });
     await syncNow(ports(() => undefined));
     await syncNow(ports(() => undefined));
-    expect(box.downloads.get("dev-bbb")).toBe(2);
+    expect(box.downloads.get("dev-bbb")).toBe(1);
+  });
+
+  it("a hashless peer that uploads again is downloaded again", () => {
+    const listed = { deviceId: "dev-bbb", bytes: 10, updatedAt: "2026-09-26T12:00:00.000Z" };
+    expect(versionOf(listed)).not.toBe(versionOf({ ...listed, updatedAt: "2026-10-09T12:00:00.000Z" }));
+    expect(versionOf(listed)).not.toBe(versionOf({ ...listed, bytes: 11 }));
+    expect(versionOf({ ...listed, sha: "abc" })).toBe("abc");
   });
 
   it("a failed merge is not recorded, so the next sync tries that peer again", async () => {
@@ -462,5 +474,133 @@ describe("knowing a peer is ahead", () => {
     expect(
       isStale({ state: "ok", lastSyncedAt: SYNCED, detail: null, peers: 0 }, new Date(SYNCED)),
     ).toBe(false);
+  });
+});
+
+/**
+ * 同期の進み具合と、あと何秒か — Zach, 2026-10-09: *"if I'm on a train and I want
+ * to review it it would take so much time without knowing how long it would take"*.
+ *
+ * 見積もりは前回この端末で測った速さから出す。測っていない部分がある間は null —
+ * 短い方の半分だけを言う数字は、電車に乗り遅れさせる数字だから。
+ */
+describe("how long a sync will take", () => {
+  const measured = { mergeMsPerByte: 0.004, downBytesPerMs: 500, sendMs: 900 };
+
+  it("adds download, merge and send from the last run's speeds", () => {
+    const eta = syncEta(measured, { downloadBytes: 1_000_000, mergeBytes: 2_000_000, send: true });
+    // 2,000 ms + 8,000 ms + 900 ms
+    expect(eta).toBeCloseTo(10.9, 5);
+  });
+
+  it("says nothing rather than half the truth when the merge was never timed", () => {
+    const eta = syncEta(
+      { ...measured, mergeMsPerByte: null },
+      { downloadBytes: 1_000, mergeBytes: 1_000, send: true },
+    );
+    expect(eta).toBeNull();
+  });
+
+  it("does not need what is already done", () => {
+    // ダウンロードが終わった後は、ダウンロード速度を知らなくても見積もれる。
+    const eta = syncEta(
+      { ...measured, downBytesPerMs: null },
+      { downloadBytes: 0, mergeBytes: 250_000, send: false },
+    );
+    expect(eta).toBeCloseTo(1, 5);
+  });
+
+  it("prefers this run's measured download rate to the stored one", () => {
+    const eta = syncEta(measured, { downloadBytes: 1_000_000, mergeBytes: 0, send: false }, 100);
+    expect(eta).toBeCloseTo(10, 5);
+  });
+});
+
+describe("what a sync reports while it runs", () => {
+  function sizedMailbox(sizes: Record<string, number>): { gets: string[]; store: Map<string, string> } {
+    const store = new Map<string, string>([["hashigo.sync.deviceId", "dev-selftest01"]]);
+    const gets: string[] = [];
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string): string | null => store.get(k) ?? null,
+      setItem: (k: string, v: string): void => void store.set(k, v),
+      removeItem: (k: string): void => void store.delete(k),
+    });
+    vi.stubGlobal("fetch", async (url: string, init?: { method?: string; signal?: AbortSignal }) => {
+      if ((init?.method ?? "GET") !== "GET") return { ok: true, status: 200 };
+      init?.signal?.throwIfAborted();
+      gets.push(url);
+      if (url === "/sync/") {
+        return json({
+          peers: Object.entries(sizes).map(([deviceId, bytes]) => ({
+            deviceId,
+            bytes,
+            updatedAt: NOW.toISOString(),
+            sha: `${deviceId}-v1`,
+          })),
+        });
+      }
+      const id = url.slice("/sync/".length);
+      return json({ ok: true }, `${id}-v1`);
+    });
+    return { gets, store };
+  }
+
+  it("totals the download from the listing and walks the stages in order", async () => {
+    sizedMailbox({ "dev-aaa": 300, "dev-bbb": 700 });
+    const seen: SyncProgress[] = [];
+    await syncNow(ports(() => undefined), { onProgress: (p) => seen.push(p) });
+    expect(seen.every((p) => p.total === 1000)).toBe(true);
+    expect(seen.map((p) => `${p.stage}:${p.peer}`)).toEqual([
+      "checking:0",
+      "downloading:1",
+      "merging:1",
+      "downloading:2",
+      "merging:2",
+      "sending:0",
+    ]);
+  });
+
+  it("has no estimate on the first run on a device, and has one on the second", async () => {
+    const { store } = sizedMailbox({ "dev-aaa": 300 });
+    const first: SyncProgress[] = [];
+    await syncNow(ports(() => undefined), { onProgress: (p) => first.push(p) });
+    expect(first.every((p) => p.etaSeconds === null)).toBe(true);
+    // 二回目は同じ端末に新しい版がある、という状況にする。
+    store.set("hashigo.sync.merged", "{}");
+    const timing = JSON.parse(store.get("hashigo.sync.timing") ?? "{}") as Record<string, unknown>;
+    // テストの偽物は一瞬で終わるので、マージ速度が測れていれば十分。
+    store.set("hashigo.sync.timing", JSON.stringify({ ...timing, mergeMsPerByte: 0.01, downBytesPerMs: 100 }));
+    const second: SyncProgress[] = [];
+    await syncNow(ports(() => undefined), { onProgress: (p) => second.push(p) });
+    expect(second[0]?.etaSeconds).not.toBeNull();
+  });
+
+  it("with push: false, sends nothing and never says it is sending", async () => {
+    const box = sizedMailbox({ "dev-aaa": 300 });
+    const exported: number[] = [];
+    const seen: SyncProgress[] = [];
+    const outcome = await syncNow(
+      { ...ports(() => undefined), exportPayload: async () => (exported.push(1), { json: "{}", bytes: 2 }) },
+      { push: false, onProgress: (p) => seen.push(p) },
+    );
+    expect(exported).toHaveLength(0);
+    expect(outcome.pushedBytes).toBe(0);
+    expect(seen.some((p) => p.stage === "sending")).toBe(false);
+    // 受け取る半分は済んだので「同期済み」の時刻は書く。
+    expect(box.store.get("hashigo.sync.lastSyncedAt")).toBeDefined();
+  });
+
+  it("reuses a listing it is handed instead of asking again", async () => {
+    const box = sizedMailbox({ "dev-aaa": 300 });
+    const listing = [{ deviceId: "dev-aaa", bytes: 300, updatedAt: NOW.toISOString(), sha: "dev-aaa-v1" }];
+    await syncNow(ports(() => undefined), { listing });
+    expect(box.gets).toEqual(["/sync/dev-aaa"]);
+  });
+
+  it("an abort is thrown, not filed as one peer's failure", async () => {
+    sizedMailbox({ "dev-aaa": 300 });
+    const abort = new AbortController();
+    abort.abort();
+    await expect(syncNow(ports(() => undefined), { signal: abort.signal })).rejects.toThrow();
   });
 });
