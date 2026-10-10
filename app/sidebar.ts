@@ -706,9 +706,9 @@ function rememberPushedCount(count: number | undefined): void {
  *
  * SPEC problem #1 is battery — *"no polling, no sockets"* — so there is no
  * interval here. The clock starts when he grades and is pushed forward by the
- * next grade, so a steady session sends once every `PUSH_AFTER_MS` of thinking
- * time and once more when he stops. A device nobody is reviewing on sends
- * nothing at all.
+ * next grade — so on its own it sends only after `PUSH_AFTER_MS` with NO grade,
+ * which a steady session never reaches (2026-10-10, below: `PUSH_MAX_WAIT_MS`
+ * caps it). A device nobody is reviewing on sends nothing at all.
  *
  * ─── AND IT FAILS QUIETLY, WHICH IS DELIBERATE ──────────────────────────────
  *
@@ -719,16 +719,47 @@ function rememberPushedCount(count: number | undefined): void {
  * everything the moment he is home.
  */
 const PUSH_AFTER_MS = 30_000;
+
+/**
+ * 上の「一定のセッションでも 30 秒ごとに一度送る」は誤りだった — Zach, 2026-10-10。
+ *
+ * *"i remember i have seen this exact order of cards from last night while i was
+ * reviewing on my tablet … after i reviewing them i closed my tablet instantly"*。
+ *
+ * 採点のたびに `clearTimeout` するので、30 秒を「考える時間」ではなく「採点しない
+ * 時間」として数えていた。10 秒に一枚のペースなら、止まるまで一度も送らない。そして
+ * 止まった瞬間に閉じると、`visibilitychange` の送信（~350 KB、`keepalive` は 64 KB
+ * 上限で使えない）は Android が止めるタブの中で走るだけで、まず届かない。結果、
+ * 一晩のセッションがまるごとタブレットに残り、翌朝の電話が同じ順番で同じカードを
+ * 出した。
+ *
+ * だから最初の未送信の採点から `PUSH_MAX_WAIT_MS` 経ったら、連続採点中でも送る。
+ * 取り残され得るのは最後の 2 分以内になる。費用は 1 回 ~350 KB（gzip）、20 分の
+ * セッションで ~10 回 — 通信量を気にする彼に対して、セッションを丸ごと失うよりは
+ * ずっと安い。残る穴（閉じる直前の 2 分）は、その端末を次に開いた時に
+ * `pushAfterBoot` が送る。
+ */
+const PUSH_MAX_WAIT_MS = 120_000;
 let pushTimer: number | undefined;
+let pendingSince: number | undefined;
 let pushing = false;
 
 export function schedulePush(): void {
   if (pushTimer !== undefined) clearTimeout(pushTimer);
+  const now = Date.now();
+  pendingSince ??= now;
+  if (now - pendingSince >= PUSH_MAX_WAIT_MS) {
+    void pushGrades();
+    return;
+  }
   pushTimer = window.setTimeout(() => void pushGrades(), PUSH_AFTER_MS);
 }
 
 async function pushGrades(): Promise<void> {
   pushTimer = undefined;
+  // この送信がこれまでの未送信分を全部運ぶ — 次の採点から新しい窓。失敗しても
+  // 同じ：次の採点が次の試みを予約する（圏外の電車）。
+  pendingSince = undefined;
   // Never on top of a full sync: that one pushes too, and the second PUT would
   // race the first with an older export.
   if (pushing || syncStatus.state === "syncing") return;
