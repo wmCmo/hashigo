@@ -34,7 +34,14 @@
 
 import { SqliteBlobStore } from "../src/blobs/sqlite.js";
 import { exportLocalArchive } from "../src/backup/index.js";
-import { exportSync, mergeSync } from "../src/sync/index.js";
+import {
+  deltaPayload,
+  exportDelta,
+  exportSync,
+  isDelta,
+  maxLocalReviewId,
+  mergeSync,
+} from "../src/sync/index.js";
 import {
   resolveDescriptorText,
   storeDescriptorText,
@@ -150,6 +157,7 @@ import type {
   SyncExportRequest,
   SyncMergeRequest,
   ReplanRequest,
+  SyncDeltaRequest,
   LogLevel,
   NextRequest,
   OpenRequest,
@@ -1871,6 +1879,8 @@ function backlinks(request: BacklinksRequest): void {
  */
 function syncExport(request: SyncExportRequest): void {
   const db = requireCards();
+  // 印は書き出しと同じ瞬間に読む — ワーカーは一つずつ処理するので、間に採点は入らない。
+  const mark = maxLocalReviewId(db);
   const payload = exportSync(db, new Date().toISOString());
   const json = JSON.stringify(payload);
   post({
@@ -1880,11 +1890,21 @@ function syncExport(request: SyncExportRequest): void {
     // UTF-8 bytes, not `.length` — decision 6, name the basis. This payload is
     // mostly Japanese and `.length` counts UTF-16 code units.
     bytes: new TextEncoder().encode(json).length,
-    localReviews: Number(
-      (db.prepare("SELECT count(*) AS n FROM reviews WHERE source = 'local'").get() as {
-        n: number;
-      }).n,
-    ),
+    mark,
+  });
+}
+
+/** 印より後の採点だけ。`src/sync/delta.ts`。 */
+function syncDelta(request: SyncDeltaRequest): void {
+  const delta = exportDelta(requireCards(), request.after);
+  const json = JSON.stringify(delta);
+  post({
+    kind: "syncDelta",
+    id: request.id,
+    json,
+    bytes: new TextEncoder().encode(json).length,
+    mark: delta.mark,
+    count: delta.reviews.length,
   });
 }
 
@@ -1908,6 +1928,12 @@ function syncMerge(request: SyncMergeRequest): void {
       n: number;
     }
   ).n;
+  const markBefore = maxLocalReviewId(db);
+  // 差分なら、review と状態だけの普通の payload に包む — 規則は全体と同じ
+  // `mergeSync`（`src/sync/delta.ts` の `deltaPayload`）。
+  const payload = isDelta(request.payload)
+    ? deltaPayload(request.payload, new Date().toISOString())
+    : request.payload;
   // ─── ONE TRANSACTION, AND ITS ABSENCE COST HIM A DAY ───────────────────────
   //
   // `applyLocalArchive`'s own header says it: *"The caller owns the
@@ -1931,7 +1957,7 @@ function syncMerge(request: SyncMergeRequest): void {
   // So the fix is the same line for both faults.
   // 訂正の当て直しも同じトランザクションの中 — 戻された値が一瞬でも確定しない。
   const report = db.transaction(() => {
-    const merged = mergeSync(db, request.payload as never);
+    const merged = mergeSync(db, payload as never);
     const fixed = reapplyCorrections(db, seedCorrections);
     if (fixed > 0) log(`  sync: ${fixed} corrected value(s) a peer carried back were re-corrected`);
     return merged;
@@ -1951,6 +1977,8 @@ function syncMerge(request: SyncMergeRequest): void {
     flagsTaken: report.flagsTaken,
     trackStateTaken: report.trackStateTaken,
     orphaned: report.flagsOrphaned + report.applied.reviewsOrphaned,
+    markBefore,
+    markAfter: maxLocalReviewId(db),
   });
 }
 
@@ -2883,6 +2911,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "replan":
           replan(request);
+          break;
+        case "syncDelta":
+          syncDelta(request);
           break;
         case "preview":
           preview(request);

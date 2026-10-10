@@ -1115,6 +1115,7 @@ export type AppRequest =
   | SyncExportRequest
   | SyncMergeRequest
   | ReplanRequest
+  | SyncDeltaRequest
   | PreviewRequest
   | BacklinksRequest
   | StoreGenerationRequest
@@ -1316,8 +1317,25 @@ export interface SyncExportMessage {
   /** The payload, already JSON text — the page only has to POST it. */
   readonly json: string;
   readonly bytes: number;
-  /** この書き出しに入っているこの端末の採点の数。起動時に「送り残し」を判断する。 */
-  readonly localReviews: number;
+  /** この書き出しに入っている最大の reviews.id（`src/sync/delta.ts` の印）。 */
+  readonly mark: number;
+}
+
+/** 印より後の採点だけを書き出す。`src/sync/delta.ts`。 */
+export interface SyncDeltaRequest {
+  readonly kind: "syncDelta";
+  readonly id: number;
+  readonly after: number;
+}
+
+export interface SyncDeltaMessage {
+  readonly kind: "syncDelta";
+  readonly id: number;
+  readonly json: string;
+  readonly bytes: number;
+  /** この差分の最大の reviews.id。空なら `after` のまま。 */
+  readonly mark: number;
+  readonly count: number;
 }
 
 export interface SyncMergeMessage {
@@ -1331,6 +1349,12 @@ export interface SyncMergeMessage {
   readonly trackStateTaken: number;
   /** Rows the peer had for cards this device does not hold. */
   readonly orphaned: number;
+  /**
+   * マージ前後の最大 reviews.id。前が送った印と同じなら、入ってきた分は送り残し
+   * ではない（持ち主の端末にある）ので、印を後ろへ運んでよい。
+   */
+  readonly markBefore: number;
+  readonly markAfter: number;
 }
 
 /** A reply that failed. Carries the `id` so the page can reject that promise. */
@@ -1367,6 +1391,7 @@ export type AppMessage =
   | SyncExportMessage
   | SyncMergeMessage
   | ReplannedMessage
+  | SyncDeltaMessage
   | SettingsMessage
   | SetSettingMessage
   | TemplateMessage
@@ -1389,6 +1414,7 @@ export interface ReplyFor {
   readonly syncExport: SyncExportMessage;
   readonly syncMerge: SyncMergeMessage;
   readonly replan: ReplannedMessage;
+  readonly syncDelta: SyncDeltaMessage;
   readonly reset: ResetMessage;
   readonly preview: PreviewMessage;
   readonly backlinks: BacklinksMessage;

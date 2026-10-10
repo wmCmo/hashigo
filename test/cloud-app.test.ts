@@ -43,6 +43,7 @@ function env(objects: Record<string, Uint8Array | string> = {}): AppEnv {
         return { value: null, metadata: null };
       },
       async put() {},
+      async delete() {},
       async list() {
         return { keys: [], list_complete: true };
       },

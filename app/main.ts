@@ -108,7 +108,6 @@ import {
 import {
   closeSidebar,
   fillSidebar,
-  carryPushedCount,
   openSidebar,
   pushAfterBoot,
   railStanding,
@@ -3676,7 +3675,7 @@ const STAGE_WORDS: Readonly<Record<SyncProgress["stage"], string>> = {
 };
 const bootSkip = el("bootskip");
 
-/** 取り込んだ採点の数を返す（`carryPushedCount` が使う）。 */
+/** 取り込んだ採点の数を返す。 */
 async function bootSync(): Promise<number> {
   const abort = new AbortController();
   const startedAt = performance.now();
@@ -3805,8 +3804,7 @@ async function boot(): Promise<void> {
     // overwritten by the "not persistent" one.
     checkEviction(opened);
     await checkPersistence();
-    const merged = await bootSync();
-    carryPushedCount(opened.localReviews, merged);
+    await bootSync();
     // The climb stops with the screen it lives on, and the mark goes back to the
     // form `index.html` authored. A `requestAnimationFrame` loop left running
     // behind a hidden section is a wake-up every frame for the life of the
@@ -3819,7 +3817,7 @@ async function boot(): Promise<void> {
     if (railStanding.matches) fillSidebar();
     await showSessionCard();
     // 送り残しは最初のカードの後、裏で。`pushAfterBoot` 参照。
-    pushAfterBoot(opened.localReviews + merged);
+    pushAfterBoot();
   } catch (cause) {
     line(String((cause as Error).message), "bad");
     line("nothing was written. Fix the above and reload.", "bad");

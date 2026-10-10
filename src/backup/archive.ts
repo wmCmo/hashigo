@@ -424,39 +424,52 @@ function userVersion(db: SqliteHandle): number {
  * `now` is a parameter because this module has no clock of its own: the browser
  * and a CLI disagree about how to spell one, and a test wants a fixed value.
  */
+/**
+ * 一行を archive の形に。`src/sync/delta.ts` も同じ関数を使う — 差分と全体で
+ * review の書き方が分かれたら、片方だけが正しい、が起きる。
+ */
+export function archivedReview(r: Record<string, unknown>): ArchivedReview {
+  return {
+    cardId: String(r["card_id"]),
+    kind: String(r["kind"]),
+    reviewedAt: String(r["reviewed_at"]),
+    tzOffsetMinutes: Number(r["tz_offset_minutes"]),
+    timeUnknown: r["time_unknown"] === 1 ? 1 : 0,
+    remembered: r["remembered"] === 1 ? 1 : 0,
+    elapsedDays: r["elapsed_days"] === null ? null : Number(r["elapsed_days"]),
+    scheduledDays: r["scheduled_days"] === null ? null : Number(r["scheduled_days"]),
+    nextScheduledDays:
+      r["next_scheduled_days"] === null ? null : Number(r["next_scheduled_days"]),
+    dueAt: r["due_at"] === null ? null : String(r["due_at"]),
+    durationMs: r["duration_ms"] === null ? null : Number(r["duration_ms"]),
+    rereview: r["rereview"] === 1 ? 1 : 0,
+    source: String(r["source"]),
+    importKey: r["import_key"] === null ? null : String(r["import_key"]),
+  };
+}
+
+/** `archivedReview` と同じ理由で共有。 */
+export function archivedTrackState(r: Record<string, unknown>): ArchivedTrackState {
+  return {
+    cardId: String(r["card_id"]),
+    kind: String(r["kind"]),
+    dueAt: r["due_at"] === null ? null : String(r["due_at"]),
+    scheduledDays: r["scheduled_days"] === null ? null : Number(r["scheduled_days"]),
+    reps: Number(r["reps"]),
+    lapses: Number(r["lapses"]),
+    lastReviewedAt: r["last_reviewed_at"] === null ? null : String(r["last_reviewed_at"]),
+    scheduler: r["scheduler"] === null ? null : String(r["scheduler"]),
+    schedulerState: r["scheduler_state"] === null ? null : String(r["scheduler_state"]),
+  };
+}
+
 export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive {
   const reviews = (db.prepare(SELECT_REVIEWS).all() as Record<string, unknown>[]).map(
-    (r): ArchivedReview => ({
-      cardId: String(r["card_id"]),
-      kind: String(r["kind"]),
-      reviewedAt: String(r["reviewed_at"]),
-      tzOffsetMinutes: Number(r["tz_offset_minutes"]),
-      timeUnknown: r["time_unknown"] === 1 ? 1 : 0,
-      remembered: r["remembered"] === 1 ? 1 : 0,
-      elapsedDays: r["elapsed_days"] === null ? null : Number(r["elapsed_days"]),
-      scheduledDays: r["scheduled_days"] === null ? null : Number(r["scheduled_days"]),
-      nextScheduledDays:
-        r["next_scheduled_days"] === null ? null : Number(r["next_scheduled_days"]),
-      dueAt: r["due_at"] === null ? null : String(r["due_at"]),
-      durationMs: r["duration_ms"] === null ? null : Number(r["duration_ms"]),
-      rereview: r["rereview"] === 1 ? 1 : 0,
-      source: String(r["source"]),
-      importKey: r["import_key"] === null ? null : String(r["import_key"]),
-    }),
+    archivedReview,
   );
 
   const trackState = (db.prepare(SELECT_TRACK_STATE).all() as Record<string, unknown>[]).map(
-    (r): ArchivedTrackState => ({
-      cardId: String(r["card_id"]),
-      kind: String(r["kind"]),
-      dueAt: r["due_at"] === null ? null : String(r["due_at"]),
-      scheduledDays: r["scheduled_days"] === null ? null : Number(r["scheduled_days"]),
-      reps: Number(r["reps"]),
-      lapses: Number(r["lapses"]),
-      lastReviewedAt: r["last_reviewed_at"] === null ? null : String(r["last_reviewed_at"]),
-      scheduler: r["scheduler"] === null ? null : String(r["scheduler"]),
-      schedulerState: r["scheduler_state"] === null ? null : String(r["scheduler_state"]),
-    }),
+    archivedTrackState,
   );
 
   const localFields = (db.prepare(SELECT_FIELDS).all() as Record<string, unknown>[]).map(

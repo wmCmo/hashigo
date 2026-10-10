@@ -29,6 +29,9 @@ function memoryKv(): KvLike & { readonly data: Map<string, { value: string; meta
     async put(key, value, options) {
       data.set(key, { value, metadata: options?.metadata });
     },
+    async delete(key) {
+      data.delete(key);
+    },
     async list(options) {
       const keys = [...data.entries()]
         .filter(([name]) => name.startsWith(options?.prefix ?? ""))
@@ -299,5 +302,97 @@ describe("a REDO on the Worker makes a new clip, with the card's reading", () =>
   it("drops readings and replaces that are not the right shape", () => {
     const parsed = parse({ kind: "speech", text: "x", readings: [{ base: "a".repeat(41), alias: "b" }, "junk"], replaces: "nope" });
     expect(parsed).toMatchObject({ readings: [], replaces: null });
+  });
+});
+
+/**
+ * 差分 — 2026-10-10。タブレットを閉じた直後の最後の採点が届くように、全体
+ * （~2 MB）ではなく数 KB の差分を `keepalive` で送る。ここは積んで、見せて、
+ * 全体が覆ったら捨てる。印の意味は知らない — 比べるだけ。
+ */
+describe("deltas: small sends that survive closing the page", () => {
+  const ID = "dev-3909a81f98a9";
+  const delta = (mark: number): string =>
+    JSON.stringify({ syncVersion: 1, delta: 1, mark, reviews: [{ cardId: "c0", kind: "forward" }], trackState: [] });
+
+  it("stacks deltas, serves them in order, and the listing shows they exist", async () => {
+    const e = env();
+    await handle(request("PUT", `/sync/${ID}`, { body: JSON.stringify({ syncVersion: 1 }) }), e);
+    expect((await handle(request("POST", `/sync/${ID}/delta`, { body: delta(5) }), e)).status).toBe(200);
+    expect((await handle(request("POST", `/sync/${ID}/delta`, { body: delta(9) }), e)).status).toBe(200);
+    const got = await handle(request("GET", `/sync/${ID}/delta`), e);
+    expect(((await got.json()) as { mark: number }[]).map((d) => d.mark)).toEqual([5, 9]);
+    expect(got.headers.get("X-Payload-Sha")).toMatch(/^[0-9a-f]{64}$/);
+    const list = (await (await handle(request("GET", "/sync/"), e)).json()) as {
+      peers: { deviceId: string; delta?: { sha?: string }; noPayload?: boolean }[];
+    };
+    // ONE peer, not two — the delta key must not show up as a device of its own.
+    expect(list.peers).toHaveLength(1);
+    expect(list.peers[0]?.deviceId).toBe(ID);
+    expect(list.peers[0]?.delta?.sha).toBe(got.headers.get("X-Payload-Sha"));
+    expect(list.peers[0]?.noPayload).toBeUndefined();
+  });
+
+  it("does not stack the same mark twice — keepalive AND a retry both arrived", async () => {
+    const e = env();
+    await handle(request("POST", `/sync/${ID}/delta`, { body: delta(5) }), e);
+    const again = await handle(request("POST", `/sync/${ID}/delta`, { body: delta(5) }), e);
+    expect(await again.json()).toMatchObject({ duplicate: true, entries: 1 });
+  });
+
+  it("a full PUT that covers a mark drops the deltas at or below it, and keeps the newer ones", async () => {
+    const e = env();
+    await handle(request("POST", `/sync/${ID}/delta`, { body: delta(5) }), e);
+    await handle(request("POST", `/sync/${ID}/delta`, { body: delta(9) }), e);
+    const put = new Request(`https://hashigo-mailbox.example.workers.dev/sync/${ID}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json", "X-Covers-Mark": "7" },
+      body: JSON.stringify({ syncVersion: 1 }),
+    });
+    expect((await handle(put, e)).status).toBe(200);
+    const left = (await (await handle(request("GET", `/sync/${ID}/delta`), e)).json()) as { mark: number }[];
+    expect(left.map((d) => d.mark)).toEqual([9]);
+  });
+
+  it("a full PUT covering everything removes the delta entry entirely", async () => {
+    const e = env();
+    await handle(request("POST", `/sync/${ID}/delta`, { body: delta(5) }), e);
+    const put = new Request(`https://hashigo-mailbox.example.workers.dev/sync/${ID}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json", "X-Covers-Mark": "5" },
+      body: JSON.stringify({ syncVersion: 1 }),
+    });
+    await handle(put, e);
+    expect([...e.MAILBOX.data.keys()]).toEqual([`payload:${ID}`]);
+  });
+
+  it("a PUT with no mark (an older device) leaves the deltas alone", async () => {
+    const e = env();
+    await handle(request("POST", `/sync/${ID}/delta`, { body: delta(5) }), e);
+    await handle(request("PUT", `/sync/${ID}`, { body: JSON.stringify({ syncVersion: 1 }) }), e);
+    const left = (await (await handle(request("GET", `/sync/${ID}/delta`), e)).json()) as unknown[];
+    expect(left).toHaveLength(1);
+  });
+
+  it("a device with only a delta is listed, and says it has no full payload", async () => {
+    const e = env();
+    await handle(request("POST", `/sync/${ID}/delta`, { body: delta(5) }), e);
+    const list = (await (await handle(request("GET", "/sync/"), e)).json()) as {
+      peers: { deviceId: string; noPayload?: boolean }[];
+    };
+    expect(list.peers).toEqual([expect.objectContaining({ deviceId: ID, noPayload: true })]);
+  });
+
+  it("refuses what is not a delta, and a delta key that is not a device", async () => {
+    const e = env();
+    expect((await handle(request("POST", `/sync/${ID}/delta`, { body: JSON.stringify({ syncVersion: 1 }) }), e)).status).toBe(400);
+    expect((await handle(request("POST", "/sync/BAD/delta", { body: delta(1) }), e)).status).toBe(400);
+    expect((await handle(request("POST", `/sync/${ID}/delta`), e)).status).toBe(400);
+  });
+
+  it("the delta route needs the token like everything else", async () => {
+    const e = env();
+    expect((await handle(request("POST", `/sync/${ID}/delta`, { body: delta(1), token: null }), e)).status).toBe(401);
+    expect(e.MAILBOX.data.size).toBe(0);
   });
 });

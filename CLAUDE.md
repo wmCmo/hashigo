@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 55 files, 1464 passed, 1 skipped (the FSRS refit, gated). ~55 s.
+npm test                # 56 files, 1491 passed, 1 skipped (the FSRS refit, gated). ~55 s.
                         # MEASURED 2026-09-17, not arithmetic. The 1127 here before it
                         # was 1117 plus ten new tests, added up rather than run — and it
                         # missed 79 tests from the same day. Run the suite or leave it alone.
@@ -1002,6 +1002,17 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     LAST run's measured speeds, null until every part has been timed. **Fixed on the
     way:** 4 of 6 cloud slots predate `X-Payload-Sha` and were re-downloaded and
     re-merged on EVERY sync (~7.4 MB). See `DECISIONS.md` 50.
+
+51. **GRADES TRAVEL AS A DELTA; THE FULL PAYLOAD ONLY AFTER AN EDIT.** Zach,
+    2026-10-10: *"so it's guaranteed that my last min of reviewing won't be synced
+    from my tablet"*, under *"as long as we don't end up like mochi flashcards"*.
+    The full payload (~350 KB gz) cannot use `keepalive` (64 KB cap), so a send on
+    hide died with the tab. `src/sync/delta.ts`: the grades after a per-device mark
+    plus their tracks' state — 3 grades measured at **1,816 B**, sent with
+    `keepalive` and seen arriving as the page closed. Merged through the SAME
+    `mergeSync` via `deltaPayload`. Full payload only with no mark yet or after an
+    edit, detected by a read-only ALLOWLIST in `worker-client.ts`'s `ask`. Still no
+    timer, no polling. See `DECISIONS.md` 51.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

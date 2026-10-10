@@ -25,9 +25,10 @@ import {
   lastPushedAt,
   listPeers,
   peersNewerThan,
-  pushNow,
+  pushGradesNow,
   sinceLabel,
   syncNow,
+  type SyncPorts,
   type SyncProgress,
 } from "./sync-client.js";
 import { openTemplateEditor } from "./template-editor.js";
@@ -426,25 +427,23 @@ function paintSync(): void {
   syncDetail.textContent = sent === null ? label : `${label} · grades sent ${sent}`;
 }
 
-let lastExportedCount: number | undefined;
-
-const syncPorts = {
-  async exportPayload(): Promise<{ json: string; bytes: number }> {
+const syncPorts: SyncPorts = {
+  async exportPayload() {
     const reply = await ask<"syncExport">({ kind: "syncExport" });
-    // 送れたと分かってから `rememberPushedCount` に渡す — 書き出した時点ではない。
-    lastExportedCount = reply.localReviews;
-    return { json: reply.json, bytes: reply.bytes };
+    return { json: reply.json, bytes: reply.bytes, mark: reply.mark };
   },
-  async mergePayload(payload: unknown): Promise<{
-    reviewsAdded: number;
-    flagsTaken: number;
-    trackStateTaken: number;
-  }> {
+  async exportDelta(after: number) {
+    const reply = await ask<"syncDelta">({ kind: "syncDelta", after });
+    return { json: reply.json, bytes: reply.bytes, mark: reply.mark, count: reply.count };
+  },
+  async mergePayload(payload: unknown) {
     const reply = await ask<"syncMerge">({ kind: "syncMerge", payload });
     return {
       reviewsAdded: reply.reviewsAdded,
       flagsTaken: reply.flagsTaken,
       trackStateTaken: reply.trackStateTaken,
+      markBefore: reply.markBefore,
+      markAfter: reply.markAfter,
     };
   },
 };
@@ -485,7 +484,6 @@ async function runSync(): Promise<void> {
     const outcome = await syncNow(syncPorts, {
       onProgress: (progress) => say(syncProgressText(progress), false, true),
     });
-    rememberPushedCount(lastExportedCount);
     syncStatus = {
       state: "ok",
       lastSyncedAt: new Date().toISOString(),
@@ -637,47 +635,13 @@ export async function syncAtBoot(hooks: {
 /**
  * 起動後、最初のカードが出てから — 前回送れなかった採点があれば送る。
  *
- * 毎回は送らない。彼は通信量を気にしている（*"how much data does it consume?"*,
- * 2026-09-29）、一回 ~350 KB。送る理由があるのは、この端末の採点が最後に送った
- * 時から増えた時だけで、それは採点の数で分かる。圏外の電車で採点した分は、次に
- * 開いた時ここで出ていく。
+ * 送り残しの判断は印（`readMark`、`src/sync/delta.ts`）で、送るのは差分。送り
+ * 残しが無ければワーカーに一度聞くだけで、通信は無い。圏外の電車で採点した分、
+ * 閉じた瞬間に届かなかった分は、次に開いた時ここで出ていく。マージで入ってきた
+ * 他の端末の採点は、`carryMark` が印を運ぶので送り直さない。
  */
-const PUSHED_COUNT_KEY = "hashigo.sync.pushedLocalReviews";
-
-/**
- * 起動時のマージで入ってきた採点は「送り残し」ではない — 持ち主の端末の payload に
- * 既にある。だが `source = 'local'` で数えるので数は増える（実測：0 → 610）。
- * マージ前に送り残しが無かったなら、マージ後の数をそのまま「送った数」にする。
- */
-export function carryPushedCount(before: number, added: number): void {
-  if (added === 0) return;
-  try {
-    if (localStorage.getItem(PUSHED_COUNT_KEY) === String(before)) {
-      localStorage.setItem(PUSHED_COUNT_KEY, String(before + added));
-    }
-  } catch {
-    /* 分からなければ一度余計に送るだけ */
-  }
-}
-
-export function pushAfterBoot(localReviews: number): void {
-  let sent: string | null = null;
-  try {
-    sent = localStorage.getItem(PUSHED_COUNT_KEY);
-  } catch {
-    /* 分からなければ送る */
-  }
-  if (sent === String(localReviews)) return;
+export function pushAfterBoot(): void {
   void pushGrades();
-}
-
-function rememberPushedCount(count: number | undefined): void {
-  if (count === undefined) return;
-  try {
-    localStorage.setItem(PUSHED_COUNT_KEY, String(count));
-  } catch {
-    /* 次の起動でもう一度送るだけ */
-  }
 }
 
 /**
@@ -755,18 +719,20 @@ export function schedulePush(): void {
   pushTimer = window.setTimeout(() => void pushGrades(), PUSH_AFTER_MS);
 }
 
-async function pushGrades(): Promise<void> {
+async function pushGrades(options: { readonly keepalive?: boolean } = {}): Promise<void> {
   pushTimer = undefined;
   // この送信がこれまでの未送信分を全部運ぶ — 次の採点から新しい窓。失敗しても
   // 同じ：次の採点が次の試みを予約する（圏外の電車）。
   pendingSince = undefined;
   // Never on top of a full sync: that one pushes too, and the second PUT would
-  // race the first with an older export.
-  if (pushing || syncStatus.state === "syncing") return;
+  // race the first with an older export. `keepalive` は例外：ページが隠れる瞬間で、
+  // 走っている送信を待つ時間は無い。差分は冪等なので、重なっても壊れない。
+  if (options.keepalive !== true && (pushing || syncStatus.state === "syncing")) return;
   pushing = true;
   try {
-    await pushNow(syncPorts);
-    rememberPushedCount(lastExportedCount);
+    // 2026-10-10：差分（数 KB）が既定、編集の後だけ全体。`pushGradesNow` 参照。
+    const sent = await pushGradesNow(syncPorts, options);
+    if (sent === "nothing" || options.keepalive === true) return;
     // WE ARE ALREADY TALKING TO THE MAILBOX, so ask the one question the push
     // cannot answer: has anyone else left newer work in it? A listing, not a
     // merge — no payload bodies, nothing applied, nothing on screen moves. This
@@ -825,7 +791,9 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "hidden") return;
   if (pushTimer === undefined) return;
   clearTimeout(pushTimer);
-  void pushGrades();
+  // 2026-10-10：差分を `keepalive` で。ページが凍っても、閉じられても、ブラウザ
+  // が送り切る。上の「keepalive は使えない（1.5 MB）」は全体の話で、差分は数 KB。
+  void pushGrades({ keepalive: true });
 });
 
 syncDot.addEventListener("click", () => void runSync());

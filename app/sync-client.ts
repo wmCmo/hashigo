@@ -63,6 +63,10 @@ export interface PeerRow {
   readonly updatedAt: string;
   /** sha256 of the peer's stored payload; absent on payloads older than 2026-09-29. */
   readonly sha?: string;
+  /** 全体が無く差分だけがある（全体を消された端末）。2026-10-10。 */
+  readonly noPayload?: true;
+  /** その端末が全体の後に積んだ差分。`src/sync/delta.ts`。 */
+  readonly delta?: { readonly bytes: number; readonly updatedAt: string; readonly sha?: string };
 }
 
 /**
@@ -102,10 +106,90 @@ function writeMerged(merged: Record<string, string>): void {
   }
 }
 
+/** 差分の側の「どれをマージしたか」。端末ごとに、差分の束の sha。 */
+const MERGED_DELTA_KEY = "hashigo.sync.mergedDelta";
+
+function readMergedDelta(): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(MERGED_DELTA_KEY) ?? "{}");
+    return parsed !== null && typeof parsed === "object" ? (parsed as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeMergedDelta(merged: Record<string, string>): void {
+  try {
+    localStorage.setItem(MERGED_DELTA_KEY, JSON.stringify(merged));
+  } catch {
+    /* 次回もう一度取るだけ */
+  }
+}
+
+/**
+ * 送った印 — この端末の採点のうち、mailbox に（全体か差分で）届いた最大の
+ * reviews.id。`src/sync/delta.ts`。null は「まだ一度も全体を送っていない」で、
+ * その時は差分ではなく全体を送る（差分は全体の上に積むものだから）。
+ */
+const MARK_KEY = "hashigo.sync.mark";
+
+export function readMark(): number | null {
+  try {
+    const held = localStorage.getItem(MARK_KEY);
+    const value = held === null ? NaN : Number(held);
+    return Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeMark(mark: number): void {
+  try {
+    localStorage.setItem(MARK_KEY, String(mark));
+  } catch {
+    /* 次は全体を送るだけ */
+  }
+}
+
+/**
+ * 採点以外の書き込みがあった — 次の送信は全体。`worker-client.ts` の `ask` が付ける。
+ *
+ * 値は時刻：送信の前に読んだ値と、送れた後の値が同じ時だけ消す。送っている間に
+ * 次の編集が入ったら、その編集はまだ送っていない。
+ */
+const DIRTY_KEY = "hashigo.sync.fullDirty";
+
+export function markFullDirty(): void {
+  try {
+    localStorage.setItem(DIRTY_KEY, String(Date.now()));
+  } catch {
+    /* 印が付けられないなら、次の送信が差分になるだけ — 手動同期は常に全体 */
+  }
+}
+
+function readDirty(): string | null {
+  try {
+    return localStorage.getItem(DIRTY_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function clearDirty(seen: string | null): void {
+  try {
+    if (seen !== null && localStorage.getItem(DIRTY_KEY) === seen) localStorage.removeItem(DIRTY_KEY);
+  } catch {
+    /* 次も全体を送るだけ */
+  }
+}
+
 /** The database was replaced or is new: nothing here has merged anything yet. */
 export function forgetMergedPeers(): void {
   try {
     localStorage.removeItem(MERGED_KEY);
+    localStorage.removeItem(MERGED_DELTA_KEY);
+    // 印は端末内の行番号なので、データベースが替われば意味を失う。
+    localStorage.removeItem(MARK_KEY);
   } catch {
     /* nothing to forget */
   }
@@ -438,21 +522,50 @@ export function versionOf(peer: PeerRow): string {
 /** The peers whose payload this device has not merged yet. */
 export function changedPeers(peers: readonly PeerRow[]): PeerRow[] {
   const self = deviceId();
-  const merged = readMerged();
-  return peers.filter(
-    (peer) => peer.deviceId !== self && merged[peer.deviceId] !== versionOf(peer),
-  );
+  return peers.filter((peer) => peer.deviceId !== self && (baseChanged(peer) || deltaChanged(peer)));
+}
+
+function baseChanged(peer: PeerRow): boolean {
+  return peer.noPayload !== true && readMerged()[peer.deviceId] !== versionOf(peer);
+}
+
+function deltaChanged(peer: PeerRow): boolean {
+  if (peer.delta === undefined) return false;
+  // sha の無い差分は無い（mailbox が必ず付ける）が、無ければ毎回取る側に倒す。
+  return peer.delta.sha === undefined || readMergedDelta()[peer.deviceId] !== peer.delta.sha;
 }
 
 export interface SyncPorts {
-  /** Ask the worker for this device's payload. */
-  exportPayload(): Promise<{ json: string; bytes: number }>;
+  /** Ask the worker for this device's payload, and the mark it covers. */
+  exportPayload(): Promise<{ json: string; bytes: number; mark?: number }>;
+  /** 印より後の採点だけ。無ければ（古いポート）差分は送らず全体を送る。 */
+  exportDelta?(after: number): Promise<{ json: string; bytes: number; mark: number; count: number }>;
   /** Hand the worker a peer's payload to merge. */
   mergePayload(payload: unknown): Promise<{
     reviewsAdded: number;
     flagsTaken: number;
     trackStateTaken: number;
+    markBefore?: number;
+    markAfter?: number;
   }>;
+}
+
+/**
+ * マージで入ってきた採点は、送り残しではない — 持ち主の端末の mailbox にある。
+ * 印がマージ前の最大と同じだった（送り残しが無かった）なら、印をマージ後へ運ぶ。
+ * 運ばないと、次の差分が他の端末の採点を何百件も運び直す（実測：一回の起動の
+ * マージで 610 件）。
+ */
+function carryMark(result: { markBefore?: number; markAfter?: number }): void {
+  const mark = readMark();
+  if (
+    mark !== null &&
+    result.markBefore !== undefined &&
+    result.markAfter !== undefined &&
+    mark === result.markBefore
+  ) {
+    writeMark(result.markAfter);
+  }
 }
 
 /**
@@ -473,8 +586,18 @@ export async function syncNow(
 
   // 一覧を既に持っている呼び出し側（起動時）は二度聞かない。
   const peers = options.listing ?? (await listPeers(signal));
-  const todo = changedPeers(peers);
-  const total = todo.reduce((sum, peer) => sum + peer.bytes, 0);
+  // 何を取るかは、記録を書き換える前に決める。全体と差分はそれぞれの版で。
+  const todo = changedPeers(peers).map((peer) => {
+    const base = baseChanged(peer);
+    const delta = deltaChanged(peer);
+    return {
+      peer,
+      base,
+      delta,
+      bytes: (base ? peer.bytes : 0) + (delta ? (peer.delta?.bytes ?? 0) : 0),
+    };
+  });
+  const total = todo.reduce((sum, item) => sum + item.bytes, 0);
 
   let reviewsAdded = 0;
   let flagsTaken = 0;
@@ -515,47 +638,81 @@ export async function syncNow(
   // peer is merged on its own and a failure is carried out rather than thrown.
   const failures: string[] = [];
   const merged = readMerged();
-  for (const [index, peer] of todo.entries()) {
+  const mergedDelta = readMergedDelta();
+  const save = (): void => {
+    writeMerged(merged);
+    writeMergedDelta(mergedDelta);
+  };
+  const take = (result: Awaited<ReturnType<SyncPorts["mergePayload"]>>): void => {
+    carryMark(result);
+    reviewsAdded += result.reviewsAdded;
+    flagsTaken += result.flagsTaken;
+    trackStateTaken += result.trackStateTaken;
+  };
+  for (const [index, item] of todo.entries()) {
+    const { peer } = item;
     const before = downloaded;
-    try {
+    const download = async (
+      path: string,
+      size: number,
+    ): Promise<{ payload: unknown; sha: string | null }> => {
+      const start = downloaded;
       const downFrom = performance.now();
       // 最初のバイトの前に言う — 繋がるまでの間も「何を待っているか」は分かる。
       report("downloading", index + 1);
-      const { payload, sha } = await mailboxPayload(`/sync/${peer.deviceId}`, {
+      const got = await mailboxPayload(path, {
         ...(signal === undefined ? {} : { signal }),
         onBytes: (received) => {
-          downloaded = before + received;
+          downloaded = start + received;
           const elapsed = downMs + (performance.now() - downFrom);
           if (elapsed > 300) liveRate = downloaded / elapsed;
           report("downloading", index + 1);
         },
       });
-      downloaded = before + peer.bytes;
+      downloaded = start + size;
       downMs += performance.now() - downFrom;
       // 中止はダウンロードの間だけ効く。マージはワーカーのトランザクションで、
       // 途中で止めても待つ時間は減らない — 始まったら終わらせる方が正直。
       signal?.throwIfAborted();
+      return got;
+    };
+    const merge = async (payload: unknown, size: number): Promise<void> => {
       report("merging", index + 1);
       const mergeFrom = performance.now();
-      const result = await ports.mergePayload(payload);
+      take(await ports.mergePayload(payload));
       mergeMs += performance.now() - mergeFrom;
-      mergedBytes += peer.bytes;
-      // sha があれば「マージした中身」の sha（KV の遅れ対策、上の MERGED_KEY 参照）。
-      // 無い古い枠は一覧の鍵で — そういう枠はもう書き換えられないので遅れは起きない。
-      if (sha !== null) merged[peer.deviceId] = sha;
-      else if (peer.sha === undefined) merged[peer.deviceId] = versionOf(peer);
-      reviewsAdded += result.reviewsAdded;
-      flagsTaken += result.flagsTaken;
-      trackStateTaken += result.trackStateTaken;
+      mergedBytes += size;
+    };
+    try {
+      if (item.base) {
+        const { payload, sha } = await download(`/sync/${peer.deviceId}`, peer.bytes);
+        await merge(payload, peer.bytes);
+        // sha があれば「マージした中身」の sha（KV の遅れ対策、上の MERGED_KEY 参照）。
+        // 無い古い枠は一覧の鍵で — そういう枠はもう書き換えられないので遅れは起きない。
+        if (sha !== null) merged[peer.deviceId] = sha;
+        else if (peer.sha === undefined) merged[peer.deviceId] = versionOf(peer);
+      }
+      if (item.delta) {
+        const size = peer.delta?.bytes ?? 0;
+        const { payload, sha } = await download(`/sync/${peer.deviceId}/delta`, size);
+        const entries = Array.isArray(payload) ? payload : [];
+        report("merging", index + 1);
+        const mergeFrom = performance.now();
+        // 一つずつ、積まれた順に。どれも冪等なので、全体と重なっていても壊れない。
+        for (const entry of entries) take(await ports.mergePayload(entry));
+        mergeMs += performance.now() - mergeFrom;
+        mergedBytes += size;
+        if (sha !== null) mergedDelta[peer.deviceId] = sha;
+      }
       peersMerged += 1;
     } catch (error) {
       // 中止は「一つの端末の失敗」ではない — 呼び出し側まで投げる。
       if (signal?.aborted === true) {
-        writeMerged(merged);
+        save();
         throw error;
       }
-      downloaded = before + peer.bytes;
-      mergedBytes += peer.bytes;
+      downloaded = before + item.bytes;
+      mergedBytes = Math.max(mergedBytes, downloaded);
       failures.push(
         `${peer.deviceId}: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -563,7 +720,7 @@ export async function syncNow(
   }
 
   // Only after the loop, and only the peers that merged: a failure is retried next time.
-  writeMerged(merged);
+  save();
 
   // 起動時は送らない（`push: false`）。受け取る側は「最初のカードの前」に済ませる
   // 必要があるが、送る側は彼を待たせる理由が無い — 起動後に裏で `pushNow` が送る。
@@ -572,12 +729,8 @@ export async function syncNow(
   if (options.push !== false) {
     report("sending", 0);
     const sendFrom = performance.now();
-    const mine = await ports.exportPayload();
-    const put = await reach(`/sync/${self}`, { method: "PUT", ...(await uploadBody(mine.json)) });
-    if (!put.ok) throw new Error(`the mailbox refused this device's payload (${put.status})`);
+    pushedBytes = await putFull(ports, self);
     sendMs = performance.now() - sendFrom;
-    pushedBytes = mine.bytes;
-    writeLastPushed(new Date().toISOString());
   }
 
   // 次回の見積もりのために、今回測れた分だけ書き換える。測れなかった項目
@@ -732,12 +885,86 @@ export function isStale(status: SyncStatus, now: Date = new Date()): boolean {
  * no work.
  */
 export async function pushNow(ports: SyncPorts): Promise<number> {
-  const self = deviceId();
+  return putFull(ports, deviceId());
+}
+
+/**
+ * 全体を送る。`X-Covers-Mark` で「ここまでの採点は入っている」と言い、mailbox は
+ * それ以下の差分を捨てる。送れたら印を進め、「全体を送るべき」印を消す。
+ */
+async function putFull(ports: SyncPorts, self: string): Promise<number> {
+  const dirty = readDirty();
   const mine = await ports.exportPayload();
-  const put = await reach(`/sync/${self}`, { method: "PUT", ...(await uploadBody(mine.json)) });
+  const body = await uploadBody(mine.json);
+  const put = await reach(`/sync/${self}`, {
+    method: "PUT",
+    body: body.body,
+    headers: {
+      ...body.headers,
+      ...(mine.mark === undefined ? {} : { "X-Covers-Mark": String(mine.mark) }),
+    },
+  });
   if (!put.ok) throw new Error(`the mailbox refused this device's payload (${put.status})`);
+  if (mine.mark !== undefined) writeMark(mine.mark);
+  clearDirty(dirty);
   writeLastPushed(new Date().toISOString());
   return mine.bytes;
+}
+
+/** `keepalive` の本文上限は 64 KB。少し手前で切る。 */
+const KEEPALIVE_MAX_BYTES = 60 * 1024;
+
+export type PushKind = "delta" | "full" | "nothing";
+
+/**
+ * 採点を送る — 差分で送れるなら差分、送れないなら全体。2026-10-10。
+ *
+ * 全体になるのは：まだ一度も全体を送っていない（印が無い）、採点以外の書き込み
+ * があった（`markFullDirty`）、mailbox が差分を受けない（ローカルの開発用 mailbox
+ * は 404/405、差分が積もりすぎたら 413）。
+ *
+ * `keepalive`: ページが隠れる瞬間（タブレットを閉じた）に呼ぶ。その時は差分しか
+ * 送らない — 全体は 64 KB を超えるので `keepalive` が使えず、走り切らない送信を
+ * 始めても意味がない。返事は届かないかもしれず、その時は印を進めない：次の送信
+ * が同じ採点をもう一度運び、マージは冪等なので重複は無害（mailbox は同じ印を
+ * 二度積まない）。
+ */
+export async function pushGradesNow(
+  ports: SyncPorts,
+  options: { readonly keepalive?: boolean } = {},
+): Promise<PushKind> {
+  const self = deviceId();
+  const mark = readMark();
+  const dirty = readDirty() !== null;
+  if (ports.exportDelta === undefined || mark === null || (dirty && options.keepalive !== true)) {
+    if (options.keepalive === true) return "nothing";
+    await putFull(ports, self);
+    return "full";
+  }
+  const delta = await ports.exportDelta(mark);
+  if (delta.count === 0) {
+    if (!dirty) return "nothing";
+    if (options.keepalive === true) return "nothing";
+    await putFull(ports, self);
+    return "full";
+  }
+  const keepalive = options.keepalive === true && delta.bytes <= KEEPALIVE_MAX_BYTES;
+  if (options.keepalive === true && !keepalive) return "nothing";
+  const response = await reach(`/sync/${self}/delta`, {
+    method: "POST",
+    body: delta.json,
+    headers: { "Content-Type": "application/json" },
+    ...(keepalive ? { keepalive: true } : {}),
+  });
+  if (response.status === 404 || response.status === 405 || response.status === 413) {
+    if (options.keepalive === true) return "nothing";
+    await putFull(ports, self);
+    return "full";
+  }
+  if (!response.ok) throw new Error(`the mailbox refused this device's grades (${response.status})`);
+  writeMark(delta.mark);
+  writeLastPushed(new Date().toISOString());
+  return "delta";
 }
 
 /**

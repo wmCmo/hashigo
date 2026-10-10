@@ -48,6 +48,7 @@ export interface KvLike {
   /** The value AND its metadata from one entry — so a hash in the metadata describes these bytes. */
   getWithMetadata(key: string, type: "text"): Promise<{ value: string | null; metadata: unknown }>;
   put(key: string, value: string, options?: { metadata?: unknown }): Promise<void>;
+  delete(key: string): Promise<void>;
   list(options?: { prefix?: string; cursor?: string }): Promise<{
     keys: { name: string; metadata?: unknown }[];
     list_complete: boolean;
@@ -69,6 +70,66 @@ const SYNC_ID = /^[a-z0-9][a-z0-9-]{5,63}$/;
 const MAX_BYTES = 24 * 1024 * 1024;
 
 const PREFIX = "payload:";
+
+/**
+ * 差分 — 2026-10-10。`payload:<id>~delta` に、その端末が全体を最後に上げた後の
+ * 採点を `SyncDelta` の配列として積む（`src/sync/delta.ts`）。
+ *
+ * 同じ接頭辞の下に置くのは、一覧が KV の `list` 一回で済むように（無料枠は一日
+ * 1,000 回）。`~` は端末 id の文字集合に無いので、どの端末の名前とも衝突しない。
+ *
+ * 全体の PUT が `X-Covers-Mark` で「ここまでは全体に入っている」と言えば、それ
+ * 以下の差分は捨てる。差分の側は、送った端末が自分の印を名乗るだけで、ここは
+ * 印の意味を知らない — 比べるだけ。
+ */
+const DELTA_SUFFIX = "~delta";
+
+/**
+ * 差分の積み上げの上限。超えたら 413 — 端末は全体を送り、全体の PUT がここを
+ * 空にする。一枚 ~400 B として ~1,300 枚、一日の復習より多い。
+ */
+const MAX_DELTA_BYTES = 512 * 1024;
+
+interface DeltaEntry {
+  readonly mark: number;
+}
+
+function isDeltaEntry(value: unknown): value is DeltaEntry & { delta: 1 } {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value as { delta?: unknown }).delta === 1 &&
+    typeof (value as { mark?: unknown }).mark === "number" &&
+    Array.isArray((value as { reviews?: unknown }).reviews)
+  );
+}
+
+async function readDeltas(env: Env, id: string): Promise<unknown[]> {
+  const body = await env.MAILBOX.get(`${PREFIX}${id}${DELTA_SUFFIX}`, "text");
+  if (body === null) return [];
+  try {
+    const parsed: unknown = JSON.parse(body);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeDeltas(env: Env, id: string, entries: readonly unknown[]): Promise<PayloadMeta | null> {
+  const key = `${PREFIX}${id}${DELTA_SUFFIX}`;
+  if (entries.length === 0) {
+    await env.MAILBOX.delete(key);
+    return null;
+  }
+  const body = JSON.stringify(entries);
+  const meta: PayloadMeta = {
+    bytes: new TextEncoder().encode(body).length,
+    updatedAt: new Date().toISOString(),
+    sha: await sha256Hex(body),
+  };
+  await env.MAILBOX.put(key, body, { metadata: meta });
+  return meta;
+}
 
 interface PayloadMeta {
   readonly bytes: number;
@@ -109,7 +170,7 @@ function corsHeaders(request: Request, env: Env): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Payload-Encoding",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Payload-Encoding, X-Covers-Mark",
     "Access-Control-Expose-Headers": "X-Payload-Sha",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
@@ -144,23 +205,51 @@ function authorised(request: Request, env: Env): boolean {
   return env.MAILBOX_TOKEN !== "" && token !== "" && sameSecret(token, env.MAILBOX_TOKEN);
 }
 
-async function listPeers(env: Env): Promise<{ deviceId: string; bytes: number; updatedAt: string; sha?: string }[]> {
-  const peers: { deviceId: string; bytes: number; updatedAt: string; sha?: string }[] = [];
+interface PeerListing {
+  deviceId: string;
+  bytes: number;
+  updatedAt: string;
+  sha?: string;
+  /** 全体がまだ無く、差分だけがある（全体が消された端末）。 */
+  noPayload?: true;
+  delta?: { bytes: number; updatedAt: string; sha?: string };
+}
+
+async function listPeers(env: Env): Promise<PeerListing[]> {
+  const peers = new Map<string, PeerListing>();
+  const entry = (id: string): PeerListing => {
+    let peer = peers.get(id);
+    if (peer === undefined) {
+      peer = { deviceId: id, bytes: 0, updatedAt: new Date(0).toISOString(), noPayload: true };
+      peers.set(id, peer);
+    }
+    return peer;
+  };
   let cursor: string | undefined;
   do {
     const page = await env.MAILBOX.list({ prefix: PREFIX, ...(cursor === undefined ? {} : { cursor }) });
     for (const key of page.keys) {
       const meta = (key.metadata ?? {}) as Partial<PayloadMeta>;
-      peers.push({
-        deviceId: key.name.slice(PREFIX.length),
-        bytes: typeof meta.bytes === "number" ? meta.bytes : 0,
-        updatedAt: typeof meta.updatedAt === "string" ? meta.updatedAt : new Date(0).toISOString(),
-        ...(typeof meta.sha === "string" ? { sha: meta.sha } : {}),
-      });
+      const name = key.name.slice(PREFIX.length);
+      const bytes = typeof meta.bytes === "number" ? meta.bytes : 0;
+      const updatedAt = typeof meta.updatedAt === "string" ? meta.updatedAt : new Date(0).toISOString();
+      if (name.endsWith(DELTA_SUFFIX)) {
+        entry(name.slice(0, -DELTA_SUFFIX.length)).delta = {
+          bytes,
+          updatedAt,
+          ...(typeof meta.sha === "string" ? { sha: meta.sha } : {}),
+        };
+        continue;
+      }
+      const peer = entry(name);
+      delete peer.noPayload;
+      peer.bytes = bytes;
+      peer.updatedAt = updatedAt;
+      if (typeof meta.sha === "string") peer.sha = meta.sha;
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor !== undefined);
-  return peers;
+  return [...peers.values()];
 }
 
 /**
@@ -235,6 +324,53 @@ export async function handle(request: Request, env: Env, preAuthorised = false):
 
   if (rest === "" && method === "GET") return json(200, { peers: await listPeers(env) }, cors);
 
+  // ── 差分：/sync/<id>/delta ────────────────────────────────────────────────
+  if (rest.endsWith("/delta")) {
+    const id = rest.slice(0, -"/delta".length);
+    if (!SYNC_ID.test(id)) {
+      return json(400, { error: "device id must match ^[a-z0-9][a-z0-9-]{5,63}$" }, cors);
+    }
+    const key = `${PREFIX}${id}${DELTA_SUFFIX}`;
+    if (method === "GET") {
+      const { value: body, metadata } = await env.MAILBOX.getWithMetadata(key, "text");
+      const sha = (metadata as Partial<PayloadMeta> | null)?.sha;
+      return new Response(body ?? "[]", {
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+          ...(typeof sha === "string" ? { "X-Payload-Sha": sha } : {}),
+          ...cors,
+        },
+      });
+    }
+    if (method === "POST") {
+      // 差分は小さい（`keepalive` の 64 KB に収めるために作った）ので、上限も小さく。
+      if (Number(request.headers.get("Content-Length") ?? "0") > 64 * 1024) {
+        return json(413, { error: "a delta is at most 64 KB — send the full payload" }, cors);
+      }
+      let incoming: unknown;
+      try {
+        incoming = JSON.parse(await requestText(request));
+      } catch {
+        return json(400, { error: "body is not JSON" }, cors);
+      }
+      if (!isDeltaEntry(incoming)) return json(400, { error: "body is not a sync delta" }, cors);
+      const held = await readDeltas(env, id);
+      // 同じ印をもう一度（keepalive と再送が両方届いた）は積まない。マージは冪等
+      // なので積んでも壊れないが、場所の無駄。
+      if (held.some((entry) => isDeltaEntry(entry) && entry.mark === incoming.mark)) {
+        return json(200, { deviceId: id, entries: held.length, duplicate: true }, cors);
+      }
+      const next = [...held, incoming];
+      if (new TextEncoder().encode(JSON.stringify(next)).length > MAX_DELTA_BYTES) {
+        return json(413, { error: "deltas are full — send the full payload" }, cors);
+      }
+      const meta = await writeDeltas(env, id, next);
+      return json(200, { deviceId: id, entries: next.length, sha: meta?.sha }, cors);
+    }
+    return json(405, { error: `${method} not allowed on a delta` }, cors);
+  }
+
   if (!SYNC_ID.test(rest)) {
     return json(400, { error: "device id must match ^[a-z0-9][a-z0-9-]{5,63}$" }, cors);
   }
@@ -271,6 +407,14 @@ export async function handle(request: Request, env: Env, preAuthorised = false):
     }
     const meta: PayloadMeta = { bytes, updatedAt: new Date().toISOString(), sha: await sha256Hex(body) };
     await env.MAILBOX.put(`${PREFIX}${rest}`, body, { metadata: meta });
+    // 全体が覆った差分を捨てる。印が無い PUT（古い端末）は差分に触らない —
+    // 何を覆ったか言えない全体で、まだ要るかもしれない差分を消してはいけない。
+    const covers = Number(request.headers.get("X-Covers-Mark") ?? "NaN");
+    if (Number.isFinite(covers)) {
+      const held = await readDeltas(env, rest);
+      const kept = held.filter((entry) => !isDeltaEntry(entry) || entry.mark > covers);
+      if (kept.length !== held.length) await writeDeltas(env, rest, kept);
+    }
     return json(200, { deviceId: rest, bytes, sha: meta.sha }, cors);
   }
 

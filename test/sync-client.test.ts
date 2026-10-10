@@ -17,7 +17,10 @@ import {
   agoLabel,
   forgetMergedPeers,
   isStale,
+  markFullDirty,
   peersNewerThan,
+  pushGradesNow,
+  readMark,
   sinceLabel,
   syncEta,
   syncNow,
@@ -602,5 +605,159 @@ describe("what a sync reports while it runs", () => {
     const abort = new AbortController();
     abort.abort();
     await expect(syncNow(ports(() => undefined), { signal: abort.signal })).rejects.toThrow();
+  });
+});
+
+/**
+ * 差分で送る — 2026-10-10。Zach: *"so it's guaranteed that my last min of reviewing
+ * won't be synced from my tablet"*。全体（~2 MB）は `keepalive` の 64 KB に入らず、
+ * 閉じた瞬間には届かない。差分は数 KB で入る。
+ */
+describe("sending grades as a delta", () => {
+  interface Call {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    keepalive: boolean;
+    body: unknown;
+  }
+
+  function mailboxRecording(
+    options: { deltaStatus?: number; listing?: unknown[]; deltas?: Record<string, unknown[]> } = {},
+  ): { calls: Call[]; store: Map<string, string> } {
+    const store = new Map<string, string>([["hashigo.sync.deviceId", "dev-selftest01"]]);
+    const calls: Call[] = [];
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string): string | null => store.get(k) ?? null,
+      setItem: (k: string, v: string): void => void store.set(k, v),
+      removeItem: (k: string): void => void store.delete(k),
+    });
+    vi.stubGlobal(
+      "fetch",
+      async (url: string, init: { method?: string; headers?: Record<string, string>; keepalive?: boolean; body?: unknown } = {}) => {
+        const method = init.method ?? "GET";
+        calls.push({ method, url, headers: init.headers ?? {}, keepalive: init.keepalive === true, body: init.body });
+        if (method === "POST" && url.endsWith("/delta")) {
+          return { ok: (options.deltaStatus ?? 200) < 300, status: options.deltaStatus ?? 200 };
+        }
+        if (method === "PUT") return { ok: true, status: 200 };
+        if (url === "/sync/") return json({ peers: options.listing ?? [] });
+        if (url.endsWith("/delta")) {
+          const id = url.slice("/sync/".length, -"/delta".length);
+          return json(options.deltas?.[id] ?? [], `delta-${id}-v1`);
+        }
+        return json({ full: true }, `${url}-sha`);
+      },
+    );
+    return { calls, store };
+  }
+
+  const exported: string[] = [];
+  const port = (deltaCount = 2, mark = 42): SyncPorts => ({
+    async exportPayload() {
+      exported.push("full");
+      return { json: "{}", bytes: 2_000_000, mark: 40 };
+    },
+    async exportDelta(after: number) {
+      exported.push(`delta>${after}`);
+      return { json: JSON.stringify({ delta: 1, mark, reviews: [] }), bytes: 900, mark, count: deltaCount };
+    },
+    async mergePayload() {
+      return { reviewsAdded: 1, flagsTaken: 0, trackStateTaken: 0, markBefore: 42, markAfter: 50 };
+    },
+  });
+
+  afterEach(() => {
+    exported.length = 0;
+  });
+
+  it("the first send is FULL, covering its mark — a delta needs a full payload under it", async () => {
+    const box = mailboxRecording();
+    expect(await pushGradesNow(port())).toBe("full");
+    const put = box.calls.find((c) => c.method === "PUT");
+    expect(put?.headers["X-Covers-Mark"]).toBe("40");
+    expect(readMark()).toBe(40);
+  });
+
+  it("after that, grades go as a few-KB delta and the mark moves", async () => {
+    const box = mailboxRecording();
+    box.store.set("hashigo.sync.mark", "40");
+    expect(await pushGradesNow(port())).toBe("delta");
+    expect(exported).toEqual(["delta>40"]);
+    expect(box.calls.map((c) => `${c.method} ${c.url}`)).toEqual(["POST /sync/dev-selftest01/delta"]);
+    expect(readMark()).toBe(42);
+  });
+
+  it("an edit (anything but a grade) makes the next send full, and clears the flag", async () => {
+    const box = mailboxRecording();
+    box.store.set("hashigo.sync.mark", "40");
+    markFullDirty();
+    expect(await pushGradesNow(port())).toBe("full");
+    expect(box.store.has("hashigo.sync.fullDirty")).toBe(false);
+  });
+
+  it("closing the page sends the delta with keepalive — even after an edit, the GRADES go", async () => {
+    const box = mailboxRecording();
+    box.store.set("hashigo.sync.mark", "40");
+    markFullDirty();
+    expect(await pushGradesNow(port(), { keepalive: true })).toBe("delta");
+    expect(box.calls[0]).toMatchObject({ method: "POST", keepalive: true });
+    // 編集はまだ送っていない — 次の普通の送信が全体にする。
+    expect(box.store.has("hashigo.sync.fullDirty")).toBe(true);
+  });
+
+  it("on keepalive, never starts a full send it cannot finish", async () => {
+    const box = mailboxRecording();
+    expect(await pushGradesNow(port(), { keepalive: true })).toBe("nothing");
+    expect(box.calls).toHaveLength(0);
+  });
+
+  it("nothing new and nothing edited sends nothing at all — no radio, no request", async () => {
+    const box = mailboxRecording();
+    box.store.set("hashigo.sync.mark", "42");
+    expect(await pushGradesNow(port(0, 42))).toBe("nothing");
+    expect(box.calls).toHaveLength(0);
+  });
+
+  it("a mailbox with no delta route (the laptop's dev one) gets the full payload instead", async () => {
+    const box = mailboxRecording({ deltaStatus: 404 });
+    box.store.set("hashigo.sync.mark", "40");
+    expect(await pushGradesNow(port())).toBe("full");
+    expect(box.calls.map((c) => c.method)).toEqual(["POST", "PUT"]);
+  });
+
+  it("pulls a peer's delta alone when only the delta changed, merging each entry once", async () => {
+    const box = mailboxRecording({
+      listing: [{ deviceId: "dev-tablet01", bytes: 10, updatedAt: NOW.toISOString(), sha: "base1", delta: { bytes: 5, updatedAt: NOW.toISOString(), sha: "delta-dev-tablet01-v1" } }],
+      deltas: { "dev-tablet01": [{ delta: 1, mark: 3 }, { delta: 1, mark: 7 }] },
+    });
+    box.store.set("hashigo.sync.merged", JSON.stringify({ "dev-tablet01": "base1" }));
+    const merged: unknown[] = [];
+    const ports = { ...port(), mergePayload: async (p: unknown) => (merged.push(p), { reviewsAdded: 1, flagsTaken: 0, trackStateTaken: 0 }) };
+    await syncNow(ports, { push: false });
+    expect(box.calls.filter((c) => c.method === "GET").map((c) => c.url)).toEqual(["/sync/", "/sync/dev-tablet01/delta"]);
+    expect(merged).toHaveLength(2);
+    // 二度目は取らない — 差分の sha が記録されている。
+    await syncNow(ports, { push: false });
+    expect(merged).toHaveLength(2);
+  });
+
+  it("a merge that brings in another device's grades carries the mark, so they are not sent back", async () => {
+    const box = mailboxRecording({
+      listing: [{ deviceId: "dev-tablet01", bytes: 10, updatedAt: NOW.toISOString(), sha: "base2" }],
+    });
+    box.store.set("hashigo.sync.mark", "42");
+    await syncNow(port(), { push: false });
+    // port の merge は markBefore 42 → markAfter 50。
+    expect(readMark()).toBe(50);
+  });
+
+  it("does not carry the mark when this device still had unsent grades", async () => {
+    const box = mailboxRecording({
+      listing: [{ deviceId: "dev-tablet01", bytes: 10, updatedAt: NOW.toISOString(), sha: "base3" }],
+    });
+    box.store.set("hashigo.sync.mark", "30");
+    await syncNow(port(), { push: false });
+    expect(readMark()).toBe(30);
   });
 });

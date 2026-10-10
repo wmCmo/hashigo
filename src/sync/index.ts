@@ -16,3 +16,10 @@ export {
   type MergeReport,
   type SyncPayload,
 } from "./merge.js";
+export {
+  deltaPayload,
+  exportDelta,
+  isDelta,
+  maxLocalReviewId,
+  type SyncDelta,
+} from "./delta.js";

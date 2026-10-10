@@ -2167,6 +2167,47 @@ right**: it holds his verbatim reasoning and this quotes it.
     payloads unchanged for a month — likely most of the wait he was asking about.
     `versionOf()` names a hashless payload by `updatedAt|bytes`.
 
+51. **GRADES TRAVEL AS A DELTA; THE FULL PAYLOAD TRAVELS ONLY AFTER AN EDIT.**
+    Zach, 2026-10-10, after his phone showed him the exact card order his tablet
+    had shown the night before: *"so it's guaranteed that my last min of reviewing
+    won't be synced from my tablet"* — and the constraint, *"as long as we don't
+    end up like mochi flashcards im fine"* (hot phone, bloated, always running).
+
+    **Two faults, measured in the code before anything was built.** The push
+    debounce reset on EVERY grade, so a steady session sent nothing until he
+    stopped for 30 s (fixed first: `PUSH_MAX_WAIT_MS`, 2 min). And the
+    last-chance send on `visibilitychange` was a ~350 KB upload from a tab Android
+    is freezing — `keepalive`, the one `fetch` mode that outlives the page, caps
+    the body at 64 KB.
+
+    **The delta** (`src/sync/delta.ts`) is the grades after a per-device MARK —
+    that device's own `reviews.id`, never compared across devices — plus the
+    current state of the tracks they touched. Measured: 3 grades = **1,816 bytes**;
+    40 grades stay under 64 KB by test. Sent with `keepalive` on hide, it arrived
+    while the page navigated away (local Worker, two origins standing in for two
+    devices; the second pulled 613 = 610 + 3 on boot and its queue dropped them).
+
+    **One merge, not two.** A delta is wrapped as a payload carrying only reviews
+    and track state (`deltaPayload`) and goes through the same `mergeSync`. Empty
+    lists say nothing — no flag, setting or template moves (pinned by test).
+
+    **Full payload when, and only when, it is needed:** no mark yet (a delta needs
+    a full payload under it), or an edit happened. Edits are detected at the one
+    channel to the worker (`worker-client.ts`'s `ask`) by an ALLOWLIST of read-only
+    request kinds, so a new kind defaults to "send everything". A full PUT names
+    the mark it covers (`X-Covers-Mark`) and the mailbox drops the deltas under it.
+    A merge that brings in another device's grades carries the mark forward when
+    nothing was unsent, or the next delta would re-send hundreds of foreign grades.
+
+    **Battery is the reason, not an afterthought.** Still no timer, no polling, no
+    socket: sends happen on grading and on hide, nothing happens on an idle device,
+    and each send is a few KB instead of ~350 KB.
+
+    **Found on the way, fixed in its own commit:** 22 `型` values the 2026-09-25
+    dictionary pass corrected were being carried BACK by five of six mailbox
+    slots, because field values merge with no clock and the corrections applied
+    only at boot. `reapplyCorrections` now runs inside every merge's transaction.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach
