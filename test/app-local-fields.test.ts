@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mergeLocalFields, type FieldsDb } from "../app/local-fields.js";
+import { mergeLocalFields, reapplyCorrections, type FieldsDb } from "../app/local-fields.js";
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 
 /**
@@ -185,6 +185,29 @@ describe("merging the local-field seed", () => {
       );
       expect(valueOf(db, "c1", "ojad")).toBe("頭高");
       expect(report).toMatchObject({ corrected: 0, differs: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("re-corrects a value a sync merge carried back — and still never touches his edit", () => {
+    // 2026-10-10 実測：クラウドの mailbox の 6 枠のうち 5 枠が、訂正済みの `型` 22 件を
+    // 古い値で運んでいた。起動時の訂正の直後に同期のマージが戻していた。
+    const db = fixture();
+    try {
+      mergeLocalFields(db as unknown as FieldsDb, [OJAD], []);
+      db.prepare(
+        "INSERT INTO card_field_values (card_id, field_id, value) VALUES ('c1', 'ojad', '中高 (2)'), ('c2', 'ojad', 'HIS')",
+      ).run();
+      const corrections = [
+        { card_id: "c1", field_id: "ojad", was: "中高 (2)", value: "平板" },
+        { card_id: "c2", field_id: "ojad", was: "中高 (2)", value: "平板" },
+      ];
+      expect(reapplyCorrections(db as unknown as FieldsDb, corrections)).toBe(1);
+      expect(valueOf(db, "c1", "ojad")).toBe("平板");
+      expect(valueOf(db, "c2", "ojad")).toBe("HIS");
+      // 冪等：二度目は何もしない。
+      expect(reapplyCorrections(db as unknown as FieldsDb, corrections)).toBe(0);
     } finally {
       db.close();
     }

@@ -210,6 +210,33 @@ export function mergeLocalFields(
   return { added, differs, corrected, unknownCards, fields: fieldCount };
 }
 
+/**
+ * 訂正だけを、もう一度。同期のマージの後に呼ぶ — 2026-10-10。
+ *
+ * 訂正は起動時に一度だけ当たっていた。けれど訂正を知らない端末（古い種のまま
+ * だった枠）の payload にはパイプラインの古い値（`中高 (2)` 等）が残っていて、
+ * `applyLocalArchive` は値を時計なしで上書きする。実測：クラウドの mailbox で、
+ * 生きている二台のうち一台と古い四枠すべてが 22 件の `型` を古い値で運んでいた。
+ * 起動 → 訂正 → 同期で元に戻る → 次の起動で訂正、の往復で、決定 50 以後は起動の
+ * 直後にマージが走るので、画面に出るのは毎回「戻された方」だった。決定 8：
+ * 間違ったアクセントを練習させる方が、無いより悪い。
+ *
+ * 条件は起動時と同じ compare-and-swap — 値が `was` と一字一句同じ時だけ。彼の
+ * 編集は `was` と一致しないので触らない。
+ */
+export function reapplyCorrections(db: FieldsDb, corrections: readonly LocalCorrectionRow[]): number {
+  if (corrections.length === 0) return 0;
+  const swap = db.prepare(
+    `UPDATE card_field_values SET value = ?
+      WHERE card_id = ? AND field_id = ? AND value = ?`,
+  );
+  let fixed = 0;
+  for (const c of corrections) {
+    fixed += Number((swap.run(c.value, c.card_id, c.field_id, c.was) as { changes?: number }).changes ?? 0);
+  }
+  return fixed;
+}
+
 /** Read the rows a seed file serves. Separate so the merge can be tested without one. */
 export function readSeedFields(seed: FieldsDb): {
   fields: LocalFieldRow[];

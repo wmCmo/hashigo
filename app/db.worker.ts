@@ -93,7 +93,13 @@ import { retireBlob, unretireBlob } from "../src/blobs/retire.js";
 import { audioHashCandidates } from "../src/cards/audio.js";
 import { suggestCards, type SuggestRow } from "./recent.js";
 import { audioIsStale } from "./seed-freshness.js";
-import { COUNT_HELD, mergeLocalFields, readSeedFields } from "./local-fields.js";
+import {
+  COUNT_HELD,
+  mergeLocalFields,
+  readSeedFields,
+  reapplyCorrections,
+  type LocalCorrectionRow,
+} from "./local-fields.js";
 import {
   describePrice,
   describeVoicePrice,
@@ -409,6 +415,9 @@ async function seedManifest(): Promise<SeedManifest | null> {
  *
  * Returns how many rows were new.
  */
+/** 種の `local_corrections`。起動時に読み、マージのたびに当て直す。 */
+let seedCorrections: readonly LocalCorrectionRow[] = [];
+
 async function applyLocalFields(): Promise<number> {
   const db = cards;
   if (db === null) return 0;
@@ -416,6 +425,8 @@ async function applyLocalFields(): Promise<number> {
   const seed = await openDatabaseBrowser({ filename: FIELDS_DB, applySchema: false });
   try {
     const { fields, values, corrections } = readSeedFields(seed);
+    // 同期のマージの後にも当て直すため、覚えておく（`reapplyCorrections`）。
+    seedCorrections = corrections;
     if (values.length === 0) return 0;
     const have = Number((db.prepare(COUNT_HELD).get() as { n: number }).n);
     // ONE TRANSACTION over both tables, so a boot that dies half way leaves
@@ -1918,7 +1929,13 @@ function syncMerge(request: SyncMergeRequest): void {
   //     how the half merge above happens in the first place.
   //
   // So the fix is the same line for both faults.
-  const report = db.transaction(() => mergeSync(db, request.payload as never))();
+  // 訂正の当て直しも同じトランザクションの中 — 戻された値が一瞬でも確定しない。
+  const report = db.transaction(() => {
+    const merged = mergeSync(db, request.payload as never);
+    const fixed = reapplyCorrections(db, seedCorrections);
+    if (fixed > 0) log(`  sync: ${fixed} corrected value(s) a peer carried back were re-corrected`);
+    return merged;
+  })();
   const after = (
     db.prepare("SELECT count(*) AS n FROM reviews WHERE source = 'local'").get() as {
       n: number;
