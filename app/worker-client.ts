@@ -87,6 +87,9 @@ const READ_ONLY_OR_DELTA: ReadonlySet<string> = new Set([
   "open",
   "next",
   "payload",
+  // カードを出すたびに走る。書かない（`db.worker.ts` の `generatedText`：
+  // "This reads `blobs` and writes nothing"）。ここに無いと、ほぼ毎回の送信が全体に戻る。
+  "generatedText",
   "answer",
   "backup",
   "syncExport",
