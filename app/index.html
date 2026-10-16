@@ -156,6 +156,9 @@
                 aria-live="polite">
           <i aria-hidden="true"></i><span id="syncdottext" class="visually-hidden"></span>
         </button>
+        <!-- 2026-10-16: 計画を一つのデッキ、または音の出ないカードに絞っている時だけ
+             出る。押すと全体の計画に戻る — 絞ったまま気付かない、が一番悪い。 -->
+        <button id="focuschip" class="focuschip" type="button" data-icon="x" hidden></button>
         <span id="progress">—</span>
         <!-- His request 4, and it sits INSIDE the header on purpose. Three
              separately-sticky elements each claiming `top: 0` is how a header
@@ -301,6 +304,9 @@
         <span id="gallerytitle" class="gallery-title"></span>
         <span id="gallerycount" class="gallery-count"></span>
       </header>
+      <!-- 2026-10-16, his: *"once im inside a deck, i can click review by deck"*.
+           `silent only` is for where he cannot speak — `src/scheduler/silent.ts`. -->
+      <div id="galleryreview" class="gallery-review"></div>
       <div class="gallery-controls">
         <input id="gallerysearch" class="gallery-search" type="search" placeholder="filter"
                autocomplete="off" spellcheck="false" />
@@ -328,6 +334,7 @@
            focusable="false"></svg>
       <h2>done</h2>
       <p id="donetext"></p>
+      <button id="focusclear" type="button" data-icon="cards" hidden>review everything</button>
       <button id="backup" type="button" data-icon="download-simple">export backup</button>
     </section>
 

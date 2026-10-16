@@ -34,6 +34,11 @@ export interface Shell {
   // ── the review screen ──
   /** Move the session on to its next card. */
   readonly showSessionCard: () => Promise<void>;
+  /**
+   * The plan was rebuilt (`./focus.ts`): leave the done screen if it is up and
+   * show the new plan's first card.
+   */
+  readonly restartReview: () => Promise<void>;
   /** Re-read the review card's pin/archive flags and repaint its handle. */
   readonly repaintReviewFlags: () => Promise<void>;
 

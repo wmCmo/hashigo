@@ -93,6 +93,7 @@
  */
 
 import {
+  audibleTemplateIds,
   dueTracks,
   gradeTrack,
   localDate,
@@ -158,6 +159,11 @@ export interface SessionOptions {
   readonly deckId?: string;
   readonly includeSubdecks?: boolean;
   readonly kinds?: readonly string[];
+  /**
+   * Only cards that cannot sound — Zach, 2026-10-16, reviewing where he cannot
+   * speak. See `src/scheduler/silent.ts` for what "cannot sound" means.
+   */
+  readonly silent?: boolean;
 }
 
 export interface SessionItem {
@@ -646,6 +652,7 @@ export function buildSession(db: SqliteHandle, options: SessionOptions = {}): Re
       ? {}
       : { includeSubdecks: options.includeSubdecks }),
     ...(options.kinds === undefined ? {} : { kinds: options.kinds }),
+    ...(options.silent === true ? { silentExcept: audibleTemplateIds(db) } : {}),
   };
 
   const due = dueTracks(db, {

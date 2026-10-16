@@ -85,6 +85,8 @@ import pushPinSlash from "@phosphor-icons/core/assets/light/push-pin-slash-light
 import repeat from "@phosphor-icons/core/assets/light/repeat-light.svg?raw";
 import repeatFill from "@phosphor-icons/core/assets/fill/repeat-fill.svg?raw";
 import speakerHigh from "@phosphor-icons/core/assets/light/speaker-high-light.svg?raw";
+import speakerSlash from "@phosphor-icons/core/assets/light/speaker-slash-light.svg?raw";
+import cards from "@phosphor-icons/core/assets/light/cards-light.svg?raw";
 import toggleLeft from "@phosphor-icons/core/assets/light/toggle-left-light.svg?raw";
 import toggleRightFill from "@phosphor-icons/core/assets/fill/toggle-right-fill.svg?raw";
 import trash from "@phosphor-icons/core/assets/light/trash-light.svg?raw";
@@ -140,6 +142,8 @@ const ICONS = {
   repeat,
   "repeat-fill": repeatFill,
   "speaker-high": speakerHigh,
+  "speaker-slash": speakerSlash,
+  cards,
   "toggle-left": toggleLeft,
   "toggle-right-fill": toggleRightFill,
   trash,

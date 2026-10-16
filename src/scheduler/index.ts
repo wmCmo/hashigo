@@ -110,3 +110,5 @@ export {
   type QueueOptions,
   type QueuedTrack,
 } from "./queue.js";
+
+export { audibleTemplateIds, silentCardFilter, templateSpeaks } from "./silent.js";

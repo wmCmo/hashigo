@@ -857,6 +857,46 @@ export interface ReplannedMessage {
   readonly planned: number;
 }
 
+/**
+ * 今日の計画を一つのデッキ、または音の出ないカードだけに絞って組み直す — Zach,
+ * 2026-10-16: 外で声を出せない時のために。`deckId: null` かつ `silent: false` で
+ * 元の全体の計画に戻る。書き込みは無い。取り消しの山は新しい計画と共に空になる
+ * （前の計画の採点は、前の計画の上でしか戻せない）。
+ */
+export interface FocusRequest {
+  readonly kind: "focus";
+  readonly id: number;
+  readonly deckId: string | null;
+  readonly silent: boolean;
+}
+
+export interface FocusedMessage {
+  readonly kind: "focus";
+  readonly id: number;
+  readonly planned: number;
+  readonly dueCount: number;
+  readonly newCount: number;
+}
+
+/** デッキの画面のボタンに出す数。組むだけで、今の計画は動かさない。 */
+export interface FocusCountsRequest {
+  readonly kind: "focusCounts";
+  readonly id: number;
+  readonly deckId: string | null;
+}
+
+export interface FocusCount {
+  readonly due: number;
+  readonly fresh: number;
+}
+
+export interface FocusCountsMessage {
+  readonly kind: "focusCounts";
+  readonly id: number;
+  readonly all: FocusCount;
+  readonly silent: FocusCount;
+}
+
 export interface SyncMergeRequest {
   readonly kind: "syncMerge";
   readonly id: number;
@@ -1115,6 +1155,8 @@ export type AppRequest =
   | SyncExportRequest
   | SyncMergeRequest
   | ReplanRequest
+  | FocusRequest
+  | FocusCountsRequest
   | SyncDeltaRequest
   | PreviewRequest
   | BacklinksRequest
@@ -1391,6 +1433,8 @@ export type AppMessage =
   | SyncExportMessage
   | SyncMergeMessage
   | ReplannedMessage
+  | FocusedMessage
+  | FocusCountsMessage
   | SyncDeltaMessage
   | SettingsMessage
   | SetSettingMessage
@@ -1414,6 +1458,8 @@ export interface ReplyFor {
   readonly syncExport: SyncExportMessage;
   readonly syncMerge: SyncMergeMessage;
   readonly replan: ReplannedMessage;
+  readonly focus: FocusedMessage;
+  readonly focusCounts: FocusCountsMessage;
   readonly syncDelta: SyncDeltaMessage;
   readonly reset: ResetMessage;
   readonly preview: PreviewMessage;

@@ -12,6 +12,7 @@ import { closeSidebar, deckIndex } from "./sidebar.js";
 import { ask } from "./worker-client.js";
 import { confirmDelete, openEditorById, runCardOp } from "./ops.js";
 import { opIcon, prependIcon } from "./icons.js";
+import { paintDeckReview } from "./focus.js";
 
 /**
  * *"once you click the deck, what happens? the main screen goes to the card
@@ -63,7 +64,10 @@ export async function openGallery(deckId: string | null): Promise<void> {
   closeSidebar();
   const deck = deckIndex.find((entry) => entry.id === deckId);
   galleryTitle.textContent = deck?.path ?? "everything";
-  await paintGallery();
+  await Promise.all([
+    paintGallery(),
+    paintDeckReview(el("galleryreview"), deckId, deck?.name ?? null),
+  ]);
 }
 
 function closeGallery(): void {

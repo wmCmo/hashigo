@@ -53,6 +53,7 @@ import { dueAfter, dueBefore, dueOnOrBefore, liveTrack } from "./predicates.js";
 import { localDate, localDayNumber } from "./day.js";
 import { dailyOrderKey } from "./schedule.js";
 import { nowInHostOffset } from "./tracks.js";
+import { silentCardFilter } from "./silent.js";
 
 /** One row of the queue: a track, with everything the UI needs to name it. */
 export interface QueuedTrack {
@@ -102,6 +103,11 @@ export interface QueueOptions {
   readonly kinds?: readonly string[];
   /** Cap the rows returned. Counts are unaffected; `queueCounts` has no cap. */
   readonly limit?: number;
+  /**
+   * Only cards that cannot sound — `./silent.ts`. The value is the AUDIBLE
+   * template ids from `audibleTemplateIds`; absent means every card.
+   */
+  readonly silentExcept?: readonly string[];
 }
 
 const COLUMNS = `
@@ -184,6 +190,11 @@ function kindFilter(options: QueueOptions): Filter {
   };
 }
 
+function silentFilter(options: QueueOptions): Filter {
+  if (options.silentExcept === undefined) return { sql: "", params: [] };
+  return silentCardFilter(options.silentExcept);
+}
+
 function limitClause(options: QueueOptions): Filter {
   const limit = options.limit;
   if (limit === undefined) return { sql: "", params: [] };
@@ -225,12 +236,14 @@ export function dueTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
   const today = localDate(now);
   const deck = deckFilter(options);
   const kind = kindFilter(options);
+  const silent = silentFilter(options);
   const cap = limitClause(options);
   const sql =
     `${COLUMNS} WHERE ${LIVE} AND t.due_at IS NOT NULL AND ${dueOnOrBefore()}` +
-    `${deck.sql}${kind.sql} ORDER BY t.due_at, t.id${cap.sql}`;
-  const rows = db.prepare(sql).all(today, ...deck.params, ...kind.params, ...cap.params) as
-    RawQueueRow[];
+    `${deck.sql}${kind.sql}${silent.sql} ORDER BY t.due_at, t.id${cap.sql}`;
+  const rows = db
+    .prepare(sql)
+    .all(today, ...deck.params, ...kind.params, ...silent.params, ...cap.params) as RawQueueRow[];
   const todayNumber = localDayNumber(now);
   return rows.map((row) => toQueued(row, todayNumber));
 }
@@ -284,10 +297,13 @@ export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
   const now = options.now ?? nowInHostOffset();
   const deck = deckFilter(options);
   const kind = kindFilter(options);
+  const silent = silentFilter(options);
   const sql =
     `${COLUMNS} WHERE ${LIVE} AND t.due_at IS NULL AND t.reps = 0` +
-    `${deck.sql}${kind.sql} ORDER BY t.id`;
-  const rows = db.prepare(sql).all(...deck.params, ...kind.params) as RawQueueRow[];
+    `${deck.sql}${kind.sql}${silent.sql} ORDER BY t.id`;
+  const rows = db
+    .prepare(sql)
+    .all(...deck.params, ...kind.params, ...silent.params) as RawQueueRow[];
   const todayNumber = localDayNumber(now);
   const shuffled = rows
     .map((row) => ({ row, key: dailyOrderKey(todayNumber, row.track_id) }))

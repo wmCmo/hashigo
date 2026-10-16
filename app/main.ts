@@ -178,6 +178,11 @@ listenToWorker({ log: (m) => line(m.text, m.level), fetching: showFetchProgress 
 // it is a port and not an import; every member is hoisted, so this is safe here.
 provideShell({
   showSessionCard,
+  restartReview: async () => {
+    doneView.hidden = true;
+    reviewView.hidden = false;
+    await showSessionCard();
+  },
   repaintReviewFlags,
   openPreview,
   paintLayerOps,

@@ -96,6 +96,9 @@ const READ_ONLY_OR_DELTA: ReadonlySet<string> = new Set([
   "syncDelta",
   "syncMerge",
   "replan",
+  // 計画を組み直すだけで、何も書かない。
+  "focus",
+  "focusCounts",
   "preview",
   "backlinks",
   "redoInfo",

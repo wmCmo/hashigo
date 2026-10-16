@@ -157,6 +157,8 @@ import type {
   SyncExportRequest,
   SyncMergeRequest,
   ReplanRequest,
+  FocusRequest,
+  FocusCountsRequest,
   SyncDeltaRequest,
   LogLevel,
   NextRequest,
@@ -1921,6 +1923,41 @@ function replan(request: ReplanRequest): void {
   post({ kind: "replan", id: request.id, planned: session.progress().planned });
 }
 
+/**
+ * 計画を絞る。`FocusRequest` 参照。
+ *
+ * `replan` と違って採点の後でも受ける — 電車で声が出せなくなるのは、セッションの
+ * 途中だから。答えたカードは due が先へ動いているので、新しい計画には戻らない。
+ * 新しいカードの上限は日ごとに数える仕組みが無く（`buildSession` は `open` ごとに
+ * 10 を配る）、それは今日までのリロードと同じ振る舞い。
+ */
+function focus(request: FocusRequest): void {
+  const db = requireCards();
+  session = buildSession(db, {
+    ...(request.deckId === null ? {} : { deckId: request.deckId }),
+    silent: request.silent,
+  });
+  answers = [];
+  const progress = session.progress();
+  post({
+    kind: "focus",
+    id: request.id,
+    planned: progress.planned,
+    dueCount: progress.dueCount,
+    newCount: progress.newCount,
+  });
+}
+
+function focusCounts(request: FocusCountsRequest): void {
+  const db = requireCards();
+  const scope = request.deckId === null ? {} : { deckId: request.deckId };
+  const count = (silent: boolean) => {
+    const p = buildSession(db, { ...scope, silent }).progress();
+    return { due: p.dueCount, fresh: p.newCount };
+  };
+  post({ kind: "focusCounts", id: request.id, all: count(false), silent: count(true) });
+}
+
 function syncMerge(request: SyncMergeRequest): void {
   const db = requireCards();
   const before = (
@@ -2911,6 +2948,12 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "replan":
           replan(request);
+          break;
+        case "focus":
+          focus(request);
+          break;
+        case "focusCounts":
+          focusCounts(request);
           break;
         case "syncDelta":
           syncDelta(request);
