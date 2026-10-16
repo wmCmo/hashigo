@@ -8,10 +8,11 @@
 import type { BrowseHit } from "./protocol.js";
 import { el } from "./dom.js";
 import { shell } from "./shell.js";
-import { closeSidebar, deckIndex } from "./sidebar.js";
+import { closeSidebar, deckIndex, loadDecks } from "./sidebar.js";
 import { ask } from "./worker-client.js";
 import { confirmDelete, openEditorById, runCardOp } from "./ops.js";
-import { opIcon, prependIcon } from "./icons.js";
+import { icon, setIcon, type IconName } from "./icons.js";
+import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
 import { paintDeckReview } from "./focus.js";
 
 /**
@@ -51,19 +52,62 @@ interface GalleryState {
   includeArchived: boolean;
 }
 
-const gallery: GalleryState = { deckId: null, query: "", sort: "name", includeArchived: true };
+/**
+ * `includeArchived` starts FALSE. An archived card is one he took out of rotation,
+ * and a deck listing that opens on them is answering a question he did not ask:
+ * 日本語 opened on rows of 数字 tiles named `124652706`, all archived, because
+ * digits sort before kana. The checkbox brings them back; decision 47 made the same
+ * call for the empty Ctrl+K.
+ */
+const gallery: GalleryState = { deckId: null, query: "", sort: "name", includeArchived: false };
 const galleryGrid = el("gallerygrid");
 const galleryTitle = el("gallerytitle");
 const galleryCount = el("gallerycount");
 const gallerySearch = el<HTMLInputElement>("gallerysearch");
 let galleryToken = 0;
 
-export async function openGallery(deckId: string | null): Promise<void> {
+/**
+ * THE GALLERY HAS A URL — `#deck/<id>`, or `#everything`.
+ *
+ * Every screen used to live at `/` under the title `梯子 · review`, so a deck could
+ * not be reloaded into, bookmarked, or left with the browser's Back — and on his
+ * phone Back is the system gesture, which took him out of the app from inside a
+ * deck. The gallery is the one VIEW (dashboard, settings and previews are layers,
+ * things you look at and dismiss), so it is the one that gets an address.
+ *
+ * ONE HISTORY ENTRY, whatever happens inside it. Opening the gallery from review
+ * pushes; moving to another deck while already in it REPLACES, so Back always
+ * means "back to review" rather than walking every deck he clicked through.
+ */
+const GALLERY_STATE = "hashigoGallery";
+
+function galleryHash(deckId: string | null): string {
+  return deckId === null ? "#everything" : `#deck/${encodeURIComponent(deckId)}`;
+}
+
+/** The deck a URL names: a string id, null for "everything", undefined for not-the-gallery. */
+function deckFromHash(hash: string): string | null | undefined {
+  if (hash === "#everything") return null;
+  const match = /^#deck\/(.+)$/.exec(hash);
+  return match === null ? undefined : decodeURIComponent(match[1] as string);
+}
+
+export async function openGallery(
+  deckId: string | null,
+  options: { readonly fromHistory?: boolean } = {},
+): Promise<void> {
+  const wasOpen = document.body.getAttribute("data-view") === "gallery";
   gallery.deckId = deckId;
+  if (options.fromHistory !== true) {
+    const state = { [GALLERY_STATE]: deckId };
+    if (wasOpen) history.replaceState(state, "", galleryHash(deckId));
+    else history.pushState(state, "", galleryHash(deckId));
+  }
   document.body.setAttribute("data-view", "gallery");
   closeSidebar();
   const deck = deckIndex.find((entry) => entry.id === deckId);
   galleryTitle.textContent = deck?.path ?? "everything";
+  document.title = `梯子 · ${deck?.path ?? "everything"}`;
   await Promise.all([
     paintGallery(),
     paintDeckReview(el("galleryreview"), deckId, deck?.name ?? null),
@@ -72,6 +116,49 @@ export async function openGallery(deckId: string | null): Promise<void> {
 
 function closeGallery(): void {
   document.body.setAttribute("data-view", "review");
+}
+
+/**
+ * THE URL FOLLOWS THE VIEW, NOT THE OTHER WAY ROUND. Three things leave the gallery
+ * — its own `review` button, a deck review started from it (`focus.ts`), and Back —
+ * and only the last goes through history. Watching `data-view` catches all three
+ * with one rule instead of three call sites that each have to remember: if the
+ * gallery's entry is the current one, step back off it (so the next Back does not
+ * land on a dead duplicate of review); otherwise just drop the hash.
+ */
+new MutationObserver(() => {
+  if (document.body.getAttribute("data-view") === "gallery") return;
+  document.title = "梯子 · review";
+  if (deckFromHash(location.hash) === undefined) return;
+  const state = history.state as Record<string, unknown> | null;
+  if (state !== null && GALLERY_STATE in state) history.back();
+  else history.replaceState(null, "", location.pathname + location.search);
+}).observe(document.body, { attributes: true, attributeFilter: ["data-view"] });
+
+window.addEventListener("popstate", () => {
+  const deckId = deckFromHash(location.hash);
+  if (deckId !== undefined) void openGallery(deckId, { fromHistory: true });
+  else if (document.body.getAttribute("data-view") === "gallery") closeGallery();
+});
+
+/**
+ * Boot's half: a reload or a bookmark on `#deck/<id>` opens that deck once the
+ * first card is up. The deck list is loaded first because the title is read from
+ * it — the rail fills it at ≥1024px, a phone has not loaded it yet.
+ */
+export async function openGalleryFromUrl(): Promise<void> {
+  const deckId = deckFromHash(location.hash);
+  if (deckId === undefined) return;
+  await loadDecks();
+  if (deckId !== null && !deckIndex.some((deck) => deck.id === deckId)) {
+    history.replaceState(null, "", location.pathname + location.search);
+    return;
+  }
+  // The entry the page loaded on becomes REVIEW and the gallery is pushed on top of
+  // it, so the history reads the same as if he had opened the deck by hand — and
+  // leaving it steps back to review instead of off the end of the app.
+  history.replaceState(null, "", location.pathname + location.search);
+  await openGallery(deckId);
 }
 
 export async function paintGallery(): Promise<void> {
@@ -86,11 +173,11 @@ export async function paintGallery(): Promise<void> {
     // different question answered under the same heading.
     suggest: false,
     visited: [],
+    includeArchived: gallery.includeArchived,
   });
   if (token !== galleryToken) return;
 
-  let hits = [...reply.hits];
-  if (!gallery.includeArchived) hits = hits.filter((hit) => !hit.archived);
+  const hits = [...reply.hits];
   if (gallery.sort === "name") hits.sort((a, b) => a.name.localeCompare(b.name, "ja"));
   // PINNED FIRST, IN BOTH ORDERS — including relevance, which is the one that looks
   // arguable. It is not: a pin is a statement about the collection and a ranking is a
@@ -122,15 +209,43 @@ function galleryCard(hit: BrowseHit): HTMLElement {
   // legitimately carry both marks and the meta line has to be able to say both.
   if (hit.pinned) tile.classList.add("is-pinned");
 
+  const label = hit.name === "" ? hit.cardId : hit.name;
   const name = document.createElement("h3");
   name.className = "gcard-name";
-  name.textContent = hit.name === "" ? hit.cardId : hit.name;
-  const meta = document.createElement("p");
-  meta.className = "gcard-meta";
-  meta.textContent = [hit.deckPath, hit.pinned ? "pinned" : null, hit.archived ? "archived" : null]
-    .filter((part) => part !== null && part !== "")
-    .join(" · ");
-  tile.append(name, meta);
+  // A BUTTON inside the heading, so the tile is reachable from the keyboard. The
+  // tile's own click handler still covers the whole surface for a pointer; this is
+  // the same action given a focus stop and a name.
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "gcard-open";
+  open.textContent = label;
+  open.addEventListener("click", () => void shell().openPreview(hit.cardId));
+  name.appendChild(open);
+
+  // ONE `⋯` instead of six buttons. Every tile used to carry preview · edit · pin ·
+  // archive · duplicate · delete, so a 300-card deck put 300 red `delete`s on screen
+  // — the loudest thing in the gallery was the one operation that destroys four
+  // years of history. Decision 40 moved the review card's operations behind `⋯` for
+  // the same reason, and "every 操作 on the desktop exists on mobile" is met by a
+  // menu on both.
+  const more = document.createElement("button");
+  more.type = "button";
+  more.className = "gcard-more";
+  more.setAttribute("aria-label", `${label} actions`);
+  setIcon(more, "dots-three");
+  more.addEventListener("click", () => openTileMenu(hit, label));
+
+  const top = document.createElement("div");
+  top.className = "gcard-top";
+  top.append(name, more);
+  tile.appendChild(top);
+
+  if (hit.gist !== null) {
+    const gist = document.createElement("p");
+    gist.className = "gcard-gist";
+    gist.textContent = hit.gist;
+    tile.appendChild(gist);
+  }
   if (hit.snippet !== null && hit.snippet !== "") {
     const snip = document.createElement("p");
     snip.className = "gcard-snippet";
@@ -138,42 +253,98 @@ function galleryCard(hit: BrowseHit): HTMLElement {
     tile.appendChild(snip);
   }
 
-  // EVERY operation as a BUTTON, not only as a shortcut. His standing rule: any
-  // 操作 available on the desktop must be available on mobile, and a phone has no
-  // shift+P.
-  const bar = document.createElement("div");
-  bar.className = "gcard-ops";
-  const ops: readonly (readonly [string, () => void])[] = [
-    ["preview", () => void shell().openPreview(hit.cardId)],
-    ["edit", () => void openEditorById(hit.cardId)],
-    [
-      hit.pinned ? "unpin" : "pin",
-      () => void runCardOp(hit.pinned ? "unpin" : "pin", hit.cardId),
-    ],
-    [
-      hit.archived ? "unarchive" : "archive",
-      () => void runCardOp(hit.archived ? "unarchive" : "archive", hit.cardId),
-    ],
-    ["duplicate", () => void runCardOp("duplicate", hit.cardId)],
-    ["delete", () => void confirmDelete(hit.cardId, hit.name)],
-  ];
-  for (const [label, run] of ops) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "gcard-op";
-    if (label === "delete") button.classList.add("danger");
-    button.textContent = label;
-    const glyph = opIcon(label);
-    if (glyph !== null) prependIcon(button, glyph);
-    button.addEventListener("click", run);
-    bar.appendChild(button);
-  }
-  tile.appendChild(bar);
+  const meta = document.createElement("p");
+  meta.className = "gcard-meta";
+  meta.textContent = [hit.deckPath, hit.pinned ? "pinned" : null, hit.archived ? "archived" : null]
+    .filter((part) => part !== null && part !== "")
+    .join(" · ");
+  tile.appendChild(meta);
+
   tile.addEventListener("click", (event) => {
-    if ((event.target as HTMLElement).closest(".gcard-ops") !== null) return;
+    if ((event.target as HTMLElement).closest("button") !== null) return;
     void shell().openPreview(hit.cardId);
   });
   return tile;
+}
+
+/**
+ * A tile's `⋯` — the review card's menu (`openCardMenu` in `main.ts`) in shape and
+ * wording, so the same card offers the same sentences wherever he opens it. It
+ * cannot BE that function: nothing imports `main.ts`, and that one reads the
+ * review screen's own flags rather than a hit's.
+ */
+function openTileMenu(hit: BrowseHit, label: string): void {
+  const root = document.createElement("div");
+  root.className = "layer layer-confirm layer-menu";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  root.setAttribute("aria-label", `${label} actions`);
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+
+  const panel = document.createElement("div");
+  panel.className = "confirm-panel";
+  const heading = document.createElement("h2");
+  heading.textContent = label;
+  const flags = [hit.pinned ? "pinned" : "", hit.archived ? "archived" : ""].filter(
+    (flag) => flag !== "",
+  );
+  const text = document.createElement("p");
+  text.textContent =
+    flags.length === 0 ? "Nothing flagged on this card." : `Currently ${flags.join(" and ")}.`;
+  panel.append(heading, text);
+
+  const list = document.createElement("div");
+  list.className = "menu-list";
+  const item = (glyph: IconName, name: string, note: string, run: () => void, danger = false): void => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "menu-item has-icon";
+    if (danger) button.classList.add("danger");
+    const bold = document.createElement("b");
+    bold.textContent = name;
+    const why = document.createElement("i");
+    why.textContent = note;
+    button.append(icon(glyph), bold, why);
+    button.addEventListener("click", () => {
+      closeIfTop(root);
+      run();
+    });
+    list.appendChild(button);
+  };
+
+  item("eye", "preview", "every side at once, nothing graded", () => void shell().openPreview(hit.cardId));
+  item("pencil-simple", "edit", "the fields, the template, the deck", () => void openEditorById(hit.cardId));
+  item(
+    hit.pinned ? "push-pin-slash" : "push-pin",
+    hit.pinned ? "unpin" : "pin",
+    hit.pinned ? "stop keeping it near the top" : "keep it near the top of a search",
+    () => void runCardOp(hit.pinned ? "unpin" : "pin", hit.cardId),
+  );
+  item(
+    hit.archived ? "box-arrow-up" : "archive",
+    hit.archived ? "unarchive" : "archive",
+    hit.archived
+      ? "put it back in the queue — its reviews were never touched"
+      : "it stops being scheduled. Nothing is deleted and undo puts it back",
+    () => void runCardOp(hit.archived ? "unarchive" : "archive", hit.cardId),
+  );
+  item("copy", "duplicate", "same fields, same deck — its schedule starts fresh", () =>
+    void runCardOp("duplicate", hit.cardId),
+  );
+  item(
+    "trash",
+    "delete",
+    "the card, its fields, its links and ALL of its review history",
+    () => confirmDelete(hit.cardId, hit.name),
+    true,
+  );
+
+  panel.appendChild(list);
+  root.append(backdrop, panel);
+  pushLayer(bareLayer(root));
+  (list.firstElementChild as HTMLElement | null)?.focus();
 }
 
 gallerySearch.addEventListener("input", () => {

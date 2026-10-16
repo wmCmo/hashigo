@@ -173,10 +173,17 @@ function paintTree(total: number): void {
   const group = document.createElement("div");
   group.className = "tree-group";
   const header = navRow(`templates`, templateChoices.length, 0, 0, "__templates__", true);
+  // The WHOLE row toggles, not only its caret. A deck row's label opens the deck and
+  // its caret folds it, so the two need separate targets; this row has nothing to
+  // open, and a full-width button that ignores a click on its own name reads as broken.
+  header.setAttribute("aria-expanded", String(expanded.has("__templates__")));
+  header.addEventListener("click", () => {
+    (header.querySelector(".tree-twist") as HTMLElement | null)?.click();
+  });
   group.appendChild(header);
   if (expanded.has("__templates__")) {
     for (const template of templateChoices) {
-      const row = navRow(template.name, template.fields, 0, 1, null, false);
+      const row = navRow(template.name, template.fields, 0, 1, null, false, "fields");
       row.classList.add("is-template");
       row.addEventListener("click", () => openTemplateEditor(template));
       group.appendChild(row);
@@ -242,6 +249,7 @@ function navRow(
   depth: number,
   twistFor: string | null,
   isGroupHeader: boolean,
+  unit = "cards",
 ): HTMLElement {
   const row = document.createElement("button");
   row.type = "button";
@@ -274,6 +282,18 @@ function navRow(
   counts.className = "tree-counts";
   counts.textContent = due > 0 ? `${due} · ${count}` : String(count);
   if (due > 0) counts.classList.add("has-due");
+  // The pair has no room for words on a 330px rail, so the words go where a reader
+  // that needs them looks: the pointer's tooltip and the accessible name. `744 · 5950`
+  // is due TRACKS beside CARDS — the dashboard's `7,726/11,050` for the same deck is
+  // tracks learned of tracks live, a third quantity, and neither said which it was.
+  if (!isGroupHeader && label !== "everything") {
+    const words =
+      due > 0
+        ? `${due.toLocaleString()} due · ${count.toLocaleString()} ${unit}`
+        : `${count.toLocaleString()} ${unit}`;
+    counts.title = words;
+    row.setAttribute("aria-label", `${label}, ${words}`);
+  }
   row.append(name, counts);
   return row;
 }

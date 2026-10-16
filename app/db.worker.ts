@@ -73,7 +73,7 @@ import { searchCards } from "../src/search/index.js";
 // `cards.search_text` over the live fields, so a write that skips this leaves an
 // edited card findable only by its OLD text — see src/generate/search-text.ts.
 import { refreshSearchText } from "../src/generate/index.js";
-import { collect, collectGlance, renderDashboard } from "../src/dashboard/index.js";
+import { collect, collectGlance, compareDeckPaths, renderDashboard } from "../src/dashboard/index.js";
 import {
   countReferences,
   promptDependencies,
@@ -99,6 +99,7 @@ import { isCatalogueVoice } from "../src/generate/voices.js";
 import { retireBlob, unretireBlob } from "../src/blobs/retire.js";
 import { audioHashCandidates } from "../src/cards/audio.js";
 import { suggestCards, type SuggestRow } from "./recent.js";
+import { GIST_FIELDS, gistOf } from "./gist.js";
 import { audioIsStale } from "./seed-freshness.js";
 import {
   COUNT_HELD,
@@ -1552,7 +1553,11 @@ function decks(request: DecksRequest): void {
     id: request.id,
     // EVERY deck now, not just non-empty ones: the sidebar nests (his #2/#5) and
             // a parent with no cards of its own is still a node its children hang from.
-    decks: rows.map((row) => ({ ...row, archived: row.archived === 1 })),
+    // Natural order, not `ORDER BY path` — see `compareDeckPaths`. The tree keeps the
+    // order of this list (`treeChildrenOf`), so sorting here is the whole fix.
+    decks: rows
+      .map((row) => ({ ...row, archived: row.archived === 1 }))
+      .sort((a, b) => compareDeckPaths(a.path, b.path)),
     cards: Number((db.prepare("SELECT count(*) AS n FROM cards").get() as { n: number }).n),
     templates: db
       .prepare(
@@ -1584,6 +1589,36 @@ function decks(request: DecksRequest): void {
  * alphabet is not neutral, it is noise, and `suggestCards` answers instead: pinned,
  * then opened here, then recently edited. See `app/recent.ts`.
  */
+/**
+ * The gallery's second line for each of `cardIds` — see `app/gist.ts` for which
+ * field and why. One query for the page (at most 300 ids), not one per tile.
+ * Ordered by the field's preference, so a card that somehow carries both names
+ * gets the first one; `Map#set` only on the first sighting keeps it.
+ */
+function gistsFor(db: BrowserDb, cardIds: readonly string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  if (cardIds.length === 0) return out;
+  const rows = db
+    .prepare(
+      `SELECT v.card_id AS id, v.value AS value
+         FROM card_field_values v JOIN template_fields f ON f.id = v.field_id
+        WHERE f.type = 'plain' AND v.value <> ''
+          AND f.name IN (${GIST_FIELDS.map(() => "?").join(", ")})
+          AND v.card_id IN (SELECT value FROM json_each(?))
+        ORDER BY ${GIST_FIELDS.map(() => "f.name = ? DESC").join(", ")}`,
+    )
+    .all(...GIST_FIELDS, JSON.stringify(cardIds), ...GIST_FIELDS) as {
+    id: string;
+    value: string;
+  }[];
+  for (const row of rows) {
+    if (out.has(row.id)) continue;
+    const gist = gistOf(row.value);
+    if (gist !== null) out.set(row.id, gist);
+  }
+  return out;
+}
+
 function browse(request: BrowseRequest): void {
   const db = requireCards();
   const started = performance.now();
@@ -1603,6 +1638,8 @@ function browse(request: BrowseRequest): void {
       : scopeToTag(request.tagPath);
   const scopeSql = `(${deckScope.sql}) AND (${tagScope.sql})`;
   const scopeArgs = [...deckScope.args, ...tagScope.args];
+  const includeArchived = request.includeArchived !== false;
+  const archivedSql = includeArchived ? "" : " AND c.archived = 0";
 
   if (request.query.trim() === "") {
     const rows = request.suggest
@@ -1617,17 +1654,18 @@ function browse(request: BrowseRequest): void {
             `SELECT c.id AS id, c.name AS name, c.archived AS archived, c.pinned AS pinned,
                     dp.path AS deck
                FROM cards c LEFT JOIN deck_paths dp ON dp.deck_id = c.deck_id
-              WHERE ${scopeSql}
+              WHERE ${scopeSql}${archivedSql}
               ORDER BY c.name LIMIT ?`,
           )
           .all(...scopeArgs, request.limit) as SuggestRow[]);
     const total = Number(
       (
         db
-          .prepare(`SELECT count(*) AS n FROM cards c WHERE ${scopeSql}`)
+          .prepare(`SELECT count(*) AS n FROM cards c WHERE ${scopeSql}${archivedSql}`)
           .get(...scopeArgs) as { n: number }
       ).n,
     );
+    const gists = gistsFor(db, rows.map((row) => row.id));
     post({
       kind: "browse",
       id: request.id,
@@ -1638,6 +1676,7 @@ function browse(request: BrowseRequest): void {
         archived: row.archived === 1,
         pinned: row.pinned === 1,
         snippet: null,
+        gist: gists.get(row.id) ?? null,
       })),
       total,
       mode: null,
@@ -1650,8 +1689,10 @@ function browse(request: BrowseRequest): void {
   // 300 matches across 7,716 cards can hold almost none from the deck he is in.
   const result = searchCards(db, request.query, {
     limit: request.limit,
+    includeArchived,
     ...(request.deckId === null ? {} : { deckIds: scopeArgs }),
   });
+  const searchGists = gistsFor(db, result.hits.map((hit) => hit.cardId));
   const deckPaths = new Map(
     (db.prepare("SELECT deck_id, path FROM deck_paths").all() as {
       deck_id: string;
@@ -1681,6 +1722,7 @@ function browse(request: BrowseRequest): void {
       archived: hit.archived,
       pinned: pinnedIds.has(hit.cardId),
       snippet: hit.snippet?.text ?? null,
+      gist: searchGists.get(hit.cardId) ?? null,
     })),
     total: result.total,
     mode: result.mode,

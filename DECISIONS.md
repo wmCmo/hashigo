@@ -2208,6 +2208,48 @@ right**: it holds his verbatim reasoning and this quotes it.
     slots, because field values merge with no clock and the corrections applied
     only at boot. `reapplyCorrections` now runs inside every merge's transaction.
 
+52. **THE GALLERY IS READ, NOT OPERATED — AND IT HAS AN ADDRESS.** Zach,
+    2026-10-16, agreeing to a design review of the live app (sections: wording
+    kept, everything else taken): *"i agree with you on every section accept for
+    [the review loop]"*, and on the wording, *"i would keep 5, 6, it feels raw to
+    me lol, and feel nerdy too"*. So the review screen, the seed screen's log and
+    every developer-voiced note are **his and stay as written**; what changed is
+    the browsing half.
+
+    **A tile's six buttons became one `⋯`** (`openTileMenu` in `app/gallery.ts`),
+    in the review card menu's shape and sentences. A 300-card deck had put 300 red
+    `delete`s on screen — the loudest element in the gallery was the operation
+    that takes four years of review history. Decision 40's reasoning, applied to
+    the second surface it never reached; "every 操作 on the desktop exists on
+    mobile" is still met.
+
+    **The space went to the MEANING.** A tile's second line is the first sense of
+    `意味` / `Meaning` (`app/gist.ts`), plain fields only: **6,689 of 7,348 cards**
+    carry one. Templates with none get no second line rather than a guessed one.
+
+    **Archived starts HIDDEN, and the filter moved into the query.** It had been
+    applied to the page AFTER the 300-row limit, so 日本語 opened on archived 数字
+    tiles named by numbers and the total still counted them. Decision 47 made the
+    same call for the empty Ctrl+K.
+
+    **`#deck/<id>` and `#everything`.** One history entry whatever happens inside
+    the gallery (opening pushes, switching decks replaces), so Back — his phone's
+    system gesture — means "back to review" instead of leaving the app. **The URL
+    follows `data-view`**, watched by one observer, because three different things
+    leave the gallery and only one of them is Back. Layers get no address on
+    purpose: they are dismissed, not visited. **Known gap:** Back with a preview
+    open over the gallery leaves the gallery under the preview.
+
+    **Smaller, same review:** deck paths sort with numbers as numbers (`第2章`
+    before `第10章`) and **nothing else moved** — a Japanese collator was tried and
+    reordered kanji decks by reading; the sidebar's `744 · 5950` and the header's
+    `31/914` say what they count in a tooltip and the accessible name (decision 6);
+    the 14-day chart has a key for its 0.85 tone; a clip button's name is `play
+    this clip`, because its old name was the clip's ALT TEXT — the masked answer,
+    readable by hover and by any screen reader before the reveal; a preview's
+    `delete` moved to the far end from ✕; and a backticked identifier in a note
+    renders as `<code>`, because in the UI face `` `inherit` `` read as `ìnherit``.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

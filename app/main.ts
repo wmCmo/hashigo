@@ -115,6 +115,7 @@ import {
   secondsLeft,
   syncAtBoot,
 } from "./sidebar.js";
+import { openGalleryFromUrl } from "./gallery.js";
 import type { SyncProgress } from "./sync-client.js";
 import { openPalette } from "./palette.js";
 import { provideShell } from "./shell.js";
@@ -781,6 +782,13 @@ async function showCardAt(): Promise<void> {
   progressLabel.textContent =
     `${reply.progress.answeredToday}/${reply.progress.plannedToday}` +
     (reply.progress.reasksRemaining > 0 ? ` +${reply.progress.reasksRemaining}` : "");
+  // Decision 6: name the basis. The denominator is answered-today PLUS what is left
+  // in this device's plan (due and today's new tracks, `Session.progress`), so it
+  // never equals the dashboard's "due now", which counts only what is still waiting.
+  // 31/914 beside "876 due" was the two quantities, not a disagreement.
+  progressLabel.title =
+    `${reply.progress.answeredToday} answered of ${reply.progress.plannedToday} planned today` +
+    (reply.progress.reasksRemaining > 0 ? ` · ${reply.progress.reasksRemaining} to see again` : "");
 
   // His request 4. The denominator is today's workload and NOT that plus reasks: a
   // decision-13 re-ask is a card he already answered, so counting it would make
@@ -1482,11 +1490,14 @@ function mountClipButtons(card: MountedCard<HTMLElement>): void {
       // Both weights, and CSS shows the Fill one while `data-clip="playing"` —
       // the "on" state is the same icon filled (app/icons.ts).
       button.append(icon("play"), icon("play-fill"));
-      // The clip's own alt text — the word, or the sentence. Never shown: the
-      // line beside it already says this, and repeating it would be noise on a
-      // card whose whole job is to be read.
-      button.setAttribute("aria-label", `play ${clip.alt}`);
-      button.title = clip.alt;
+      // A NEUTRAL name, never the clip's alt text. The alt is the word or the
+      // sentence the clip SAYS — on a masked side, the answer — and it used to be
+      // both the accessible name and the `title`, so hovering the button (or any
+      // screen reader, or the accessibility tree) read out `たっぷり` while the cloze
+      // still hid it. Found 2026-10-16 by reading the review screen's tree before a
+      // reveal. The line beside the button is its real label, as decision 36 says;
+      // this only has to say what pressing it does.
+      button.setAttribute("aria-label", "play this clip");
 
       // THE HAIRLINE. A 2px rule under the button, filling as the clip runs.
       //
@@ -3070,7 +3081,16 @@ async function openPreview(cardId: string): Promise<void> {
  */
 function paintLayerOps(layer: Layer, host: HTMLElement): void {
   host.replaceChildren();
+  // `delete` FIRST, the far end from ✕. It used to be last, one 8px gap from the
+  // close button — the control he presses on every preview sat beside the one that
+  // takes a card's whole review history, and on a phone the two are a thumb apart.
+  // `confirmDelete` still asks; this keeps the near-miss from reaching that dialog.
   const buttons: readonly (readonly [string, boolean, () => void])[] = [
+    [
+      "delete",
+      false,
+      () => confirmDelete(layer.cardId, layer.prepared?.loaded.name ?? layer.cardId),
+    ],
     [
       layer.pinned ? "unpin" : "pin",
       layer.pinned,
@@ -3082,11 +3102,6 @@ function paintLayerOps(layer: Layer, host: HTMLElement): void {
       () => void runCardOp(layer.archived ? "unarchive" : "archive", layer.cardId),
     ],
     ["edit", false, () => openEditor()],
-    [
-      "delete",
-      false,
-      () => confirmDelete(layer.cardId, layer.prepared?.loaded.name ?? layer.cardId),
-    ],
   ];
   for (const [label, on, run] of buttons) {
     const button = document.createElement("button");
@@ -3821,6 +3836,9 @@ async function boot(): Promise<void> {
     // it. Below that it is still a drawer and fills when it opens.
     if (railStanding.matches) fillSidebar();
     await showSessionCard();
+    // A reload on `#deck/<id>` lands back in that deck — after the first card, so
+    // the review underneath it is real and Back has somewhere to go.
+    await openGalleryFromUrl();
     // 送り残しは最初のカードの後、裏で。`pushAfterBoot` 参照。
     pushAfterBoot();
   } catch (cause) {

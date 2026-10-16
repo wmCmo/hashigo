@@ -16,7 +16,7 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 
 import { openDatabase } from "../src/db/index.js";
-import { collectGlance, shiftDate, shiftMonth } from "../src/dashboard/index.js";
+import { collectGlance, compareDeckPaths, shiftDate, shiftMonth } from "../src/dashboard/index.js";
 
 const CORPUS = "build/hashigo.db";
 
@@ -257,9 +257,11 @@ describe("learned", () => {
         expect(deck.learned).toBeLessThanOrEqual(deck.live);
         expect(deck.depth).toBeGreaterThanOrEqual(0);
       }
-      // Tree order, so indentation in the UI reads as nesting.
+      // Tree order, so indentation in the UI reads as nesting — and NATURAL order, so
+      // 基本情報's 第2章 comes before 第10章 (it used to be a plain `.sort()`, which
+      // pinned 第1章, 第10章, 第11章 … as correct).
       const paths = g.decks.map((deck) => deck.path);
-      expect([...paths].sort()).toEqual(paths);
+      expect([...paths].sort(compareDeckPaths)).toEqual(paths);
     } finally {
       db.close();
     }
@@ -318,5 +320,30 @@ describe("shiftMonth", () => {
     expect(shiftMonth("2026-03", -11)).toBe("2025-04");
     expect(shiftMonth("2026-12", 1)).toBe("2027-01");
     expect(shiftMonth("2026-08", 0)).toBe("2026-08");
+  });
+});
+
+describe("compareDeckPaths", () => {
+  it("orders numbered chapters as numbers, the way 基本情報's 21 read", () => {
+    const shuffled = ["基本情報/第10章", "基本情報/第2章", "基本情報/第1章", "基本情報/第21章", "基本情報/科目B"];
+    const sorted = [...shuffled].sort(compareDeckPaths).filter((path) => path.includes("第"));
+    expect(sorted).toEqual([
+      "基本情報/第1章",
+      "基本情報/第2章",
+      "基本情報/第10章",
+      "基本情報/第21章",
+    ]);
+  });
+
+  it("moves NOTHING but the numbers — kanji keep their code-point order", () => {
+    // The first cut used a Japanese collator, which reordered these by reading.
+    const tree = ["日本語/単語", "日本語/原神", "日本語/数字", "日本語/文法", "日本語/漢字", "日本語/言葉"];
+    expect([...tree].reverse().sort(compareDeckPaths)).toEqual(tree);
+  });
+
+  it("keeps a parent immediately before its children, whatever the sibling's characters", () => {
+    const sorted = ["日本語/単語/ビジネス", "日本語 extra", "日本語/単語", "日本語"].sort(compareDeckPaths);
+    expect(sorted.indexOf("日本語")).toBe(sorted.indexOf("日本語/単語") - 1);
+    expect(sorted.indexOf("日本語/単語")).toBe(sorted.indexOf("日本語/単語/ビジネス") - 1);
   });
 });

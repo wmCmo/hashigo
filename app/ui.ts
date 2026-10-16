@@ -6,7 +6,7 @@
  * module extracted after it needs these and none of these needs a feature.
  */
 
-import { el } from "./dom.js";
+import { el, setTextWithCode } from "./dom.js";
 import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
 
 /**
@@ -65,7 +65,7 @@ export function openConfirm(
   const h = document.createElement("h2");
   h.textContent = title;
   const p = document.createElement("p");
-  p.textContent = body;
+  setTextWithCode(p, body);
   const bar = document.createElement("div");
   bar.className = "confirm-bar";
   const cancel = document.createElement("button");
@@ -116,7 +116,7 @@ export function openPrompt(
   const heading = document.createElement("h2");
   heading.textContent = title;
   const text = document.createElement("p");
-  text.textContent = body;
+  setTextWithCode(text, body);
 
   const field = document.createElement("label");
   field.className = "edit-row";

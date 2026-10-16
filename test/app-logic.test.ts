@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { childrenOf, rootsOf, subtreeTotals, type TreeDeck } from "../app/deck-tree.js";
+import { gistOf } from "../app/gist.js";
 import { isTypingTarget, survivesTyping } from "../app/keys.js";
 import {
   promptPositions,
@@ -1065,5 +1066,31 @@ describe("the last-seen date", () => {
       const mm = String(m).padStart(2, "0");
       expect(lastSeenLabel(`2025-${mm}-15T00:00:00+09:00`)).toBe(`${months[m - 1]} 15, 2025`);
     }
+  });
+});
+
+/**
+ * A gallery tile's second line (`app/gist.ts`). The inputs are shapes measured in
+ * the real corpus on 2026-10-16, not invented ones.
+ */
+describe("gistOf", () => {
+  it("takes the FIRST sense of a numbered 意味, without its number", () => {
+    expect(
+      gistOf("1. even if …; even supposing that\n2. also as …; also for …"),
+    ).toBe("even if …; even supposing that");
+  });
+
+  it("reduces a wiki link to its display text, as 単語's fields author them", () => {
+    expect(gistOf("~に[[越|4nKAg2kH]]したことはない")).toBe("~に越したことはない");
+  });
+
+  it("drops emphasis and skips blank leading lines", () => {
+    expect(gistOf("\n\n**plentifully**; amply")).toBe("plentifully; amply");
+  });
+
+  it("is null when there is nothing to read — no second line beats an empty one", () => {
+    expect(gistOf("")).toBeNull();
+    expect(gistOf("  \n\n")).toBeNull();
+    expect(gistOf("<ai>Example sentence of plectrum</ai>")).toBeNull();
   });
 });

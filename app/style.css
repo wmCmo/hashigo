@@ -2584,7 +2584,20 @@ body[data-view="gallery"] .review { display: none; }
 .gcard-name { color: var(--ink-bright); font: 400 17px/1.35 var(--jp), sans-serif; }
 .gcard-meta { color: var(--muted); font-size: 11px; }
 .gcard-snippet { color: var(--muted); font-family: var(--jp), sans-serif; font-size: 12px; line-height: 1.5; max-height: 3em; overflow: hidden; }
-.gcard-ops { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.gcard-top { align-items: flex-start; display: flex; gap: 8px; }
+.gcard-top .gcard-name { flex: 1; min-width: 0; }
+/* The heading's button is the tile's keyboard stop. It looks like the heading it
+   replaces; the focus ring is the global one. */
+.gcard-open { background: none; border: 0; color: inherit; cursor: pointer; font: inherit; overflow-wrap: anywhere; padding: 0; text-align: left; }
+/* 40px, not the 34px clip button: decision 36's trade was for a control sitting in
+   running text, and this one sits in a corner with room to spare. */
+.gcard-more { align-items: center; background: none; border: 1px solid transparent; color: var(--muted); cursor: pointer; display: inline-flex; flex: none; height: 40px; justify-content: center; margin: -8px -8px 0 0; width: 40px; }
+.gcard-more:hover, .gcard-more:focus-visible { border-color: var(--line-soft); color: var(--ink); }
+/* The meaning, two lines at most. --ink rather than --muted: it is the content a
+   deck listing is scanned for, and --muted at this size is where the brief's one
+   below-AA pairing lives (decision 32). */
+.gcard-gist { color: var(--ink); display: -webkit-box; font-family: var(--jp), sans-serif; font-size: 13px; -webkit-line-clamp: 2; line-clamp: 2; line-height: 1.5; overflow: hidden; -webkit-box-orient: vertical; }
+.gcard-meta { margin-top: auto; }
 .gcard-op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; font: inherit; font-size: 11px; padding: 6px 8px; }
 .gcard-op.danger { border-color: var(--no-edge); color: var(--no); }
 .gallery-empty { color: var(--muted); grid-column: 1 / -1; padding: 30px 0; }
@@ -2736,6 +2749,11 @@ body[data-view="review"] .review main {
   color: var(--ink);
 }
 
+/* A step of air after `delete`, so it reads as apart from the flags beside it. */
+.layer-op.danger {
+  margin-right: 8px;
+}
+
 .layer-op.danger:hover,
 .layer-op.danger:focus-visible {
   border-color: var(--no);
@@ -2754,6 +2772,14 @@ body[data-view="review"] .review main {
   line-height: 1.5;
   margin: 6px 0 0;
   max-width: 62ch;
+}
+
+/* `setTextWithCode`'s spans: an identifier quoted in a note, in the face the
+   quoting stood for. */
+.settings-note code,
+.confirm-panel code {
+  font-family: var(--mono);
+  font-size: 0.95em;
 }
 
 .settings-bad {
@@ -3302,6 +3328,24 @@ input[data-answer="incorrect"] {
    the corpus sits at 96.24% and the target is 0.90. */
 .glance-bar.is-low {
   background: var(--no);
+}
+
+/* The key for `.is-low`, under the chart it explains. The swatch is the bar's own
+   token, so the key cannot drift from the bars if `--no` ever moves. */
+.glance-legend {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 11px;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.glance-swatch {
+  background: var(--no);
+  display: inline-block;
+  height: 8px;
+  width: 8px;
 }
 
 .glance-tick {

@@ -284,6 +284,54 @@ SELECT an.ancestor_id            AS deck_id,
  GROUP BY an.ancestor_id, dp.path, dp.depth
  ORDER BY dp.path`;
 
+/**
+ * Deck paths in TREE order with numbers compared as numbers — `第1章`, `第2章` …
+ * `第10章`, not `第1章`, `第10章`, `第11章` … `第2章`, which is what `ORDER BY path`
+ * gave 基本情報's 21 chapters on the dashboard and in the sidebar.
+ *
+ * SEGMENT BY SEGMENT, so a parent always comes immediately before its children: a
+ * whole-string comparison would weigh `/` against whatever character the sibling
+ * has in that position (`/` is U+002F, above space and `!`). Shorter
+ * wins a tie, which is the parent.
+ */
+export function compareDeckPaths(a: string, b: string): number {
+  const left = a.split("/");
+  const right = b.split("/");
+  for (let i = 0; i < Math.min(left.length, right.length); i += 1) {
+    const order = compareNatural(left[i] as string, right[i] as string);
+    if (order !== 0) return order;
+  }
+  return left.length - right.length;
+}
+
+/**
+ * Code-point order, except that a run of digits compares as a NUMBER.
+ *
+ * Not `Intl.Collator("ja", { numeric: true })`, which was the first cut: a Japanese
+ * collator also reorders KANJI (by JIS order, which roughly follows reading), so
+ * 日本語's children came out 漢字 · 原神 · 言葉 · 数字 … instead of the 単語 · 原神 ·
+ * 数字 … he has always seen. The fix was meant to move the chapter numbers and
+ * nothing else, so everything that is not a digit keeps `ORDER BY path`'s order.
+ */
+function compareNatural(a: string, b: string): number {
+  const left = a.match(/\d+|\D+/g) ?? [];
+  const right = b.match(/\d+|\D+/g) ?? [];
+  for (let i = 0; i < Math.min(left.length, right.length); i += 1) {
+    const x = left[i] as string;
+    const y = right[i] as string;
+    const numeric = /^\d/.test(x) && /^\d/.test(y);
+    const order = numeric
+      ? Number(x) - Number(y) || x.length - y.length
+      : x < y
+        ? -1
+        : x > y
+          ? 1
+          : 0;
+    if (order !== 0) return order;
+  }
+  return left.length - right.length;
+}
+
 /** `YYYY-MM-DD`, `days` away from `date`. Negative goes back. */
 export function shiftDate(date: string, days: number): string {
   const at = new Date(`${date}T00:00:00Z`).getTime();
@@ -412,7 +460,8 @@ export function collectGlance(db: SqliteHandle, options: GlanceOptions = {}): Gl
     depth: Number(row.depth),
     live: Number(row.live),
     learned: Number(row.learned),
-  }));
+  }))
+  .sort((a, b) => compareDeckPaths(a.path, b.path));
 
   const counts = queueCounts(db);
   // `ForecastDay.count` is renamed to `due` here on purpose: this payload is read

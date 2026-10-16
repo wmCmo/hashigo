@@ -1014,6 +1014,18 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     edit, detected by a read-only ALLOWLIST in `worker-client.ts`'s `ask`. Still no
     timer, no polling. See `DECISIONS.md` 51.
 
+52. **THE GALLERY IS READ, NOT OPERATED — AND IT HAS AN ADDRESS.** Zach,
+    2026-10-16, taking a design review of the live app except its review-loop
+    section, and keeping the developer-voiced wording: *"it feels raw to me lol,
+    and feel nerdy too"*. A tile's six buttons became one `⋯` (300 red `delete`s
+    per deck were the loudest thing on screen); the room went to the first sense of
+    `意味`/`Meaning` (`app/gist.ts`, 6,689 of 7,348 cards). Archived starts hidden,
+    filtered IN the query rather than after the 300-row limit. `#deck/<id>` gives
+    the gallery an address and Back a meaning — one history entry, the URL follows
+    `data-view`; layers get none. Also: numbers sort as numbers in deck paths and
+    nothing else moves; counts name their basis; the clip button no longer carries
+    its masked answer as its name. See `DECISIONS.md` 52.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19

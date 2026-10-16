@@ -12,6 +12,7 @@ import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
 import { pushUndo } from "./ops.js";
 import { THEMES, readTheme, themeLabel } from "./theme.js";
 import { openConfirm, say } from "./ui.js";
+import { setTextWithCode } from "./dom.js";
 import { versionLabel } from "./version.js";
 import { ask } from "./worker-client.js";
 
@@ -356,7 +357,7 @@ function settingRow(
 
   const note = document.createElement("p");
   note.className = "settings-note";
-  note.textContent = row.note;
+  setTextWithCode(note, row.note);
   wrap.appendChild(note);
   return wrap;
 }

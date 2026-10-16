@@ -59,6 +59,7 @@ export { renderDashboard, type RenderOptions } from "./render.js";
 
 export {
   collectGlance,
+  compareDeckPaths,
   shiftDate,
   shiftMonth,
   type Glance,

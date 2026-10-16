@@ -428,6 +428,16 @@ export interface BrowseRequest {
    * Ignored unless `suggest` is set and the query is empty.
    */
   readonly visited: readonly string[];
+  /**
+   * Archived cards in the result. Absent means TRUE, which is what Ctrl+K and the
+   * `@` picker want — a search must still find a card he took out of rotation.
+   *
+   * The gallery sends its checkbox. It used to filter the page after the fact,
+   * which cut the 300-card page AFTER the limit: a deck whose archived cards sort
+   * first (日本語's 数字, named by numbers) showed a short page and a total that
+   * still counted them. Asked here, the limit and the total are both of what he sees.
+   */
+  readonly includeArchived?: boolean;
 }
 
 export interface BrowseHit {
@@ -439,6 +449,8 @@ export interface BrowseHit {
   /** His #6. Pinned tiles sort to the front of the gallery, in every order. */
   readonly pinned: boolean;
   readonly snippet: string | null;
+  /** The first line of the card's `意味` / `Meaning`, or null — see `app/gist.ts`. */
+  readonly gist: string | null;
 }
 
 export interface BrowseMessage {

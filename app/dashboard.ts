@@ -9,6 +9,7 @@ import type { GlanceDeck } from "../src/dashboard/index.js";
 import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
 import type { ReplyFor } from "./protocol.js";
 import { closeSidebar } from "./sidebar.js";
+import { setTextWithCode } from "./dom.js";
 import { setIcon } from "./icons.js";
 import { say } from "./ui.js";
 import { ask } from "./worker-client.js";
@@ -141,6 +142,11 @@ export async function openDashboard(): Promise<void> {
     ),
   );
 
+  // The tone needs a KEY. Without one the chart is blue and orange days with nothing
+  // to say which is which — and orange reads as "missed" here only if you already
+  // know `.is-low` is the 0.85 band, which nothing on the screen said.
+  body.appendChild(glanceLegend("under 85% remembered"));
+
   // ── what is coming ──
   body.appendChild(glanceHead("scheduled, next 14 days"));
   body.appendChild(
@@ -178,14 +184,16 @@ export async function openDashboard(): Promise<void> {
   // ── the full report ──
   const note = document.createElement("p");
   note.className = "settings-note";
-  note.textContent =
+  setTextWithCode(
+    note,
     `The full analysis — retention by interval, by deck, by track, the heatmap, the ` +
-    `long-interval outlook — is the same document \`npm run dashboard\` writes. It ` +
-    `reads the whole history and SQLite runs synchronously in the one worker, so ` +
-    `nothing can grade while it builds. ` +
-    (dashboardLastMs === null
-      ? `On a desktop it measured 81 seconds.`
-      : `Last run here: ${(dashboardLastMs / 1000).toFixed(0)} seconds.`);
+      `long-interval outlook — is the same document \`npm run dashboard\` writes. It ` +
+      `reads the whole history and SQLite runs synchronously in the one worker, so ` +
+      `nothing can grade while it builds. ` +
+      (dashboardLastMs === null
+        ? `On a desktop it measured 81 seconds.`
+        : `Last run here: ${(dashboardLastMs / 1000).toFixed(0)} seconds.`),
+  );
   const full = document.createElement("button");
   full.type = "button";
   full.className = "sidebar-action";
@@ -202,6 +210,16 @@ function glanceHead(text: string): HTMLElement {
   head.className = "tpl-head";
   head.textContent = text;
   return head;
+}
+
+function glanceLegend(text: string): HTMLElement {
+  const legend = document.createElement("p");
+  legend.className = "glance-legend";
+  const swatch = document.createElement("span");
+  swatch.className = "glance-swatch";
+  swatch.setAttribute("aria-hidden", "true");
+  legend.append(swatch, document.createTextNode(text));
+  return legend;
 }
 
 function glanceTiles(rows: readonly (readonly [string, string, string])[]): HTMLElement {
