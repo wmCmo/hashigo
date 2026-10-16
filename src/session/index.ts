@@ -39,6 +39,7 @@ export {
   ReviewSession,
   SessionCompleteError,
   buildSession,
+  newTracksStartedOn,
   interleaveTracks,
   type AnswerResult,
   type InterleavePolicy,

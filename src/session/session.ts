@@ -637,6 +637,26 @@ export class ReviewSession {
  * a card that becomes due mid-session is tomorrow's problem rather than a queue
  * that grows while it is being worked.
  */
+/**
+ * Tracks whose FIRST review is dated `today` — the new cards he has already met.
+ *
+ * Dates compared AS WRITTEN, in each row's own offset, which is what
+ * `countAnsweredToday` does and what `localDate` means. `reviews_track` covers the
+ * `NOT EXISTS`, and `reviews_when` seeks the day.
+ */
+export function newTracksStartedOn(db: SqliteHandle, today: string): number {
+  const row = db
+    .prepare(
+      `SELECT COUNT(DISTINCT r.track_id) AS n
+         FROM reviews r
+        WHERE r.reviewed_at >= ? AND substr(r.reviewed_at, 1, 10) = ?
+          AND NOT EXISTS (SELECT 1 FROM reviews p
+                           WHERE p.track_id = r.track_id AND p.reviewed_at < ?)`,
+    )
+    .get(today, today, today) as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
 export function buildSession(db: SqliteHandle, options: SessionOptions = {}): ReviewSession {
   const now = options.now ?? nowInHostOffset();
   // Decision 12 calls the new-card limit "a SETTING", and until `./settings.ts`
@@ -644,7 +664,13 @@ export function buildSession(db: SqliteHandle, options: SessionOptions = {}): Re
   // every session on 10 whatever he had last chosen. An explicit option still wins:
   // a caller that passed a number meant it, and the backtest passes several.
   const stored = readSessionSettings(db);
-  const newLimit = options.newLimit ?? stored.newLimit;
+  // DECISION 12 IS A DAILY LIMIT, and until 2026-10-16 it was a per-PLAN one: every
+  // `open`, every reload and every `focus` dealt a fresh ten, so narrowing to a deck
+  // and back handed him thirty new cards. The stored setting now pays for the new
+  // tracks already started today, on any device (a synced grade counts). An
+  // explicit `newLimit` still wins outright — the backtest means the number it passes.
+  const newLimit =
+    options.newLimit ?? Math.max(0, stored.newLimit - newTracksStartedOn(db, localDate(now)));
   const shared = {
     now,
     ...(options.deckId === undefined ? {} : { deckId: options.deckId }),
