@@ -2270,9 +2270,18 @@ right**: it holds his verbatim reasoning and this quotes it.
     any template that declares the field takes part. Priority picks WHICH ten,
     never how many: with 772 overdue, load was not the thing to add.
 
-    **The second tier is planned, not built:** words containing 3級 / 準2級 kanji,
-    from a kanji → 漢検級 table that reflects the 2020 reassignment. That waits on
-    a verified source; a wrong level would prioritise the wrong cards silently.
+    **THE SECOND TIER, BUILT THE SAME DAY: 日本語 words with a 3級 or 準2級 kanji.**
+    Order is `優先` → this → the rest, random within each. The table is
+    `src/scheduler/kanken.ts`, every 常用漢字 at its FY2020 level, parsed from the
+    協会's own 級別漢字表 (2020年度～新配当対応版) and identical to mimneko/kanji-data
+    (CC0). Verified rather than trusted: per-level counts equal the 協会's running
+    totals; all 57 kanji in the 2020 change list sit at their new level (two other
+    open datasets are pre-2020 and fail exactly there); 叱填頬剥 are folded onto the
+    常用漢字表's 𠮟塡頰剝. Measured on the 2026-09-08 laptop copy: **501 of 3,907**
+    unlearned tracks, ~50 days at ten a day. The 日本語 scope is not decoration:
+    seven 基本情報 sentences matched on a stray 準2級 character. **What it cannot
+    see:** a word of ≤4級 kanji with a 高校 reading is still a 準2級 question; `優先`
+    is the lever for those.
 
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 

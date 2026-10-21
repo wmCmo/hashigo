@@ -54,6 +54,7 @@ import { localDate, localDayNumber } from "./day.js";
 import { dailyOrderKey } from "./schedule.js";
 import { nowInHostOffset } from "./tracks.js";
 import { silentCardFilter } from "./silent.js";
+import { hasExamTierKanji } from "./kanken.js";
 
 /** One row of the queue: a track, with everything the UI needs to name it. */
 export interface QueuedTrack {
@@ -326,6 +327,28 @@ export function priorityCardIds(db: SqliteHandle): Set<string> {
   return new Set(rows.map((row) => row.card_id));
 }
 
+/**
+ * DECISION 53's SECOND TIER: a word in the 日本語 deck that contains a 3級 or 準2級
+ * kanji (`./kanken.ts`, the 協会's FY2020 table). Measured on the 2026-09-08 laptop
+ * copy: 508 of 3,907 unlearned tracks — about 51 days at ten a day, inside the
+ * ~108 before the exam.
+ *
+ * The WORD is `cards.name`, which for 単語 / 言葉 is the head word and for 漢字 the
+ * kanji itself. The DECK is the 日本語 subtree, by path: without it seven 基本情報
+ * sentences matched on a stray 準2級 character and would have jumped the queue as
+ * "exam vocabulary".
+ *
+ * What a kanji cannot tell: a word whose kanji are all ≤4級 but whose READING is a
+ * 高校 one is still a 準2級 question — the 協会 tests 高校で習う読み from 準2級 up.
+ * Those stay in the random pool; `優先` is the way to pull one forward.
+ */
+export const EXAM_TIER_DECK = "日本語";
+
+function examTier(row: RawQueueRow): boolean {
+  const inDeck = row.deck_path === EXAM_TIER_DECK || row.deck_path.startsWith(`${EXAM_TIER_DECK}/`);
+  return inDeck && hasExamTierKanji(row.card_name);
+}
+
 export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedTrack[] {
   const now = options.now ?? nowInHostOffset();
   const deck = deckFilter(options);
@@ -342,10 +365,10 @@ export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
   const shuffled = rows
     .map((row) => ({
       row,
-      // Tier first (decision 53): `優先` cards ahead of everything, still at random
-      // AMONG themselves, still inside the day's limit — priority picks WHICH ten,
-      // never how many.
-      tier: priority.has(row.card_id) ? 0 : 1,
+      // Tier first (decision 53): `優先` cards, then words with 3級 / 準2級 kanji,
+      // then the rest — at random WITHIN each tier, still inside the day's limit.
+      // Priority picks WHICH ten, never how many.
+      tier: priority.has(row.card_id) ? 0 : examTier(row) ? 1 : 2,
       key: dailyOrderKey(todayNumber, row.track_id),
     }))
     // `key` collisions are possible over 32 bits; `track_id` breaks the tie so

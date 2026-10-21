@@ -103,6 +103,7 @@ export {
 export {
   dueTracks,
   newTracks,
+  EXAM_TIER_DECK,
   PRIORITY_FIELD,
   priorityCardIds,
   queueCounts,
@@ -114,3 +115,11 @@ export {
 } from "./queue.js";
 
 export { audibleTemplateIds, silentCardFilter, templateSpeaks } from "./silent.js";
+
+export {
+  EXAM_TIER_LEVELS,
+  KANKEN_LEVELS,
+  KANKEN_VARIANTS,
+  hasExamTierKanji,
+  kankenLevel,
+} from "./kanken.js";

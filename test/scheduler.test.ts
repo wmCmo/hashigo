@@ -37,6 +37,9 @@ import {
   localDayNumber,
   newTracks,
   priorityCardIds,
+  KANKEN_LEVELS,
+  hasExamTierKanji,
+  kankenLevel,
   nowInHostOffset,
   parseInstant,
   parseMemory,
@@ -1074,6 +1077,34 @@ describe("the queue", () => {
     db.close();
   });
 
+  it("puts 3級 / 準2級 words in 日本語 after `優先` and before the rest — decision 53", () => {
+    const db = queueFixture();
+    // `fresh` is in 日本語/単語 and has no kanji, so it is tier 2 like the filler.
+    const add = (id: string, deck: string) => {
+      db.prepare("INSERT INTO cards (id, deck_id, name, archived, pos) VALUES (?, ?, ?, 0, ?)").run(id, deck, id, id);
+      db.prepare("INSERT INTO card_tracks (card_id, kind, due_at, reps) VALUES (?, 'forward', NULL, 0)").run(id);
+    };
+    for (let i = 0; i < 20; i += 1) add(`学校${i}`, "kid"); // 10級 kanji: no tier
+    add("寡黙", "kid"); // 寡 is 準2級
+    add("抑制", "kid"); // 抑 is 3級
+    add("寡黙English", "other"); // right kanji, wrong deck: 基本情報 sentences were the case
+    db.prepare("INSERT INTO templates (id, name) VALUES ('tango', '単語')").run();
+    db.prepare(
+      "INSERT INTO template_fields (template_id, id, name, type, pos, local) VALUES ('tango', 'yusen', '優先', 'boolean', 'z', 1)",
+    ).run();
+    db.prepare("UPDATE cards SET template_id = 'tango' WHERE id = '学校3'").run();
+    db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES ('学校3', 'yusen', 'true')").run();
+
+    for (const day of ["2026-08-22", "2026-08-23", "2026-08-24"]) {
+      const picked = newTracks(db, { now: `${day}T09:00:00+09:00`, limit: 3 }).map((t) => t.cardId);
+      expect(picked[0], day).toBe("学校3");
+      expect(new Set(picked.slice(1)), day).toEqual(new Set(["寡黙", "抑制"]));
+    }
+    const all = newTracks(db, { now: NOW }).map((t) => t.cardId);
+    expect(all.indexOf("寡黙English")).toBeGreaterThan(2);
+    db.close();
+  });
+
   it("forecasts forward only, and keeps the empty days", () => {
     const db = queueFixture();
     const forecast = reviewForecast(db, { now: NOW, days: 3 });
@@ -1209,4 +1240,49 @@ describeCorpus("the real collection", () => {
     expect(auditRows(db)).toEqual([]);
     db.close();
   }, 120_000);
+});
+
+/**
+ * The 漢検 table (`src/scheduler/kanken.ts`) against the 協会's own figures — so a
+ * regenerated table that drifts fails here, not in his queue.
+ */
+describe("the FY2020 漢検 table", () => {
+  it("has the 協会's per-level counts and every 常用漢字 exactly once", () => {
+    const counts = Object.fromEntries(KANKEN_LEVELS.map(([level, kanji]) => [level, [...kanji].length]));
+    expect(counts).toEqual({
+      "10": 80, "9": 160, "8": 200, "7": 202, "6": 193, "5": 191,
+      "4": 313, "3": 284, "準2": 328, "2": 185,
+    });
+    const all = KANKEN_LEVELS.flatMap(([, kanji]) => [...kanji]);
+    expect(all).toHaveLength(2_136);
+    expect(new Set(all).size).toBe(2_136);
+  });
+
+  it("puts all 57 kanji the 2020 change moved at their NEW level", () => {
+    // alterclassofkanji2020.pdf, summary table. The pre-2020 datasets that were
+    // rejected disagree on exactly these.
+    const moved: Record<string, string> = {
+      "7": "茨媛岡熊埼鹿栃奈梨阪阜潟佐崎滋縄岐香井沖城賀群徳富",
+      "6": "囲紀喜救型航告殺士史象賞貯停堂得毒費粉脈歴",
+      "5": "恩券承舌銭退敵俵預胃腸",
+    };
+    let n = 0;
+    for (const [level, kanji] of Object.entries(moved)) {
+      for (const ch of kanji) {
+        expect(kankenLevel(ch), ch).toBe(level);
+        n += 1;
+      }
+    }
+    expect(n).toBe(57);
+  });
+
+  it("finds a level under either codepoint of the four variant kanji", () => {
+    for (const [typed, joyo] of [["叱", "𠮟"], ["填", "塡"], ["頬", "頰"], ["剥", "剝"]] as const) {
+      expect(kankenLevel(typed), typed).not.toBeNull();
+      expect(kankenLevel(typed)).toBe(kankenLevel(joyo));
+    }
+    expect(kankenLevel("あ")).toBeNull();
+    expect(hasExamTierKanji("寡黙")).toBe(true); // 寡 準2級
+    expect(hasExamTierKanji("学校")).toBe(false);
+  });
 });

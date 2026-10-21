@@ -1032,8 +1032,10 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     average (~23% odds of surfacing before the exam). The flag is a `local = 1`
     boolean field named `優先`, so it syncs like `かな主流` and needs no schema bump;
     `priorityCardIds` matches it by name and type on any template. Priority picks
-    WHICH ten, never how many. A second tier (words with 3級/準2級 kanji) waits on a
-    verified post-2020 kanji → 漢検級 table. See `DECISIONS.md` 53.
+    WHICH ten, never how many. **Second tier, built:** 日本語 words with a 3級/準2級
+    kanji (`src/scheduler/kanken.ts`, the 協会's FY2020 table, verified against its
+    own counts and the 57-kanji change list) — 501 of 3,907 unlearned tracks on the
+    09-08 copy. See `DECISIONS.md` 53.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
