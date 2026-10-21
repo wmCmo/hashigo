@@ -54,7 +54,14 @@ import { localDate, localDayNumber } from "./day.js";
 import { dailyOrderKey } from "./schedule.js";
 import { nowInHostOffset } from "./tracks.js";
 import { silentCardFilter } from "./silent.js";
-import { hasExamTierKanji } from "./kanken.js";
+import {
+  DEFAULT_EXAM_TARGET,
+  EXAM_TARGET_KEY,
+  examTierLevels,
+  hasExamTierKanji,
+  isExamTarget,
+  type ExamTarget,
+} from "./kanken.js";
 
 /** One row of the queue: a track, with everything the UI needs to name it. */
 export interface QueuedTrack {
@@ -328,10 +335,11 @@ export function priorityCardIds(db: SqliteHandle): Set<string> {
 }
 
 /**
- * DECISION 53's SECOND TIER: a word in the 日本語 deck that contains a 3級 or 準2級
- * kanji (`./kanken.ts`, the 協会's FY2020 table). Measured on the 2026-09-08 laptop
- * copy: 508 of 3,907 unlearned tracks — about 51 days at ten a day, inside the
- * ~108 before the exam.
+ * DECISION 53's SECOND TIER: a word in the 日本語 deck that contains a kanji at the
+ * EXAM TARGET's levels (`./kanken.ts` — the 協会's FY2020 table, and the target is
+ * the `queue.exam-target` setting, 準2級 → 3級 + 準2級 unless he changes it).
+ * Measured on the 2026-09-08 laptop copy at 準2級: 501 of 3,907 unlearned tracks —
+ * about 50 days at ten a day, inside the ~108 before the exam.
  *
  * The WORD is `cards.name`, which for 単語 / 言葉 is the head word and for 漢字 the
  * kanji itself. The DECK is the 日本語 subtree, by path: without it seven 基本情報
@@ -344,9 +352,27 @@ export function priorityCardIds(db: SqliteHandle): Set<string> {
  */
 export const EXAM_TIER_DECK = "日本語";
 
-function examTier(row: RawQueueRow): boolean {
+/**
+ * The stored exam target, or the default — never a throw. A missing `settings`
+ * table, an absent row and a value that is not one of `EXAM_TARGETS` all mean
+ * 準2級, which is what the queue did before the target was a setting.
+ */
+export function examTarget(db: SqliteHandle): ExamTarget {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(EXAM_TARGET_KEY) as
+      | { value?: string }
+      | undefined;
+    const value = row?.value?.trim() ?? "";
+    return isExamTarget(value) ? value : DEFAULT_EXAM_TARGET;
+  } catch {
+    return DEFAULT_EXAM_TARGET;
+  }
+}
+
+function examTier(row: RawQueueRow, levels: ReadonlySet<string>): boolean {
+  if (levels.size === 0) return false;
   const inDeck = row.deck_path === EXAM_TIER_DECK || row.deck_path.startsWith(`${EXAM_TIER_DECK}/`);
-  return inDeck && hasExamTierKanji(row.card_name);
+  return inDeck && hasExamTierKanji(row.card_name, levels);
 }
 
 export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedTrack[] {
@@ -362,13 +388,14 @@ export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
     .all(...deck.params, ...kind.params, ...silent.params) as RawQueueRow[];
   const todayNumber = localDayNumber(now);
   const priority = priorityCardIds(db);
+  const levels = examTierLevels(examTarget(db));
   const shuffled = rows
     .map((row) => ({
       row,
       // Tier first (decision 53): `優先` cards, then words with 3級 / 準2級 kanji,
       // then the rest — at random WITHIN each tier, still inside the day's limit.
       // Priority picks WHICH ten, never how many.
-      tier: priority.has(row.card_id) ? 0 : examTier(row) ? 1 : 2,
+      tier: priority.has(row.card_id) ? 0 : examTier(row, levels) ? 1 : 2,
       key: dailyOrderKey(todayNumber, row.track_id),
     }))
     // `key` collisions are possible over 32 bits; `track_id` breaks the tie so

@@ -2283,6 +2283,14 @@ right**: it holds his verbatim reasoning and this quotes it.
     see:** a word of ≤4級 kanji with a 高校 reading is still a 準2級 question; `優先`
     is the lever for those.
 
+    **THE TARGET IS A SETTING, `queue.exam-target`** — Zach, the same day: *"in
+    future, how do change the target priority? because i will level up"*. Settings
+    → "漢検 target": off / 3級 / 準2級 / 2級. A target pulls forward the level it
+    adds and the one below (準2級 = 3級 + 準2級, 2級 = 準2級 + 2級); `off` keeps
+    `優先` and drops the level tier. Absent or unusable means 準2級, what shipped —
+    the queue never throws on a bad row, and the screen names the rejected value.
+    It syncs like every setting, and changing it needs no deploy.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

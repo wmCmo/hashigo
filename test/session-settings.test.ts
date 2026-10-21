@@ -39,8 +39,27 @@ describe("session settings", () => {
       expect(readSessionSettings(handle)).toEqual({
         newLimit: DEFAULT_NEW_LIMIT,
         interleave: DEFAULT_INTERLEAVE,
+        examTarget: "準2",
         rejected: [],
       });
+    } finally {
+      handle.close();
+    }
+  });
+
+  it("resolves the 漢検 exam target, and flags a value the queue cannot use — decision 53", () => {
+    const handle = db();
+    try {
+      expect(readSetting(handle, SESSION_SETTING_KEYS.examTarget)).toBeNull();
+      for (const good of ["off", "3", "準2", "2"]) {
+        writeSetting(handle, SESSION_SETTING_KEYS.examTarget, good);
+        expect(readSessionSettings(handle).examTarget).toBe(good);
+        expect(readSessionSettings(handle).rejected).toEqual([]);
+      }
+      writeSetting(handle, SESSION_SETTING_KEYS.examTarget, "pre-2");
+      const settings = readSessionSettings(handle);
+      expect(settings.examTarget).toBe("準2");
+      expect(settings.rejected).toEqual([{ key: SESSION_SETTING_KEYS.examTarget, value: "pre-2" }]);
     } finally {
       handle.close();
     }

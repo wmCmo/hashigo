@@ -1138,6 +1138,8 @@ export interface SettingsMessage {
   readonly resolved: {
     readonly newLimit: number;
     readonly interleave: string;
+    /** Decision 53's `queue.exam-target`, default 準2級. */
+    readonly examTarget: string;
     readonly rejected: readonly { readonly key: string; readonly value: string }[];
   };
   /** Decision 17's other half: is this database allowed to survive? */

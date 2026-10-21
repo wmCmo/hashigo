@@ -2315,6 +2315,7 @@ async function settings(request: SettingsRequest): Promise<void> {
     resolved: {
       newLimit: resolved.newLimit,
       interleave: resolved.interleave,
+      examTarget: resolved.examTarget,
       rejected: resolved.rejected,
     },
     storage: { persisted, usageBytes, quotaBytes },

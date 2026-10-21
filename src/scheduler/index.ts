@@ -104,6 +104,7 @@ export {
   dueTracks,
   newTracks,
   EXAM_TIER_DECK,
+  examTarget,
   PRIORITY_FIELD,
   priorityCardIds,
   queueCounts,
@@ -117,9 +118,14 @@ export {
 export { audibleTemplateIds, silentCardFilter, templateSpeaks } from "./silent.js";
 
 export {
-  EXAM_TIER_LEVELS,
+  DEFAULT_EXAM_TARGET,
+  EXAM_TARGET_KEY,
+  EXAM_TARGETS,
   KANKEN_LEVELS,
   KANKEN_VARIANTS,
+  examTierLevels,
   hasExamTierKanji,
+  isExamTarget,
   kankenLevel,
+  type ExamTarget,
 } from "./kanken.js";

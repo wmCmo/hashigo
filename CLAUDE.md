@@ -1035,7 +1035,8 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     WHICH ten, never how many. **Second tier, built:** 日本語 words with a 3級/準2級
     kanji (`src/scheduler/kanken.ts`, the 協会's FY2020 table, verified against its
     own counts and the 57-kanji change list) — 501 of 3,907 unlearned tracks on the
-    09-08 copy. See `DECISIONS.md` 53.
+    09-08 copy. **The target is a setting** (`queue.exam-target`: off / 3級 / 準2級 /
+    2級, default 準2級), so levelling up needs no code. See `DECISIONS.md` 53.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

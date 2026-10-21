@@ -36,6 +36,12 @@
 import { DEFAULT_INTERLEAVE, DEFAULT_NEW_LIMIT, type InterleavePolicy } from "./session.js";
 
 import type { SqliteHandle } from "../db/browser.js";
+import {
+  DEFAULT_EXAM_TARGET,
+  EXAM_TARGET_KEY,
+  isExamTarget,
+  type ExamTarget,
+} from "../scheduler/kanken.js";
 
 /**
  * The keys this module owns. Not in `SETTING_KEYS` (`src/schema`), which documents
@@ -47,6 +53,8 @@ export const SESSION_SETTING_KEYS = {
   newLimit: "new.limit",
   /** Which end of the plan new cards land in. `spread` is Zach's, 2026-08-23. */
   interleave: "session.interleave",
+  /** Decision 53: the 漢検 level whose kanji go to the front of the new pool. */
+  examTarget: EXAM_TARGET_KEY,
 } as const;
 
 /** New cards per day cannot usefully exceed a day's attention. */
@@ -57,6 +65,8 @@ const INTERLEAVE_VALUES: readonly InterleavePolicy[] = ["new-first", "due-first"
 export interface SessionSettings {
   readonly newLimit: number;
   readonly interleave: InterleavePolicy;
+  /** Read by `newTracks` itself (`examTarget` in `src/scheduler/queue.ts`); resolved here for the screen. */
+  readonly examTarget: ExamTarget;
   /**
    * Keys whose stored value could not be used, with the raw text.
    *
@@ -121,7 +131,14 @@ export function readSessionSettings(db: SqliteHandle): SessionSettings {
     }
   }
 
-  return { newLimit, interleave, rejected };
+  const rawTarget = readSetting(db, SESSION_SETTING_KEYS.examTarget);
+  let examTarget = DEFAULT_EXAM_TARGET;
+  if (rawTarget !== null) {
+    if (isExamTarget(rawTarget.trim())) examTarget = rawTarget.trim() as ExamTarget;
+    else rejected.push({ key: SESSION_SETTING_KEYS.examTarget, value: rawTarget });
+  }
+
+  return { newLimit, interleave, examTarget, rejected };
 }
 
 export { INTERLEAVE_VALUES, MAX_NEW_LIMIT };

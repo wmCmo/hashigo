@@ -55,17 +55,48 @@ export function kankenLevel(ch: string): string | null {
 }
 
 /**
- * The levels decision 53's second tier pulls forward: what 準2級 adds, and the 3級
- * below it that the 準2級 test assumes. Most of his corpus is ≤4級 already, so "≤準2級"
- * would barely filter; these two are the gap.
+ * WHICH LEVEL HE IS STUDYING FOR — a setting, because he will level up. Zach,
+ * 2026-10-21: *"in future, how do change the target priority? because i will
+ * level up"*.
+ *
+ * A target pulls forward the kanji that level ADDS and the level just below it,
+ * which its test assumes: 準2級 means 3級 + 準2級. Most of his corpus is ≤4級
+ * already, so "everything up to the target" would barely filter; the top two
+ * levels are the gap. `off` turns the level tier off — `優先` works either way.
+ *
+ * Stored as `queue.exam-target` in `settings`, which syncs (decision 33), so
+ * switching on one device switches the other. ABSENT MEANS 準2級, the target when
+ * this shipped; an unusable value falls back to it too, for
+ * `src/session/settings.ts`'s reason — a bad row must never stop a plan building.
  */
-export const EXAM_TIER_LEVELS: ReadonlySet<string> = new Set(["3", "準2"]);
+export const EXAM_TARGET_KEY = "queue.exam-target";
+export const EXAM_TARGETS = ["off", "3", "準2", "2"] as const;
+export type ExamTarget = (typeof EXAM_TARGETS)[number];
+export const DEFAULT_EXAM_TARGET: ExamTarget = "準2";
 
-/** Does `word` contain a kanji at one of `EXAM_TIER_LEVELS`? */
-export function hasExamTierKanji(word: string): boolean {
+const TARGET_LEVELS: Readonly<Record<ExamTarget, readonly string[]>> = {
+  off: [],
+  "3": ["4", "3"],
+  準2: ["3", "準2"],
+  "2": ["準2", "2"],
+};
+
+/** The levels a target pulls forward. Empty for `off`. */
+export function examTierLevels(target: ExamTarget): ReadonlySet<string> {
+  return new Set(TARGET_LEVELS[target]);
+}
+
+/** Is `value` one of the stored forms? */
+export function isExamTarget(value: string): value is ExamTarget {
+  return (EXAM_TARGETS as readonly string[]).includes(value);
+}
+
+/** Does `word` contain a kanji at one of `levels`? */
+export function hasExamTierKanji(word: string, levels: ReadonlySet<string>): boolean {
+  if (levels.size === 0) return false;
   for (const ch of word) {
     const level = kankenLevel(ch);
-    if (level !== null && EXAM_TIER_LEVELS.has(level)) return true;
+    if (level !== null && levels.has(level)) return true;
   }
   return false;
 }

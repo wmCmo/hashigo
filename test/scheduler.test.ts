@@ -38,6 +38,8 @@ import {
   newTracks,
   priorityCardIds,
   KANKEN_LEVELS,
+  examTarget,
+  examTierLevels,
   hasExamTierKanji,
   kankenLevel,
   nowInHostOffset,
@@ -1102,6 +1104,26 @@ describe("the queue", () => {
     }
     const all = newTracks(db, { now: NOW }).map((t) => t.cardId);
     expect(all.indexOf("寡黙English")).toBeGreaterThan(2);
+
+    // THE TARGET IS A SETTING. Absent means 準2級 (above). `off` drops the level
+    // tier and keeps `優先`; `2` moves it to 準2級 + 2級, which still catches 寡 (準2級)
+    // and lets 抑 (3級) fall back into the pool; junk falls back to the default.
+    const set = (value: string) =>
+      db.prepare("INSERT INTO settings (key, value) VALUES ('queue.exam-target', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(value);
+    const firstThree = () =>
+      newTracks(db, { now: "2026-08-22T09:00:00+09:00", limit: 3 }).map((t) => t.cardId);
+    expect(examTarget(db)).toBe("準2");
+    set("off");
+    expect(examTarget(db)).toBe("off");
+    let picked = firstThree();
+    expect(picked[0]).toBe("学校3");
+    expect(picked.includes("寡黙") && picked.includes("抑制")).toBe(false);
+    set("2");
+    picked = firstThree();
+    expect(picked.slice(0, 2)).toEqual(["学校3", "寡黙"]);
+    set("4級ぐらい");
+    expect(examTarget(db)).toBe("準2");
+    expect(new Set(firstThree().slice(1))).toEqual(new Set(["寡黙", "抑制"]));
     db.close();
   });
 
@@ -1282,7 +1304,16 @@ describe("the FY2020 漢検 table", () => {
       expect(kankenLevel(typed)).toBe(kankenLevel(joyo));
     }
     expect(kankenLevel("あ")).toBeNull();
-    expect(hasExamTierKanji("寡黙")).toBe(true); // 寡 準2級
-    expect(hasExamTierKanji("学校")).toBe(false);
+    const jun2 = examTierLevels("準2");
+    expect(hasExamTierKanji("寡黙", jun2)).toBe(true); // 寡 準2級
+    expect(hasExamTierKanji("学校", jun2)).toBe(false);
+    expect(hasExamTierKanji("寡黙", examTierLevels("off"))).toBe(false);
+  });
+
+  it("maps each exam target to the level it adds and the one below", () => {
+    expect([...examTierLevels("off")]).toEqual([]);
+    expect([...examTierLevels("3")]).toEqual(["4", "3"]);
+    expect([...examTierLevels("準2")]).toEqual(["3", "準2"]);
+    expect([...examTierLevels("2")]).toEqual(["準2", "2"]);
   });
 });

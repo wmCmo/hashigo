@@ -92,6 +92,24 @@ const SETTING_ROWS: readonly SettingRow[] = [
     },
   },
   {
+    key: "queue.exam-target",
+    label: "漢検 target",
+    note:
+      "Decision 53. New cards whose word has a kanji at this level or the one " +
+      "below it come first, after 優先 cards — still the same number a day, at " +
+      "random within each tier. Only the 日本語 deck. Move it up when he passes.",
+    when: "next session",
+    control: {
+      kind: "choice",
+      options: [
+        ["off", "off — 優先 cards only"],
+        ["3", "3級 — 4級 + 3級 kanji"],
+        ["準2", "準2級 — 3級 + 準2級 kanji"],
+        ["2", "2級 — 準2級 + 2級 kanji"],
+      ],
+    },
+  },
+  {
     key: "target_retention.default",
     label: "target retention",
     note:
@@ -225,6 +243,7 @@ export async function openSettings(): Promise<void> {
   const effective: Readonly<Record<string, string>> = {
     "new.limit": String(reply.resolved.newLimit),
     "session.interleave": reply.resolved.interleave,
+    "queue.exam-target": reply.resolved.examTarget,
   };
   // FIRST, AND IT IS THE ONE ROW THAT DOES NOT WRITE TO THE DATABASE. Every
   // other setting here syncs between his two devices (decision 33); a theme must
