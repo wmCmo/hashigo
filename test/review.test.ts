@@ -11,6 +11,7 @@ import { loadCard } from "../src/cards/index.js";
 import { resolveDescriptorText } from "../src/generate/index.js";
 import { readingOf } from "../src/review/text.js";
 import {
+  cardGaps,
   cardMode,
   mountCard,
   mountPrepared,
@@ -1355,5 +1356,46 @@ describe("booleanValue — the one rule the gate and the mode share", () => {
   it("no default means false — which is every card in the corpus today", () => {
     expect(booleanValue(undefined, {})).toBe(false);
     expect(booleanValue(undefined, undefined)).toBe(false);
+  });
+});
+
+/**
+ * `cardGaps` — what the app's auto-fill asks of one card (`autoFill` in
+ * `app/main.ts`). Over the real corpus, so the cards named here are real: the
+ * three with a gap are English Vocabulary cards whose sentence clip Mochi never
+ * made, found by `scripts/fill-generations.ts -- --dry`.
+ */
+describe.skipIf(!HAS_CORPUS)("cardGaps", () => {
+  it("names the clip a card renders and nothing has made", () => {
+    const db = openDatabase(DB, { readOnly: true, applySchema: false });
+    try {
+      const gaps = cardGaps(db, "1LnWMegi"); // engulf
+      expect(gaps.length).toBeGreaterThan(0);
+      expect(gaps.every((gap) => gap.kind === "speech" && gap.text.trim() !== "")).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("is empty for a card whose generations all exist", () => {
+    const db = openDatabase(DB, { readOnly: true, applySchema: false });
+    try {
+      expect(cardGaps(db, "01HxiZut")).toEqual([]); // 係数
+      expect(cardGaps(db, "no-such-card")).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("never offers furigana — the Worker cannot make one, and a reading is drilled", () => {
+    const db = openDatabase(DB, { readOnly: true, applySchema: false });
+    try {
+      const all = cardGaps(db, "1LnWMegi", new Set(["ai", "translate", "speech", "furigana"]));
+      const shipped = cardGaps(db, "1LnWMegi");
+      expect(shipped.some((gap) => gap.kind === "furigana")).toBe(false);
+      expect(all.length).toBeGreaterThanOrEqual(shipped.length);
+    } finally {
+      db.close();
+    }
   });
 });

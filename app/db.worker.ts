@@ -60,7 +60,7 @@ import { backlinksOf } from "../src/cards/index.js";
 import { decodeFieldOptions } from "../src/cards/index.js";
 import { cardAudioResolver } from "../src/cards/index.js";
 import { directionForTrackKind } from "../src/cards/index.js";
-import { ACCENT_FIELD_TYPE, READING_FIELD, prepareCard, readingSwitch } from "../src/review/index.js";
+import { ACCENT_FIELD_TYPE, READING_FIELD, cardGaps, prepareCard, readingSwitch } from "../src/review/index.js";
 import {
   buildSession,
   readSessionSettings,
@@ -127,6 +127,7 @@ import type {
   AnswerRequest,
   PriceFieldRequest,
   RedoInfoRequest,
+  CardGapsRequest,
   VoiceRequest,
   BrowseRequest,
   CardOpMessage,
@@ -2090,6 +2091,16 @@ function generatedText(request: GeneratedTextRequest): void {
   post({ kind: "generatedText", id: request.id, texts });
 }
 
+/** See `CardGapsRequest`. Read-only: it renders the card and looks things up. */
+function cardGapsFor(request: CardGapsRequest): void {
+  const db = requireCards();
+  const row = db.prepare("SELECT local FROM cards WHERE id = ?").get(request.cardId) as
+    | { local: number }
+    | undefined;
+  const local = row?.local === 1;
+  post({ kind: "cardGaps", id: request.id, local, gaps: local ? cardGaps(db, request.cardId) : [] });
+}
+
 /**
  * CACHE A GENERATION THE LAPTOP JUST MADE — Zach, 2026-09-14.
  *
@@ -3038,6 +3049,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "redoInfo":
           redoInfo(request);
+          break;
+        case "cardGaps":
+          cardGapsFor(request);
           break;
         case "priceField":
           priceField(request);

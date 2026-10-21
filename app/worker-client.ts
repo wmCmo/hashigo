@@ -102,6 +102,8 @@ const READ_ONLY_OR_DELTA: ReadonlySet<string> = new Set([
   "preview",
   "backlinks",
   "redoInfo",
+  // 欠けている生成を数えるだけ。埋めるのは storeGeneration / storeClip の方。
+  "cardGaps",
   "decks",
   "browse",
   "template",

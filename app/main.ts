@@ -1590,6 +1590,9 @@ async function fillGeneratedText(card: MountedCard<HTMLElement>): Promise<void> 
     });
     card.fillText(reply.texts);
     offerMissingGenerations(card, reply.texts);
+    // A card made here fills its own gaps — see `autoFill`. Fire-and-forget: the
+    // card is usable as it is, and the redraw comes when the fill lands.
+    void autoFill(card.cardId);
     // RE-SCALE, AND THIS IS NOT OPTIONAL. `sideScale` measures rendered text, and
     // an `ai` slot is EMPTY at render time by contract — so 単語's example-sentence
     // side measures as a two-character stub, lands in `display`, and then the
@@ -2075,6 +2078,129 @@ async function redoClip(
   // Redraw, so the card plays the new clip rather than the one still attached
   // to its button.
   await showCardAt();
+}
+
+/**
+ * AUTO-FILL: A CARD MADE HERE GETS ITS GENERATIONS WITHOUT A TAP.
+ *
+ * Zach, 2026-10-21, after his first 漢検 cards came up with an example-sentence
+ * side reading `<<Translate>>` `<<Audio>>` and a "generate" button: *"those things
+ * that automatically generates should also be created when we created the card,
+ * no need to wait for users to click it"*.
+ *
+ * ─── ONLY FOR CARDS CREATED IN THIS APP ─────────────────────────────────────
+ *
+ * The worker answers for `cards.local = 1` and nothing else. The 785 clips and
+ * 1,311 texts Mochi never made are a different matter, and his: audio
+ * regeneration happens after the app is finished (CLAUDE.md, "do not ask again"
+ * #2). A screen that silently synthesised them on view would spend his money on
+ * a decision he has made the other way.
+ *
+ * ─── A LOOP, BECAUSE THE FIELDS CHAIN ───────────────────────────────────────
+ *
+ * 単語's `Translate` and `Audio` read `例文`, which is itself generated, so their
+ * requests do not exist until the sentence does. Each pass asks the worker what
+ * is still missing (`cardGaps`, which renders against what is stored NOW), fills
+ * it, and asks again. Three passes covers the deepest chain any template has
+ * (field → ai → translate/speech) with one to spare; a pass that makes nothing
+ * stops it.
+ *
+ * ─── WHEN ───────────────────────────────────────────────────────────────────
+ *
+ * When the editor closes, which is the end of "creating the card" — a new card is
+ * a name until its fields are typed in — and whenever such a card is shown. The
+ * second is what reaches his OTHER device: a generation is filed where it was
+ * made and in the Worker's KV, not in the sync payload, so the phone asks too and
+ * the Worker answers from its cache (`cloud/mailbox/src/generate.ts`, "ALREADY
+ * THERE?") without making anything twice. Once per card per session on view; the
+ * editor's close always runs, because an edit can change what a generator reads.
+ *
+ * Nothing here PLAYS. Filing a clip is not sounding one; the hard rule is about
+ * the second (decision 29).
+ */
+const autoFilling = new Set<string>();
+const autoFillTried = new Set<string>();
+
+async function autoFill(cardId: string, options: { readonly force?: boolean } = {}): Promise<void> {
+  if (autoFilling.has(cardId)) return;
+  if (options.force !== true && autoFillTried.has(cardId)) return;
+  autoFilling.add(cardId);
+  autoFillTried.add(cardId);
+  let made = 0;
+  try {
+    for (let pass = 0; pass < 3; pass += 1) {
+      const reply = await ask<"cardGaps">({ kind: "cardGaps", cardId });
+      if (!reply.local || reply.gaps.length === 0) break;
+      let progress = 0;
+      // Sequential, for `fill-generations.ts`'s reason: a 429 halfway through
+      // costs more than the seconds a parallel burst would save.
+      for (const gap of reply.gaps) {
+        const result = await generateGap(gap);
+        if ("failure" in result) {
+          say(`could not fill this card's generated parts: ${result.failure}`, true);
+          return;
+        }
+        if ("text" in result) {
+          await ask<"storeGeneration">({ kind: "storeGeneration", cardId, slot: gap, text: result.text });
+        } else {
+          await ask<"storeClip">({
+            kind: "storeClip",
+            slot: { text: gap.text, lang: gap.lang, voice: result.voice, options: gap.options },
+            audio: result.audio,
+          });
+        }
+        progress += 1;
+      }
+      made += progress;
+      if (progress === 0) break;
+    }
+  } catch (cause) {
+    say(`could not fill this card's generated parts: ${(cause as Error).message}`, true);
+  } finally {
+    autoFilling.delete(cardId);
+    if (made > 0) await redrawFilled(cardId, made);
+  }
+}
+
+/** One generation from the Worker, read the way `requestGeneration` / `requestClip` read it. */
+async function generateGap(gap: {
+  readonly kind: string;
+  readonly text: string;
+  readonly lang: string | null;
+  readonly voice: string | null;
+  readonly options: Readonly<Record<string, string>>;
+}): Promise<{ text: string } | { audio: string; voice: string | null } | { failure: string }> {
+  const speech = gap.kind === "speech";
+  const attempt = await askLaptop(
+    { kind: gap.kind, text: gap.text, lang: gap.lang, voice: gap.voice, options: gap.options },
+    speech ? CLIP_TIMEOUT_MS : TEXT_TIMEOUT_MS,
+  );
+  if ("failure" in attempt) return attempt;
+  const response = attempt.response;
+  // Status before body — `requestGeneration` records what parsing first cost.
+  const raw = await response.text();
+  let body: { text?: string; audio?: string; voice?: string; error?: string } = {};
+  try {
+    body = raw === "" ? {} : (JSON.parse(raw) as typeof body);
+  } catch {
+    /* not ours — the status is the story */
+  }
+  const value = speech ? body.audio : body.text;
+  if (!response.ok || typeof value !== "string" || value === "") {
+    return { failure: body.error ?? `${SERVER_NAME} said ${response.status} ${response.statusText}` };
+  }
+  return speech ? { audio: value, voice: body.voice ?? null } : { text: value };
+}
+
+/** Show what was filled: the review card in place, or a preview of it reopened. */
+async function redrawFilled(cardId: string, made: number): Promise<void> {
+  say(`filled ${made} generated part${made === 1 ? "" : "s"} of this card`);
+  await remountAfterEdit(cardId);
+  const top = layers.at(-1);
+  if (top !== undefined && top.ops && top.cardId === cardId) {
+    closeTop();
+    await openPreview(cardId);
+  }
 }
 
 /**
@@ -3451,6 +3577,9 @@ function openEditorFor(
       // Saves first, and the worker answers in order — so the preview asked for
       // next is rendered from the saved text, never the stale one.
       flushFields();
+      // The end of making (or editing) a card, so its generations are made now —
+      // forced, because the edit may have changed what a generator reads.
+      void autoFill(card.cardId, { force: true });
       void remountAfterEdit(card.cardId);
       if (!showPreview) return;
       // A preview of this card still underneath (it can only get there by some

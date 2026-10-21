@@ -86,8 +86,7 @@ import {
   storeGeneratedSpeech,
 } from "../src/generate/index.js";
 import { resolveAudioHash } from "../src/cards/index.js";
-import { memoryDocument, renderSides } from "../src/render/index.js";
-import { prepareCard } from "../src/review/index.js";
+import { cardGaps } from "../src/review/index.js";
 
 function arg(name: string, fallback: string): string {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -122,38 +121,25 @@ function sweep(db: Db, kinds: ReadonlySet<string>): Gap[] {
     id: string;
     name: string;
   }[];
+  // Per card through `cardGaps` — the same question the app now asks of one card
+  // when it is created — and deduped again ACROSS cards here, which is the half
+  // only a corpus sweep has.
   const seen = new Set<string>();
   const gaps: Gap[] = [];
   for (const card of cards) {
-    const prepared = prepareCard({ db, cardId: card.id, direction: "forward" });
-    if (prepared === null) continue;
-    const out = renderSides(prepared.sides, { document: memoryDocument() });
-    for (const generation of out.generations) {
-      const request = generation.request;
-      if (request === null) continue;
-      if (!kinds.has(request.kind)) continue;
-      if (String(request.text).trim() === "") continue;
+    for (const gap of cardGaps(db, card.id, kinds)) {
       const key = JSON.stringify(
         generationIdentity({
-          kind: request.kind,
-          text: request.text,
-          voice: request.voice,
-          lang: request.lang,
-          options: request.options,
+          kind: gap.kind,
+          text: gap.text,
+          voice: gap.voice,
+          lang: gap.lang,
+          options: gap.options,
         }),
       );
       if (seen.has(key)) continue;
       seen.add(key);
-      if (present(db, request)) continue;
-      gaps.push({
-        kind: request.kind,
-        text: request.text,
-        lang: request.lang,
-        voice: request.voice,
-        options: request.options,
-        cardId: card.id,
-        cardName: card.name,
-      });
+      gaps.push({ ...gap, cardId: card.id, cardName: card.name });
     }
   }
   return gaps;

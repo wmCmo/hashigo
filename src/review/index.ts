@@ -43,6 +43,7 @@ export {
 } from "./mount.js";
 
 export { fillTextSlots, textSlots, type TextSlot } from "./text.js";
+export { cardGaps, FILLABLE_KINDS, type CardGap } from "./gaps.js";
 
 export {
   ACCENT_FIELD_TYPE,

@@ -1041,6 +1041,31 @@ export interface RedoInfoMessage {
   readonly readings: readonly { readonly base: string; readonly alias: string }[];
 }
 
+/**
+ * What this card still needs generated — `cardGaps` in `src/review/gaps.ts`.
+ * Asked by the page's auto-fill (`autoFill` in `main.ts`), only ever for a card
+ * created HERE: the 785 clips Mochi never made are his to fill, not a screen's.
+ */
+export interface CardGapsRequest {
+  readonly kind: "cardGaps";
+  readonly id: number;
+  readonly cardId: string;
+}
+
+export interface CardGapsMessage {
+  readonly kind: "cardGaps";
+  readonly id: number;
+  /** `cards.local` — made in this app (or a duplicate of one), not imported from Mochi. */
+  readonly local: boolean;
+  readonly gaps: readonly {
+    readonly kind: string;
+    readonly text: string;
+    readonly lang: string | null;
+    readonly voice: string | null;
+    readonly options: Readonly<Record<string, string>>;
+  }[];
+}
+
 export interface StoreGenerationRequest {
   readonly kind: "storeGeneration";
   readonly id: number;
@@ -1180,6 +1205,7 @@ export type AppRequest =
   | StoreGenerationRequest
   | StoreClipRequest
   | RedoInfoRequest
+  | CardGapsRequest
   | DecksRequest
   | BrowseRequest
   | CreateCardRequest
@@ -1437,6 +1463,7 @@ export type AppMessage =
   | StoreGenerationMessage
   | StoreClipMessage
   | RedoInfoMessage
+  | CardGapsMessage
   | ResetMessage
   | LogMessage
   | FetchingMessage
@@ -1484,6 +1511,7 @@ export interface ReplyFor {
   readonly storeGeneration: StoreGenerationMessage;
   readonly storeClip: StoreClipMessage;
   readonly redoInfo: RedoInfoMessage;
+  readonly cardGaps: CardGapsMessage;
   readonly setField: SetFieldMessage;
   readonly glance: GlanceMessage;
   readonly dashboard: DashboardMessage;
