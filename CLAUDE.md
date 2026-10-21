@@ -1026,6 +1026,15 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     nothing else moves; counts name their basis; the clip button no longer carries
     its masked answer as its name. See `DECISIONS.md` 52.
 
+53. **`優先` CARDS ARE PICKED FIRST FROM THE NEW POOL — STILL TEN A DAY.** Zach,
+    2026-10-21, for the 漢検準2級 CBT on 6 Feb 2027. Amends decision 15's "at random"
+    for flagged cards only: a track in the 3,736-track pool waited ~374 days on
+    average (~23% odds of surfacing before the exam). The flag is a `local = 1`
+    boolean field named `優先`, so it syncs like `かな主流` and needs no schema bump;
+    `priorityCardIds` matches it by name and type on any template. Priority picks
+    WHICH ten, never how many. A second tier (words with 3級/準2級 kanji) waits on a
+    verified post-2020 kanji → 漢検級 table. See `DECISIONS.md` 53.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19

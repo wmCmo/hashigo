@@ -293,6 +293,39 @@ export function dueTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
  * in SQL — but that means reimplementing `hash32` in two dialects and keeping
  * them identical, which is a worse trade than 14 ms.
  */
+/**
+ * THE `優先` FIELD — a new card he wants to learn NOW, ahead of the random pool.
+ *
+ * Zach, 2026-10-21, with the 漢検準2級 CBT on 6 Feb 2027: the cards his tutor
+ * session hands over are his misses, and at 10 a day from a 3,736-track pool a
+ * given track waits ~374 days on average — measured odds of ~23% that one
+ * surfaces before the exam. *"make the priority feature, that from now on, the
+ * queue will select my priority first"*. Decision 53.
+ *
+ * A LOCAL BOOLEAN FIELD, NOT A COLUMN: decision 41 made a schema bump expensive,
+ * and a `local = 1` field and its values already travel in decision 33's sync
+ * payload, the way `かな主流` does — so a card flagged on the laptop is flagged on
+ * the phone. Matched by NAME and TYPE across templates, so any template that
+ * declares the field takes part; a template without it simply has no priority
+ * cards. The value is the importer's "true", trimmed and case-folded the way the
+ * `Reading` switch reads booleans.
+ */
+export const PRIORITY_FIELD = "優先";
+
+/** Cards whose `優先` is true. One read per plan, and the set is the size of his attention. */
+export function priorityCardIds(db: SqliteHandle): Set<string> {
+  const rows = db
+    .prepare(
+      `SELECT DISTINCT v.card_id AS card_id
+         FROM card_field_values v
+         JOIN cards c ON c.id = v.card_id
+         JOIN template_fields f ON f.id = v.field_id AND f.template_id = c.template_id
+        WHERE trim(f.name) = ? AND f.type = 'boolean' AND lower(trim(v.value)) = 'true'`,
+    )
+    .all(PRIORITY_FIELD) as { card_id: string }[];
+  return new Set(rows.map((row) => row.card_id));
+}
+
 export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedTrack[] {
   const now = options.now ?? nowInHostOffset();
   const deck = deckFilter(options);
@@ -305,11 +338,19 @@ export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
     .prepare(sql)
     .all(...deck.params, ...kind.params, ...silent.params) as RawQueueRow[];
   const todayNumber = localDayNumber(now);
+  const priority = priorityCardIds(db);
   const shuffled = rows
-    .map((row) => ({ row, key: dailyOrderKey(todayNumber, row.track_id) }))
+    .map((row) => ({
+      row,
+      // Tier first (decision 53): `優先` cards ahead of everything, still at random
+      // AMONG themselves, still inside the day's limit — priority picks WHICH ten,
+      // never how many.
+      tier: priority.has(row.card_id) ? 0 : 1,
+      key: dailyOrderKey(todayNumber, row.track_id),
+    }))
     // `key` collisions are possible over 32 bits; `track_id` breaks the tie so
     // the order is total and reproducible rather than dependent on sort stability.
-    .sort((a, b) => a.key - b.key || a.row.track_id - b.row.track_id);
+    .sort((a, b) => a.tier - b.tier || a.key - b.key || a.row.track_id - b.row.track_id);
   const limited =
     options.limit === undefined ? shuffled : shuffled.slice(0, Math.max(0, options.limit));
   return limited.map(({ row }) => toQueued(row, todayNumber));

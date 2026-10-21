@@ -2250,6 +2250,30 @@ right**: it holds his verbatim reasoning and this quotes it.
     `delete` moved to the far end from ✕; and a backticked identifier in a note
     renders as `<code>`, because in the UI face `` `inherit` `` read as `ìnherit``.
 
+53. **`優先` CARDS ARE PICKED FIRST FROM THE NEW POOL — STILL TEN A DAY.** Zach,
+    2026-10-21, with the 漢検準2級 CBT on 6 Feb 2027: *"make the priority feature,
+    that from now on, the queue will select my priority first"*. **This amends
+    decision 15's "chosen at RANDOM"** for the cards he flags; everything else is
+    still the daily keyed shuffle, and priority cards are shuffled among
+    themselves the same way.
+
+    **Why it was needed, measured.** `newTracks` reshuffles the whole unlearned
+    pool every day and takes ten, so one track has a ~10/N chance a day. With
+    3,736 tracks waiting that is ~374 days on average, and ~23% odds that a given
+    track surfaces in the ~96 days before the exam — the cards his tutor session
+    hands over are exactly the ones he needs before then.
+
+    **A LOCAL BOOLEAN FIELD named `優先`, not a column.** Decision 41 made a schema
+    bump expensive, and a `local = 1` field travels in decision 33's payload with
+    its values, as `かな主流` does — flagged on the laptop is flagged on the phone.
+    Matched by NAME and TYPE (`priorityCardIds` in `src/scheduler/queue.ts`), so
+    any template that declares the field takes part. Priority picks WHICH ten,
+    never how many: with 772 overdue, load was not the thing to add.
+
+    **The second tier is planned, not built:** words containing 3級 / 準2級 kanji,
+    from a kanji → 漢検級 table that reflects the 2020 reassignment. That waits on
+    a verified source; a wrong level would prioritise the wrong cards silently.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

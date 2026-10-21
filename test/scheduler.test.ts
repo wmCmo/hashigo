@@ -36,6 +36,7 @@ import {
   localDate,
   localDayNumber,
   newTracks,
+  priorityCardIds,
   nowInHostOffset,
   parseInstant,
   parseMemory,
@@ -1033,6 +1034,43 @@ describe("the queue", () => {
     // silently offering it as new would hide it.
     db.prepare("UPDATE card_tracks SET due_at = NULL WHERE card_id = 'today'").run();
     expect(newTracks(db, { now: NOW }).map((r) => r.cardId)).toEqual(["fresh"]);
+    db.close();
+  });
+
+  it("picks `優先` cards first, still inside the limit — decision 53", () => {
+    const db = queueFixture();
+    // Thirty more new cards, so the priority card would almost never make a
+    // random two by chance: without the tier it lands in the first two on about
+    // one day in sixteen.
+    for (let i = 0; i < 30; i += 1) {
+      db.prepare("INSERT INTO cards (id, deck_id, name, archived, pos) VALUES (?, 'kid', ?, 0, ?)").run(
+        `new-${i}`,
+        `new-${i}`,
+        `new-${i}`,
+      );
+      db.prepare("INSERT INTO card_tracks (card_id, kind, due_at, reps) VALUES (?, 'forward', NULL, 0)").run(`new-${i}`);
+    }
+    db.prepare("INSERT INTO templates (id, name) VALUES ('tango', '単語')").run();
+    db.prepare(
+      "INSERT INTO template_fields (template_id, id, name, type, pos, local) VALUES ('tango', 'yusen', '優先', 'boolean', 'z', 1)",
+    ).run();
+    db.prepare("UPDATE cards SET template_id = 'tango' WHERE id IN ('new-7', 'new-23')").run();
+    db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES ('new-7', 'yusen', 'true')").run();
+    // A FALSE value is not a priority, and neither is the right NAME on a field of
+    // the wrong type — the two ways a near-miss could promote a card.
+    db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES ('new-23', 'yusen', 'false')").run();
+
+    expect(priorityCardIds(db)).toEqual(new Set(["new-7"]));
+    for (const day of ["2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"]) {
+      const picked = newTracks(db, { now: `${day}T09:00:00+09:00`, limit: 2 }).map((t) => t.cardId);
+      expect(picked[0], day).toBe("new-7");
+      // The limit holds: priority chooses WHICH, never how many.
+      expect(picked).toHaveLength(2);
+    }
+    // Unlimited, it is first and everything else is still there.
+    const all = newTracks(db, { now: NOW });
+    expect(all[0]?.cardId).toBe("new-7");
+    expect(all).toHaveLength(31); // the fixture's `fresh` plus the thirty
     db.close();
   });
 
