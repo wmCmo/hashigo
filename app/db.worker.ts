@@ -100,6 +100,7 @@ import { retireBlob, unretireBlob } from "../src/blobs/retire.js";
 import { audioHashCandidates } from "../src/cards/audio.js";
 import { suggestCards, type SuggestRow } from "./recent.js";
 import { GIST_FIELDS, gistOf } from "./gist.js";
+import { readingOverride } from "./reading-override.js";
 import { audioIsStale } from "./seed-freshness.js";
 import {
   COUNT_HELD,
@@ -2069,15 +2070,23 @@ function syncMerge(request: SyncMergeRequest): void {
  */
 function generatedText(request: GeneratedTextRequest): void {
   const db = requireCards();
-  const texts = request.slots.map((slot) =>
-    resolveDescriptorText(db, {
+  // Looked up once, and only if some furigana comes back empty — see below.
+  let yomi: string | null | undefined;
+  const texts = request.slots.map((slot) => {
+    const stored = resolveDescriptorText(db, {
       kind: slot.kind as never,
       text: slot.text,
       lang: slot.lang,
       voice: slot.voice,
       options: slot.options,
-    }),
-  );
+    });
+    if (stored !== null || slot.kind !== "furigana" || request.cardId === undefined) return stored;
+    // A reading nothing generated: the card's own `読み`, or still nothing. A plain
+    // reading is what `readingOf` passes through untouched, so the page's ruby
+    // alignment treats it exactly as it treats an unwrapped Mochi annotation.
+    if (yomi === undefined) yomi = readingOverride(db, request.cardId);
+    return yomi;
+  });
   post({ kind: "generatedText", id: request.id, texts });
 }
 

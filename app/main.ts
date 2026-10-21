@@ -1579,6 +1579,7 @@ async function fillGeneratedText(card: MountedCard<HTMLElement>): Promise<void> 
   try {
     const reply = await ask<"generatedText">({
       kind: "generatedText",
+      cardId: card.cardId,
       slots: card.textSlots.map((slot) => ({
         kind: slot.kind,
         text: slot.text,

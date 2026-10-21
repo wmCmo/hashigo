@@ -931,6 +931,11 @@ export interface SyncMergeRequest {
 export interface GeneratedTextRequest {
   readonly kind: "generatedText";
   readonly id: number;
+  /**
+   * The card the slots are on, when there is one. Only a `furigana` slot the cache
+   * cannot fill uses it — for the card's own `読み` (`app/reading-override.ts`).
+   */
+  readonly cardId?: string;
   readonly slots: readonly {
     readonly kind: string;
     readonly text: string;

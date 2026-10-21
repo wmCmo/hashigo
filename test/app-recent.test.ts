@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { scopeToSubtree, type ScopedDb } from "../app/deck-scope.js";
 import { suggestCards } from "../app/recent.js";
+import { readingOverride } from "../app/reading-override.js";
 
 /**
  * WHAT Ctrl+K OFFERS BEFORE HE TYPES — measured against the real 7,716-card corpus.
@@ -255,5 +256,19 @@ describe.skipIf(!haveCorpus)("suggestCards over the real corpus", () => {
     const per = (performance.now() - started) / 20;
     // The `last_reviewed_at` ranking this replaced measured 182 ms for one call.
     expect(per).toBeLessThan(25);
+  });
+});
+
+// Not a ranking, but the same corpus copy and the same structural `ScopedDb`: the
+// fallback reading for a furigana the generation cache cannot fill.
+describe.skipIf(!haveCorpus)("readingOverride", () => {
+  it("returns a card's explicit 読み — 主語's しゅご, one of the 13 rows decision 10 wrote", () => {
+    expect(readingOverride(db, "3giJ9apN")).toBe("しゅご");
+  });
+
+  it("is null for a card with no 読み, so the furigana stays pending as before", () => {
+    // 維持: a Reading = true 単語 card whose reading comes from Mochi's furigana cache.
+    expect(readingOverride(db, "OpKBNv1d")).toBeNull();
+    expect(readingOverride(db, "no-such-card")).toBeNull();
   });
 });
