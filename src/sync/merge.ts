@@ -456,8 +456,14 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
   const localRetired = retiredHashes(db);
 
   const localFlags = new Map<string, string>();
+  const localCardState = new Map<string, { archived: number; pinned: number; updatedAt: string }>();
   for (const r of db.prepare(SELECT_CARD_FLAGS).all() as Record<string, unknown>[]) {
     localFlags.set(String(r["card_id"]), String(r["updated_at"]));
+    localCardState.set(String(r["card_id"]), {
+      archived: Number(r["archived"]),
+      pinned: Number(r["pinned"]),
+      updatedAt: String(r["updated_at"]),
+    });
   }
 
   // ── field values: CARD-level LWW on `cards.updated_at` ───────────────────
@@ -576,6 +582,7 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
   const exists = db.prepare(CARD_EXISTS);
   const setFlags = db.prepare(SET_CARD_FLAGS);
   const setFlagsAndVoice = db.prepare(SET_CARD_FLAGS_AND_VOICE);
+  const restoreCardState = db.prepare(SET_CARD_FLAGS);
   for (const incoming of remote.cardFlags) {
     const localClock = localFlags.get(incoming.cardId);
     if (localClock === undefined) {
@@ -588,6 +595,14 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
       }
     }
     if (localClock !== undefined && !isNewer(incoming.updatedAt, localClock)) {
+      // PUT THE LOCAL ROW BACK, not just leave it. The apply has already run the
+      // backup's `max(archived, ?)` and stamped `updated_at = now` on every
+      // archived or pinned card the peer holds (2026-10-22: all 8 of his pins
+      // carried each device's last merge instant). Left alone, that re-archived
+      // a card un-archived here and made 353 cards look freshly edited on every
+      // device that merged — which hands stale field values the win.
+      const local = localCardState.get(incoming.cardId);
+      if (local !== undefined) restoreCardState.run(local.archived, local.pinned, local.updatedAt, incoming.cardId);
       flagsKept += 1;
       continue;
     }
