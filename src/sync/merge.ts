@@ -92,6 +92,13 @@
  * rebuild, and doing it then costs nothing extra instead of forcing a destructive
  * re-seed now. Until then this merge is card-level for field values and says so.
  *
+ * AND UNTIL 2026-10-22 IT WAS NOT EVEN THAT. This paragraph said card-level and
+ * the code had no rule at all: the apply upserted every value, and no edit moved
+ * `cards.updated_at`, so there was no clock to compare. Now `setField` and
+ * `setReading` stamp the card, and the merge keeps local values whenever the local
+ * card clock is not older than the peer's. Two edits to different fields of one
+ * card on two devices between syncs still lose one of them — that is the gap.
+ *
  * BROWSER-PORTABLE: `SqliteHandle`, no `node:` import — this runs in the OPFS
  * worker on both devices.
  */
@@ -194,6 +201,8 @@ export interface MergeReport {
   readonly fieldsTaken: number;
   /** Field rows this device kept — newer here, or the remote carried no clock. */
   readonly fieldsKept: number;
+  /** Field values put back because this device's card clock was not older. */
+  readonly valuesKept: number;
   /** Cards in the payload that this device does not have. */
   readonly flagsOrphaned: number;
   /** Decks whose archive flag the remote won, by clock. */
@@ -347,6 +356,17 @@ function isNewer(a: string | null, b: string | null): boolean {
   return a > b;
 }
 
+/** A peer's clock for one card, or null when its payload does not carry the card. */
+function remoteClock(clocks: ReadonlyMap<string, string>, cardId: string): string | null {
+  return clocks.get(cardId) ?? null;
+}
+
+const SELECT_VALUE = `
+SELECT value FROM card_field_values WHERE card_id = ? AND field_id = ?`;
+
+const RESTORE_VALUE = `
+UPDATE card_field_values SET value = ? WHERE card_id = ? AND field_id = ?`;
+
 /** What this device would send a peer. */
 export function exportSync(db: SqliteHandle, createdAt: string): SyncPayload {
   const cardFlags = (db.prepare(SELECT_CARD_FLAGS).all() as Record<string, unknown>[]).map(
@@ -440,8 +460,36 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
     localFlags.set(String(r["card_id"]), String(r["updated_at"]));
   }
 
+  // ── field values: CARD-level LWW on `cards.updated_at` ───────────────────
+  //
+  // The apply below upserts every incoming value with no clock, so until
+  // 2026-10-22 the value a card ended up with was whichever PAYLOAD merged last
+  // — and with eight device slots in the mailbox, several of them stale, that
+  // was routinely an old one. Measured that day: seven Reference links made on
+  // the laptop at 05:1x reached the phone, and the phone's 07:04 upload carried
+  // all seven back unlinked. Same shape as `reapplyCorrections`, which patched
+  // one table of it on 2026-10-10. So: remember what this device holds for any
+  // card whose local clock is not older than the peer's, and put it back after.
+  // A value this device does not hold at all is still taken — there is nothing
+  // local to protect, and refusing it would starve a device of a new field.
+  const remoteCardClock = new Map(remote.cardFlags.map((f) => [f.cardId, f.updatedAt]));
+  const heldValue = db.prepare(SELECT_VALUE);
+  const keptValues: { cardId: string; fieldId: string; value: string }[] = [];
+  for (const incoming of remote.archive.fieldValues) {
+    const localClock = localFlags.get(incoming.cardId);
+    if (localClock === undefined) continue; // new here: the apply inserts it
+    if (isNewer(remoteClock(remoteCardClock, incoming.cardId), localClock)) continue;
+    const held = heldValue.get(incoming.cardId, incoming.fieldId) as { value: string } | undefined;
+    if (held === undefined || held.value === incoming.value) continue;
+    keptValues.push({ cardId: incoming.cardId, fieldId: incoming.fieldId, value: held.value });
+  }
+
   // ── the union and the upserts, reused wholesale ───────────────────────────
   const applied = applyLocalArchive(db, remote.archive);
+
+  const restoreValue = db.prepare(RESTORE_VALUE);
+  for (const kept of keptValues) restoreValue.run(kept.value, kept.cardId, kept.fieldId);
+  const valuesKept = keptValues.length;
 
   // ── rule: a template body is LAST WRITE WINS, by its own clock ────────────
   //
@@ -603,6 +651,7 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
     trackStateKept,
     flagsTaken,
     flagsKept,
+    valuesKept,
     flagsOrphaned,
     deckFlagsTaken,
     templatesTaken,

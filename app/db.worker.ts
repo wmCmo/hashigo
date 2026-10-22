@@ -988,6 +988,11 @@ function readingFieldOf(db: BrowserDb, cardId: string): { id: string } | undefin
   );
 }
 
+/** Stamp a card as edited now — the clock sync's field-value rule compares. */
+function touchCard(db: ReturnType<typeof requireCards>, cardId: string): void {
+  db.prepare("UPDATE cards SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(cardId);
+}
+
 function setReading(request: ReadingRequest): void {
   const db = requireCards();
   const field = readingFieldOf(db, request.cardId);
@@ -1003,6 +1008,7 @@ function setReading(request: ReadingRequest): void {
      VALUES (?, ?, ?)
      ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`,
   ).run(request.cardId, field.id, request.value ? "true" : "false");
+  touchCard(db, request.cardId);
   refreshSearchText(db, [request.cardId]);
   post({ kind: "reading", id: request.id, cardId: request.cardId, value: request.value });
 }
@@ -1807,6 +1813,10 @@ function setField(request: SetFieldRequest): void {
        ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`,
     ).run(request.cardId, request.fieldId, request.value);
   }
+  // THE EDIT'S CLOCK. Sync keeps field values by card clock (`src/sync/merge.ts`);
+  // without this stamp an edit is indistinguishable from the stale copy every
+  // other device still uploads, and the last payload merged decides.
+  touchCard(db, request.cardId);
   refreshSearchText(db, [request.cardId]);
   post({
     kind: "setField",

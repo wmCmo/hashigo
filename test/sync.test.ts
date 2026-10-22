@@ -594,6 +594,113 @@ describe("every synced mutation moves its row's clock", () => {
   });
 });
 
+// ─── a field VALUE merges by its card's clock (2026-10-22) ───────────────────
+
+/**
+ * Until 2026-10-22 the apply upserted every incoming value and no edit moved
+ * `cards.updated_at`, so a value ended up as whichever payload merged LAST. Seven
+ * Reference links made on the laptop reached the phone, and the phone's next
+ * upload carried all seven back unlinked from a stale slot. These pin the rule
+ * that replaced that: newer card clock wins, older or equal keeps the local value,
+ * and an edit stamps the clock.
+ */
+describe("a field value merges by its card's clock, not by peer order", () => {
+  function withValue(db: Db, value: string, cardClock: string): void {
+    db.prepare(
+      "INSERT INTO templates (id, name, content, updated_at) VALUES ('t', '単語', '<<Reference>>', ?) " +
+        "ON CONFLICT (id) DO NOTHING",
+    ).run(EPOCH);
+    db.prepare(
+      `INSERT INTO template_fields (template_id, id, name, type, pos, updated_at)
+       VALUES ('t', 'ref', 'Reference', 'plain', 'a', ?) ON CONFLICT (template_id, id) DO NOTHING`,
+    ).run(EPOCH);
+    db.prepare("UPDATE cards SET template_id = 't', local = 1, updated_at = ? WHERE id = 'c0'").run(cardClock);
+    db.prepare(
+      `INSERT INTO card_field_values (card_id, field_id, value) VALUES ('c0', 'ref', ?)
+       ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`,
+    ).run(value);
+  }
+  const valueOf = (db: Db): string =>
+    (db.prepare("SELECT value FROM card_field_values WHERE card_id = 'c0' AND field_id = 'ref'").get() as {
+      value: string;
+    }).value;
+
+  const STALE = "殉‎[[職|D2oxO4Hv]]";
+  const LINKED = "[[殉|t3jlKArb]]‎[[職|D2oxO4Hv]]";
+
+  it("KEEPS the linked value here when a stale peer carries the old one", () => {
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      withValue(phone, STALE, "2026-10-21T13:00:00.000Z");
+      withValue(laptop, LINKED, "2026-10-22T05:10:00.000Z");
+      const report = mergeSync(laptop, exportSync(phone, NOW));
+      expect(valueOf(laptop)).toBe(LINKED);
+      expect(report.valuesKept).toBe(1);
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+
+  it("TAKES the newer edit on the device that still has the stale value", () => {
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      withValue(phone, STALE, "2026-10-21T13:00:00.000Z");
+      withValue(laptop, LINKED, "2026-10-22T05:10:00.000Z");
+      const report = mergeSync(phone, exportSync(laptop, NOW));
+      expect(valueOf(phone)).toBe(LINKED);
+      expect(report.valuesKept).toBe(0);
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+
+  it("converges whichever order the two payloads merge in", () => {
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      withValue(phone, STALE, "2026-10-21T13:00:00.000Z");
+      withValue(laptop, LINKED, "2026-10-22T05:10:00.000Z");
+      const fromLaptop = exportSync(laptop, NOW);
+      const fromPhone = exportSync(phone, NOW);
+      mergeSync(phone, fromLaptop);
+      mergeSync(phone, fromPhone); // its own stale upload, merged back after
+      mergeSync(laptop, fromPhone);
+      expect(valueOf(phone)).toBe(LINKED);
+      expect(valueOf(laptop)).toBe(LINKED);
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+
+  it("an EQUAL clock keeps the local value — 'same time' is not a reason to move", () => {
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      withValue(phone, STALE, EPOCH);
+      withValue(laptop, LINKED, EPOCH);
+      mergeSync(laptop, exportSync(phone, NOW));
+      expect(valueOf(laptop)).toBe(LINKED);
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+
+  it("the worker stamps the card clock on every field write", () => {
+    const source = readFileSync(new URL("../app/db.worker.ts", import.meta.url), "utf8");
+    for (const name of ["setField", "setReading"]) {
+      const body = source.slice(source.indexOf(`function ${name}(`));
+      const end = body.indexOf("\n}\n");
+      expect(body.slice(0, end), `${name} must call touchCard`).toContain("touchCard(db, request.cardId)");
+    }
+  });
+});
+
 // ─── a field's settings merge by clock too (2026-09-25) ──────────────────────
 
 /**
