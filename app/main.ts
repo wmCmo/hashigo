@@ -148,6 +148,7 @@ import {
   visiblePositions,
   type BoundarySide,
 } from "./review-boundary.js";
+import { toggleCloze } from "./cloze-toggle.js";
 import { revealScroll } from "./review-scroll.js";
 import { revealSteps, type RevealStep } from "./review-steps.js";
 import {
@@ -3626,6 +3627,28 @@ function openEditorFor(
     },
     { capture: true },
   );
+
+  // CTRL+L: TOGGLE A CLOZE on the selection — see `app/cloze-toggle.ts`. Taken
+  // from the browser on purpose: Ctrl+L is "focus the address bar", which inside
+  // a card's field is never what he means.
+  root.addEventListener("keydown", (event) => {
+    if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
+    if (event.key.toLowerCase() !== "l") return;
+    const area = event.target;
+    if (!(area instanceof HTMLTextAreaElement) || !area.classList.contains("edit-input")) return;
+    event.preventDefault();
+    const edit = toggleCloze(area.value, area.selectionStart, area.selectionEnd);
+    if (edit === null) return;
+    area.setSelectionRange(edit.from, edit.to);
+    // `insertText`, not `.value =`: it keeps Ctrl+Z, and it fires the same `input`
+    // a keystroke does, so the height and the link mirror follow. Saving is still
+    // the field's own blur.
+    if (!document.execCommand("insertText", false, edit.insert)) {
+      area.setRangeText(edit.insert, edit.from, edit.to);
+      area.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    area.setSelectionRange(edit.selectStart, edit.selectEnd);
+  });
 }
 
 /**
