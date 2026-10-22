@@ -6,6 +6,7 @@
  */
 
 import type { BrowseHit, DeckBrief } from "./protocol.js";
+import { prependIcon } from "./icons.js";
 import { bareLayer, closeIfTop, layers, pushLayer } from "./layers.js";
 import { shell } from "./shell.js";
 import { loadDecks, templateChoices } from "./sidebar.js";
@@ -135,7 +136,16 @@ function paintPalette(list: HTMLElement): void {
     name.textContent = hit.name === "" ? hit.cardId : hit.name;
     const meta = document.createElement("span");
     meta.className = "palette-meta";
-    meta.textContent = hit.archived ? `${hit.deckPath} · archived` : hit.deckPath;
+    // PINNED SAYS SO. Zach, 2026-10-22, over the empty Ctrl+K: *"we need a way to
+    // know that those are pinned cards"*. Decision 47 puts the pins first and
+    // nothing on the row said why they were there. Same place and voice as
+    // "archived", plus the pin the card menu already uses.
+    const flags = [hit.pinned ? "pinned" : null, hit.archived ? "archived" : null].filter((f) => f !== null);
+    meta.textContent = [hit.deckPath, ...flags].join(" · ");
+    if (hit.pinned) {
+      row.classList.add("is-pinned");
+      prependIcon(meta, "push-pin");
+    }
     row.append(name, meta);
     row.addEventListener("click", () => {
       const top = layers.at(-1);

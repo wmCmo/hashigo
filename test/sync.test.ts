@@ -273,6 +273,34 @@ describe("collection flags merge by clock, and CAN clear", () => {
     laptop.db.close();
     phone.db.close();
   });
+
+  it("a NEWER local unarchive survives a stale peer that still has it archived", () => {
+    // The backup apply runs `max(archived, ?)` before any merge rule looks, so
+    // until 2026-10-22 the "kept" branch kept the clock and lost the flag.
+    const laptop = device();
+    const phone = device();
+    laptop.db.prepare("UPDATE cards SET archived = 0, updated_at = ? WHERE id = 'c1'").run("2026-10-22T08:00:00.000Z");
+    phone.db.prepare("UPDATE cards SET archived = 1, updated_at = ? WHERE id = 'c1'").run("2026-10-21T08:00:00.000Z");
+    const report = mergeSync(laptop.db, exportSync(phone.db, NOW));
+    expect(flagsOf(laptop.db, "c1").archived).toBe(0);
+    expect(report.flagsKept).toBeGreaterThan(0);
+    laptop.db.close();
+    phone.db.close();
+  });
+
+  it("a merge does not move the clock of a card it kept — pins measured at the merge instant", () => {
+    const laptop = device();
+    const phone = device();
+    const clock = "2026-10-16T10:37:06.552Z";
+    for (const db of [laptop.db, phone.db]) {
+      db.prepare("UPDATE cards SET pinned = 1, updated_at = ? WHERE id = 'c2'").run(clock);
+    }
+    mergeSync(laptop.db, exportSync(phone.db, NOW));
+    const after = laptop.db.prepare("SELECT updated_at FROM cards WHERE id = 'c2'").get() as { updated_at: string };
+    expect(after.updated_at).toBe(clock);
+    laptop.db.close();
+    phone.db.close();
+  });
 });
 
 describe("the payload refuses what it cannot merge", () => {
