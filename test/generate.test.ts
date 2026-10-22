@@ -1133,6 +1133,15 @@ describe("the text provider and its prompt", () => {
     expect(stripThinking("📖💡✨")).toBe("📖💡✨");
   });
 
+  it("strips the control tags a hosted model echoed into 左遷's emoji", () => {
+    // Verbatim from the Worker's KV, 2026-10-21.
+    const leaked =
+      "<thinking_mode>auto</thinking_mode>\n\n<reasoning_effort>medium</reasoning_effort>👔📉🏢➡️🏝️😞";
+    expect(stripThinking(leaked)).toBe("👔📉🏢➡️🏝️😞");
+    // A word that happens to be in angle brackets in an answer is not a tag pair.
+    expect(stripThinking("<b>🙇</b>")).toBe("<b>🙇</b>");
+  });
+
   it("says a daemon that is not there is not there, rather than throwing", async () => {
     const refused = (): never => {
       throw new Error("ECONNREFUSED");

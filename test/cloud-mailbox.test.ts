@@ -260,6 +260,28 @@ describe("generation on the Worker answers like the laptop, and keeps what it ma
     expect(asked).toBe(1);
   });
 
+  it("serves a cached text cleaned of echoed control tags, and repairs the record", async () => {
+    // 左遷, 2026-10-21: the leak was cached, so every later press — including
+    // the editor's forced one — would have handed the tags back.
+    let asked = 0;
+    const leaked = "<thinking_mode>auto</thinking_mode>\n\n<reasoning_effort>medium</reasoning_effort>👔📉🏢";
+    const e = { ...env(), ANTHROPIC_API_KEY: "a" };
+    const write = async (): Promise<string> => {
+      asked += 1;
+      return leaked;
+    };
+    const request = parse({ kind: "ai", text: "Describe a word 左遷 using emojis only", lang: null, voice: null, options: {} });
+    // The injected writer skips the provider's own strip, so this stores the
+    // record exactly as the old Worker did.
+    await generate(request as never, e, { generateText: write });
+    const [key] = [...e.MAILBOX.data.keys()] as [string];
+    expect(JSON.parse(e.MAILBOX.data.get(key)?.value as string).output).toBe(leaked);
+    const [, served] = await generate(request as never, e, { generateText: write });
+    expect(served).toMatchObject({ text: "👔📉🏢", cached: true });
+    expect(JSON.parse(e.MAILBOX.data.get(key)?.value as string).output).toBe("👔📉🏢");
+    expect(asked).toBe(1);
+  });
+
   it("says which secret is missing rather than failing somewhere inside", async () => {
     const [status, body] = await generate(parse({ kind: "speech", text: "x", lang: "ja-JP", voice: null, options: {} }) as never, env());
     expect(status).toBe(503);

@@ -94,11 +94,18 @@ export function systemPrompt(descriptor: LlmDescriptor): string {
  * limit mid-thought would otherwise be stored whole, and a field holding half a
  * monologue is the worst of the three outcomes (empty, right, or plausible
  * rubbish). An unclosed `<think>` therefore takes everything after it.
+ *
+ * ALSO THE CONTROL TAGS A HOSTED MODEL ECHOES. 2026-10-21, 左遷's emoji line came
+ * back from the Worker as `<thinking_mode>auto</thinking_mode>\n\n
+ * <reasoning_effort>medium</reasoning_effort>👔📉🏢➡️🏝️😞`, was cached in KV and
+ * rendered on the card as is — 1 of the 54 cloud text generations at the time.
+ * They are settings, not content, so each pair goes and what follows stays.
  */
 export function stripThinking(text: string): string {
   return text
     .replace(/<think>[\s\S]*?<\/think>/gi, "")
     .replace(/<think>[\s\S]*$/i, "")
+    .replace(/<(thinking_mode|reasoning_effort)>[^<]*<\/\1>/gi, "")
     .trim();
 }
 

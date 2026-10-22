@@ -42,7 +42,7 @@
 import { generationIdentity, generationKey } from "../../../src/blobs/generation.js";
 import { sha256Hex } from "../../../src/blobs/sha256.js";
 import { synthesise } from "../../../src/accent/speech.js";
-import { generateText } from "../../../src/generate/llm.js";
+import { generateText, stripThinking } from "../../../src/generate/llm.js";
 import { fillVoiceFor } from "../../../src/generate/speech.js";
 import { catalogueVoice, sampleLine, synthesisVoice } from "../../../src/generate/voices.js";
 import { speakableText } from "../../../src/text/index.js";
@@ -279,7 +279,15 @@ export async function generate(
   // second bill, and must not return different emoji for a card he has seen.
   const textKey = keyFor(descriptor, descriptor.voice);
   const cached = await read(env, textKey);
-  if (cached?.output !== undefined && cached.output !== "") return [200, { text: cached.output, cached: true }];
+  if (cached?.output !== undefined && cached.output !== "") {
+    // A record stored before `stripThinking` knew a tag would be served with the
+    // tag for ever, since the cache is what a second press reads. Repair it here.
+    const clean = stripThinking(cached.output);
+    if (clean !== cached.output && clean !== "") {
+      await env.MAILBOX.put(textKey, JSON.stringify({ ...cached, output: clean }));
+    }
+    if (clean !== "") return [200, { text: clean, cached: true }];
+  }
 
   const apiKey = env.ANTHROPIC_API_KEY ?? "";
   if (apiKey === "") return [503, { error: "no ANTHROPIC_API_KEY on the Worker" }];
