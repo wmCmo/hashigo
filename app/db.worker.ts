@@ -46,6 +46,7 @@ import {
   resolveDescriptorText,
   storeDescriptorText,
   storeGeneratedSpeech,
+  stripThinking,
 } from "../src/generate/index.js";
 import {
   databaseFilesInOpfs,
@@ -2091,7 +2092,13 @@ function generatedText(request: GeneratedTextRequest): void {
       voice: slot.voice,
       options: slot.options,
     });
-    if (stored !== null || slot.kind !== "furigana" || request.cardId === undefined) return stored;
+    // CLEANED ON THE WAY OUT, not only on the way in. 2026-10-23: 左遷's emoji
+    // still showed `<thinking_mode>…<reasoning_effort>…` on his phone a day after
+    // b8c20f3, because that fix cleaned the Worker and its cache — and the phone
+    // had filed its own copy on 10-21, which nothing ever re-reads from the cloud.
+    // Stripping here fixes every device's existing copy without a write.
+    if (stored !== null) return stripThinking(stored);
+    if (slot.kind !== "furigana" || request.cardId === undefined) return stored;
     // A reading nothing generated: the card's own `読み`, or still nothing. A plain
     // reading is what `readingOf` passes through untouched, so the page's ruby
     // alignment treats it exactly as it treats an unwrapped Mochi annotation.
@@ -2138,7 +2145,7 @@ function storeGeneration(request: StoreGenerationRequest): void {
         voice: request.slot.voice,
         options: request.slot.options,
       },
-      request.text,
+      stripThinking(request.text),
     );
   } catch (cause) {
     log(`could not cache the generation: ${(cause as Error).message}`, "bad");
