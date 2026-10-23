@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { openDatabase } from "../src/db/index.js";
 import { MEMORY, type Db } from "../src/db/index.js";
 import { MemoryBlobStore, type BlobStore } from "../src/blobs/store.js";
@@ -1140,6 +1140,16 @@ describe("the text provider and its prompt", () => {
     expect(stripThinking(leaked)).toBe("👔📉🏢➡️🏝️😞");
     // A word that happens to be in angle brackets in an answer is not a tag pair.
     expect(stripThinking("<b>🙇</b>")).toBe("<b>🙇</b>");
+  });
+
+  it("the device cleans what it already holds, on read and on store", () => {
+    // 2026-10-23: the phone still rendered the tags a day after the Worker was
+    // fixed, from its own copy filed on 10-21. The render path must strip too.
+    const source = readFileSync(new URL("../app/db.worker.ts", import.meta.url), "utf8");
+    const read = source.slice(source.indexOf("function generatedText("));
+    expect(read.slice(0, read.indexOf("\n}\n"))).toContain("stripThinking(stored)");
+    const store = source.slice(source.indexOf("function storeGeneration("));
+    expect(store.slice(0, store.indexOf("\n}\n"))).toContain("stripThinking(request.text)");
   });
 
   it("says a daemon that is not there is not there, rather than throwing", async () => {
