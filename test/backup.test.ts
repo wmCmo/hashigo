@@ -608,7 +608,11 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
         // count check, correctly. The other 3,710 values are byte-identical.
         // WAS 7,567, +1 on 2026-09-25: 嗤う (アーカイブ済みの一枚) に初めて `型` が
         // 付いた。OpenJTalk は拒否していて、辞書の裁定 (笑う の項) で 平板 になった。
-        fieldValues: 7_568,
+        // WAS 7,568 — local fields and app-made cards only. EVERY value since
+        // 2026-10-24: sync is built on this archive, and an edit to a Mochi field
+        // of an imported card (意味, Reading …) never left the device it was made
+        // on. Every value in the database, so this is now `card_field_values` itself.
+        fieldValues: 29_893,
         settings: 4,
         // The 244 individually archived cards. They LOOK like something the export
         // rebuilds and they are not: `UPSERT_CARD` writes `archived` from Mochi, and
@@ -626,7 +630,9 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
       // a 30-mora reading is ~90 bytes and there are 3,718 of them. Still three
       // orders of magnitude under the 74 MB database, which is the property that
       // matters: an export he can take in a second, at any time.
-      expect(bytes).toBeLessThan(1_200_000);
+      // WAS 1,200,000, before the archive carried every field value (2026-10-24):
+      // 29,893 values, 2.7 MB of JSON. Still under a twentieth of the database.
+      expect(bytes).toBeLessThan(4_000_000);
       expect(verifyLocalArchive(a)).toBeUndefined();
     } finally {
       db.close();

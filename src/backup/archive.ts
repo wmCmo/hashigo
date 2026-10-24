@@ -387,17 +387,25 @@ SELECT t.card_id, t.kind
   FROM card_tracks t JOIN cards c ON c.id = t.card_id
  WHERE c.local = 1 ORDER BY t.card_id, t.kind`;
 
-/** Every value on a locally-created card, not only the locally-authored fields. */
-const SELECT_LOCAL_CARD_VALUES = `
-SELECT v.card_id, v.field_id, v.value
-  FROM card_field_values v JOIN cards c ON c.id = v.card_id
- WHERE c.local = 1 ORDER BY v.card_id, v.field_id`;
-
-/** Values of locally-authored fields only. A Mochi field's values are in the export. */
-const SELECT_FIELD_VALUES = `
+/**
+ * EVERY VALUE, ON EVERY CARD — since 2026-10-24.
+ *
+ * It used to be two narrower sources: the values of locally-authored fields, and
+ * every value of a card made here, on the ground that "a Mochi field's values are
+ * in the export". That stopped being true twice. Decision 41 retired the export as
+ * a source, and sync is built on this archive — so an edit to `意味`, `単語`,
+ * `Reference` or `Reading` on any of the ~7,700 IMPORTED cards never left the
+ * device it was made on. Found by comparing every device's upload: the payloads
+ * carried `型`, `OJAD`, `優先`, `読み`, `かな主流` for imported cards and nothing
+ * else. Flipping `Reading` from the review screen — decision 29's audit loop —
+ * stayed on whichever device he flipped it on.
+ *
+ * Measured: 29,893 values, 2.7 MB raw, 661 KB gzipped. Which side wins is the
+ * card clock's job in `src/sync/merge.ts`, not this file's.
+ */
+const SELECT_ALL_VALUES = `
 SELECT v.card_id, v.field_id, v.value
   FROM card_field_values v
- WHERE v.field_id IN (SELECT id FROM template_fields WHERE local = 1)
  ORDER BY v.card_id, v.field_id`;
 
 const SELECT_SETTINGS = `SELECT key, value FROM settings ORDER BY key`;
@@ -521,25 +529,17 @@ export function exportLocalArchive(db: SqliteHandle, now: string): LocalArchive 
     }),
   );
 
-  // TWO SOURCES, ONE LIST, DEDUPLICATED. A value can qualify twice — decision 9's
-  // 読み on a card he created here matches both "the field is local" and "the card
-  // is local" — and a duplicate would break the self-describing count check in
-  // `verifyLocalArchive` on a file that is perfectly good.
-  const valueRows = new Map<string, ArchivedFieldValue>();
-  for (const sql of [SELECT_FIELD_VALUES, SELECT_LOCAL_CARD_VALUES]) {
-    for (const r of db.prepare(sql).all() as Record<string, unknown>[]) {
-      const cardId = String(r["card_id"]);
-      const fieldId = String(r["field_id"]);
-      valueRows.set(`${cardId}\u0000${fieldId}`, {
-        cardId,
-        fieldId,
+  const fieldValues = (db.prepare(SELECT_ALL_VALUES).all() as Record<string, unknown>[])
+    .map(
+      (r): ArchivedFieldValue => ({
+        cardId: String(r["card_id"]),
+        fieldId: String(r["field_id"]),
         value: String(r["value"]),
-      });
-    }
-  }
-  const fieldValues = [...valueRows.values()].sort((a, b) =>
-    a.cardId === b.cardId ? a.fieldId.localeCompare(b.fieldId) : a.cardId.localeCompare(b.cardId),
-  );
+      }),
+    )
+    .sort((a, b) =>
+      a.cardId === b.cardId ? a.fieldId.localeCompare(b.fieldId) : a.cardId.localeCompare(b.cardId),
+    );
 
   const settings = (db.prepare(SELECT_SETTINGS).all() as Record<string, unknown>[]).map(
     (r): ArchivedSetting => ({ key: String(r["key"]), value: String(r["value"]) }),
@@ -715,7 +715,8 @@ UPDATE templates
 
 const UPSERT_VALUE = `
 INSERT INTO card_field_values (card_id, field_id, value) VALUES (?, ?, ?)
-ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`;
+ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value
+  WHERE card_field_values.value IS NOT excluded.value`;
 
 const UPSERT_SETTING = `
 INSERT INTO settings (key, value) VALUES (?, ?)
@@ -856,9 +857,12 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
       fieldValuesOrphaned += 1;
       continue;
     }
-    upsertValue.run(v.cardId, v.fieldId, v.value);
+    // Only a card whose text MOVED is re-indexed. Since the archive carries every
+    // value (2026-10-24) an unconditional add would rebuild the search text of the
+    // whole collection on every merge, on his phone.
+    const result = upsertValue.run(v.cardId, v.fieldId, v.value) as { changes?: number };
     fieldValuesUpserted += 1;
-    retextCards.add(v.cardId);
+    if (Number(result.changes ?? 0) > 0) retextCards.add(v.cardId);
   }
   refreshSearchText(db, retextCards);
 

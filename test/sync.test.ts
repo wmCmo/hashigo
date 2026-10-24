@@ -705,6 +705,34 @@ describe("a field value merges by its card's clock, not by peer order", () => {
     }
   });
 
+  it("an edit to a MOCHI field on an IMPORTED card reaches the other device", () => {
+    // 2026-10-24: the archive carried values only for local fields and for cards
+    // made in the app, so flipping `Reading` on one of his ~7,700 imported cards
+    // never left the device. Neither the card nor the field here is local.
+    const laptop = device().db;
+    const phone = device().db;
+    try {
+      for (const db of [laptop, phone]) {
+        db.prepare("INSERT INTO templates (id, name, content, updated_at) VALUES ('t', '単語', '<<Reading>>', ?)").run(EPOCH);
+        db.prepare(
+          "INSERT INTO template_fields (template_id, id, name, type, pos, local, updated_at) VALUES ('t', 'rd', 'Reading', 'boolean', 'a', 0, ?)",
+        ).run(EPOCH);
+        db.prepare("UPDATE cards SET template_id = 't', local = 0 WHERE id = 'c1'").run();
+        db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES ('c1', 'rd', 'false')").run();
+      }
+      phone.prepare("UPDATE card_field_values SET value = 'true' WHERE card_id = 'c1' AND field_id = 'rd'").run();
+      phone.prepare("UPDATE cards SET updated_at = ? WHERE id = 'c1'").run("2026-10-24T09:00:00.000Z");
+      mergeSync(laptop, exportSync(phone, NOW));
+      const got = laptop.prepare("SELECT value FROM card_field_values WHERE card_id = 'c1' AND field_id = 'rd'").get() as {
+        value: string;
+      };
+      expect(got.value).toBe("true");
+    } finally {
+      laptop.close();
+      phone.close();
+    }
+  });
+
   it("an EQUAL clock keeps the local value — 'same time' is not a reason to move", () => {
     const laptop = device().db;
     const phone = device().db;
