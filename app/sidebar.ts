@@ -104,16 +104,37 @@ function writeExpanded(open: ReadonlySet<string>): void {
 export let deckIndex: readonly DeckBrief[] = [];
 export let templateChoices: readonly TemplateBrief[] = [];
 let decksLoaded = false;
+let decksLoading: Promise<void> | null = null;
 const expanded = readExpanded();
 
+/**
+ * LOADED IS RECORDED ON SUCCESS, NOT ON ASKING. The flag used to be set before
+ * the request, so a request that failed — the rail filling itself while the
+ * worker was still opening the database, e.g. a window that crossed 1024px
+ * during boot (`railStanding`'s listener below) — left the tree EMPTY and every
+ * later call returning early. That was "the sidebar is empty after boot until
+ * `/` is pressed" (NEXT.md, 2026-09-18): only `/`'s forced reload ever repaired
+ * it. A failure now leaves the flag down, so the next call simply tries again —
+ * and boot's own `fillSidebar`, which runs after `open`, is that next call.
+ * Concurrent calls share one request rather than racing two paints.
+ */
 export async function loadDecks(force = false): Promise<void> {
   if (decksLoaded && !force) return;
-  decksLoaded = true;
-  const reply = await ask<"decks">({ kind: "decks" });
-  deckIndex = reply.decks;
-  templateChoices = reply.templates;
-  paintTree(reply.cards);
-  fillNewCardChoices(reply.decks);
+  if (decksLoading !== null && !force) return decksLoading;
+  const loading = (async () => {
+    const reply = await ask<"decks">({ kind: "decks" });
+    deckIndex = reply.decks;
+    templateChoices = reply.templates;
+    paintTree(reply.cards);
+    fillNewCardChoices(reply.decks);
+    decksLoaded = true;
+  })();
+  decksLoading = loading;
+  try {
+    await loading;
+  } finally {
+    if (decksLoading === loading) decksLoading = null;
+  }
 }
 
 /**
@@ -316,7 +337,8 @@ export const railStanding = window.matchMedia("(min-width: 1024px)");
 export function fillSidebar(): void {
   const host = el("newcardhost");
   if (host.childElementCount === 0) host.appendChild(buildNewCardForm());
-  void loadDecks();
+  // Caught, not dropped: before `open` this rejects, and the next fill retries.
+  loadDecks().catch(() => undefined);
 }
 
 export function openSidebar(): void {
