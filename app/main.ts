@@ -149,6 +149,7 @@ import {
   type BoundarySide,
 } from "./review-boundary.js";
 import { toggleCloze } from "./cloze-toggle.js";
+import { roleOf } from "../src/fields/index.js";
 import { revealScroll } from "./review-scroll.js";
 import { revealSteps, type RevealStep } from "./review-steps.js";
 import {
@@ -3446,6 +3447,23 @@ function openEditorFor(
       note.textContent =
         `generated — its content lives in the generation cache, not on the card, ` +
         `so there is nothing here to edit`;
+      row.appendChild(note);
+      body.appendChild(row);
+      continue;
+    }
+
+    // OJAD IS DERIVED, NOT AUTHORED. Zach, 2026-10-22: *"why is it not
+    // `generated` just like translate and audio and speech? because you are not
+    // supposed to edit that field no?"* It is a `plain` field only because a new
+    // field type is a schema bump (decision 43); its value is OpenJTalk's reading
+    // of the example sentence, `か*れわ|…`, which nobody types. Shown, not edited.
+    if (roleOf(field) === "ojad") {
+      const note = document.createElement("p");
+      note.className = "edit-readonly";
+      note.textContent =
+        value.trim() === ""
+          ? "derived — not filled yet. `npx vite-node scripts/ojad-fill.ts -- --apply` on the laptop fills it from the example sentence"
+          : `derived from the example sentence — ${value}`;
       row.appendChild(note);
       body.appendChild(row);
       continue;

@@ -243,6 +243,10 @@ npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accent
 npx vite-node src/accent/cli.ts -- ojad  --db build/hashigo.db     # 33 OJAD adjudications
 npx vite-node src/accent/cli.ts -- queue --db build/hashigo.db     # 30 still disputed (2026-09-25, after the sweep)
 python tools/f0.py build/longvowel/*.wav    # F0 in thirds
+# OJAD for cards MADE IN THE APP — the pipeline above only ever saw imported cards.
+# Reads the live data from the mailbox, runs the same analyser, self-checks the merge,
+# and sends ONLY the OJAD values from its own sync slot (`dev-ojad-fill`). Dry by default.
+npx vite-node scripts/ojad-fill.ts -- --apply
 # THE DEV SERVER'S BIND ADDRESS IS A TRAP IN BOTH DIRECTIONS. Binding one address
 # family REFUSES the other, and on Windows `localhost` resolves to ::1 FIRST.
 #   --host 127.0.0.1   IPv4 loopback only. Fine for a local browser, and it is what
