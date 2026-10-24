@@ -2000,6 +2000,25 @@ textarea.edit-input:not(.tpl-body) {
   resize: none;
 }
 
+/* 型's picker (`app/accent-picker.ts`): the four labels, and the mora beside them
+   only for 中高. `[hidden]` has to be restated — `.edit-input` sets no display, but
+   the flex row would still reserve the gap for it. */
+.edit-accent {
+  display: flex;
+  gap: 8px;
+}
+.edit-accent select.edit-input {
+  appearance: auto;
+  flex: 1;
+}
+.edit-accent .edit-mora {
+  flex: 0 0 6em;
+  width: 6em;
+}
+.edit-accent .edit-mora[hidden] {
+  display: none;
+}
+
 .edit-input:focus {
   border-color: var(--accent);
   outline: none;
