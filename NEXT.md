@@ -290,9 +290,11 @@ instead. **The failure is silent**: rename `例文` and the ojad pipeline report
   ceiling; **246 arrived with the 2026-09-08 Mochi import**, so Mochi made them. 習慣's
   ends mid-emoji on a lone high surrogate. Only visible since the wrap fix. Regenerating
   is his call, after the app is finished.
-* **The sidebar deck tree is empty after every boot until `/` is pressed** — `loadDecks`
-  races the worker's `open`, the promise rejects, nothing retries. Pre-existing; verified
-  against `277c8d5` with the work stashed. Has its own task.
+* ~~**The sidebar deck tree is empty after every boot until `/` is pressed**~~ — **FIXED
+  2026-10-24.** `loadDecks` set `decksLoaded` BEFORE asking, so a load that failed (the
+  rail filling itself while the worker was still opening — e.g. a window crossing 1024px
+  during boot) was remembered as done and never retried. The flag is now set on success.
+  Not reproduced in a plain wide tab, where boot fills after `open` and it works.
 * **`src/generate/voice.ts` has zero production callers** — a complete, tested
   card → deck → workspace → field voice resolution that nothing reaches. Stage D wires it.
 
