@@ -248,6 +248,10 @@ python tools/f0.py build/longvowel/*.wav    # F0 in thirds
 # Reads the live data from the mailbox, runs the same analyser, self-checks the merge,
 # and sends ONLY the OJAD values from its own sync slot (`dev-ojad-fill`). Dry by default.
 npx vite-node scripts/ojad-fill.ts -- --apply
+# Settle a value two devices hold differently at the SAME clock (any edit made before
+# e3254c5 never moved the clock, so sync keeps each side's copy for ever). Sends it with
+# a fresh clock from `dev-manual-fix`, cumulative, self-checked. Dry by default.
+npx vite-node scripts/sync-set.ts -- --card <id> --field <id> --from <deviceId> --apply
 # THE DEV SERVER'S BIND ADDRESS IS A TRAP IN BOTH DIRECTIONS. Binding one address
 # family REFUSES the other, and on Windows `localhost` resolves to ::1 FIRST.
 #   --host 127.0.0.1   IPv4 loopback only. Fine for a local browser, and it is what
