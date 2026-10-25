@@ -241,7 +241,8 @@ npx vite-node src/accent/cli.ts -- words --db build/hashigo.db --out build/head-
 .venv-accent/Scripts/python tools/accent_derive.py --words build/head-words.txt --out build/accents.jsonl
 npx vite-node src/accent/cli.ts -- load  --db build/hashigo.db --in build/accents.jsonl
 npx vite-node src/accent/cli.ts -- ojad  --db build/hashigo.db     # 33 OJAD adjudications
-npx vite-node src/accent/cli.ts -- queue --db build/hashigo.db     # 30 still disputed (2026-09-25, after the sweep)
+npx vite-node src/accent/cli.ts -- queue --db build/hashigo.db     # 15 listed (2026-10-25, after jpdb) — 5 are settled PER CARD and 6 have two valid patterns
+npx vite-node scripts/accent-push.ts -- --apply   # after `ojad` + `write`: send changed 型 labels to the devices
 python tools/f0.py build/longvowel/*.wav    # F0 in thirds
 # OJAD for cards MADE IN THE APP — the pipeline above only ever saw imported cards.
 # Reads the live data from the mailbox, runs the same analyser, self-checks the merge,

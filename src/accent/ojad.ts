@@ -200,7 +200,45 @@ export const DICTIONARY_ADJUDICATIONS: readonly CitedAdjudication[] = [
     source: "OJAD 専念する 0/6 から: 有核名詞は する の前で核を保つ (同じ結果に 握手する 1 · 手術する 1)",
     looked: "2026-09-25",
   },
+
+  // ─── 2026-10-25: the remaining disputes, from jpdb.io ─────────────────────
+  //
+  // Zach, 2026-10-25: *"look them up on jpdb.io works too"*. Read off jpdb's
+  // pitch diagram, where a drop after the last high mora is drawn as a marker on
+  // that segment — checked on 花 (尾高, marked) against 鼻 (平板, not) first.
+  // Where jpdb lists more than one pattern and the card already shows one of them
+  // (ずるずる, だぶだぶ, もやもや, バタバタ, 根本, 近々), nothing is recorded.
+  jpdb("さあ", "さあ", 1, "頭高", "unidic", "OpenJTalk refused"),
+  jpdb("なおざり", "なおざり", 0, "平板", "unidic", "OpenJTalk refused"),
+  jpdb("さりげない", "さりげない", 4, "中高", "unidic"),
+  jpdb("だらけ", "だらけ", 1, "頭高", "unidic", "suffix; citation form"),
+  jpdb("まみれ", "まみれ", 1, "頭高", "unidic", "suffix; citation form"),
+  jpdb("ニコニコ", "ニコニコ", 1, "頭高", "unidic"),
+  jpdb("バラン", "バラン", 1, "頭高", "unidic", "every jpdb sense is 1"),
+  jpdb("敵軍", "てきぐん", 0, "平板", "unidic"),
+  jpdb("空前", "くうぜん", 0, "平板", "unidic"),
+  jpdb("転嫁", "てんか", 1, "頭高", "unidic"),
+  jpdb("高め", "たかめ", 0, "平板", "unidic"),
+  jpdb("ベタベタ", "ベタベタ", 1, "頭高", "neither", "jpdb lists 1, 0 and 2; the first is taken, and none is 中高"),
+  // Each of these has another reading or sense, and one card on 2026-10-25 — the
+  // label is for THAT card's sense. A second card with the other sense would need
+  // the word moved to `OJAD_AMBIGUOUS` and settled per card instead.
+  jpdb("カンカン", "カンカン", 3, "中高", "neither", "the can-can; the onomatopoeia is 1 or 0"),
+  jpdb("一足", "いっそく", 4, "尾高", "unidic", "a pair of shoes; ひとあし is 2"),
+  jpdb("裏面", "りめん", 1, "頭高", "unidic", "うらめん is 0"),
 ];
+
+function jpdb(
+  word: string,
+  reading: string,
+  accent: number,
+  type: AccentType,
+  backed: Adjudication["backed"],
+  remark?: string,
+): CitedAdjudication {
+  const where = remark === undefined ? "" : `; ${remark}`;
+  return { word, reading, accent, type, backed, source: `jpdb.io ${reading} ${accent}${where}`, looked: "2026-10-25" };
+}
 
 function wiktionary(
   word: string,

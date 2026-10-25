@@ -612,7 +612,9 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
         // 2026-10-24: sync is built on this archive, and an edit to a Mochi field
         // of an imported card (意味, Reading …) never left the device it was made
         // on. Every value in the database, so this is now `card_field_values` itself.
-        fieldValues: 29_893,
+        // WAS 29,893, +2 on 2026-10-25: さあ and なおざり got their first `型`
+        // from jpdb.io — OpenJTalk had refused both.
+        fieldValues: 29_895,
         settings: 4,
         // The 244 individually archived cards. They LOOK like something the export
         // rebuilds and they are not: `UPSERT_CARD` writes `archived` from Mochi, and
