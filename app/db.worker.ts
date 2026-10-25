@@ -57,7 +57,7 @@ import {
   sqliteVersion,
   type BrowserDb,
 } from "../src/db/browser.js";
-import { backlinksOf } from "../src/cards/index.js";
+import { backlinksOf, reconcileCardLinks } from "../src/cards/index.js";
 import { decodeFieldOptions } from "../src/cards/index.js";
 import { cardAudioResolver } from "../src/cards/index.js";
 import { directionForTrackKind } from "../src/cards/index.js";
@@ -1918,6 +1918,18 @@ function preview(request: PreviewRequest): void {
  * is a claim about his corpus that wants measuring rather than asserting.
  */
 function backlinks(request: BacklinksRequest): void {
+  // Links written since the import live only in the TEXT until this runs —
+  // `src/cards/link-index.ts`. Lazily, here, because this is the one reader; ~60 ms
+  // over the whole corpus, and only after something may have written a value.
+  if (linksStale) {
+    try {
+      const { cards, rows } = reconcileCardLinks(requireCards());
+      if (cards > 0) log(`links: re-indexed ${cards} card(s), ${rows} row(s)`);
+    } catch (error) {
+      log(`links: re-index failed — ${String(error)}`, "bad");
+    }
+    linksStale = false;
+  }
   post({
     kind: "backlinks",
     id: request.id,
@@ -2994,8 +3006,39 @@ function dashboard(request: DashboardRequest): void {
   });
 }
 
+/**
+ * Whether `card_links` may trail the text. True at boot, so the first backlink
+ * list after a sync — or after an app version that never indexed — is current.
+ * Any request outside `LINK_SAFE` may have written a value (the editor, a merge,
+ * a restore, a local field), so it sets the flag again.
+ */
+let linksStale = true;
+const LINK_SAFE: ReadonlySet<string> = new Set([
+  "next",
+  "payload",
+  "generatedText",
+  "answer",
+  "backup",
+  "syncExport",
+  "syncDelta",
+  "replan",
+  "focus",
+  "focusCounts",
+  "preview",
+  "backlinks",
+  "redoInfo",
+  "cardGaps",
+  "decks",
+  "browse",
+  "template",
+  "priceField",
+  "glance",
+  "dashboard",
+]);
+
 self.onmessage = (event: MessageEvent<AppRequest>): void => {
   const request = event.data;
+  if (!LINK_SAFE.has(request.kind)) linksStale = true;
   void (async () => {
     try {
       switch (request.kind) {

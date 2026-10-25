@@ -30,6 +30,7 @@ export {
 } from "./audio.js";
 
 export { backlinksOf, type Backlink } from "./backlinks.js";
+export { reconcileCardLinks, type ReconcileReport } from "./link-index.js";
 
 export {
   knownTagsFor,

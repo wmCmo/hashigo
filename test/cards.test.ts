@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   backlinksOf,
+  reconcileCardLinks,
   cardAudioResolver,
   cardContext,
   cardInputFor,
@@ -665,6 +666,42 @@ describe("what links here", () => {
     const db = linkFixture();
     expect(backlinksOf(db, "src-a")).toEqual([]);
     expect(backlinksOf(db, "no-such-card")).toEqual([]);
+    db.close();
+  });
+
+  it("indexes links written after the import — 濃紺 → 紺, 2026-10-26", () => {
+    // Only the importer wrote `card_links`, so a card made in the app linked to
+    // nothing as far as the backlink list could tell. The fixture's rows stand in
+    // for the import; their values are written to match, so the first reconcile
+    // must change NOTHING — the laptop corpus measured 0 cards too.
+    const db = linkFixture();
+    const value = db.prepare(
+      "INSERT INTO card_field_values (card_id, field_id, value) VALUES (?, ?, ?) ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value",
+    );
+    value.run("src-a", "f1", "一[[人|target]]前");
+    value.run("src-b", "f1", "けが[[人|target]]");
+    value.run("src-b", "f2", "[[人|target]]");
+    value.run("target", "f1", "no links here");
+    expect(reconcileCardLinks(db)).toEqual({ cards: 0, rows: 0 });
+
+    // A card made in the app: its link is in the text and nowhere else.
+    db.prepare("INSERT INTO cards (id, deck_id, template_id, name, archived) VALUES ('app', 'kid', 't', '人間', 0)").run();
+    value.run("app", "f1", "[[人|target]]間");
+    expect(backlinksOf(db, "target").map((r) => r.cardId)).not.toContain("app");
+    expect(reconcileCardLinks(db)).toEqual({ cards: 1, rows: 1 });
+    expect(backlinksOf(db, "target").map((r) => r.cardId)).toContain("app");
+    expect(reconcileCardLinks(db)).toEqual({ cards: 0, rows: 0 });
+
+    // An edit that REMOVES a link takes the row with it.
+    value.run("src-b", "f2", "plain now");
+    expect(reconcileCardLinks(db)).toEqual({ cards: 1, rows: 1 });
+    expect(
+      db.prepare("SELECT field_id FROM card_links WHERE from_card_id = 'src-b' ORDER BY field_id").all(),
+    ).toEqual([{ field_id: "f1" }]);
+
+    // Content-scoped rows are the import's and are never touched: src-c's link
+    // lives in discarded `content`, with no value behind it.
+    expect(backlinksOf(db, "target").map((r) => r.cardId)).toContain("src-c");
     db.close();
   });
 });
