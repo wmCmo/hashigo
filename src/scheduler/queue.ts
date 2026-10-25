@@ -375,6 +375,84 @@ function examTier(row: RawQueueRow, levels: ReadonlySet<string>): boolean {
   return inDeck && hasExamTierKanji(row.card_name, levels);
 }
 
+/**
+ * KANJI BEFORE THE WORDS THAT USE THEM. Zach, 2026-10-25: *"no matter what the
+ * priority is, if the 単語 cards are containing kanjis that i have not learned, it
+ * will swap out that word from the learning queue and let me learn the kanji
+ * first"*. Decision 54.
+ *
+ * A kanji is UNLEARNED when it has a live card on the `漢字` template and no track
+ * of any such card has been reviewed. A kanji with no card at all blocks nothing —
+ * there is nothing to learn first (248 word tracks, measured 2026-10-25).
+ */
+export const KANJI_TEMPLATE = "漢字";
+
+/**
+ * Kanji (the card name) → whether any live `漢字` card for it has been reviewed,
+ * plus the ids of those cards — a 単語 card named `疎` is a WORD and is gated by
+ * the kanji 疎, so "is this a kanji card" is asked of the template, not the name.
+ */
+function kanjiLearnedState(db: SqliteHandle): { learned: Map<string, boolean>; cards: Set<string> } {
+  const rows = db
+    .prepare(
+      `SELECT c.id AS id, c.name AS name, max(t.reps > 0) AS learned
+         FROM cards c
+         JOIN templates tp ON tp.id = c.template_id
+         JOIN card_tracks t ON t.card_id = c.id
+        WHERE trim(tp.name) = ? AND c.archived = 0
+        GROUP BY c.id`,
+    )
+    .all(KANJI_TEMPLATE) as { id: string; name: string; learned: number }[];
+  const learned = new Map<string, boolean>();
+  // Two cards for one kanji (彼, 私 exist twice): learned if EITHER is.
+  for (const row of rows) learned.set(row.name, learned.get(row.name) === true || row.learned === 1);
+  return { learned, cards: new Set(rows.map((row) => row.id)) };
+}
+
+/**
+ * Walks the tiered order and swaps each 日本語 word that contains an unlearned
+ * kanji for that kanji's own new track, at the word's place — so the kanji
+ * inherits the word's tier, and a `優先` word pulls its kanji to the front. The
+ * word waits: it is eligible again once the kanji has had one review, which at
+ * the earliest is tomorrow's plan.
+ *
+ * The swap uses only tracks already in `rows`, so a deck-scoped or audio-only
+ * session (no `漢字` cards in scope) cannot inject a card from outside its scope;
+ * there the word stays, because hiding it with nothing offered instead would
+ * empty the session rather than reorder it. Forward is preferred — kanji to
+ * reading is the direction that teaches it.
+ */
+function kanjiFirst<T extends { row: RawQueueRow }>(ordered: readonly T[], db: SqliteHandle): T[] {
+  const { learned, cards } = kanjiLearnedState(db);
+  const substitute = new Map<string, T>();
+  for (const entry of ordered) {
+    const { row } = entry;
+    if (!cards.has(row.card_id) || learned.get(row.card_name) !== false) continue;
+    const held = substitute.get(row.card_name);
+    if (held === undefined || (held.row.kind !== "forward" && row.kind === "forward")) substitute.set(row.card_name, entry);
+  }
+  if (substitute.size === 0) return [...ordered];
+  const out: T[] = [];
+  const emitted = new Set<number>();
+  const emit = (entry: T): void => {
+    if (emitted.has(entry.row.track_id)) return;
+    emitted.add(entry.row.track_id);
+    out.push(entry);
+  };
+  for (const entry of ordered) {
+    const { row } = entry;
+    const inDeck = row.deck_path === EXAM_TIER_DECK || row.deck_path.startsWith(`${EXAM_TIER_DECK}/`);
+    const isKanjiCard = cards.has(row.card_id);
+    const gates = inDeck && !isKanjiCard ? [...row.card_name].flatMap((ch) => substitute.get(ch) ?? []) : [];
+    if (gates.length === 0) {
+      emit(entry);
+      continue;
+    }
+    for (const gate of gates) emit(gate);
+  }
+  return out;
+}
+
 export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedTrack[] {
   const now = options.now ?? nowInHostOffset();
   const deck = deckFilter(options);
@@ -401,8 +479,9 @@ export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
     // `key` collisions are possible over 32 bits; `track_id` breaks the tie so
     // the order is total and reproducible rather than dependent on sort stability.
     .sort((a, b) => a.tier - b.tier || a.key - b.key || a.row.track_id - b.row.track_id);
+  const ordered = kanjiFirst(shuffled, db);
   const limited =
-    options.limit === undefined ? shuffled : shuffled.slice(0, Math.max(0, options.limit));
+    options.limit === undefined ? ordered : ordered.slice(0, Math.max(0, options.limit));
   return limited.map(({ row }) => toQueued(row, todayNumber));
 }
 

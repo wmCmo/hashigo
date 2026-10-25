@@ -2291,6 +2291,35 @@ right**: it holds his verbatim reasoning and this quotes it.
     the queue never throws on a bad row, and the screen names the rejected value.
     It syncs like every setting, and changing it needs no deploy.
 
+54. **A WORD WAITS FOR ITS KANJI — the unlearned kanji takes the word's slot.**
+    Zach, 2026-10-25: *"no matter what the priority is, if the 単語 cards are
+    containing kanjis that i have not learned, it will swap out that word from the
+    learning queue and let me learn the kanji first"*. **This sits above decision
+    53's tiers**: the swap runs over the tiered order, so a `優先` word with an
+    unlearned kanji puts the KANJI in the front slot instead.
+
+    **Unlearned** = the kanji has a live card on the `漢字` template and no track of
+    any such card has been reviewed (彼 and 私 have two cards; either counts). A
+    kanji with no card blocks nothing, since there is nothing to learn first, and
+    neither does an archived one. One review of the kanji, in either direction,
+    makes the word eligible again — at the earliest on the next day's plan.
+
+    **What is swapped in** is the kanji's FORWARD track (kanji → reading, the
+    direction that teaches it), once, however many words point at it; its reverse
+    stays in the random pool, unpaired per decision 15. Still ten a day. Scoped to
+    日本語 for decision 53's reason, and a "kanji card" is asked of the TEMPLATE, not
+    the name, so a 単語 card named `疎` is gated by the kanji 疎 rather than mistaken
+    for it. The swap only uses tracks already in the query, so a deck-scoped or
+    audio-only session cannot pull in a card from outside its scope; there the word
+    stays rather than leaving the session empty.
+
+    **Measured on the merged devices, 2026-10-25:** 386 kanji unlearned, gating
+    **705 of 2,054** new 日本語 word tracks; 199 word tracks contain a kanji with no
+    card at all. Today's ten went from 7 gated words to 7 kanji and 3 free words.
+    **The cost is pace, and it is front-loaded:** the 準2級 tier is mostly words
+    whose kanji he has not met, so the first weeks of new cards will be largely
+    kanji before the words they unlock come through.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

@@ -1042,6 +1042,14 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     09-08 copy. **The target is a setting** (`queue.exam-target`: off / 3級 / 準2級 /
     2級, default 準2級), so levelling up needs no code. See `DECISIONS.md` 53.
 
+54. **A WORD WAITS FOR ITS KANJI.** Zach, 2026-10-25: a 日本語 word containing a
+    kanji whose `漢字` card has never been reviewed is swapped, at its place in the
+    order, for that kanji's forward track — above decision 53's tiers, so a `優先`
+    word fronts its kanji. One review of the kanji frees the word. Still ten a day;
+    a kanji with no card blocks nothing. Measured: 386 unlearned kanji gate 705 of
+    2,054 new word tracks. `kanjiFirst` in `src/scheduler/queue.ts`. See
+    `DECISIONS.md` 54.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19

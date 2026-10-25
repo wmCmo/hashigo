@@ -1127,6 +1127,64 @@ describe("the queue", () => {
     db.close();
   });
 
+  it("swaps a word with an unlearned kanji for that kanji's card — decision 54", () => {
+    const db = queueFixture();
+    db.prepare("INSERT INTO templates (id, name) VALUES ('kanji', '漢字'), ('tango', '単語')").run();
+    db.prepare(
+      "INSERT INTO template_fields (template_id, id, name, type, pos, local) VALUES ('tango', 'yusen', '優先', 'boolean', 'z', 1)",
+    ).run();
+    const card = (id: string, name: string, template: string, deck = "kid") =>
+      db.prepare("INSERT INTO cards (id, deck_id, name, template_id, archived, pos) VALUES (?, ?, ?, ?, 0, ?)").run(id, deck, name, template, id);
+    const track = (cardId: string, kind: string, reps: number) =>
+      db.prepare("INSERT INTO card_tracks (card_id, kind, due_at, reps) VALUES (?, ?, ?, ?)").run(
+        cardId, kind, reps > 0 ? "2026-09-01T00:00:00+09:00" : null, reps,
+      );
+    for (let i = 0; i < 20; i += 1) {
+      card(`filler-${i}`, `たべもの${i}`, "tango");
+      track(`filler-${i}`, "forward", 0);
+    }
+    card("k-ko", "恒", "kanji"); // unlearned, both tracks new
+    track("k-ko", "reverse", 0);
+    track("k-ko", "forward", 0);
+    card("k-kyu", "久", "kanji"); // learned: one track reviewed is enough
+    track("k-kyu", "forward", 3);
+    track("k-kyu", "reverse", 0);
+    card("w-kokyu", "恒久", "tango"); // blocked by 恒
+    track("w-kokyu", "forward", 0);
+    track("w-kokyu", "reverse", 0);
+    card("w-eikyu", "永久", "tango"); // 永 has no card, 久 learned: not blocked
+    track("w-eikyu", "forward", 0);
+    card("w-other", "恒久", "tango", "other"); // outside 日本語: never gated
+    track("w-other", "forward", 0);
+    // `優先` on the blocked word: its kanji takes the front slot in its place.
+    db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES ('w-kokyu', 'yusen', 'true')").run();
+
+    for (const day of ["2026-08-22", "2026-08-23", "2026-08-24"]) {
+      const picked = newTracks(db, { now: `${day}T09:00:00+09:00`, limit: 3 });
+      // The kanji's FORWARD track, once, though both of the word's tracks pointed at it.
+      expect(picked[0]?.cardId, day).toBe("k-ko");
+      expect(picked[0]?.kind, day).toBe("forward");
+      expect(picked).toHaveLength(3);
+    }
+    const all = newTracks(db, { now: NOW }).map((t) => `${t.cardId}:${t.kind}`);
+    expect(all.filter((id) => id.startsWith("w-kokyu"))).toEqual([]);
+    expect(all.filter((id) => id === "k-ko:forward")).toHaveLength(1);
+    expect(all).toContain("k-ko:reverse"); // still in the pool, unpaired (decision 15)
+    expect(all).toContain("w-eikyu:forward");
+    expect(all).toContain("w-other:forward");
+
+    // One review of the kanji and the word is back.
+    db.prepare("UPDATE card_tracks SET reps = 1, due_at = '2026-09-01T00:00:00+09:00' WHERE card_id = 'k-ko' AND kind = 'forward'").run();
+    const after = newTracks(db, { now: NOW, limit: 2 }).map((t) => t.cardId);
+    expect(after).toEqual(["w-kokyu", "w-kokyu"]);
+
+    // An archived kanji card is out of rotation, so it blocks nothing.
+    db.prepare("UPDATE card_tracks SET reps = 0, due_at = NULL WHERE card_id = 'k-ko'").run();
+    db.prepare("UPDATE cards SET archived = 1 WHERE id = 'k-ko'").run();
+    expect(newTracks(db, { now: NOW, limit: 1 }).map((t) => t.cardId)).toEqual(["w-kokyu"]);
+    db.close();
+  });
+
   it("forecasts forward only, and keeps the empty days", () => {
     const db = queueFixture();
     const forecast = reviewForecast(db, { now: NOW, days: 3 });
