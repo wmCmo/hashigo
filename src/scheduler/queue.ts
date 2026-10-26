@@ -473,7 +473,12 @@ export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
       // Tier first (decision 53): `優先` cards, then words with 3級 / 準2級 kanji,
       // then the rest — at random WITHIN each tier, still inside the day's limit.
       // Priority picks WHICH ten, never how many.
-      tier: priority.has(row.card_id) ? 0 : examTier(row, levels) ? 1 : 2,
+      // `優先` pulls the FORWARD track only. Zach, 2026-10-26 ("sounds good", to
+      // option (a)): his 漢検 misses are drilled on the forward track — reading
+      // misses with Reading on, writing misses with it off — so a flagged card's
+      // reverse track took one of the ten slots and drilled nothing he missed.
+      // The reverse keeps the place it would have without the flag.
+      tier: priority.has(row.card_id) && row.kind === "forward" ? 0 : examTier(row, levels) ? 1 : 2,
       key: dailyOrderKey(todayNumber, row.track_id),
     }))
     // `key` collisions are possible over 32 bits; `track_id` breaks the tie so

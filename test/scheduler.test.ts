@@ -1079,6 +1079,42 @@ describe("the queue", () => {
     db.close();
   });
 
+  it("`優先` pulls the FORWARD track only; the reverse keeps its own place — 2026-10-26", () => {
+    // Zach approved option (a): his 漢検 misses are drilled on the forward track,
+    // so a flagged card's reverse track was spending one of the ten new slots on
+    // a direction he did not miss.
+    const db = queueFixture();
+    for (let i = 0; i < 30; i += 1) {
+      db.prepare("INSERT INTO cards (id, deck_id, name, archived, pos) VALUES (?, 'kid', ?, 0, ?)").run(
+        `new-${i}`,
+        `new-${i}`,
+        `new-${i}`,
+      );
+      db.prepare("INSERT INTO card_tracks (card_id, kind, due_at, reps) VALUES (?, 'forward', NULL, 0)").run(`new-${i}`);
+    }
+    db.prepare("INSERT INTO card_tracks (card_id, kind, due_at, reps) VALUES ('new-7', 'reverse', NULL, 0)").run();
+    db.prepare("INSERT INTO templates (id, name) VALUES ('tango', '単語')").run();
+    db.prepare(
+      "INSERT INTO template_fields (template_id, id, name, type, pos, local) VALUES ('tango', 'yusen', '優先', 'boolean', 'z', 1)",
+    ).run();
+    db.prepare("UPDATE cards SET template_id = 'tango' WHERE id = 'new-7'").run();
+    const key = (t: { cardId: string; kind: string }): string => `${t.cardId}/${t.kind}`;
+
+    for (const day of ["2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"]) {
+      const now = `${day}T09:00:00+09:00`;
+      db.prepare("DELETE FROM card_field_values WHERE card_id = 'new-7'").run();
+      const unflagged = newTracks(db, { now }).map(key);
+      db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES ('new-7', 'yusen', 'true')").run();
+      const flagged = newTracks(db, { now }).map(key);
+      // The forward track leads …
+      expect(flagged[0], day).toBe("new-7/forward");
+      // … and EVERYTHING else, the reverse included, is in exactly the order it
+      // had with no flag at all. A reverse pulled forward would sit at index 1.
+      expect(flagged.slice(1), day).toEqual(unflagged.filter((k) => k !== "new-7/forward"));
+    }
+    db.close();
+  });
+
   it("puts 3級 / 準2級 words in 日本語 after `優先` and before the rest — decision 53", () => {
     const db = queueFixture();
     // `fresh` is in 日本語/単語 and has no kanji, so it is tier 2 like the filler.
@@ -1175,8 +1211,9 @@ describe("the queue", () => {
 
     // One review of the kanji and the word is back.
     db.prepare("UPDATE card_tracks SET reps = 1, due_at = '2026-09-01T00:00:00+09:00' WHERE card_id = 'k-ko' AND kind = 'forward'").run();
-    const after = newTracks(db, { now: NOW, limit: 2 }).map((t) => t.cardId);
-    expect(after).toEqual(["w-kokyu", "w-kokyu"]);
+    // Only its FORWARD track leads: `優先` no longer pulls the reverse (2026-10-26).
+    const after = newTracks(db, { now: NOW, limit: 1 }).map((t) => `${t.cardId}:${t.kind}`);
+    expect(after).toEqual(["w-kokyu:forward"]);
 
     // An archived kanji card is out of rotation, so it blocks nothing.
     db.prepare("UPDATE card_tracks SET reps = 0, due_at = NULL WHERE card_id = 'k-ko'").run();
