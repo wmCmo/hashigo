@@ -153,6 +153,7 @@ import { toggleCloze } from "./cloze-toggle.js";
 import { ACCENT_TYPES, formatAccent, parseAccent } from "./accent-picker.js";
 import type { AccentType } from "../src/accent/store.js";
 import { roleOf } from "../src/fields/index.js";
+import { exampleSentencePrompt, isEnglishSentenceField } from "./example-sentence.js";
 import { revealScroll } from "./review-scroll.js";
 import { revealSteps, type RevealStep } from "./review-steps.js";
 import {
@@ -3451,6 +3452,8 @@ function openEditorFor(
     body.appendChild(none);
   }
 
+  /** Each text field's box, so a button can read what he has typed, not what was loaded. */
+  const liveValues = new Map<string, HTMLTextAreaElement>();
   for (const field of fields) {
     const value = card.loaded.values.get(field.id) ?? "";
     /**
@@ -3619,6 +3622,50 @@ function openEditorFor(
           // follows it — see `openNewCardDialog`.
           { deckId: card.loaded.deckId, templateId: card.loaded.templateId },
         );
+      }
+      liveValues.set(field.id, area);
+      // An English example sentence he could not find in a dictionary — see
+      // `app/example-sentence.ts`. Offered only while the field is EMPTY: when
+      // there is a sentence, it is his, and one press must not replace it.
+      if (isEnglishSentenceField(field, fields)) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "regen edit-generate";
+        button.textContent = "generate";
+        const sync = (): void => {
+          button.hidden = area.value.trim() !== "";
+        };
+        area.addEventListener("input", sync);
+        sync();
+        button.addEventListener("click", (event) => {
+          // Inside a <label>: without this the click also focuses the textarea.
+          event.preventDefault();
+          const values = new Map([...liveValues].map(([id, el]) => [id, el.value]));
+          const prompt = exampleSentencePrompt(fields, values);
+          if (prompt === null) {
+            status.textContent = `${field.name}: write the word first`;
+            status.classList.add("bad");
+            return;
+          }
+          button.disabled = true;
+          button.textContent = "generating…";
+          void generateGap({ kind: "ai", text: prompt, lang: null, voice: null, options: {} }).then((result) => {
+            button.disabled = false;
+            button.textContent = "generate";
+            if (!("text" in result)) {
+              status.textContent = `${field.name}: ${"failure" in result ? result.failure : "no text came back"}`;
+              status.classList.add("bad");
+              return;
+            }
+            // He typed while it was out — his sentence wins.
+            if (area.value.trim() !== "") return;
+            area.value = result.text;
+            fitTextarea(area);
+            sync();
+            save(area.value);
+          });
+        });
+        row.appendChild(button);
       }
     }
     body.appendChild(row);

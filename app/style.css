@@ -2033,6 +2033,14 @@ textarea.edit-input:not(.tpl-body) {
   outline: none;
 }
 
+/* "generate" under an empty English example sentence (`app/example-sentence.ts`). */
+.edit-generate {
+  margin-top: 8px;
+}
+.edit-generate[hidden] {
+  display: none;
+}
+
 .edit-check {
   height: 22px;
   width: 22px;
