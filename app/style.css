@@ -2706,6 +2706,27 @@ body[data-view="review"] .review main {
 
 .say.bad { border-color: var(--no-edge); color: var(--no); }
 
+/* `+ new card` under a selection (decision 55). Placed by script at the
+   selection's own viewport box, so it needs no rail offset; above every layer
+   because a preview is where he most often selects. The filled-button pair, so
+   it reads as an action the moment it appears. */
+.selection-newcard {
+  background: var(--indigo);
+  border: 1px solid var(--indigo);
+  color: var(--card);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 12px;
+  position: fixed;
+  touch-action: manipulation;
+  z-index: 30;
+}
+
+.selection-newcard[hidden] {
+  display: none;
+}
+
 .confirm-panel {
   background: var(--bg);
   border: 1px solid var(--line-soft);

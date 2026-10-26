@@ -607,6 +607,9 @@ describe("every position: fixed rule has an answer for the rail", () => {
     ".sidebar-scrim":
       "never shows at this width; the composition block hides it because the " +
       "rail is permanent and has nothing to dismiss",
+    ".selection-newcard":
+      "placed by script at the selection's getBoundingClientRect, a viewport " +
+      "box that already sits right of the rail — an offset would move it twice",
   };
 
   /** The rail itself. Offsetting it by its own width is the obvious own-goal. */

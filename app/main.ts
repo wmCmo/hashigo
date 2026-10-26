@@ -105,7 +105,7 @@ import {
   runUndo,
   templateRow,
 } from "./ops.js";
-import { newCardFrom } from "./found-in.js";
+import { newCardFrom, setReviewCard } from "./found-in.js";
 import {
   closeSidebar,
   fillSidebar,
@@ -472,6 +472,8 @@ let askedOnEntry = false;
 let currentCardId: string | null = null;
 /** The review card's prepared form, so `e` can edit it without re-fetching. */
 let previewOfCurrent: PreparedCard | null = null;
+// The selection button (`./found-in.ts`) asks which card a selection is on.
+setReviewCard(() => ({ host: cardHost, prepared: previewOfCurrent }));
 let drawHandles: DrawHandle[] = [];
 let inputHandles: InputHandle[] = [];
 /**

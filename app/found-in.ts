@@ -19,20 +19,93 @@
  * 包帯ほうたい. Both the word and the sentence are read from a CLONE with `rt` and
  * `rp` removed.
  */
+import { layers } from "./layers.js";
 import { openNewCardDialog } from "./ops.js";
 import type { PreparedCard } from "../src/review/index.js";
 
 let remembered: Range | null = null;
 
+/** The review card, as `main.ts` holds it — set once at startup. */
+let reviewCard: () => { readonly host: Element; readonly prepared: PreparedCard | null } = () => ({
+  host: document.body,
+  prepared: null,
+});
+export function setReviewCard(get: typeof reviewCard): void {
+  reviewCard = get;
+}
+
+/** Which card a node is on: a preview layer's, else the review card's. */
+function cardOf(node: Node): { host: Element; prepared: PreparedCard } | null {
+  for (const layer of [...layers].reverse()) {
+    if (layer.ops && layer.prepared !== null && layer.root.contains(node)) {
+      return { host: layer.root, prepared: layer.prepared };
+    }
+  }
+  const review = reviewCard();
+  return review.prepared !== null && review.host.contains(node)
+    ? { host: review.host, prepared: review.prepared }
+    : null;
+}
+
+/**
+ * THE BUTTON AT THE SELECTION. Zach, 2026-10-26: *"it's just that when i select,
+ * i don't see `...`"* — he selected 濃紺 and expected the action THERE, not in a
+ * menu he had to know about. So a selection inside a card puts `+ new card` just
+ * BELOW it: below, because his phone's own Copy/Share bar sits above.
+ *
+ * It acts on `pointerdown` with `preventDefault`, because on a touch screen the
+ * tap that reaches a button first collapses the selection, and a button that
+ * vanished on collapse would never receive its click. The selection is
+ * remembered anyway (`remembered`), so the word survives either way.
+ */
+const floater = document.createElement("button");
+floater.type = "button";
+floater.className = "selection-newcard";
+floater.textContent = "+ new card";
+floater.hidden = true;
+document.body.appendChild(floater);
+let floaterFor: { host: Element; prepared: PreparedCard } | null = null;
+let hideTimer: number | undefined;
+
+const fire = (event: Event): void => {
+  event.preventDefault();
+  const target = floaterFor;
+  floater.hidden = true;
+  if (target !== null) newCardFrom(target.host, target.prepared);
+};
+floater.addEventListener("pointerdown", fire);
+// Keyboard: Tab to it and Enter. A pointer press already acted on `pointerdown`.
+floater.addEventListener("click", (event) => {
+  if ((event as PointerEvent).pointerType === "" || event.detail === 0) fire(event);
+});
+
 document.addEventListener("selectionchange", () => {
   const selection = document.getSelection();
-  if (selection === null || selection.isCollapsed || selection.rangeCount === 0) return;
+  if (selection === null || selection.isCollapsed || selection.rangeCount === 0) {
+    // Not at once: on a phone the collapse can land before the tap reaches us.
+    window.clearTimeout(hideTimer);
+    hideTimer = window.setTimeout(() => (floater.hidden = true), 300);
+    return;
+  }
   const range = selection.getRangeAt(0);
   const node = range.commonAncestorContainer;
   const element = node instanceof Element ? node : node.parentElement;
-  if (element?.closest(".hashigo-side") === null || element === null) return;
+  if (element === null || element.closest(".hashigo-side") === null) return;
   remembered = range.cloneRange();
+  const card = cardOf(node);
+  if (card === null || plain(range.cloneContents()) === "") return;
+  window.clearTimeout(hideTimer);
+  floaterFor = card;
+  const box = range.getBoundingClientRect();
+  floater.hidden = false;
+  const width = floater.offsetWidth;
+  const left = Math.min(Math.max(8, box.left + box.width / 2 - width / 2), window.innerWidth - width - 8);
+  floater.style.left = `${left}px`;
+  floater.style.top = `${Math.min(box.bottom + 8, window.innerHeight - floater.offsetHeight - 8)}px`;
 });
+
+// A scroll moves the text from under a fixed button; drop it rather than chase.
+document.addEventListener("scroll", () => (floater.hidden = true), { capture: true, passive: true });
 
 /**
  * Text of a fragment or element without its furigana, whitespace folded. The
