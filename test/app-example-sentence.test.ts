@@ -38,15 +38,15 @@ describe("which field gets the button", () => {
 describe("the prompt", () => {
   it("is his own Mochi phrasing, over the head word as typed", () => {
     expect(exampleSentencePrompt(NEW_VOCAB, new Map([["name", " substrate "]]))).toBe(
-      "Example sentence of substrate",
+      "Example sentence using substrate in English",
     );
   });
 
   it("asks about the word, not its link or cloze markup", () => {
     expect(exampleSentencePrompt(NEW_VOCAB, new Map([["name", "[[stagnant|PaaW2o7t]]"]]))).toBe(
-      "Example sentence of stagnant",
+      "Example sentence using stagnant in English",
     );
-    expect(exampleSentencePrompt(NEW_VOCAB, new Map([["name", "{{duvet}}"]]))).toBe("Example sentence of duvet");
+    expect(exampleSentencePrompt(NEW_VOCAB, new Map([["name", "{{duvet}}"]]))).toBe("Example sentence using duvet in English");
   });
 
   it("is null with no word yet", () => {

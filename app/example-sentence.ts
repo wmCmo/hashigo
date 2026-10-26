@@ -14,10 +14,13 @@
  * the instruction. So the button sends his own prompt, word for word, and writes
  * the SENTENCE it gets back. The field stays plain text he can correct.
  *
- * The prompt is exactly his Mochi phrasing on purpose: `Example sentence of X`
- * is what the existing cache entries are keyed on, and it was checked against
- * the Worker's system prompt (which says "Japanese flashcard") before shipping —
- * `substrate` and `skinflint` both came back as one English sentence.
+ * The prompt NAMES THE LANGUAGE, the way his own Japanese prompts do ("Example
+ * sentence using <<単語>> in Japanese (Don't translate)"). It first shipped as his
+ * bare Mochi phrasing, `Example sentence of X`, checked on two words — and the
+ * Worker's system prompt says "Japanese flashcard", so measured over ten calls on
+ * 2026-10-26 three came back in Japanese (酵素は特定の基質と…). Giving up the old
+ * cache keys costs nothing here: the button only shows on an EMPTY field, and the
+ * 28 values still holding a Mochi `<ai>` tag are not empty.
  *
  * ─── WHICH FIELD — BY STRUCTURE, NOT BY NAME ────────────────────────────────
  *
@@ -73,5 +76,5 @@ export function exampleSentencePrompt(
     .replace(/\[\[([^|\]]*)(?:\|[^\]]*)?\]\]/g, "$1")
     .replace(/\{\{|\}\}/g, "")
     .trim();
-  return word === "" ? null : `Example sentence of ${word}`;
+  return word === "" ? null : `Example sentence using ${word} in English`;
 }

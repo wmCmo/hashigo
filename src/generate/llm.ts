@@ -207,14 +207,25 @@ async function viaOllama(descriptor: LlmDescriptor, options: LlmOptions): Promis
   return text;
 }
 
+/** Room for thinking plus "an emoji line, a sentence". It bounds a runaway; it is not a target. */
+const ANTHROPIC_MIN_TOKENS = 2048;
+
 async function viaAnthropic(descriptor: LlmDescriptor, options: LlmOptions): Promise<string> {
   const key = options.apiKey;
   if (key === undefined || key === "") throw new Error("no ANTHROPIC_API_KEY");
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const client = new Anthropic({ apiKey: key });
+  // THE SAME TRAP AS OLLAMA, NOW ON ANTHROPIC TOO. `claude-opus-5` thinks by
+  // default, and thinking counts against `max_tokens`: measured 2026-10-26, at
+  // 256 "Example sentence of substrate" came back as one thinking block and
+  // `stop_reason: max_tokens` — the "returned nothing" he saw on the generate
+  // button, intermittently, because how long it thinks varies. Turning thinking
+  // OFF is the wrong fix on this model (it can then leak `<thinking>` tags into
+  // the text); `effort: "low"` keeps it short, and the floor gives the answer room.
   const message = await client.messages.create({
     model: options.model,
-    max_tokens: options.maxTokens,
+    max_tokens: Math.max(options.maxTokens, ANTHROPIC_MIN_TOKENS),
+    output_config: { effort: "low" },
     system: systemPrompt(descriptor),
     messages: [{ role: "user", content: descriptor.text }],
   });
