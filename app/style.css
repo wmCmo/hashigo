@@ -315,6 +315,15 @@
   padding: 0;
 }
 
+/* A SELECTION HE CAN SEE. Zach, 2026-10-26, selecting 濃紺 to make a card from it
+   (decision 55): the browser's default highlight on the dark ground is a faint
+   grey box with the kanji all but gone inside it. The filled-button pair — the
+   same one `.clip:active` uses — is already the measured one in both themes. */
+::selection {
+  background: var(--indigo);
+  color: var(--card);
+}
+
 body {
   background: var(--bg);
   color: var(--ink);
