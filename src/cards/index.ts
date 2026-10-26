@@ -31,6 +31,14 @@ export {
 
 export { backlinksOf, type Backlink } from "./backlinks.js";
 export { reconcileCardLinks, type ReconcileReport } from "./link-index.js";
+export {
+  ensureSourceField,
+  foundInOf,
+  sourceValue,
+  SOURCE_FIELD_ID,
+  SOURCE_FIELD_NAME,
+  type FoundIn,
+} from "./found-in.js";
 
 export {
   knownTagsFor,

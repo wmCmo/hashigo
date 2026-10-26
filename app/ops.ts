@@ -688,11 +688,13 @@ export function attachLinkEditing(
  * NOTHING IS WRITTEN UNTIL `create`. Backing out leaves no empty card behind and
  * no half-finished `[[` turned into a link.
  */
-function openNewCardDialog(options: {
+export function openNewCardDialog(options: {
   readonly name: string;
   readonly deckId: string;
   readonly templateId: string | null;
   readonly onCreated: (cardId: string) => void;
+  /** `出典`: the card it was found in, and the sentence. See `src/cards/found-in.ts`. */
+  readonly source?: { readonly cardId: string; readonly name: string; readonly sentence: string };
 }): void {
   void loadDecks();
   const root = document.createElement("div");
@@ -787,6 +789,9 @@ function openNewCardDialog(options: {
       deckId: deck.value,
       templateId: template.value === "" ? null : template.value,
       name,
+      ...(options.source === undefined
+        ? {}
+        : { source: { cardId: options.source.cardId, sentence: options.source.sentence } }),
     })
       .then((reply) => {
         pushUndo({
@@ -810,12 +815,27 @@ function openNewCardDialog(options: {
       });
   });
 
-  panel.append(heading, title, template, deck, said, bar);
+  // Says what `出典` will record, so the link is not a surprise in the editor.
+  const from = document.createElement("p");
+  from.className = "newcard-from";
+  if (options.source !== undefined) {
+    const where = document.createElement("b");
+    where.textContent = `found in ${options.source.name}`;
+    from.appendChild(where);
+    if (options.source.sentence !== "") {
+      const line = document.createElement("i");
+      line.textContent = options.source.sentence;
+      from.appendChild(line);
+    }
+  }
+  panel.append(heading, ...(options.source === undefined ? [] : [from]), title, template, deck, said, bar);
   root.append(backdrop, panel);
   pushLayer(bareLayer(root));
   // The name is already right in his routine, so the first thing he does is pick
-  // the template — focus goes there.
-  template.focus();
+  // the template — focus goes there. With no name yet (a "new card from this"
+  // with nothing selected), the name is the first thing to type.
+  if (options.name === "") title.focus();
+  else template.focus();
 }
 
 /** Open the editor for a card the page does not already hold prepared. */

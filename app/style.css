@@ -2351,6 +2351,26 @@ body.sidebar-open .sidebar-scrim {
   color: var(--no);
 }
 
+/* What `出典` will record: the source card, then the sentence in full ink — it is
+   Japanese, and a muted small sentence is the low-contrast kanji the palette
+   rules forbid. */
+.newcard-from {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.newcard-from b {
+  color: var(--muted);
+  display: block;
+  font-weight: 400;
+}
+
+.newcard-from i {
+  color: var(--ink);
+  display: block;
+  font-style: normal;
+}
+
 /* ── the drawing surface (his #10) ── */
 
 /* OUTLINE, NOT BORDER, AND IT IS NOT A STYLE PREFERENCE — it is what makes the
@@ -3615,6 +3635,18 @@ input[data-answer="incorrect"] {
   display: block;
   font-size: 0.72rem;
   font-style: normal;
+}
+
+/* `出典`'s row carries a Japanese SENTENCE where other rows carry a deck path, so
+   it reads at body size in full ink. */
+.link-item.found-in i {
+  color: var(--ink);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.link-item.found-in:disabled {
+  cursor: default;
 }
 
 /* `+ create card` — the last row of the picker, and an ACTION, not a card. A

@@ -165,6 +165,7 @@ const OP_ICONS: Readonly<Record<string, IconName>> = {
   unarchive: "box-arrow-up",
   duplicate: "copy",
   delete: "trash",
+  "new card": "plus",
 };
 
 /** 操作名のアイコン。知らない名前なら null（文言だけのボタンのまま）。 */

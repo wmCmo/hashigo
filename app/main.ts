@@ -105,6 +105,7 @@ import {
   runUndo,
   templateRow,
 } from "./ops.js";
+import { newCardFrom } from "./found-in.js";
 import {
   closeSidebar,
   fillSidebar,
@@ -1372,10 +1373,34 @@ async function backlinkSection(cardId: string): Promise<HTMLElement | null> {
     return null;
   }
   const cards = reply.cards;
-  if (cards.length === 0) return null;
+  const found = reply.foundIn;
+  if (cards.length === 0 && found === null) return null;
 
   const section = document.createElement("section");
   section.className = "backlinks";
+
+  // `出典` FIRST, and in this block for this block's reason: the sentence he met
+  // the word in contains the word, so it is the answer — after the walk only.
+  // The source card also lists THIS one under "links here", from the link alone.
+  if (found !== null) {
+    const head = document.createElement("h2");
+    head.className = "backlinks-head";
+    head.textContent = "found in";
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "link-item found-in";
+    const name = document.createElement("b");
+    name.textContent = found.name === "" ? found.cardId : found.name;
+    const line = document.createElement("i");
+    line.textContent = found.sentence !== "" ? found.sentence : found.deckPath;
+    row.append(name, line);
+    // A source card deleted since has no deck: the row stays as a record, inert.
+    if (found.deckPath === "") row.disabled = true;
+    else row.addEventListener("click", () => void openPreview(found.cardId));
+    section.append(head, row);
+  }
+  if (cards.length === 0) return section;
+
   const head = document.createElement("h2");
   head.className = "backlinks-head";
   head.textContent = cards.length === 1 ? "1 card links here" : `${cards.length} cards link here`;
@@ -3233,6 +3258,9 @@ function paintLayerOps(layer: Layer, host: HTMLElement): void {
       () => void runCardOp(layer.archived ? "unarchive" : "archive", layer.cardId),
     ],
     ["edit", false, () => openEditor()],
+    ...(layer.prepared === null
+      ? []
+      : ([["new card", false, () => newCardFrom(layer.root, layer.prepared as PreparedCard)]] as const)),
   ];
   for (const [label, on, run] of buttons) {
     const button = document.createElement("button");
@@ -3838,6 +3866,15 @@ function openCardMenu(cardId: string, name: string): void {
   // that is the same call `e` makes, so the two cannot drift into different
   // editors — see `openEditor`.
   item("pencil-simple", "edit", "the fields, the template, the deck", () => void openEditorById(cardId));
+
+  // `出典`, 2026-10-26 — a card for a word he met on THIS card, remembering
+  // where. Select the word first and it is filled in.
+  if (previewOfCurrent !== null && previewOfCurrent.loaded.id === cardId) {
+    const prepared = previewOfCurrent;
+    item("plus", "new card from this", "select a word first; the new card remembers it came from here", () =>
+      newCardFrom(cardHost, prepared),
+    );
+  }
 
   item(
     currentPinned ? "push-pin-slash" : "push-pin",

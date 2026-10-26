@@ -2320,6 +2320,38 @@ right**: it holds his verbatim reasoning and this quotes it.
     whose kanji he has not met, so the first weeks of new cards will be largely
     kanji before the words they unlock come through.
 
+55. **A CARD REMEMBERS WHERE IT WAS FOUND — `出典`.** Zach, 2026-10-26: *"whenever
+    i see a new word inside an example sentence like 彼女は古いシャツを細く裂いて、
+    包帯の代わりにした。 i see 包帯 so then i would create new card, but then i would
+    have no way to tell myself that i created that card because of this one"*. He
+    took the proposal as offered (*"sounds perfect"*).
+
+    **THE EDGE LIVES ON THE NEW CARD.** The sentence is usually `例文`, an `ai`
+    field, so there is no durable place inside it for `[[包帯]]` — a regeneration
+    would lose it. The new card's `出典` holds `[[恒久|id]]` and, on the next line,
+    a COPY of the sentence, for the same reason. The link alone gives the other
+    direction: the source lists the new card under "links here" (decision 52's
+    backlinks, kept current since 2026-10-26 by `src/cards/link-index.ts`).
+
+    **THE FIELD:** `local = 1`, `plain`, role `source`, created on first use by
+    `ensureSourceField`. Its id is the FIXED string `source` on every template, not
+    a random `newFieldId`: two devices that each create it write the same row and
+    sync's upsert makes them one, where random ids would leave two fields named
+    `出典` and the resolver would bind only the first. Found by role, so renaming it
+    is safe. No template body references it; the screen shows it as "found in" at
+    the head of the backlink block, which appears only after the walk — the sentence
+    contains the word, so before then it is the answer.
+
+    **THE ACTION:** "new card from this" in the review card's `⋯` menu and `new
+    card` on a preview. A selection inside a card is REMEMBERED as it is made,
+    because on his phone tapping `⋯` collapses it first; it is used only while its
+    nodes are still in that card. Furigana and the `<ojad>` line are stripped, and
+    the sentence is the generated span holding the selection. Nothing selected
+    still works: the name is empty and the link is still recorded.
+
+    **Mochi-era cards have no record.** Offered: suggest pairs where a card's word
+    appears in an older card's example sentence, for him to confirm. Not built.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

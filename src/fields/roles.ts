@@ -37,10 +37,13 @@ export const ROLE_KEY = `${LOCAL_OPTION_PREFIX}role`;
  * deliberately not yet written by anything: the moment a role and the name
  * disagree, 692 cards change which exercise they run, so it ships last and behind
  * a census (`src/review/mode.ts`).
+ *
+ * `source` is `出典` — the card a word was found in, as a `[[link]]`, and the
+ * sentence it was found in. See `src/cards/found-in.ts`.
  */
-export type FieldRole = "ojad" | "reading-switch";
+export type FieldRole = "ojad" | "reading-switch" | "source";
 
-const ROLES: ReadonlySet<string> = new Set<FieldRole>(["ojad", "reading-switch"]);
+const ROLES: ReadonlySet<string> = new Set<FieldRole>(["ojad", "reading-switch", "source"]);
 
 /** The shape this needs of a field. Structural, so every caller's row fits. */
 export interface RoledField {

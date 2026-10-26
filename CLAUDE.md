@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 60 files, 1541 passed, 1 skipped (the FSRS refit, gated). ~55 s.
+npm test                # 61 files, 1548 passed, 1 skipped (the FSRS refit, gated). ~55 s.
                         # MEASURED 2026-09-17, not arithmetic. The 1127 here before it
                         # was 1117 plus ten new tests, added up rather than run — and it
                         # missed 79 tests from the same day. Run the suite or leave it alone.
@@ -1050,6 +1050,16 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     a kanji with no card blocks nothing. Measured: 386 unlearned kanji gate 705 of
     2,054 new word tracks. `kanjiFirst` in `src/scheduler/queue.ts`. See
     `DECISIONS.md` 54.
+
+55. **A CARD REMEMBERS WHERE IT WAS FOUND — `出典`.** Zach, 2026-10-26: he meets
+    包帯 in a card's example sentence, makes a card, and nothing recorded why. "new
+    card from this" (card `⋯` menu, and `new card` on a preview) prefills the
+    selected word and writes `出典` on the NEW card: `[[source|id]]` plus a copy of
+    the sentence, because `例文` is generated and can change. The link puts the new
+    card in the source's backlinks for free. A `local = 1` plain field with the
+    `source` role and the FIXED id `source` on every template, so two devices
+    creating it make one row. Shown as "found in" in the backlink block — after the
+    walk, since the sentence contains the word. See `DECISIONS.md` 55.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

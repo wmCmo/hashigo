@@ -57,7 +57,13 @@ import {
   sqliteVersion,
   type BrowserDb,
 } from "../src/db/browser.js";
-import { backlinksOf, reconcileCardLinks } from "../src/cards/index.js";
+import {
+  backlinksOf,
+  ensureSourceField,
+  foundInOf,
+  reconcileCardLinks,
+  sourceValue,
+} from "../src/cards/index.js";
 import { decodeFieldOptions } from "../src/cards/index.js";
 import { cardAudioResolver } from "../src/cards/index.js";
 import { directionForTrackKind } from "../src/cards/index.js";
@@ -1496,6 +1502,22 @@ function createCard(request: CreateCardRequest): void {
       }
     }
 
+    // `出典` — the card he found this word in (`src/cards/found-in.ts`). In the
+    // same transaction, so a card never exists without the reason he made it.
+    if (request.templateId !== null && request.source !== undefined) {
+      const from = db.prepare("SELECT name FROM cards WHERE id = ?").get(request.source.cardId) as
+        | { name: string }
+        | undefined;
+      if (from !== undefined) {
+        const fieldId = ensureSourceField(db, request.templateId);
+        db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES (?, ?, ?)").run(
+          cardId,
+          fieldId,
+          sourceValue(request.source.cardId, from.name, request.source.sentence),
+        );
+      }
+    }
+
     const reverse = db
       .prepare("SELECT reverse FROM card_reverse_resolved WHERE card_id = ?")
       .get(cardId) as { reverse: string } | undefined;
@@ -1934,6 +1956,7 @@ function backlinks(request: BacklinksRequest): void {
     kind: "backlinks",
     id: request.id,
     cards: backlinksOf(requireCards(), request.cardId),
+    foundIn: foundInOf(requireCards(), request.cardId),
   });
 }
 

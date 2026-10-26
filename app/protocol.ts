@@ -31,7 +31,7 @@
 
 import type { AudioAddress } from "../src/render/audio.js";
 import type { BlobPayload } from "../src/blobs/url.js";
-import type { Backlink } from "../src/cards/index.js";
+import type { Backlink, FoundIn } from "../src/cards/index.js";
 import type { PreparedCard } from "../src/review/index.js";
 import type { Glance } from "../src/dashboard/index.js";
 import type { SessionProgress } from "../src/session/index.js";
@@ -328,6 +328,12 @@ export interface CreateCardRequest {
   /** Null makes a template-less card, which 66 of his already are. */
   readonly templateId: string | null;
   readonly name: string;
+  /**
+   * The card this one was found in, and the sentence — written to `出典`
+   * (`src/cards/found-in.ts`). Ignored on a template-less card, which has no
+   * fields to hold it.
+   */
+  readonly source?: { readonly cardId: string; readonly sentence: string };
 }
 
 export interface CreateCardMessage {
@@ -567,6 +573,8 @@ export interface BacklinksMessage {
    * second identical row is a duplicate, not a second fact.
    */
   readonly cards: readonly Backlink[];
+  /** Where THIS card was found — its `出典`. Null for nearly every card. */
+  readonly foundIn: FoundIn | null;
 }
 
 /**
