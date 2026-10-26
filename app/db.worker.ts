@@ -130,7 +130,11 @@ import {
   writeFieldSource,
 } from "./field-ops.js";
 
+import { applyAccentFill, planAccentFill } from "../src/accent/fill.js";
+import type { Db } from "../src/db/index.js";
 import type {
+  AccentFillRequest,
+  AccentPlanRequest,
   AnswerRequest,
   PriceFieldRequest,
   RedoInfoRequest,
@@ -2143,6 +2147,22 @@ function generatedText(request: GeneratedTextRequest): void {
   post({ kind: "generatedText", id: request.id, texts });
 }
 
+/** `src/accent/fill.ts`'s first half. Read-only. */
+function accentPlan(request: AccentPlanRequest): void {
+  const db = requireCards() as unknown as Db;
+  post({ kind: "accentPlan", id: request.id, items: planAccentFill(db, request.cardIds) });
+}
+
+/** Its second half: the helper's answers, written into empty fields only. */
+function accentFill(request: AccentFillRequest): void {
+  const db = requireCards() as unknown as Db;
+  const report = applyAccentFill(db, request.items, new Map(request.derived), request.lines);
+  if (report.labels + report.yomi + report.ojad > 0) {
+    refreshSearchText(requireCards(), request.items.map((item) => item.cardId));
+  }
+  post({ kind: "accentFill", id: request.id, report });
+}
+
 /** See `CardGapsRequest`. Read-only: it renders the card and looks things up. */
 function cardGapsFor(request: CardGapsRequest): void {
   const db = requireCards();
@@ -3051,6 +3071,7 @@ const LINK_SAFE: ReadonlySet<string> = new Set([
   "backlinks",
   "redoInfo",
   "cardGaps",
+  "accentPlan",
   "decks",
   "browse",
   "template",
@@ -3160,6 +3181,12 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "createCard":
           createCard(request);
+          break;
+        case "accentPlan":
+          accentPlan(request);
+          break;
+        case "accentFill":
+          accentFill(request);
           break;
         case "cardOp":
           cardOp(request);

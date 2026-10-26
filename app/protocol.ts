@@ -32,6 +32,8 @@
 import type { AudioAddress } from "../src/render/audio.js";
 import type { BlobPayload } from "../src/blobs/url.js";
 import type { Backlink, FoundIn } from "../src/cards/index.js";
+import type { DeriveResult, FillItem, FillReport } from "../src/accent/fill.js";
+import type { AnnotatedLine } from "../src/accent/marks.js";
 import type { PreparedCard } from "../src/review/index.js";
 import type { Glance } from "../src/dashboard/index.js";
 import type { SessionProgress } from "../src/session/index.js";
@@ -1074,6 +1076,38 @@ export interface CardGapsMessage {
   }[];
 }
 
+/**
+ * `src/accent/fill.ts`, in two halves around the laptop's helper: what cards made
+ * here are missing (`accentPlan`), then the helper's answers written in
+ * (`accentFill`). The page talks to the helper; the worker owns the database.
+ */
+export interface AccentPlanRequest {
+  readonly kind: "accentPlan";
+  readonly id: number;
+  /** Omit for every card made in the app. */
+  readonly cardIds?: readonly string[];
+}
+
+export interface AccentPlanMessage {
+  readonly kind: "accentPlan";
+  readonly id: number;
+  readonly items: readonly FillItem[];
+}
+
+export interface AccentFillRequest {
+  readonly kind: "accentFill";
+  readonly id: number;
+  readonly items: readonly FillItem[];
+  readonly derived: readonly (readonly [string, DeriveResult])[];
+  readonly lines: readonly AnnotatedLine[];
+}
+
+export interface AccentFillMessage {
+  readonly kind: "accentFill";
+  readonly id: number;
+  readonly report: FillReport;
+}
+
 export interface StoreGenerationRequest {
   readonly kind: "storeGeneration";
   readonly id: number;
@@ -1216,6 +1250,8 @@ export type AppRequest =
   | StoreClipRequest
   | RedoInfoRequest
   | CardGapsRequest
+  | AccentPlanRequest
+  | AccentFillRequest
   | DecksRequest
   | BrowseRequest
   | CreateCardRequest
@@ -1474,6 +1510,8 @@ export type AppMessage =
   | StoreClipMessage
   | RedoInfoMessage
   | CardGapsMessage
+  | AccentPlanMessage
+  | AccentFillMessage
   | ResetMessage
   | LogMessage
   | FetchingMessage
@@ -1522,6 +1560,8 @@ export interface ReplyFor {
   readonly storeClip: StoreClipMessage;
   readonly redoInfo: RedoInfoMessage;
   readonly cardGaps: CardGapsMessage;
+  readonly accentPlan: AccentPlanMessage;
+  readonly accentFill: AccentFillMessage;
   readonly setField: SetFieldMessage;
   readonly glance: GlanceMessage;
   readonly dashboard: DashboardMessage;

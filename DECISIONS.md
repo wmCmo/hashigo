@@ -2352,6 +2352,47 @@ right**: it holds his verbatim reasoning and this quotes it.
     **Mochi-era cards have no record.** Offered: suggest pairs where a card's word
     appears in an older card's example sentence, for him to confirm. Not built.
 
+56. **CARDS MADE IN THE APP GET `読み`, `型` AND `OJAD` FROM A HELPER ON THE
+    LAPTOP.** Zach, 2026-10-26, over 包帯 with neither a reading nor a label: *"i
+    have to fill them myself?"*, then *"when i create a card it's almost always
+    when im at my laptop, so can't it just use my laptop automatically?"*. He
+    weighed the cloud (Cloud Run, the same Python in a container) and chose the
+    laptop; his one worry was RAM.
+
+    **WHY NOT THE CLOUD WE HAVE.** The pipeline is Python, OpenJTalk (C) and two
+    dictionaries. Workers run JavaScript/WASM, and a port would be a second
+    pipeline beside one this file calls validated — a wrong accent drilled is worse
+    than none.
+
+    **THE SHAPE.** `tools/accent_helper.py` serves `/derive` and `/sentences` on
+    `127.0.0.1:47474` from `accent.derive_value`, `accent_crosscheck`'s UniDic
+    lookup and `accent_sentence.analyse` — the batch run's own functions, in the
+    batch run's own JSON shapes. The page asks (`app/accent-helper.ts`); the worker
+    plans and writes (`src/accent/fill.ts`). The answers go through `loadAccents`
+    with `cli.ts load`'s refusals, the hand adjudications are applied, and the
+    label is manual-else-OpenJTalk; UniDic is stored for the disagreement view and
+    never decides (decision 8). OJAD goes through `sentenceFor` — split out of
+    `extractSentences` for this — and `loadMarks`.
+
+    **`読み` IS THE ONE NEW RULE:** only on a head word with kanji, only when
+    UniDic reads it as ONE token whose pronunciation equals OpenJTalk's reading,
+    and then UniDic's WRITTEN kana (ほうたい, not the spoken ホータイ). Checked first
+    that `読み` moves no generation identity in the app — it feeds the furigana
+    fallback and the redo dialog only — because an identity change after the clip
+    exists would orphan it.
+
+    **ONLY EMPTY FIELDS, AND NEVER ON A PHONE.** It runs after the editor closes
+    and once per app open, on cards with `local = 1`; a value present is his. On a
+    phone 127.0.0.1 is the phone, and asking would put the browser's network
+    prompt in front of him for nothing, so a touch-first device never asks; its
+    cards are filled the next time the laptop opens the app.
+
+    **MEASURED 2026-10-26:** ~40 MB working set with both dictionaries, flat over
+    100 words, ~0.1 ms a word, idle between requests. Edge's Local Network Access
+    asked once for the site and he allowed it. On his merged devices one card was
+    missing a label (貫く → 中高 (3), つらぬく). Bound to loopback; CORS answers the
+    app's origins only, and any other origin gets 403.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

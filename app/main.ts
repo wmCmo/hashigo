@@ -106,6 +106,7 @@ import {
   templateRow,
 } from "./ops.js";
 import { newCardFrom, setReviewCard } from "./found-in.js";
+import { fillAccents } from "./accent-helper.js";
 import {
   closeSidebar,
   fillSidebar,
@@ -3713,7 +3714,13 @@ function openEditorFor(
       flushFields();
       // The end of making (or editing) a card, so its generations are made now —
       // forced, because the edit may have changed what a generator reads.
-      void autoFill(card.cardId, { force: true });
+      // Then the laptop's accent helper (`./accent-helper.ts`) — after the
+      // generations, because OJAD annotates the example sentence they make.
+      void autoFill(card.cardId, { force: true })
+        .then(() => fillAccents([card.cardId], (text) => line(text, "good")))
+        .then((filled) => {
+          if (filled !== null && filled.labels + filled.yomi + filled.ojad > 0) refreshShown(card.cardId);
+        });
       void remountAfterEdit(card.cardId);
       if (!showPreview) return;
       // A preview of this card still underneath (it can only get there by some
@@ -3819,6 +3826,20 @@ async function remountAfterEdit(cardId: string): Promise<void> {
   }
   if (walked > 0) settleReveal(card);
   window.scrollTo({ top: scroll });
+}
+
+/**
+ * Show a card again after something wrote to it behind his back — the accent
+ * helper filling 読み / 型 / OJAD a moment after the editor closed. The review
+ * card remounts in place; a preview of it on top is reopened.
+ */
+function refreshShown(cardId: string): void {
+  void remountAfterEdit(cardId);
+  const top = layers.at(-1);
+  if (top !== undefined && top.ops && top.cardId === cardId) {
+    closeTop();
+    void openPreview(cardId);
+  }
 }
 
 /**
@@ -4136,6 +4157,9 @@ async function boot(): Promise<void> {
     await openGalleryFromUrl();
     // 送り残しは最初のカードの後、裏で。`pushAfterBoot` 参照。
     pushAfterBoot();
+    // Cards made in the app that still lack 読み / 型 / OJAD — made on the phone,
+    // or before the helper was running. Laptop only, in the background.
+    void fillAccents(undefined, (text) => line(text, "good"));
   } catch (cause) {
     line(String((cause as Error).message), "bad");
     line("nothing was written. Fix the above and reload.", "bad");

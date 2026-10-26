@@ -149,6 +149,7 @@
     "app:build:cloud": "vite build --config vite.app.config.ts --mode cloud",
     "app:preview": "vite preview --config vite.app.config.ts",
     "phone": "node scripts/phone.mjs",
+    "accent:helper": ".venv-accent\\Scripts\\python tools/accent_helper.py",
     "app:check": "tsc -p app/tsconfig.json",
     "spike:bootstrap": "node spike/make-bootstrap.mjs",
     "spike:dev": "vite",

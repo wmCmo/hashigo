@@ -124,7 +124,7 @@ npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start he
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 61 files, 1548 passed, 1 skipped (the FSRS refit, gated). ~55 s.
+npm test                # 63 files, 1559 passed, 1 skipped (the FSRS refit, gated). ~55 s.
                         # MEASURED 2026-09-17, not arithmetic. The 1127 here before it
                         # was 1117 plus ten new tests, added up rather than run — and it
                         # missed 79 tests from the same day. Run the suite or leave it alone.
@@ -1060,6 +1060,19 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     `source` role and the FIXED id `source` on every template, so two devices
     creating it make one row. Shown as "found in" in the backlink block — after the
     walk, since the sentence contains the word. See `DECISIONS.md` 55.
+
+56. **CARDS MADE IN THE APP GET `読み`, `型` AND `OJAD` FROM A HELPER ON THE
+    LAPTOP.** Zach, 2026-10-26: *"when i create a card it's almost always when im
+    at my laptop, so can't it just use my laptop automatically?"* The pipeline is
+    Python + OpenJTalk + two dictionaries, so neither the browser nor a Worker runs
+    it. `tools/accent_helper.py` (`npm run accent:helper`) serves the batch run's
+    OWN functions on `127.0.0.1:47474`; `app/accent-helper.ts` asks it after the
+    editor closes and once per app open, laptop only (never on a phone — it would
+    raise Edge's network prompt for nothing); `src/accent/fill.ts` writes EMPTY
+    fields only. Same rules as the batch run: manual adjudication, else OpenJTalk;
+    UniDic stored, never deciding. `読み` is UniDic's written kana, only when its
+    pronunciation matches OpenJTalk's. Measured: ~40 MB, ~0.1 ms a word; Edge's
+    Local Network Access permission granted for the site once. See `DECISIONS.md` 56.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

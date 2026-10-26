@@ -41,6 +41,15 @@ export {
 } from "./speech.js";
 
 export {
+  applyAccentFill,
+  planAccentFill,
+  type DeriveResult,
+  type DerivedLine,
+  type FillItem,
+  type FillReport,
+} from "./fill.js";
+
+export {
   CARD_ADJUDICATIONS,
   DICTIONARY_ADJUDICATIONS,
   OJAD_ADJUDICATIONS,

@@ -33,6 +33,7 @@ import {
   fieldGenerationRequest,
   resolveDescriptorText,
   storeTextResolver,
+  stripThinking,
 } from "../generate/index.js";
 import { applyReadingOverrides, cleanSentence, MARKS_FIELD, parseAnnotation } from "./sentence.js";
 
@@ -120,44 +121,56 @@ export function extractSentences(db: Db): ExtractReport {
   let overridden = 0;
 
   for (const { cardId } of cards) {
-    const card = loadCard(db, cardId);
-    if (card?.template == null) continue;
-    // BY ROLE, then by pointer — see `OJAD_SCOPE`. No name is read here.
-    const marks = fieldWithRole(card.template.fields, "ojad");
-    const sourceId = marks?.sourceFieldId ?? null;
-    const field = card.template.fields.find((candidate) => candidate.id === sourceId);
-    if (marks === null || field === undefined) continue;
-
-    const context = {
-      fields: card.template.fields,
-      values: card.values,
-      resolveGenerated: storeTextResolver(db),
-    };
-    const request = fieldGenerationRequest(field, context);
-    if (request === null) {
-      ungenerated += 1;
-      continue;
+    const found = sentenceFor(db, cardId);
+    if (found.status === "ungenerated") ungenerated += 1;
+    else if (found.status === "refused") refused += 1;
+    else if (found.status === "ok") {
+      if (found.overridden) overridden += 1;
+      clean.push(found.row);
     }
-    const generated = resolveDescriptorText(db, request);
-    if (generated === null) {
-      ungenerated += 1;
-      continue;
-    }
-    const cleaned = cleanSentence(generated);
-    if (cleaned === null) {
-      refused += 1;
-      continue;
-    }
-    // OVERRIDES APPLIED HERE AND NOWHERE ELSE, so the string written to the
-    // analyser's input file and the string `loadMarks` looks the annotation up
-    // by are the SAME string. Applying them on only one side would key every
-    // overridden sentence under a text no card reports, and those cards would
-    // silently end up with no annotation at all.
-    const sentence = applyReadingOverrides(cleaned);
-    if (sentence !== cleaned) overridden += 1;
-    clean.push({ cardId, sentence, fieldId: marks.id });
   }
   return { cards: cards.length, clean, ungenerated, refused, overridden };
+}
+
+/**
+ * One card's sentence, exactly as `extractSentences` takes it — split out so the
+ * app's accent helper (`src/accent/fill.ts`) annotates a new card through the
+ * same path the batch run did, rather than a copy of it.
+ */
+export function sentenceFor(
+  db: Db,
+  cardId: string,
+):
+  | { readonly status: "ok"; readonly row: SentenceRow; readonly overridden: boolean }
+  | { readonly status: "none" | "ungenerated" | "refused" } {
+  const card = loadCard(db, cardId);
+  if (card?.template == null) return { status: "none" };
+  // BY ROLE, then by pointer — see `OJAD_SCOPE`. No name is read here.
+  const marks = fieldWithRole(card.template.fields, "ojad");
+  const sourceId = marks?.sourceFieldId ?? null;
+  const field = card.template.fields.find((candidate) => candidate.id === sourceId);
+  if (marks === null || field === undefined) return { status: "none" };
+
+  const context = {
+    fields: card.template.fields,
+    values: card.values,
+    resolveGenerated: storeTextResolver(db),
+  };
+  const request = fieldGenerationRequest(field, context);
+  if (request === null) return { status: "ungenerated" };
+  const generated = resolveDescriptorText(db, request);
+  if (generated === null) return { status: "ungenerated" };
+  // A device's own copy of a generation can still hold a model's control tags
+  // (the 左遷 case, b8c20f3) — the screen strips them on the way out, so must this.
+  const cleaned = cleanSentence(stripThinking(generated));
+  if (cleaned === null) return { status: "refused" };
+  // OVERRIDES APPLIED HERE AND NOWHERE ELSE, so the string written to the
+  // analyser's input file and the string `loadMarks` looks the annotation up
+  // by are the SAME string. Applying them on only one side would key every
+  // overridden sentence under a text no card reports, and those cards would
+  // silently end up with no annotation at all.
+  const sentence = applyReadingOverrides(cleaned);
+  return { status: "ok", row: { cardId, sentence, fieldId: marks.id }, overridden: sentence !== cleaned };
 }
 
 /** One line of `tools/accent_sentence.py`'s output. */

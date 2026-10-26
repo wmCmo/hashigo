@@ -104,6 +104,8 @@ const READ_ONLY_OR_DELTA: ReadonlySet<string> = new Set([
   "redoInfo",
   // 欠けている生成を数えるだけ。埋めるのは storeGeneration / storeClip の方。
   "cardGaps",
+  // Only lists what is missing; `accentFill` is the one that writes.
+  "accentPlan",
   "decks",
   "browse",
   "template",
