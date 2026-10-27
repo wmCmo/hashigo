@@ -445,6 +445,9 @@ function serviceWorkerPrecache(): Plugin {
         `self.__HASHIGO_PRECACHE__ = ${JSON.stringify(unique)};\n\n`;
 
       writeFileSync(swFile, header + readFileSync(swFile, "utf8"));
+      // What a RUNNING app compares itself against (`app/update-check.ts`). Never
+      // precached and never stored by the worker — it must always be the live one.
+      writeFileSync(resolve(dir, "version.json"), `${JSON.stringify(BUILD_INFO)}\n`);
       this.info?.(`sw.js precaches ${unique.length} URLs (cache hashigo-shell-${hash.toString(36)})`);
     },
   };

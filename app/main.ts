@@ -107,6 +107,7 @@ import {
 } from "./ops.js";
 import { newCardFrom, setReviewCard } from "./found-in.js";
 import { fillAccents } from "./accent-helper.js";
+import { watchForUpdates } from "./update-check.js";
 import {
   closeSidebar,
   fillSidebar,
@@ -4157,6 +4158,8 @@ async function boot(): Promise<void> {
     await openGalleryFromUrl();
     // 送り残しは最初のカードの後、裏で。`pushAfterBoot` 参照。
     pushAfterBoot();
+    // A deploy that lands while this page stays open — `./update-check.ts`.
+    watchForUpdates();
     // Cards made in the app that still lack 読み / 型 / OJAD — made on the phone,
     // or before the helper was running. Laptop only, in the background.
     void fillAccents(undefined, (text) => line(text, "good"));

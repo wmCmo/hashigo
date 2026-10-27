@@ -72,6 +72,9 @@ const NEVER_CACHE = new Set([
   "/hashigo-app-fields.db",
   "/hashigo-app-blobs.db",
   "/hashigo-app.json",
+  // The live build, for `app/update-check.ts`. A stored copy would tell a stale
+  // app it is current — the same lie as a cached seed manifest.
+  "/version.json",
 ]);
 
 /*
