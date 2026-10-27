@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Hashigo">
-  <g fill="none" stroke="#1B3B6F" stroke-width="10" stroke-linecap="round">
+  <g fill="none" stroke="#3A3A3A" stroke-width="10" stroke-linecap="round">
     <path d="M16 87L27.5 32"/>
     <path d="M84 87L72.5 32"/>
   </g>
-  <g fill="none" stroke="#1B3B6F" stroke-width="9" stroke-linecap="round">
+  <g fill="none" stroke="#3A3A3A" stroke-width="9" stroke-linecap="round">
     <path d="M18.09 77H81.91"/>
     <path d="M22.27 57H77.73"/>
     <path d="M25.83 40H74.17"/>
   </g>
-  <path d="M31.47 13H68.53" fill="none" stroke="#E0451D"
+  <path d="M31.47 13H68.53" fill="none" stroke="#1F5FE0"
         stroke-width="9" stroke-linecap="round"/>
 </svg>

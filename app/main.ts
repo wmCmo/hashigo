@@ -146,6 +146,7 @@ import { lastSeenLabel, lastSeenTitle } from "./last-seen.js";
 import { barValueText, barWidths } from "./progress.js";
 import { reviewAction } from "./review-keys.js";
 import {
+  heroLength,
   promptPositions as promptBoundary,
   sideScale,
   visiblePositions,
@@ -2456,10 +2457,14 @@ function markAccentLabel(card: MountedCard<HTMLElement>): void {
   }
 }
 
-/** Size every side from what it actually says. See `sideScale`. */
+/** Size every side from what it actually says. See `sideScale` and `heroLength`. */
 function scaleSides(card: MountedCard<HTMLElement>): void {
   for (const side of card.result.sides) {
-    side.element.setAttribute("data-scale", sideScale(side.element.textContent ?? ""));
+    const text = side.element.textContent ?? "";
+    side.element.setAttribute("data-scale", sideScale(text));
+    const hero = heroLength(text);
+    if (hero > 0) side.element.setAttribute("data-hero", String(hero));
+    else side.element.removeAttribute("data-hero");
   }
 }
 

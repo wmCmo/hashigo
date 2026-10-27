@@ -6,7 +6,7 @@
  */
 
 import type { Theme } from "./theme.js";
-import { THEME_KEY, forcedChrome, readTheme, themeAttribute } from "./theme.js";
+import { CHROME, THEME_KEY, forcedChrome, readTheme, themeAttribute } from "./theme.js";
 
 /**
  * Zach, 2026-09-13: *"where do i change light dark theme?"* He could not — the
@@ -38,7 +38,7 @@ export function applyTheme(theme: Theme): void {
   const forced = forcedChrome(theme);
   for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
     if (forced !== null) meta.content = forced;
-    else meta.content = meta.media.includes("dark") ? "#1A1815" : "#ECEAE5";
+    else meta.content = meta.media.includes("dark") ? CHROME.dark : CHROME.light;
   }
 
   try {

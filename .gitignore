@@ -90,14 +90,17 @@ Thumbs.db
 *.ts.net.key
 
 # Webfonts, built by `python tools/fonts.py`.
-# The THREE SHIPPING faces are committed: the app is offline-first and must not
-# need a build step to render its own text. The candidates the specimen renders
-# side by side (Shippori, Noto Sans JP) are not — they are 7.3 MB of decision
-# that has already been made.
+# The SHIPPING faces are committed: the app is offline-first and must not need a
+# build step to render its own text. Decision 57: Noto Sans JP 400 and Hanken
+# Grotesk 400/600/700/800. `zenkaku-med` stays because `scripts/ojad-preview.ts`
+# renders with it.
 app/fonts/*
-!app/fonts/fraunces-latin.woff2
+!app/fonts/notosansjp-400.woff2
+!app/fonts/hanken-400.woff2
+!app/fonts/hanken-600.woff2
+!app/fonts/hanken-700.woff2
+!app/fonts/hanken-800.woff2
 !app/fonts/zenkaku-med.woff2
-!app/fonts/zenmaru-med.woff2
 build/fonts-src/
 
 # Wrangler state for cloud/ (local dev store, cached tokens)

@@ -2393,6 +2393,54 @@ right**: it holds his verbatim reasoning and this quotes it.
     missing a label (貫く → 中高 (3), つらぬく). Bound to loopback; CORS answers the
     app's origins only, and any other origin gets 403.
 
+57. **THE PINTEREST SYSTEM REPLACES DECISION 32's LOOK, AND THE ONE COLOUR IS
+    瑠璃.** Zach, 2026-10-27, handing over a flashcard mockup from Pinterest: *"i
+    think every details make it looks super good for a flashcard app … build a
+    design system around this … you might find documents about the decision that
+    i have made about the design but you can ignore them, we'll start from
+    scratch"*. The system was built as a Design System artifact (its README is the
+    brand book) and then applied: *"apply this design to the actual app"*.
+
+    **WHAT IT IS.** Neutral grey grounds and three inks; ONE colour, used only on
+    what is live (the replay disc, the mark's top rung, the focus ring); the head
+    word set huge and centred; a raised card with 28px corners and a whisper of
+    shadow in light, lifted by tone alone in dark; pills and discs for every
+    control. Noto Sans JP 400 for every Japanese glyph, Hanken Grotesk 400-800 for
+    Latin (the wordmark is Hanken 800). Fraunces and Zen Maru are retired; Zen Kaku
+    stays on disk only because `scripts/ojad-preview.ts` uses it.
+
+    **THE COLOUR IS HIS: 瑠璃 (ruri, lapis), over orange.** The reference's accent
+    was orange; *"orange makes people think of claude lol"*. Five accents were
+    rendered over the same screen and he took lapis, liking the stone beside
+    Obsidian. It also measured best: ≥4.6:1 on every light ground, and blue against
+    `--danger`'s red survives red-green colour blindness, which sakura and bamboo
+    did not.
+
+    **THE TOKEN NAMES ARE OLDER THAN THE VALUES, ON PURPOSE.** `--indigo` (the
+    primary) now resolves to `--ink`, `--vermilion` (the one live colour) to
+    `--ruri`, and `--accent` still to `--indigo`. 268 rules, the inline SVG,
+    `app/sync-climb.ts` and the contrast test speak those roles, and repointing
+    values is what made decision 32's own restyle tractable. New: `--on-live`, the
+    icon on the ruri fill, pinned against `--vermilion` in `test/contrast.test.ts`.
+
+    **THE HERO IS SCRIPT AND LENGTH, NOT DIRECTION.** `heroLength()` in
+    `app/review-boundary.ts`: a side that is only Japanese script and 1-4 code
+    points long gets `data-hero`, sized against the CARD (`cqi`) so four kanji fit
+    375px. Latin never qualifies (decision 35's `protein` stays `display`) and a
+    side holding a cloze never does, because its text carries `[…]`.
+
+    **UNCHANGED:** decision 23's hand (bottom controls, the round replay
+    bottom-right — the reference put its disc in the same corner, `remembered` on
+    the right), decision 29's audio gating, decision 34/42's walk, decision 48's
+    red misses, every measured footer offset. This is a re-skin; no control
+    changed state, place or behaviour.
+
+    **REFERENCE'S GREYS DID NOT SURVIVE CONTRAST.** Its translations sit near
+    2.4:1; `--muted` is the darkest grey that still reads as the picture (4.67:1
+    on sunk light, 4.84 dark). Dark `--paper-sunk` is now LIGHTER than `--paper`.
+    The word rail from the reference was NOT built: listing upcoming head words
+    would print the answer on a mode-2 or reverse card.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

@@ -41,9 +41,11 @@ const OUT = join(ROOT, "app", "public", "icons");
 const SLOPE = 0.20909;
 const railX = (y) => [16 + (87 - y) * SLOPE, 84 - (87 - y) * SLOPE];
 
-const INDIGO = [0x1b, 0x3b, 0x6f];
-const VERMILION = [0xe0, 0x45, 0x1d];
-const PAPER = [0xec, 0xea, 0xe5];
+// Decision 57: the mark is `--ink` with its top rung in `--ruri`. The names
+// below are the roles the rest of this file speaks; the values are the new ones.
+const INDIGO = [0x3a, 0x3a, 0x3a];
+const VERMILION = [0x1f, 0x5f, 0xe0];
+const PAPER = [0xf2, 0xf2, 0xf2];
 
 /**
  * THE COLOURWAY IS NOT IN THE BRIEF. Checked 2026-09-12: §2 constrains the
@@ -56,7 +58,7 @@ const PAPER = [0xec, 0xea, 0xe5];
  *                  where the icon competes with other icons rather than sitting
  *                  on the app's own ground.
  */
-const CARD = [0xfb, 0xfa, 0xf7];
+const CARD = [0xfc, 0xfc, 0xfc];
 
 const WAYS = {
   "ink-on-paper": { ground: PAPER, ink: INDIGO },

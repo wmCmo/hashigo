@@ -1,146 +1,126 @@
 /*
- * DECISION 32 — the design brief of 2026-09-12.
+ * DECISION 57 — the Pinterest system, 2026-10-27. Supersedes decision 32's LOOK.
  *
- * Paper, indigo, hairlines. Flat ground, 1px rules, square corners, no shadows,
- * depth by RECESSION rather than elevation. Fraunces for the wordmark, Zen Maru
- * Gothic for Japanese display, Zen Kaku Gothic New for Japanese UI text.
+ * Zach, handing over a reference image: *"every details make it looks super
+ * good for a flashcard app … build a design system around this"*, then *"apply
+ * this design to the actual app"*. The system itself is published as a Design
+ * System artifact and its README is the brand book; this file is that system
+ * applied to the app.
  *
- * ─── WHAT SURVIVED FROM DECISION 23, AND WHY IT IS NOT A LEFTOVER ───────────
+ *   · GREY DOES THE STRUCTURE. Neutral grounds (`--paper`, `--card`, `--sunk`),
+ *     three inks (`--ink-bright`, `--ink`, `--muted`). No hue carries hierarchy.
+ *   · ONE COLOUR, 瑠璃 (ruri, lapis), and only on what is LIVE: the replay disc,
+ *     the mark's top rung, the progress dot and the focus ring. He picked it over
+ *     orange, which read as Claude's. If two resting things on a screen are ruri,
+ *     one of them is wrong.
+ *   · THE WORD IS THE HERO. A side that is a short run of kanji/kana is set huge
+ *     and centred (`[data-hero]`, see `heroLength` in `app/review-boundary.ts`).
+ *   · SOFT SHAPES. The card is a 28px-radius raised surface with a whisper of
+ *     shadow in light and none in dark; every control is a pill or a disc.
+ *     Decision 32's square corners and no-shadow rule are withdrawn.
  *
- * Decision 23 settled two different kinds of thing and only one of them was
- * withdrawn. The LOOK is gone — dark, mono, the yellow accent. The HAND is not:
+ * ─── THE NAMES ARE OLDER THAN THE VALUES ────────────────────────────────────
  *
- *   · controls pinned to the bottom edge, everything on one scroll
- *   · the replay button ROUND and bottom-RIGHT, because he reviews one-handed
- *     with his right thumb. THE BRIEF SAYS `border-radius: 0` ON BUTTONS AND
- *     THIS ONE IS THE EXCEPTION — its shape is ergonomic, not decorative, and
- *     it is the only radius in this file. Every other control is square.
- *   · keycap hints only where a real pointer exists, NEVER behind hover
- *   · `remembered` on the RIGHT: 96.24% of taps over 103,110 reviews are that
- *     button, so it belongs under the thumb that is already there
+ * 268 rules speak `--indigo`, `--vermilion` and `--accent`, and several tests,
+ * `app/sync-climb.ts` and the inline SVG in `index.html` speak them too. So the
+ * ROLES were kept and the values repointed, which is what made decision 32's own
+ * restyle tractable:
  *
- * ─── THE TWO THAT CARRY THE EXERCISE ────────────────────────────────────────
+ *   --indigo      the PRIMARY: filled buttons, the wordmark, links in UI chrome.
+ *                 Now `--ink` — the reference's primary action is a dark fill.
+ *   --vermilion   the ONE LIVE COLOUR. Now `--ruri`.
+ *   --accent      structure that used to be tinted (progress fill, due counts,
+ *                 furigana). Still `--indigo`, so it is ink too.
  *
- *   .hashigo-cloze-mask     the masked form, and it is the DEFAULT state here —
- *                           the answer is what is hidden. `src/render` owns these
- *                           class names; this file only dresses them.
- *   .drill                  the side the question is on, marked by main.ts. It
- *                           no longer sets the type size — `data-scale` does,
- *                           from the side's own LENGTH. See that rule.
- *   [data-scale]            display / mid / body, written by main.ts from
- *                           `sideScale()`. Size follows content, not position.
+ * ─── WHAT SURVIVED, AND WHY IT IS NOT A LEFTOVER ────────────────────────────
+ *
+ * Decision 23's HAND is untouched, as it was through decision 32: controls pinned
+ * to the bottom edge, one scroll, the replay ROUND and bottom-RIGHT for his right
+ * thumb (now the ruri disc — the reference put its play disc in exactly that
+ * corner), keycap hints only where a real pointer exists, `remembered` on the
+ * right. Decisions 34-48's behaviour is untouched too: this is a re-skin.
+ *
+ * `.hashigo-cloze-mask` is still the DEFAULT state and `[data-scale]` still sizes
+ * a side from its own LENGTH (decision 35); `[data-hero]` refines `display` only.
  *
  * ─── CONTRAST IS A CORRECTNESS CONSTRAINT HERE, NOT A PREFERENCE ────────────
  *
- * Every grey in this file carries a Japanese reading at some point. That rule
- * predates this design and survives the change of ground. Two cells of the
- * brief's palette failed it as published and are corrected below, both measured:
- *
- *   --muted was #6B6862, which is 4.21:1 on --paper-sunk — UNDER AA, and
- *   --muted at 11-12px is exactly where the captions live. Darkened to #636059:
- *   4.76:1 on sunk, 5.22:1 on paper, 6.01:1 on card. The change is invisible.
- *
- *   --vermilion is 3.47:1 on paper: LARGE TEXT ONLY. Correct for the focus ring,
- *   the mark's top rung and big numerals; wrong for any small vermilion text.
- *   Do not use it for a caption, a count or a label.
- *
- * ─── ONE VERMILION PER SCREEN, AND HERE IS WHERE IT WENT ─────────────────────
- *
- * The brief: "Vermilion appears roughly once per screen. If two things on a
- * screen are vermilion, one of them is wrong." At rest that one thing is the
- * MARK's top rung, in the header. The focus ring is the only other vermilion in
- * this file, and it is transient, keyboard-only, and must be unmissable — so the
- * two never really coexist on a phone, which has no focus ring at all.
- *
- * EVERYTHING THE OLD FILE PAINTED YELLOW IS NOW INDIGO: the progress fill, the
- * due counts, furigana `rt`, the selected-row marker, the download bar. Yellow
- * was one accent doing six jobs, which is the "lacks identity" complaint in its
- * concrete form.
- *
- * ─── GRADING LOST ITS COLOURS, DELIBERATELY ─────────────────────────────────
- *
- * `remembered` was green and `forgot` was red. The brief adds no hues beyond
- * indigo and vermilion, so the pair is now distinguished by WEIGHT and POSITION
- * instead: `remembered` is the solid primary on the right, `forgot` is a 1px
- * outline on the left. Both facts it relied on are intact — the position is
- * decision 23's and the solid/outline split is the brief's own button rule.
- * FLAGGED FOR ZACH: this is the one place the brief's palette discipline costs a
- * semantic signal he has 103,110 reps of muscle memory for.
+ * Every grey in this file carries a Japanese reading at some point, and
+ * `test/contrast.test.ts` measures every foreground token against every ground in
+ * both themes. The reference's own greys do not survive that — its translations
+ * sit near 2.4:1 — so `--muted` is the darkest grey that still looks like the
+ * picture: 4.67:1 on sunk, 5.43:1 on card in light; 4.84 / 5.71 in dark.
+ * Dark `--paper-sunk` is LIGHTER than `--paper` now (a pressed-in surface on a
+ * dark ground reads as a lighter well in this system), which is why several dark
+ * foregrounds are a step brighter than their light twins.
  */
 
 :root {
   color-scheme: light;
 
-  /* ── the brief's palette, primitives ── */
-  --indigo: #1b3b6f;
-  --indigo-deep: #12294d;
-  --vermilion: #e0451d;
-  /* THE ACCENT HEAD, AND IT IS NOT `--vermilion`. Decision 43. `--vermilion` is
-     3.99:1 on --card in light: a LARGE-TEXT colour, and an example sentence is
-     body text. Walked down in lightness at the same hue until it cleared 4.5:1
-     on every ground it can land on -- 5.79 on --card, 5.03 on --paper, 4.58 on
-     --paper-sunk. Same fix and same reason as decision 32 darkening --muted.
-     Dark mode keeps #f05a2e, which already clears AA on all three (4.74 / 5.24
-     / 5.57) -- the light theme was the only failing half. */
+  /* ── primitives ── */
+  --ruri: #1f5fe0;
+  --paper: #f2f2f2;
+  --paper-sunk: #ebebeb;
+  --card: #fcfcfc;
+  --ink: #3a3a3a;
+  --muted: #686868;
+  --hair: #e0e0e0;
+  /* THE ACCENT HEAD — decision 43's per-mora pitch mark in example sentences.
+     Kept warm on purpose: it is notation, not chrome, and it must not read as
+     the live colour. 5.89 on --card, 5.40 on --paper, 5.07 on --paper-sunk. */
   --accent-head: #b33717;
-  --paper: #eceae5;
-  --paper-sunk: #e3e0d9;
-  --card: #fbfaf7;
-  --ink: #2c2a26;
-  /* #6B6862 as published; darkened for AA on --paper-sunk. See the header. */
-  --muted: #636059;
-  --hair: #d3cfc6;
 
-  /* ── roles. The 268 rules below speak THESE names, so a palette change is a
-     change here and nowhere else. ── */
+  /* ── roles. The rules below speak THESE names, so a palette change is a
+     change here and nowhere else. See the header for why the names are older
+     than the values. ── */
   --bg: var(--paper);
-  --ink-bright: #17150f;
+  --ink-bright: #262626;
   --line: var(--hair);
   --line-soft: var(--hair);
-  --edge: #b3ada1;
-  /* Was #e2b714, doing six jobs at once. Progress, due counts, furigana,
-     selection, the download bar — all of it is the primary colour now. */
+  --edge: #c2c2c2;
+  --indigo: var(--ink);
+  --indigo-deep: var(--ink-bright);
+  --vermilion: var(--ruri);
   --accent: var(--indigo);
   --focus: var(--vermilion);
+  /* The label colour on a `--vermilion` fill: the replay disc's icon. */
+  --on-live: var(--card);
 
   /* ── STATES, and they are NOT decoration ────────────────────────────────
-     Grading lost its colours on purpose (see the header) — but `--ok`/`--no`
-     were never only the two grade buttons, and repointing them at indigo
-     silently deleted the signal from the answer verdict, the boot log, the edit
-     status, every `.danger` control and the low-retention bar. Found by Zach:
-     the create button went invisible, because `--ok` had become near-white text
-     on paper. That is the whole class of bug, not one button.
+     `--ok`/`--no` were never only the two grade buttons — the answer verdict,
+     the boot log, the edit status, every `.danger` control and the progress
+     bar's misses read them. So states keep their own two colours, measured
+     against every ground they land on:
 
-     So states get their own two colours, derived rather than picked, in the
-     brief's dye family and measured against every ground they land on:
+       --danger  light #A8261B  paper 6.34 · sunk 5.96 · card 6.92
+                 dark  #FF8F80  paper 6.84 · sunk 4.91 · card 5.80
+       --good    light #386E4C  paper 5.36 · sunk 5.03 · card 5.84
+                 dark  #7CC296  see the dark block
 
-       --danger  the brief's vermilion hue, DARKENED until it clears AA for
-                 SMALL text. `--vermilion` itself is 3.47:1 on paper — correct
-                 for the mark and the focus ring, unreadable as a 12px label.
-                 light #B93109  paper 4.98 · sunk 4.54 · card 5.74
-                 dark  #F05A2E  paper 5.24 · sunk 5.57 · card 4.74
-       --good    seeded from 千歳緑, so it reads as a dye rather than a UI green.
-                 light #386E4C  paper 4.99 · sunk 4.55 · card 5.74
-                 dark  #5D9470  paper 5.01 · sunk 5.33 · card 4.53
-
-     THEY ARE ISOLUMINANT — measured, 1.00:1 against each other in light. That is
-     deliberate (both sit at the same AA distance from the same grounds) and it
-     means COLOUR ALONE MUST NEVER CARRY A STATE HERE. Every place that uses them
-     carries a second signal: the answer box thickens its border for correct and
-     adds an inset rule for incorrect, the log lines say what happened in words,
-     the danger controls are labelled `delete`. Do not remove a second signal on
-     the grounds that "the colour says it". */
+     THEY ARE NEARLY ISOLUMINANT (1.18:1 in light), so COLOUR ALONE MUST NEVER
+     CARRY A STATE HERE. Every place that uses them carries a second signal: the
+     answer box thickens its border for correct and adds an inset rule for
+     incorrect, the log lines say what happened in words, the danger controls are
+     labelled `delete`. Do not remove a second signal on the grounds that "the
+     colour says it". */
   --good: #386e4c;
-  --danger: #b93109;
+  --danger: #a8261b;
 
-  /* Kept as the names 26 rules already speak. `.ok`/`.no` — the two GRADE
-     buttons — no longer read these: they are solid-vs-outline indigo, set
-     explicitly, so these four mean "success" and "failure" and nothing else. */
   --ok: var(--good);
   --ok-edge: var(--good);
   --no: var(--danger);
   --no-edge: var(--danger);
   --sunk: var(--paper-sunk);
+
+  /* ── shape and depth (decision 57) ── */
+  --radius-sm: 6px;
+  --radius-md: 14px;
+  --radius-lg: 28px;
+  --radius-full: 999px;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 4%), 0 16px 40px rgb(0 0 0 / 5%);
+  --shadow-live: 0 6px 16px rgb(31 95 224 / 35%);
+  --shadow-layer: 0 24px 64px rgb(0 0 0 / 18%);
 
   /* ── the rail ──
      TWO NAMES, BECAUSE THEY ANSWER TWO QUESTIONS. `--rail-width` is how wide
@@ -154,36 +134,21 @@
   --rail-w: 0px;
 
   /* ── type ──
-     Fraunces is the WORDMARK and the display face and never sets a Japanese
-     glyph, which is why its subset is Latin-only. `--jp-display` used to lean
-     round to agree with the mark's round line caps; `--jp-ui` is flat because a
-     rounded gothic goes blobby on an 11px 型 label. Zach's call, 2026-09-12.
+     Hanken Grotesk sets every Latin glyph — the wordmark at 800, counts and
+     glosses at 700-800, buttons at 600, body at 400. Noto Sans JP sets every
+     Japanese glyph at ONE weight, 400: the head word's calm comes from a light
+     face at a huge size, and a second weight would double a 2.2 MB download.
+     The contrast between the two — airy kanji, short bold Latin — is the look.
 
-     ── ZEN KAKU WINS, 2026-09-13, AND THIS WAS THE LAST OPEN CELL OF THE BRIEF ──
-     Decision 32 recorded the Japanese face as still HIS: the design brief is
-     silent on it and specifies a Latin-only stack, while *"1,725 distinct kanji
-     are 100% of what is studied"*. It stayed open because he had never seen the
-     candidates over real cards.
-
-     He saw them, and the way he got there is worth keeping. A preview page of
-     mine wrapped cards in the wrong class, so `--jp-display` never applied and
-     the Japanese fell through to the system font. He read the result as the APP
-     looking worse than a page with no design — *"why does this html look better
-     than our actual app...? … im not kidding, it actually looks good"*. Which
-     was a real signal wearing a bug's clothes: Zen Maru was the thing he did not
-     like. Given the three side by side (`scripts/ojad-preview.ts`), he picked
-     **Zen Kaku Gothic New** over both Zen Maru and his system font.
-
-     So the round/flat split is gone and `--jp-display` is now `--jp` at display
-     size. Zen Maru stays in the stack as a fallback rather than being deleted —
-     the face is already downloaded and self-hosted, and removing it is a
-     bundle-size decision rather than a taste one. */
-  --display: "Fraunces VF", Georgia, serif;
-  --sans: "Avenir Next", Avenir, "Nunito Sans", "Segoe UI", system-ui, sans-serif;
-  --jp-display: "Zen Kaku Gothic New", "Zen Maru Gothic", "Hiragino Kaku Gothic ProN",
-    "Yu Gothic", Meiryo, sans-serif;
-  --jp: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Yu Gothic UI",
-    Meiryo, sans-serif;
+     `--display` and `--jp-display` are kept as names for the rules that speak
+     them. Zen Kaku Gothic New (decision 32's pick) stays LAST in the Japanese
+     stacks only as a system fallback; it is no longer loaded. */
+  --display: "Hanken Grotesk", "Noto Sans JP", system-ui, sans-serif;
+  --sans: "Hanken Grotesk", "Noto Sans JP", system-ui, sans-serif;
+  --jp-display: "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic",
+    "Zen Kaku Gothic New", Meiryo, sans-serif;
+  --jp: "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic",
+    "Yu Gothic UI", Meiryo, sans-serif;
   /* Kept for the template body and code, which are authored text. */
   --mono: ui-monospace, "Cascadia Mono", Consolas, var(--jp), monospace;
 }
@@ -191,115 +156,100 @@
 /*
  * ─── DARK ────────────────────────────────────────────────────────────────────
  *
- * DERIVED, not dimmed, and the brief's stated reason for leaving it open does
- * not survive measurement — so it is recorded here rather than repeated.
- *
- * The brief says vermilion "goes muddy on dark grounds". As a CONTRAST claim
- * that is false: #E0451D measures 4.25:1 on this ground and only 3.47:1 on
- * paper, so it is better off here. The real problem is perceptual — a saturated
- * red-orange on near-black reads dull, and blooms on OLED. The fix is therefore
- * a LIGHTNESS lift at constant hue, not a new colour: #F05A2E, 5.24:1.
- *
- * The ground is the INK family deepened, not a blue-black. var(--paper) belonged to
- * the terminal direction; a warm paper palette wants a warm dark or the whole
- * thing reads as two unrelated products.
- *
- * INDIGO INVERTS ITS ROLE. On paper it is a foreground ON a light ground. Here
- * it has to BE light: #7FA4E1 at 7.00:1. And `--indigo-deep` means "further in"
- * rather than "darker", so on dark it gets BRIGHTER (#A8C4F0) — a hover that
- * darkens on a dark ground reads as disabled.
- *
- * Measured against --paper #1a1815 unless noted:
- *   ink #E8E4DC 13.97   muted #A49E94 6.66 (7.09 on sunk, 6.03 on card)
- *   indigo #7FA4E1 7.00 (6.34 on card)   vermilion #F05A2E 5.24
+ * The reference's own dark phone: a charcoal ground, a lifted card, no shadow —
+ * the card is set apart by TONE. Ruri brightens to #5B8CFF so the disc and the
+ * rung stay vivid (4.79:1 on paper, 4.05:1 on card) and its icon flips to dark.
+ * `--indigo` follows `--ink`, so the primary fill becomes light-on-dark by
+ * itself.
  */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --indigo: #7fa4e1;
-    --indigo-deep: #a8c4f0;
-    --vermilion: #f05a2e;
-    --accent-head: #f05a2e;
-    --paper: #1a1815;
-    --paper-sunk: #121110;
-    --card: #232120;
-    --ink: #e8e4dc;
-    --muted: #a49e94;
-    --hair: #36322c;
-    --ink-bright: #fbf8f2;
-    --edge: #4f4a42;
-    --good: #5d9470;
-    --danger: #f05a2e;
+    --ruri: #5b8cff;
+    --accent-head: #ff8c6b;
+    --paper: #262626;
+    --paper-sunk: #3d3d3d;
+    --card: #323232;
+    --ink: #e8e8e8;
+    --muted: #adadad;
+    --hair: #444444;
+    --ink-bright: #ffffff;
+    --edge: #5a5a5a;
+    --good: #7cc296;
+    --danger: #ff8f80;
+    --on-live: #141414;
+    --shadow-card: none;
+    --shadow-live: 0 0 0 7px rgb(0 0 0 / 22%), 0 6px 16px rgb(91 140 255 / 30%);
+    --shadow-layer: 0 24px 64px rgb(0 0 0 / 50%);
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --indigo: #7fa4e1;
-  --indigo-deep: #a8c4f0;
-  --vermilion: #f05a2e;
-  --accent-head: #f05a2e;
-  --paper: #1a1815;
-  --paper-sunk: #121110;
-  --card: #232120;
-  --ink: #e8e4dc;
-  --muted: #a49e94;
-  --hair: #36322c;
-  --ink-bright: #fbf8f2;
-  --edge: #4f4a42;
-  --good: #5d9470;
-  --danger: #f05a2e;
+  --ruri: #5b8cff;
+  --accent-head: #ff8c6b;
+  --paper: #262626;
+  --paper-sunk: #3d3d3d;
+  --card: #323232;
+  --ink: #e8e8e8;
+  --muted: #adadad;
+  --hair: #444444;
+  --ink-bright: #ffffff;
+  --edge: #5a5a5a;
+  --good: #7cc296;
+  --danger: #ff8f80;
+  --on-live: #141414;
+  --shadow-card: none;
+  --shadow-live: 0 0 0 7px rgb(0 0 0 / 22%), 0 6px 16px rgb(91 140 255 / 30%);
+  --shadow-layer: 0 24px 64px rgb(0 0 0 / 50%);
 }
 
 /* ── the faces, self-hosted. `python tools/fonts.py` builds app/fonts/. ──
-   `font-display: block` on the wordmark is the brief's call and it is right: a
-   brief gap reads as loading, a synthesized Georgia 650 reads as broken. The
-   Japanese faces `swap` instead — a card must never wait on a 1 MB download. */
+   Hanken is `block` because it IS the wordmark and is 20 KB — a brief gap reads
+   as loading, a fallback grotesk reads as a different product. Noto Sans JP
+   `swap`s: a card must never wait on a 2.2 MB download. */
 @font-face {
-  font-family: "Fraunces VF";
-  src: url("./fonts/fraunces-latin.woff2") format("woff2");
-  font-weight: 100 900;
+  font-family: "Hanken Grotesk";
+  src: url("./fonts/hanken-400.woff2") format("woff2");
+  font-weight: 400;
   font-display: block;
 }
 
 @font-face {
-  font-family: "Zen Kaku Gothic New";
-  src: url("./fonts/zenkaku-med.woff2") format("woff2");
-  font-weight: 500;
-  font-display: swap;
+  font-family: "Hanken Grotesk";
+  src: url("./fonts/hanken-600.woff2") format("woff2");
+  font-weight: 600;
+  font-display: block;
 }
 
 @font-face {
-  font-family: "Zen Maru Gothic";
-  src: url("./fonts/zenmaru-med.woff2") format("woff2");
-  font-weight: 500;
+  font-family: "Hanken Grotesk";
+  src: url("./fonts/hanken-700.woff2") format("woff2");
+  font-weight: 700;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Hanken Grotesk";
+  src: url("./fonts/hanken-800.woff2") format("woff2");
+  font-weight: 800;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Noto Sans JP";
+  src: url("./fonts/notosansjp-400.woff2") format("woff2");
+  font-weight: 400;
   font-display: swap;
 }
 
-/* The wordmark, and the ONLY place the display instance is used at full size.
-   Every number in it was chosen against the mark by eye and is locked by the
-   brief — `opsz` is pinned with `font-optical-sizing: none` on purpose, so do
-   not "fix" that to auto. */
-.wordmark {
-  font-family: var(--display);
-  font-weight: 650;
-  font-optical-sizing: none;
-  font-variation-settings: "opsz" 144, "wght" 650, "SOFT" 100, "WONK" 1;
-  letter-spacing: 0.005em;
-}
-
-/* The small wordmark (header, rail) is the SAME locked instance as the boot
-   screen's. Zach, 2026-09-27: *"the logo font doesn't follow the design spec, but
-   the one on the loading screen does"*. It used to be `opsz 16, wght 620, WONK 0`
-   on a claim that the brief turns WONK off under ~24px — a claim recorded nowhere
-   the repo can check (DECISIONS.md 32 names one instance only), and at opsz 16
-   Fraunces is a different, chunkier cut, which is what he saw. */
+/* The wordmark: Hanken at 800, tracked tight — the reference's "248". The boot
+   lockup, the header and the rail all use this one instance. */
+.wordmark,
 .wordmark-ui {
   font-family: var(--display);
-  font-weight: 650;
-  font-optical-sizing: none;
-  font-variation-settings: "opsz" 144, "wght" 650, "SOFT" 100, "WONK" 1;
-  letter-spacing: 0.005em;
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
 /* Visible keyboard focus, everywhere, at the brief's values. The only vermilion
@@ -912,9 +862,8 @@ body {
    `.drill` is still set, because "which side is the question" is a real fact and
    something will want it. It just no longer decides how big anything is.
 
-   This is where `--jp-display` earns its 1.5 MB: Zen Maru's round terminals agree
-   with the mark's round line caps, which is the same argument the brief used to
-   set Fraunces to SOFT 100. */
+   Decision 57 adds one step ABOVE this one for a short run of Japanese script —
+   `[data-hero]`, at the end of this file. Everything else in `display` is here. */
 .hashigo-side[data-scale="display"] {
   font-size: clamp(26px, 7vw, 40px);
   line-height: 1.35;
@@ -1797,13 +1746,11 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
 }
 
 .done h2 {
-  color: var(--indigo);
+  color: var(--ink-bright);
   font-family: var(--display);
-  font-optical-sizing: none;
   font-size: 30px;
-  font-variation-settings: "opsz" 48, "wght" 650, "SOFT" 100, "WONK" 0;
-  font-weight: 650;
-  letter-spacing: 0.005em;
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
 .done p {
@@ -4102,4 +4049,236 @@ input[data-answer="incorrect"] {
   margin: 0 0 10px;
   padding: 8px 10px;
   white-space: pre-wrap;
+}
+
+/* ═══ DECISION 57 — THE PINTEREST SYSTEM, APPLIED ═════════════════════════════
+   The tokens at the top of this file carry the palette and the faces. This
+   section carries the SHAPES: a raised card with a big radius, pills and discs
+   for every control, a hero head word. It sits last so that it wins at equal
+   specificity over the decision-32 rules it replaces, which keeps every
+   behavioural rule above (states, gating, the walk, the measured footer) exactly
+   where its comment explains it. Nothing here hides, shows or moves a control
+   between states — that is all still decided above. */
+
+/* ── the chrome sits on the paper ──
+   The reference has no rule under its header: the count and the menu float on
+   the ground and the card is the only surface. The 2px progress bar still rides
+   the header's bottom edge, so the edge is still marked — by the bar. */
+.review header {
+  border-bottom: 0;
+  padding: 12px 16px;
+}
+
+.review header .wordmark-ui {
+  color: var(--ink-bright);
+  font-size: 17px;
+}
+
+/* The count is the reference's "248": heavy, tight, tabular. */
+#progress {
+  color: var(--ink-bright);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.progressbar,
+.progressbar i {
+  border-radius: var(--radius-full);
+}
+
+/* ── the deck line's chips ── pills, same border, same words. */
+.latetag,
+.newtag,
+.reasktag,
+.reversetag,
+.seentag {
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 9px;
+}
+
+/* ── THE CARD ──
+   The one raised surface: `--card` on `--paper`, 28px corners, a whisper of
+   shadow in light and none in dark (the dark card is lifted by tone alone, as in
+   the reference). No hairline round it and none between sides — the space does
+   that job. `container-type` is what lets the hero size itself to the card. */
+.cardhost {
+  border: 0;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  container-type: inline-size;
+  padding: 36px 24px 28px;
+}
+
+.hashigo-side {
+  border-top: 0;
+  padding: 18px 0;
+}
+
+/* THE HERO. `data-hero` is the side's length in code points, 1-4, and only on a
+   side that is nothing but Japanese script (`heroLength`). Sized against the
+   CARD's width rather than the viewport, so four kanji still fit a 375px phone
+   and one kanji does not become a billboard on the laptop. */
+.hashigo-side[data-hero] {
+  color: var(--ink);
+  font-family: var(--jp-display);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  padding-bottom: 28px;
+  text-align: center;
+}
+.hashigo-side[data-hero="1"] { font-size: min(128px, 44cqi); }
+.hashigo-side[data-hero="2"] { font-size: min(120px, 40cqi); }
+.hashigo-side[data-hero="3"] { font-size: min(96px, 30cqi); }
+.hashigo-side[data-hero="4"] { font-size: min(76px, 22cqi); }
+.hashigo-side[data-hero] ruby rt {
+  color: var(--muted);
+  font-size: 0.24em;
+  letter-spacing: 0.04em;
+}
+
+/* The mask: a recessed block, as in the system's Cloze. The dashed underline
+   was decision 32's only cue on a flat card; on a raised card the well reads. */
+.hashigo-cloze-mask {
+  border-bottom: 0;
+  border-radius: var(--radius-sm);
+  padding: 0 0.4em;
+}
+
+/* An inline clip button: a small disc in the line it belongs to. Ink, not ruri
+   — a card can carry several clips, and the one ruri on the screen is the big
+   disc under his thumb. */
+.clip {
+  border-radius: var(--radius-full);
+}
+.clip::after {
+  border-radius: var(--radius-full);
+  left: 25%;
+  max-width: 50%;
+}
+
+/* ── THE RURI DISC ──
+   Decision 23's round, bottom-right replay, now the system's play disc: the one
+   live colour, its glow, and the icon in `--on-live`. Same place, same size of
+   target, so his thumb finds it where it always was. */
+.replay {
+  background: var(--vermilion);
+  border: 0;
+  box-shadow: var(--shadow-live);
+  color: var(--on-live);
+  height: 60px;
+  transition: transform 0.12s ease;
+  width: 60px;
+}
+.replay:active {
+  background: var(--vermilion);
+  transform: scale(0.94);
+}
+.replay[disabled] {
+  background: var(--edge);
+  box-shadow: none;
+  opacity: 1;
+}
+.replay .ic {
+  height: 24px;
+  width: 24px;
+}
+
+/* ── THE FOOTER ── the rows float on the paper; no rules between them. */
+.ops,
+.shadowbar,
+.bar {
+  border-top: 0;
+}
+
+.op {
+  border-radius: var(--radius-full);
+  padding: 10px 6px;
+}
+
+/* The grade row: two pills. `forgot` and the walk's `next`/`reveal` are the
+   secondary — a recessed fill, ink label. `remembered` is the primary — the ink
+   fill. The `!important`s answer the ones decision 32 put on `.no`/`.ok`. */
+.bar button {
+  background: var(--sunk);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--ink);
+  font-weight: 600;
+  padding: 16px 10px;
+}
+.reveal-zone {
+  border-style: solid !important;
+}
+.no {
+  border-color: transparent !important;
+  color: var(--ink) !important;
+}
+@media (hover: hover) and (pointer: fine) {
+  .bar button:hover {
+    background: var(--hair);
+    color: var(--ink);
+  }
+}
+.bar button:active {
+  background: var(--hair);
+  color: var(--ink);
+}
+
+/* ── everything else that is a button, a field or a panel ── same language. */
+.banner button,
+.bootskip,
+.focuschip,
+.readingtoggle,
+.done button,
+.confirm-bar button,
+.gallery-back,
+.gallery-review-go,
+.gcard-op,
+.layer-op,
+.newcard-submit,
+.draw-button,
+.regen {
+  border-radius: var(--radius-full);
+}
+
+.layer-close,
+.gcard-more,
+.sidebartoggle {
+  border-radius: var(--radius-full);
+}
+
+.edit-input,
+.searchbox,
+.newcard-select,
+.gallery-search,
+.gallery-sort {
+  border-radius: var(--radius-sm);
+}
+
+.gcard {
+  border-color: transparent;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+.layer-panel,
+.confirm-panel,
+.palette-panel {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-layer);
+  overflow: hidden;
+}
+
+.say {
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-layer);
+}
+
+.boot-lockup {
+  color: var(--ink-bright);
 }

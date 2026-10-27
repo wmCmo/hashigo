@@ -165,3 +165,25 @@ export function sideScale(text: string): SideScale {
   if (length <= 64) return "mid";
   return "body";
 }
+
+/**
+ * DECISION 57 — THE WORD IS THE HERO. A side that is nothing but a short run of
+ * Japanese script (a head word like 東京, a kanji like 慈) is set huge and centred,
+ * the way the reference sets its card. Returns the length in code points, 1-4,
+ * or 0 for every other side, which keeps its `data-scale` size untouched.
+ *
+ * SCRIPT, NOT ONLY LENGTH, and that is what keeps decision 35 intact: `protein`
+ * and `cook; chef` are short reverse prompts that `sideScale` rightly keeps in
+ * `display`, and Latin at hero size would be a poster, not a card. A side holding
+ * a cloze is never a hero either — its text carries the `[…]` mask, so the walk
+ * cannot reveal a word into a size it was not laid out for.
+ *
+ * The cap is 4 because 4 kanji is the widest run that still fits a 375px phone at
+ * the smallest hero step; 5 and up stay in `display`, as before.
+ */
+export function heroLength(text: string): number {
+  const compact = text.replace(/\s+/g, "");
+  if (!/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー々〆ヶ]+$/u.test(compact)) return 0;
+  const length = [...compact].length;
+  return length <= 4 ? length : 0;
+}

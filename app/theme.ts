@@ -63,7 +63,7 @@ export const THEME_KEY = "hashigo.theme";
  * — the phone's browser chrome is painted before any CSS is resolved. Pinned
  * against the stylesheet by a test rather than trusted.
  */
-export const CHROME = { light: "#ECEAE5", dark: "#1A1815" } as const;
+export const CHROME = { light: "#F2F2F2", dark: "#262626" } as const;
 
 /** Tolerant: anything unrecognised is `system`, which is the shipped default. */
 export function readTheme(raw: string | null | undefined): Theme {

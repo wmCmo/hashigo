@@ -7,6 +7,7 @@ import { gistOf } from "../app/gist.js";
 import { isTypingTarget, survivesTyping } from "../app/keys.js";
 import {
   promptPositions,
+  heroLength,
   sideScale,
   visiblePositions,
   type BoundarySide,
@@ -413,6 +414,39 @@ describe("the reveal order", () => {
  * The old rule was positional (`.drill`, the question side). These are the real
  * strings from his corpus on both sides of the thresholds.
  */
+describe("which sides are set as the hero (decision 57)", () => {
+  it("takes a short run of Japanese script, and says how long it is", () => {
+    expect(heroLength("慈")).toBe(1);
+    expect(heroLength("東京")).toBe(2);
+    expect(heroLength(" 日本語 ")).toBe(3);
+    expect(heroLength("にんじん")).toBe(4);
+    expect(heroLength("コーヒー")).toBe(4);
+    expect(heroLength("人々")).toBe(2);
+  });
+
+  it("leaves Latin to `display`, because decision 35's short reverse prompts are not heroes", () => {
+    expect(heroLength("protein")).toBe(0);
+    expect(heroLength("cook; chef")).toBe(0);
+    expect(heroLength("shun")).toBe(0);
+  });
+
+  it("never takes a side holding a cloze mask, so a reveal cannot jump sizes", () => {
+    expect(heroLength("[…]係数[…]係数 中高(3)")).toBe(0);
+    expect(heroLength("[…]")).toBe(0);
+  });
+
+  it("stops at four, and an empty side is not a hero", () => {
+    expect(heroLength("気が付く")).toBe(4);
+    expect(heroLength("一から十まで")).toBe(0);
+    expect(heroLength("")).toBe(0);
+    expect(heroLength("   ")).toBe(0);
+  });
+
+  it("counts CODE POINTS, like `sideScale`", () => {
+    expect(heroLength("𠮟る")).toBe(2);
+  });
+});
+
 describe("how big the text on a side should be", () => {
   it("puts every forward vocabulary prompt in display", () => {
     for (const text of [
@@ -693,8 +727,8 @@ describe("theme", () => {
     // On `system` the two media-scoped <meta> tags answer for themselves; a
     // forced value there would freeze the status bar at one ground.
     expect(forcedChrome("system")).toBeNull();
-    expect(forcedChrome("dark")).toBe("#1A1815");
-    expect(forcedChrome("light")).toBe("#ECEAE5");
+    expect(forcedChrome("dark")).toBe("#262626");
+    expect(forcedChrome("light")).toBe("#F2F2F2");
   });
 
   it("falls back to following the device on anything unrecognised", () => {

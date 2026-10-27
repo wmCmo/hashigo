@@ -138,7 +138,7 @@ describe("the manifest is the one Samsung Internet needs", () => {
   it("uses the brief's palette for the splash, not an invented colour", () => {
     // background_color is what the OS paints before the first frame. A wrong one
     // is a flash of the wrong product on every cold launch.
-    expect(manifest.background_color.toUpperCase()).toBe("#ECEAE5");
+    expect(manifest.background_color.toUpperCase()).toBe("#F2F2F2");
   });
 });
 
@@ -200,7 +200,7 @@ describe("the icons on disk are what the manifest promises", () => {
         .map((v) => (v as number).toString(16).padStart(2, "0"))
         .join("")
         .toUpperCase();
-    expect(hex, "the icon ground drifted off --card").toBe("#FBFAF7");
+    expect(hex, "the icon ground drifted off --card").toBe("#FCFCFC");
   });
 
   it("the maskable icon is FULL BLEED — a transparent corner is a visible notch", () => {

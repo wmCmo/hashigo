@@ -43,6 +43,8 @@ const GROUNDS = ["--paper", "--paper-sunk", "--card"] as const;
  */
 const ON_INSTEAD: Record<string, readonly string[]> = {
   "--card": ["--indigo", "--indigo-deep", "--danger"],
+  // Decision 57: the replay disc's icon, and it sits on the ruri fill only.
+  "--on-live": ["--vermilion"],
 };
 
 /**
@@ -325,6 +327,7 @@ describe("text that lands on a FILLED ground, not on paper", () => {
     ["--card", "--indigo", "a filled button's own label"],
     ["--card", "--indigo-deep", "a filled button's label, pressed"],
     ["--card", "--danger", "the record button's label while the mic is open"],
+    ["--on-live", "--vermilion", "the replay disc's icon on the ruri fill (decision 57)"],
     ["--ink", "--sunk", "a recessed row: deck rows, palette rows, menu rows"],
     ["--muted", "--sunk", "the subtitle on those rows — deck path, card count"],
     ["--muted", "--paper-sunk", "the cloze mask's own text"],

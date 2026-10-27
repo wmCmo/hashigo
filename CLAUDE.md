@@ -1078,6 +1078,17 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     pronunciation matches OpenJTalk's. Measured: ~40 MB, ~0.1 ms a word; Edge's
     Local Network Access permission granted for the site once. See `DECISIONS.md` 56.
 
+57. **THE PINTEREST SYSTEM REPLACES DECISION 32's LOOK; THE ONE COLOUR IS 瑠璃.**
+    Zach, 2026-10-27: *"build a design system around this … we'll start from
+    scratch"*, then *"apply this design to the actual app"*. Grey grounds, three
+    inks, ONE live colour — ruri `#1F5FE0` / `#5B8CFF`, his pick over orange
+    (*"orange makes people think of claude lol"*) — on the replay disc, the mark's
+    top rung and focus only. A raised 28px card, pills and discs, Noto Sans JP 400
+    + Hanken Grotesk. Token NAMES kept, values repointed (`--indigo` → ink,
+    `--vermilion` → ruri). `heroLength()` sets a 1-4 character Japanese-only side
+    huge and centred. Decision 23's hand and all review behaviour are unchanged.
+    See `DECISIONS.md` 57.
+
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's
 zero JavaScript, the heatmap's 4 colour bins, and `tags` keeping 20 rows for 19

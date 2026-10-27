@@ -9,8 +9,8 @@
          phone's own chrome follow, which is what stops a light app from sitting
          in a black status bar (and the reverse at night). -->
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#ECEAE5" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1A1815" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#F2F2F2" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#262626" media="(prefers-color-scheme: dark)" />
     <title>梯子 · review</title>
     <link rel="icon" href="./brand/favicon.svg" />
     <!-- The PWA set. `manifest.webmanifest`, `sw.js` and `icons/` are copied
@@ -21,12 +21,13 @@
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Hashigo" />
-    <!-- The wordmark is `font-display: block`, so it is on the critical path by
-         design — a brief gap reads as loading, a synthesized Georgia 650 reads as
-         broken. Preloaded so that gap is as short as it can be. -->
+    <!-- The wordmark is Hanken Grotesk 800 at `font-display: block`, so it is on
+         the critical path by design — a brief gap reads as loading, a fallback
+         grotesk reads as a different product. Preloaded so that gap is as short
+         as it can be (20 KB). -->
     <link
       rel="preload"
-      href="./fonts/fraunces-latin.woff2"
+      href="./fonts/hanken-800.woff2"
       as="font"
       type="font/woff2"
       crossorigin
@@ -44,7 +45,7 @@
         var t = localStorage.getItem("hashigo.theme");
         if (t === "light" || t === "dark") {
           document.documentElement.setAttribute("data-theme", t);
-          var c = t === "dark" ? "#1A1815" : "#ECEAE5";
+          var c = t === "dark" ? "#262626" : "#F2F2F2";
           for (var m of document.querySelectorAll('meta[name="theme-color"]')) m.content = c;
         }
       } catch (cause) {
@@ -59,8 +60,8 @@
 
     <section id="boot" class="boot">
       <!-- The mark at full size — the THREE-rung construction, because this one
-           is large enough for it. The wordmark is the locked display instance:
-           opsz 144, wght 650, SOFT 100, WONK 1. -->
+           is large enough for it. The top rung is `--vermilion`, which is ruri
+           since decision 57: the one live colour. -->
       <h1 class="boot-lockup">
         <svg class="boot-mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
           <g fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round">
@@ -129,8 +130,8 @@
         <button id="sidebartoggle" class="sidebartoggle" type="button"
                 aria-controls="sidebar" aria-expanded="false" aria-label="browse the collection" data-icon="list"></button>
         <!-- Decision 32's mark, in the two-rung small construction: below 24px
-             the three-rung one collapses. The top rung is the ONE vermilion on
-             this screen — everything else that used to be an accent is indigo. -->
+             the three-rung one collapses. The top rung is `--vermilion`, which
+             decision 57 made ruri — the live colour, beside the replay disc. -->
         <svg class="mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
           <g fill="none" stroke="currentColor" stroke-linecap="round">
             <path d="M17 86L27 38" stroke-width="12" />
