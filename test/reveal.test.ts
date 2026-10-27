@@ -92,7 +92,7 @@ import {
 // ─── 1. the ports really are the DOM ─────────────────────────────────────────
 
 /**
- * Type-only, in the manner of `spike/contract-compat.ts`: no runtime value, and
+ * Type-only, in the manner of `test/db-contract.types.ts`: no runtime value, and
  * the assignment IS the assertion. If either port is widened past what a browser
  * provides, `npm run typecheck` stops compiling — which is the moment to find out.
  */

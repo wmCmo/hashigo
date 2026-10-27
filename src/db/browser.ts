@@ -360,8 +360,8 @@ export async function openDatabaseBrowser(options: BrowserOpenOptions = {}): Pro
  * the drift was "caught by a build rather than by a corrupt database". It was
  * not: `vite.config.ts:106` does inject the Node-side value and
  * `spike/db.worker.ts:202-207` does compare all three, but it only PRINTS
- * `<- DRIFT` to a page a human has to be looking at. Nothing failed. `npm run
- * spike:check` is `tsc` over a type-only file and never evaluated it.
+ * `<- DRIFT` to a page a human has to be looking at. Nothing failed. The old `spike:check`
+ * gate was `tsc` over a type-only file and never evaluated it.
  *
  * Live only because both spikes open an existing database with
  * `applySchema: false`; it would have corrupted the first database the shell

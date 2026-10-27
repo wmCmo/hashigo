@@ -5,7 +5,8 @@ questions that could not be settled by reasoning, and it is safe to delete once
 the PWA shell in `src/` exists. Nothing in `src/` imports it. Do not build on it;
 build on `src/db/browser.ts`, which is the production half of this work.
 
-The one file here worth keeping in some form is `contract-compat.ts` — see below.
+The one file that was worth keeping, `contract-compat.ts`, moved to
+`test/db-contract.types.ts` on 2026-10-27, where `npm run typecheck` covers it.
 
 ```
 spike/
@@ -13,7 +14,6 @@ spike/
   main.ts             main thread: DOM, persist(), header check, misuse probes
   db.worker.ts        the dedicated Worker: ALL SQLite work happens here
   protocol.ts         the messages between them
-  contract-compat.ts  tsc-only proof that better-sqlite3 satisfies SqliteHandle
   make-bootstrap.mjs  build/hashigo.db -> a checkpointed, non-WAL copy to fetch
 ```
 
@@ -24,7 +24,6 @@ npm run spike:bootstrap    # once; makes build/spike/hashigo-bootstrap.db (69 MB
 npm run spike:build        # vite build -> build/spike-dist/
 npm run spike:preview      # http://localhost:4273  (this is the PASS condition)
 npm run spike:dev          # http://localhost:5273  (dev server, also verified)
-npm run spike:check        # tsc: the two handles satisfy one contract
 ```
 
 `build/` is gitignored, so neither the 69 MB bootstrap database nor the bundle

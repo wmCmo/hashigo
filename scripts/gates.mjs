@@ -58,7 +58,6 @@ const only = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 const GATES = [
   { name: "typecheck", why: "src/ compiles under the strict config", cmd: "npm run typecheck" },
   { name: "app:check", why: "app/ compiles under ITS OWN tsconfig", cmd: "npm run app:check" },
-  { name: "spike:check", why: "the browser contract still holds", cmd: "npm run spike:check" },
   { name: "build", why: "dist/ compiles AND actually imports", cmd: "npm run build" },
   {
     // `app:check` is `tsc --noEmit` and is blind to every bundler hazard

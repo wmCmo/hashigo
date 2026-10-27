@@ -3,7 +3,7 @@
  * governs it ("Read this before building the renderer or the review UI").
  *
  * 1. THE PORT IS THE REAL DOM. Type-only assignments, in the manner of
- *    `spike/contract-compat.ts`: `Document`, `HTMLElement` and `Text` satisfy
+ *    `test/db-contract.types.ts`:`Document`, `HTMLElement` and `Text` satisfy
  *    `RenderDocument`, `RenderElement` and `RenderText`. Nothing executes; if
  *    someone widens the port past what a browser provides, `npm run typecheck`
  *    stops compiling. The same trick pins `GenerationDescriptor` against

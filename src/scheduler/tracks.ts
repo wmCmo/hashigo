@@ -5,7 +5,7 @@
  * is typed against `SqliteHandle` rather than better-sqlite3's `Database`
  * because the review UI runs in the browser over OPFS — see the contract note in
  * `src/db/browser.ts`. That is a TYPE-LEVEL claim, checked by tsc and by
- * `spike/contract-compat.ts`, and it is the honest limit of it: every test here
+ * `test/db-contract.types.ts`, and it is the honest limit of it: every test here
  * runs on better-sqlite3, and nothing in this file has yet executed against
  * sqlite-wasm. What the contract buys is that it will not need rewriting to;
  * what it does not buy is a measurement.

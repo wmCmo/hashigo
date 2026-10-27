@@ -26,7 +26,7 @@
  * THE PORT IS PROVED, NOT ASSERTED. `RenderElement` and `RenderDocument` are
  * shaped so the platform's own `HTMLElement` and `Document` satisfy them
  * structurally, and `test/render.test.ts` pins that with a type-only assignment
- * in the manner of `spike/contract-compat.ts`. If someone widens this surface
+ * in the manner of `test/db-contract.types.ts`. If someone widens this surface
  * past what the real DOM provides, `npm run typecheck` stops compiling — which
  * is the moment to find out.
  *
