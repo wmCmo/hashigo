@@ -4264,31 +4264,23 @@ input[data-answer="incorrect"] {
   font-size: min(72px, 22cqi);
   line-height: 1.05;
 }
-/* The reading is `ink-2` beside ordinary text — it annotates the word, it is not
-   as loud as the word. Over a hero it is `ink`, at a size that reads. */
+/* FURIGANA HE CAN READ. Zach, 2026-10-27, on 予告 on his phone: *"i think
+   ふりがな is a bit hard to read"*. Measured on that card: 7.5px over 15px body
+   text in a preview, ~12px under the display-size head word. The fix is SIZE: a
+   px floor at the system's `reading` style, 13px, so a small base never drags it
+   below legible. Weight, tracking and colour stay the system's — Japanese is 400
+   (the only weight shipped), untracked, and the reading is `ink-2`, because it
+   annotates the word and must not compete with it. */
 .hashigo-side ruby rt,
 .hashigo-side[data-scale="display"] ruby rt,
 .hashigo-side[data-scale="mid"] ruby rt {
   color: var(--muted);
-}
-/* FURIGANA HE CAN READ. Zach, 2026-10-27, on 予告 on his phone: *"i think
-   ふりがな is a bit hard to read"*. Measured on that card: 7.5px over 15px body
-   text in a preview, ~12px under the display-size head word — kana at that size,
-   at weight 400, is a smudge. A floor in px, so a small base never drags the
-   reading below legible. (The 500 asks for strokes that survive the size; with
-   only Noto 400 shipped it renders at 400, and the floor is what carries it.) */
-.hashigo-side ruby rt {
-  font-size: max(0.5em, 11px);
-  font-weight: 500;
-  letter-spacing: 0.04em;
-}
-.hashigo-side[data-scale="display"] ruby rt {
-  font-size: max(0.5em, 14px);
+  font-size: max(0.5em, 13px);
+  font-weight: 400;
+  letter-spacing: 0;
 }
 .hashigo-side[data-hero] ruby rt {
-  color: var(--ink);
   font-size: max(0.3em, 16px);
-  letter-spacing: 0.04em;
 }
 
 /* 型 is a jp chip (decision 27: it is load-bearing, so it keeps a legible 15px).
@@ -4369,7 +4361,8 @@ input[data-answer="incorrect"] {
    Same `--played`, drawn as a conic sweep from twelve o'clock and masked to a
    2px ring just outside the border, so it costs no layout either. */
 .clip::after {
-  background: conic-gradient(var(--accent) var(--played, 0%), transparent 0);
+  /* Ruri: playback progress is LIVE, the same role as the day's progress fill. */
+  background: conic-gradient(var(--vermilion) var(--played, 0%), transparent 0);
   border-radius: var(--radius-full);
   bottom: auto;
   height: auto;
