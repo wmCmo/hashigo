@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hashigo</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="A flashcard app for Japanese that drills pitch accent: the word, and how it rises and falls.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&family=Noto+Sans+JP:wght@400;500&display=swap">
+<style>
+/* Layout: one column of prose beside one live flashcard; everything else is grey on grey.
+   Tokens are design-system/tokens.json, verbatim. Ruri appears only on what is live. */
+:root {
+  --canvas: #f2f2f2;
+  --card: #fcfcfc;
+  --sunk: #ebebeb;
+  --hairline: #e0e0e0;
+  --ink: #3a3a3a;
+  --ink-strong: #262626;
+  --ink-2: #686868;
+  --ink-3: #b4b4b4;
+  --accent: #1f5fe0;
+  --accent-text: #1f5fe0;
+  --on-accent: #fcfcfc;
+  --accent-head: #b33717;
+  --danger: #a8261b;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.04), 0 16px 40px rgba(0,0,0,.05);
+  --shadow-live: 0 6px 16px rgba(31,95,224,.35);
+
+  --jp: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --sans: "Hanken Grotesk", "Noto Sans JP", system-ui, sans-serif;
+
+  --r-sm: 6px; --r-md: 14px; --r-lg: 28px; --r-full: 999px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #262626; --card: #323232; --sunk: #3d3d3d; --hairline: #444444;
+    --ink: #e8e8e8; --ink-strong: #ffffff; --ink-2: #adadad; --ink-3: #626262;
+    --accent: #5b8cff; --accent-text: #8cb0ff; --on-accent: #141414;
+    --accent-head: #ff8c6b; --danger: #ff8f80;
+    --shadow-card: none;
+    --shadow-live: 0 0 0 7px rgba(0,0,0,.22), 0 6px 16px rgba(91,140,255,.30);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --canvas: #262626; --card: #323232; --sunk: #3d3d3d; --hairline: #444444;
+  --ink: #e8e8e8; --ink-strong: #ffffff; --ink-2: #adadad; --ink-3: #626262;
+  --accent: #5b8cff; --accent-text: #8cb0ff; --on-accent: #141414;
+  --accent-head: #ff8c6b; --danger: #ff8f80;
+  --shadow-card: none;
+  --shadow-live: 0 0 0 7px rgba(0,0,0,.22), 0 6px 16px rgba(91,140,255,.30);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font: 400 16px/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+@media (min-width: 640px) {
+  .wrap { padding-left: max(32px, env(safe-area-inset-left, 0px)); padding-right: max(32px, env(safe-area-inset-right, 0px)); }
+}
+h1, h2, h3 { margin: 0; text-wrap: balance; color: var(--ink-strong); }
+p { margin: 0; }
+a { color: var(--accent-text); text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.jp { font-family: var(--jp); }
+
+/* ── chrome ───────────────────────────────────────── */
+.top {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding-block: 24px;
+}
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink-strong); }
+.brand svg { width: 32px; height: 32px; display: block; }
+.brand b { font-weight: 800; font-size: 20px; letter-spacing: -0.03em; }
+.status {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--sunk); color: var(--ink-2);
+  border-radius: var(--r-full); padding: 6px 14px;
+  font-size: 13px; font-weight: 600;
+}
+.status i {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ── hero ─────────────────────────────────────────── */
+.hero {
+  display: grid; gap: 48px; align-items: center;
+  padding-block: 40px 88px;
+}
+@media (min-width: 900px) { .hero { grid-template-columns: 1fr 420px; gap: 72px; padding-block: 56px 112px; } }
+.hero > * { min-width: 0; }
+.kicker {
+  font-family: var(--jp); font-size: 15px; color: var(--ink-2); margin-bottom: 20px;
+}
+.hero h1 {
+  font-size: clamp(40px, 6.4vw, 68px); line-height: 1.02; font-weight: 800; letter-spacing: -0.035em;
+}
+.lede { margin-top: 24px; font-size: 18px; line-height: 1.6; color: var(--ink-2); max-width: 34em; }
+.lede strong { color: var(--ink); font-weight: 600; }
+
+/* ── the demo card ────────────────────────────────── */
+.demo { display: grid; gap: 14px; }
+.demo-chrome { display: flex; justify-content: space-between; align-items: center; padding-inline: 6px; }
+.chip {
+  background: var(--sunk); color: var(--ink-2); border-radius: var(--r-full);
+  padding: 3px 12px; font-size: 12px; font-weight: 600;
+}
+.count { font-weight: 800; color: var(--ink-strong); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.count span { color: var(--ink-2); font-weight: 700; }
+.card {
+  position: relative;
+  background: var(--card); border-radius: var(--r-lg); box-shadow: var(--shadow-card);
+  padding: 44px 32px 92px; min-height: 440px;
+  display: flex; flex-direction: column; gap: 22px;
+  container-type: inline-size;
+}
+.head {
+  font-family: var(--jp); font-weight: 400; text-align: center;
+  font-size: min(120px, 34cqi); line-height: 1.05; color: var(--ink); padding-block: 8px 4px;
+}
+.side { display: grid; gap: 10px; transition: opacity .2s; }
+.side + .side { border-top: 1px solid var(--hairline); padding-top: 18px; }
+.side[hidden] { display: none; }
+.cloze {
+  display: inline-block; min-width: 4.2em; height: 1.5em; vertical-align: middle;
+  background: var(--sunk); border-radius: var(--r-sm);
+}
+.reading-row { display: flex; align-items: baseline; justify-content: center; gap: 14px; font-size: 22px; }
+.reading-row .jp { color: var(--ink); }
+.kata { font-family: var(--jp); font-size: 14px; color: var(--ink-2); background: var(--sunk); border-radius: var(--r-full); padding: 2px 12px; }
+.sentence { font-family: var(--jp); font-size: 18px; color: var(--ink); text-align: center; }
+.ojad { font-family: var(--jp); font-size: 15px; line-height: 1.9; color: var(--ink-2); text-align: center; }
+.ojad .gap { display: inline-block; width: .5em; }
+.m-head { color: var(--accent-head); font-weight: 600; position: relative; }
+.m-head::after {
+  content: ""; position: absolute; right: -.1em; top: -.28em; width: .34em; height: .45em;
+  border-top: 2px solid currentColor; border-right: 2px solid currentColor;
+}
+.m-dv { border: 1px solid currentColor; border-radius: 50%; padding: 0 .1em; opacity: .85; }
+.gloss { text-align: center; font-weight: 700; font-size: 18px; color: var(--ink); }
+.disc {
+  position: absolute; right: 22px; bottom: 22px;
+  width: 60px; height: 60px; border-radius: 50%; border: 0;
+  background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-live);
+  display: grid; place-items: center; cursor: pointer;
+  transition: transform .12s;
+}
+.disc:active { transform: scale(.92); }
+.disc svg { width: 20px; height: 20px; margin-left: 3px; }
+.note {
+  position: absolute; left: 32px; bottom: 36px; right: 100px;
+  font-size: 13px; color: var(--ink-2);
+}
+.bar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn {
+  font: 600 16px/1 var(--sans); border: 0; border-radius: var(--r-full);
+  padding: 17px 16px; white-space: nowrap; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 10px;
+  transition: transform .12s;
+}
+.btn:active { transform: scale(.97); }
+.btn-2 { background: var(--sunk); color: var(--ink); }
+.btn-1 { background: var(--ink); color: var(--card); }
+.kbd { font-size: 12px; opacity: .85; font-weight: 600; border: 1px solid currentColor; border-radius: 5px; padding: 1px 5px; }
+@media (hover: none), (max-width: 420px) { .kbd { display: none; } }
+.progress { height: 3px; background: var(--sunk); border-radius: 2px; overflow: hidden; margin-inline: 6px; }
+.progress i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .28s cubic-bezier(.2,.7,.2,1); }
+
+/* ── sections ─────────────────────────────────────── */
+section { padding-block: 80px; border-top: 1px solid var(--hairline); }
+.sec-head { display: grid; gap: 14px; max-width: 40em; margin-bottom: 44px; }
+.eyebrow { font-family: var(--jp); color: var(--ink-2); font-size: 15px; }
+.sec-head h2 { font-size: clamp(28px, 4vw, 40px); line-height: 1.1; font-weight: 800; letter-spacing: -0.03em; }
+.sec-head p { color: var(--ink-2); font-size: 17px; }
+
+/* the 花 / 鼻 pair */
+.pair { display: grid; gap: 20px; }
+@media (min-width: 760px) { .pair { grid-template-columns: 1fr 1fr; } }
+.pitch {
+  background: var(--card); border-radius: var(--r-lg); box-shadow: var(--shadow-card);
+  padding: 28px; display: grid; gap: 18px; min-width: 0;
+}
+.pitch-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.pitch-word { font-family: var(--jp); font-size: 56px; line-height: 1; color: var(--ink); }
+.pitch-word small { font-size: 18px; color: var(--ink-2); margin-left: 10px; font-family: var(--sans); font-weight: 700; }
+.pitch svg { width: 100%; height: auto; display: block; overflow: visible; }
+.pitch svg .line { fill: none; stroke: var(--ink-2); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.pitch svg .dot { fill: var(--ink); }
+.pitch svg .dot.after { fill: var(--card); stroke: var(--ink-2); stroke-width: 2.5; }
+.pitch svg .drop { fill: var(--accent-head); }
+.pitch svg text { font-family: var(--jp); font-size: 20px; fill: var(--ink); text-anchor: middle; }
+.pitch svg text.after { fill: var(--ink-2); }
+.pitch svg .hl { font-family: var(--sans); font-size: 12px; font-weight: 700; fill: var(--ink-3); text-anchor: end; letter-spacing: .06em; }
+.pitch p { color: var(--ink-2); font-size: 15px; }
+.aside { margin-top: 28px; color: var(--ink-2); max-width: 44em; font-size: 15px; }
+
+/* features */
+.feats { display: grid; gap: 36px 48px; }
+@media (min-width: 700px) { .feats { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 1000px) { .feats { grid-template-columns: 1fr 1fr 1fr; } }
+.feat { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.feat h3 { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+.feat p { color: var(--ink-2); font-size: 15px; }
+.feat .jp-term { font-family: var(--jp); color: var(--ink); }
+
+/* figures */
+.figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 24px; }
+@media (min-width: 800px) { .figs { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.fig b { display: block; font-size: clamp(32px, 4.4vw, 48px); font-weight: 800; letter-spacing: -0.04em; color: var(--ink-strong); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.fig span { color: var(--ink-2); font-size: 14px; }
+
+/* closing */
+.closing { display: grid; gap: 28px; }
+@media (min-width: 860px) { .closing { grid-template-columns: 1.1fr 1fr; gap: 64px; align-items: start; } }
+.closing > * { min-width: 0; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; counter-reset: s; }
+.steps li {
+  counter-increment: s; background: var(--card); border-radius: var(--r-md);
+  padding: 16px 20px 16px 58px; position: relative; font-size: 15px; color: var(--ink);
+}
+.steps li::before {
+  content: counter(s); position: absolute; left: 18px; top: 14px;
+  width: 26px; height: 26px; border-radius: 50%; background: var(--sunk); color: var(--ink-2);
+  display: grid; place-items: center; font-weight: 700; font-size: 13px;
+}
+.steps li.done::before { background: var(--ink); color: var(--card); }
+.steps li small { display: block; color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+
+footer { padding-block: 40px 56px; border-top: 1px solid var(--hairline); color: var(--ink-2); font-size: 14px; display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: space-between; }
+footer .jp { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="#" aria-label="Hashigo">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-linecap="round">
+          <path d="M16 87L27.5 32" stroke-width="10"/>
+          <path d="M84 87L72.5 32" stroke-width="10"/>
+          <path d="M18.09 77H81.91" stroke-width="9"/>
+          <path d="M22.27 57H77.73" stroke-width="9"/>
+          <path d="M25.83 40H74.17" stroke-width="9"/>
+        </g>
+        <path d="M31.47 13H68.53" fill="none" stroke="var(--accent)" stroke-width="9" stroke-linecap="round"/>
+      </svg>
+      <b>hashigo</b>
+    </a>
+    <span class="status"><i></i>in private use</span>
+  </header>
+
+  <div class="hero">
+    <div>
+      <p class="kicker">はしご · a ladder</p>
+      <h1>Learn the word, and how it rises and falls.</h1>
+      <p class="lede">Hashigo is a flashcard app for Japanese built around <strong>pitch accent</strong>. Every word carries its accent pattern, every example sentence is marked mora by mora, and the audio waits until you have said the word yourself.</p>
+    </div>
+
+    <div class="demo" aria-label="A sample review">
+      <div class="demo-chrome">
+        <span class="chip jp" id="deck">単語</span>
+        <span class="count"><span id="n">1</span> / 2</span>
+      </div>
+      <div class="progress" aria-hidden="true"><i id="prog"></i></div>
+      <article class="card" id="card" aria-live="polite">
+        <div class="head" id="head">花</div>
+        <div class="side" data-step="1" hidden>
+          <div class="reading-row"><span class="jp" id="reading">はな</span><span class="kata" id="kata">尾高(2)</span></div>
+        </div>
+        <div class="side" data-step="2" hidden>
+          <p class="sentence" id="sentence">庭の花が咲きました。</p>
+          <p class="ojad" id="ojad"></p>
+        </div>
+        <div class="side" data-step="3" hidden>
+          <p class="gloss" id="gloss">flower; blossom</p>
+        </div>
+        <p class="note" id="note">Say the reading aloud first.</p>
+        <button class="disc" id="disc" type="button" aria-label="play the word (no audio on this page)">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3.5v13l11-6.5z" fill="currentColor"/></svg>
+        </button>
+      </article>
+      <div class="bar">
+        <button class="btn btn-2" id="forgot" type="button">forgot <span class="kbd">f</span></button>
+        <button class="btn btn-1" id="go" type="button">reveal <span class="kbd">space</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">花 と 鼻</p>
+      <h2>Two words that sound the same until a particle follows.</h2>
+      <p>Said on their own, 花 and 鼻 are both low then high. The difference appears on the next syllable: after 花 the pitch drops, after 鼻 it stays up. A clip of the bare word cannot carry that, so Hashigo puts the pattern on the card.</p>
+    </div>
+    <div class="pair">
+      <div class="pitch">
+        <div class="pitch-top"><span class="pitch-word">花<small>flower</small></span><span class="kata">尾高</span></div>
+        <svg viewBox="0 0 300 120" role="img" aria-label="は low, な high, が low: the pitch falls after な">
+          <text class="hl" x="24" y="34">H</text><text class="hl" x="24" y="84">L</text>
+          <polyline class="line" points="70,80 160,30 250,80"/>
+          <circle class="dot" cx="70" cy="80" r="7"/>
+          <circle class="dot" cx="160" cy="30" r="7"/>
+          <circle class="dot after" cx="250" cy="80" r="7"/>
+          <path class="drop" d="M178 22 l8 0 l0 8 z"/>
+          <text x="70" y="114">は</text><text x="160" y="114">な</text><text class="after" x="250" y="114">が</text>
+        </svg>
+        <p>はな＼が. The fall lands on the particle, so 尾高 and 平板 only part ways in a sentence.</p>
+      </div>
+      <div class="pitch">
+        <div class="pitch-top"><span class="pitch-word">鼻<small>nose</small></span><span class="kata">平板</span></div>
+        <svg viewBox="0 0 300 120" role="img" aria-label="は low, な high, が high: the pitch stays up">
+          <text class="hl" x="24" y="34">H</text><text class="hl" x="24" y="84">L</text>
+          <polyline class="line" points="70,80 160,30 250,30"/>
+          <circle class="dot" cx="70" cy="80" r="7"/>
+          <circle class="dot" cx="160" cy="30" r="7"/>
+          <circle class="dot after" cx="250" cy="30" r="7"/>
+          <text x="70" y="114">は</text><text x="160" y="114">な</text><text class="after" x="250" y="114">が</text>
+        </svg>
+        <p>はなが. No fall at all. On the review card, a 平板 phrase carries no mark.</p>
+      </div>
+    </div>
+    <p class="aside">In this corpus, 2,148 of the 3,830 labelled words are 平板 or 尾高. For all of them, the label is the only place the difference shows.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">練習</p>
+      <h2>Built for one way of studying.</h2>
+    </div>
+    <div class="feats">
+      <div class="feat">
+        <h3>Say it, then hear it</h3>
+        <p>A card in produce mode shows the kanji and stays silent. You say the reading and the contour aloud, reveal, and compare. Audio before the reveal would hand you the answer.</p>
+      </div>
+      <div class="feat">
+        <h3>Or hear it, then name it</h3>
+        <p>A card in identify mode plays the word and hides it. You find the kanji from the sound. When the <span class="jp-term">型</span> label shows you had an accent wrong, one switch moves the card to produce mode.</p>
+      </div>
+      <div class="feat">
+        <h3>A reveal is a walk</h3>
+        <p>Each press uncovers one blank, then the next side. <em>forgot</em> is there from the first step. <em>remembered</em> waits until everything is on screen.</p>
+      </div>
+      <div class="feat">
+        <h3>Shadow the clip</h3>
+        <p>Replay, loop, 0.75× and 1.25×, and record yourself to play back beside the clip. No 0.5×: stretching the audio that far smears the very fall you are trying to hear.</p>
+      </div>
+      <div class="feat">
+        <h3>FSRS-6, two buttons</h3>
+        <p>Remembered or forgot. Intervals up to a year, aimed at 90% recall. Ten new cards a day, and a word waits until you have met its kanji.</p>
+      </div>
+      <div class="feat">
+        <h3>Yours, on your device</h3>
+        <p>The database runs in the browser and stays there. Reviews work offline, and a phone and a laptop keep each other up to date when they next connect.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">数字</p>
+      <h2>Tested on four years of real study.</h2>
+      <p>Hashigo was built against one person's complete Mochi history and has replaced Mochi for that person since September 2026.</p>
+    </div>
+    <div class="figs">
+      <div class="fig"><b>7,716</b><span>cards</span></div>
+      <div class="fig"><b>103,110</b><span>reviews imported</span></div>
+      <div class="fig"><b>3,830</b><span>words with an accent label</span></div>
+      <div class="fig"><b>86,627</b><span>morae marked in example sentences</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap closing">
+    <div class="sec-head" style="margin:0">
+      <p class="eyebrow">これから</p>
+      <h2>Not open yet.</h2>
+      <p>Hashigo has one user today. It will open to others, free, once it has earned it. There is nothing to sign up for in the meantime.</p>
+    </div>
+    <ol class="steps">
+      <li class="done">Daily use replaces Mochi<small>Since September 2026</small></li>
+      <li>A month of daily use with almost nothing to fix</li>
+      <li>A friend starts from an empty deck without help</li>
+      <li>Cost, accounts, licence and support are settled</li>
+    </ol>
+  </div>
+</section>
+
+<div class="wrap">
+  <footer>
+    <span><span class="jp">はしご</span> · one card, one word, one rung higher.</span>
+    <span>Accent data from OpenJTalk and UniDic, checked against OJAD.</span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  // Two real cards from the corpus's own pattern: same reading, different 型.
+  // Morae: [text, mark] where mark is "h" (pitch falls after this mora), "d" (devoiced) or "".
+  const CARDS = [
+    {
+      head: "花", reading: "はな", kata: "尾高(2)", sentence: "庭の花が咲きました。", gloss: "flower; blossom",
+      ojad: [[["に",""],["わ",""],["の",""]], [["は",""],["な","h"],["が",""]], [["さ",""],["き",""],["ま","h"],["し","d"],["た",""]]],
+    },
+    {
+      head: "鼻", reading: "はな", kata: "平板", sentence: "彼は鼻が高い。", gloss: "nose",
+      ojad: [[["か","h"],["れ",""],["は",""]], [["は",""],["な",""],["が",""]], [["た",""],["か","h"],["い",""]]],
+    },
+  ];
+  const STEPS = 3;
+  const $ = (id) => document.getElementById(id);
+  const sides = [...document.querySelectorAll(".side")];
+  let i = 0, step = 0;
+
+  function renderOjad(phrases) {
+    const out = $("ojad");
+    out.textContent = "";
+    phrases.forEach((p, k) => {
+      if (k) { const g = document.createElement("span"); g.className = "gap"; out.append(g); }
+      for (const [t, m] of p) {
+        const s = document.createElement("span");
+        s.textContent = t;
+        if (m === "h") s.className = "m-head";
+        if (m === "d") s.className = "m-dv";
+        out.append(s);
+      }
+    });
+  }
+
+  function load() {
+    const c = CARDS[i];
+    $("head").textContent = c.head;
+    $("reading").textContent = c.reading;
+    $("kata").textContent = c.kata;
+    $("sentence").textContent = c.sentence;
+    $("gloss").textContent = c.gloss;
+    renderOjad(c.ojad);
+    $("n").textContent = i + 1;
+    step = 0;
+    paint();
+  }
+
+  function paint() {
+    sides.forEach((s) => (s.hidden = Number(s.dataset.step) > step));
+    const left = STEPS - step;
+    const go = $("go");
+    go.firstChild.textContent = left > 0 ? (step === 0 ? "reveal " : `next · ${left} more `) : "remembered ";
+    go.querySelector(".kbd").textContent = left > 0 ? "space" : "j";
+    $("note").textContent = step === 0 ? "Say the reading aloud first." : left > 0 ? "" : "";
+    $("prog").style.width = `${(i / CARDS.length) * 100 + (step / STEPS) * (100 / CARDS.length)}%`;
+  }
+
+  function grade(remembered) {
+    const days = remembered ? 3 : 1;
+    $("note").textContent = `${remembered ? "remembered" : "forgot"} · due again in ${days} day${days > 1 ? "s" : ""}`;
+    sides.forEach((s) => (s.hidden = false));
+    setTimeout(() => { i = (i + 1) % CARDS.length; load(); }, 1100);
+  }
+
+  $("go").addEventListener("click", () => (step < STEPS ? (step++, paint()) : grade(true)));
+  $("forgot").addEventListener("click", () => grade(false));
+  $("disc").addEventListener("click", () => {
+    $("note").textContent = step === 0 ? "In the app, nothing plays before you reveal." : "In the app, this replays the clip.";
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest && e.target.closest("input, textarea")) return;
+    if (e.key === " ") { e.preventDefault(); $("go").click(); }
+    else if (e.key === "f") $("forgot").click();
+    else if (e.key === "j" && step === STEPS) $("go").click();
+  });
+  load();
+})();
+</script>
+</body>
+</html>
