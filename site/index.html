@@ -33,6 +33,9 @@
   --jp: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
   --sans: "Hanken Grotesk", "Noto Sans JP", system-ui, sans-serif;
 
+  --slab-bg: var(--ink); --slab-fg: var(--card); --slab-2: color-mix(in srgb, var(--card) 70%, var(--ink));
+  --slab-rung: color-mix(in srgb, var(--card) 18%, var(--ink)); --slab-shape: color-mix(in srgb, var(--card) 10%, var(--ink));
+
   --r-sm: 6px; --r-md: 14px; --r-lg: 28px; --r-full: 999px;
   --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
 }
@@ -43,6 +46,8 @@
     --accent: #5b8cff; --accent-text: #8cb0ff; --on-accent: #141414;
     --accent-head: #ff8c6b;
     --shadow-card: none;
+    --slab-bg: var(--card); --slab-fg: var(--ink-strong); --slab-2: var(--ink-2);
+    --slab-rung: var(--ink-3); --slab-shape: var(--ink);
     --shadow-live: 0 0 0 7px rgba(0,0,0,.22), 0 6px 16px rgba(91,140,255,.30);
     color-scheme: dark;
   }
@@ -53,6 +58,8 @@
   --accent: #5b8cff; --accent-text: #8cb0ff; --on-accent: #141414;
   --accent-head: #ff8c6b;
   --shadow-card: none;
+  --slab-bg: var(--card); --slab-fg: var(--ink-strong); --slab-2: var(--ink-2);
+  --slab-rung: var(--ink-3); --slab-shape: var(--ink);
   --shadow-live: 0 0 0 7px rgba(0,0,0,.22), 0 6px 16px rgba(91,140,255,.30);
   color-scheme: dark;
 }
@@ -92,6 +99,7 @@ a { color: var(--accent-text); text-underline-offset: 3px; }
 .art { position: absolute; pointer-events: none; }
 .art svg { display: block; width: 100%; height: 100%; }
 .deep { fill: var(--ink); }
+.knock { fill: var(--card); }
 .rail { fill: var(--ink-2); }
 .rung { fill: var(--ink-3); }
 .sunk { fill: var(--sunk); }
@@ -151,13 +159,14 @@ a { color: var(--accent-text); text-underline-offset: 3px; }
 }
 
 /* ── 2 · the card, live ─────────────────────────────────────────────── */
-.duo { display: grid; gap: var(--s4); }
-@media (min-width: 900px) { .duo { grid-template-columns: 1fr 1fr; } }
-.try { display: grid; min-height: 560px; }
-.try .art { inset: 0; }
-.try .words { align-content: start; padding-bottom: 0; }
-.try h2 { font-size: clamp(36px, 4.6vw, 52px); }
+.try { display: grid; }
+@media (min-width: 900px) { .try { grid-template-columns: 1fr 460px; min-height: 600px; } }
+.try .art { left: 0; bottom: 0; width: min(520px, 52%); height: 300px; }
+.try .words { align-content: start; padding-top: var(--s7); padding-bottom: 0; }
+.try h2 { font-size: clamp(40px, 6vw, 72px); }
 .demo-wrap { position: relative; padding: var(--s5) var(--s6) var(--s6); align-self: end; }
+@media (min-width: 900px) { .demo-wrap { padding-top: var(--s7); align-self: center; } }
+@media (max-width: 899px) { .try .art { display: none; } }
 
 .demo { display: grid; gap: var(--s3); max-width: 400px; margin-left: auto; }
 .card {
@@ -210,28 +219,39 @@ a { color: var(--accent-text); text-underline-offset: 3px; }
 @media (hover: none), (max-width: 420px) { .kbd { display: none; } }
 
 /* ── 3 · 花 and 鼻, drawn in blocks ─────────────────────────────────── */
-.pitch { display: grid; min-height: 560px; }
-.pitch .words { align-content: start; }
-.pitch h2 { font-size: clamp(36px, 4.6vw, 52px); }
-.pairs { display: grid; gap: var(--s5); padding: 0 var(--s6) var(--s6); align-self: end; }
+.pitch { display: grid; grid-template-rows: auto auto 1fr; }
+@media (min-width: 700px) and (max-width: 999px) { .pitch { grid-column: 1 / -1; } }
+@media (min-width: 1000px) { .pitch { grid-row: span 3; } }
+.pitch .words { align-content: start; padding-bottom: var(--s5); }
+.pitch h2 { font-size: clamp(32px, 3.4vw, 40px); }
+.pairs { display: grid; gap: var(--s5); padding: 0 var(--s6); }
+.pitch-fig { padding: var(--s6); display: grid; gap: 6px; align-self: end; }
+.pitch-fig b { font-size: clamp(44px, 5vw, 64px); font-weight: 800; letter-spacing: -0.045em; line-height: 1; color: var(--ink-strong); font-variant-numeric: tabular-nums; }
+.pitch-fig span { font-size: 14px; color: var(--ink-2); max-width: 26em; }
 .pair { display: grid; grid-template-columns: 104px 1fr; gap: var(--s4); align-items: center; }
 .pair-word { font-family: var(--jp); font-size: 56px; line-height: 1; color: var(--ink); }
 .pair-word small { display: block; font: 700 13px/1.4 var(--sans); color: var(--ink-2); margin-top: 6px; }
 .morae {
-  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: 44px 44px;
-  gap: 8px; position: relative;
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: 40px 40px;
+  gap: 6px; position: relative;
 }
+/* the two pitch levels, as guide lines behind the morae */
+.morae::before, .morae::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 1px; background: var(--hairline);
+}
+.morae::before { top: 20px; }
+.morae::after { top: 66px; }
 .mora {
-  border-radius: var(--r-full); display: grid; place-items: center;
+  border-radius: var(--r-sm); display: grid; place-items: center; z-index: 1;
   font-family: var(--jp); font-size: 18px; position: relative;
 }
 .mora.hi { grid-row: 1; }
 .mora.lo { grid-row: 2; }
-.mora.on { background: var(--ink); color: var(--card); }
-.mora.off { background: var(--sunk); color: var(--ink-2); }
+.mora.on { background: var(--sunk); color: var(--ink); }
+.mora.off { background: var(--card); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--hairline); }
 .mora.fall::after {
-  content: ""; position: absolute; right: 14px; top: 9px; width: 8px; height: 10px;
-  border-top: 2.5px solid var(--accent-head); border-right: 2.5px solid var(--accent-head);
+  content: ""; position: absolute; right: 6px; top: 5px; width: 6px; height: 8px;
+  border-top: 2px solid var(--accent-head); border-right: 2px solid var(--accent-head);
 }
 @media (max-width: 480px) { .pair { grid-template-columns: 64px 1fr; gap: 10px; } .pair-word { font-size: 44px; } .mora { font-size: 15px; } }
 .pair-note { grid-column: 2; font-size: 14px; color: var(--ink-2); }
@@ -251,18 +271,19 @@ a { color: var(--accent-text); text-underline-offset: 3px; }
 
 /* ── 5 · the numbers, on the ink slab ───────────────────────────────── */
 .slab {
-  background: var(--ink); color: var(--card); box-shadow: none;
+  background: var(--slab-bg); color: var(--slab-fg);
   display: grid; min-height: 380px;
 }
 .slab .art { right: 0; top: 0; width: min(420px, 50%); height: 100%; }
-.slab .rung { fill: color-mix(in srgb, var(--card) 18%, var(--ink)); }
+.slab .rung { fill: var(--slab-rung); }
+.slab .shape { fill: var(--slab-shape); }
 .slab .live-ring { fill: none; stroke: var(--accent); stroke-width: 10; }
 .slab .words { gap: var(--s6); padding: var(--s7) var(--s6) var(--s6); }
-.slab .label { color: color-mix(in srgb, var(--card) 70%, var(--ink)); }
-.slab h2 { color: var(--card); font-size: clamp(32px, 4.4vw, 48px); max-width: 14em; }
+.slab .label { color: var(--slab-2); }
+.slab h2 { color: var(--slab-fg); font-size: clamp(32px, 4.4vw, 48px); max-width: 14em; }
 .figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s5) var(--s6); max-width: 640px; }
 .fig b { display: block; font-size: clamp(36px, 5vw, 56px); font-weight: 800; letter-spacing: -0.045em; line-height: 1; font-variant-numeric: tabular-nums; }
-.fig span { font-size: 14px; color: color-mix(in srgb, var(--card) 70%, var(--ink)); }
+.fig span { font-size: 14px; color: var(--slab-2); }
 @media (max-width: 640px) { .slab .art { display: none; } }
 
 /* ── 6 · the climb still to go ──────────────────────────────────────── */
@@ -331,9 +352,16 @@ footer b { color: var(--ink-strong); font-weight: 800; letter-spacing: -0.03em; 
     </div>
   </section>
 
-  <div class="duo">
-    <!-- 2 · try it -->
-    <section class="panel try" aria-labelledby="t-try">
+  <!-- 2 · try it -->
+  <section class="panel try" aria-labelledby="t-try">
+      <div class="art" aria-hidden="true">
+        <svg viewBox="0 0 520 300" preserveAspectRatio="xMinYMax slice">
+          <rect class="sunk" x="-40" y="120" width="340" height="220" rx="28"/>
+          <rect class="rail" x="32" y="40" width="12" height="300" rx="6"/>
+          <rect class="rung" x="58" y="80" width="140" height="14" rx="7"/>
+          <rect class="rung" x="58" y="52" width="96" height="14" rx="7"/>
+        </svg>
+      </div>
       <div class="words">
         <p class="label">練習</p>
         <h2 class="big" id="t-try">Say it before you hear it.</h2>
@@ -367,12 +395,14 @@ footer b { color: var(--ink-strong); font-weight: 800; letter-spacing: -0.03em; 
       <span hidden id="n">1</span><span hidden id="prog"></span>
     </section>
 
-    <!-- 3 · 花 and 鼻 -->
+
+  <!-- 4 · what it does -->
+  <div class="bento">
     <section class="panel pitch" aria-labelledby="t-pitch">
       <div class="words">
         <p class="label">花 と 鼻</p>
         <h2 class="big" id="t-pitch">Same sound, until the particle.</h2>
-        <p class="lede">On their own, 花 and 鼻 both go low then high. After 花 the pitch drops; after 鼻 it stays up. A bare clip cannot carry that, so the card does: <strong>2,148</strong> of the 3,830 labelled words depend on it.</p>
+        <p class="lede">On their own, 花 and 鼻 both go low then high. After 花 the pitch drops; after 鼻 it stays up. A clip of the bare word cannot carry that, so the card does.</p>
       </div>
       <div class="pairs">
         <div class="pair">
@@ -392,17 +422,16 @@ footer b { color: var(--ink-strong); font-weight: 800; letter-spacing: -0.03em; 
           </div>
         </div>
       </div>
+      <div class="pitch-fig"><b>2,148</b><span>of the 3,830 labelled words are 平板 or 尾高. Only the label tells them apart.</span></div>
     </section>
-  </div>
-
-  <!-- 4 · what it does -->
-  <div class="bento">
     <section class="panel tile">
       <div class="glyph" aria-hidden="true">
         <svg viewBox="0 0 340 150" preserveAspectRatio="xMinYMid slice">
-          <rect class="deep" x="32" y="40" width="96" height="96" rx="28"/>
-          <rect class="rung" x="148" y="62" width="120" height="14" rx="7"/>
-          <rect class="rung" x="148" y="90" width="76" height="14" rx="7"/>
+          <circle class="deep" cx="72" cy="86" r="42"/>
+          <rect class="knock" x="56" y="74" width="6" height="24" rx="3"/>
+          <rect class="knock" x="69" y="66" width="6" height="40" rx="3"/>
+          <rect class="knock" x="82" y="76" width="6" height="20" rx="3"/>
+          <rect class="sunk" x="140" y="60" width="160" height="52" rx="6"/>
         </svg>
       </div>
       <div class="words"><h3>Or hear it, then name it</h3><p>Identify mode plays the word and hides it. You find the kanji from the sound. When the <span class="jp">型</span> shows you had it wrong, one switch moves the card to the other mode.</p></div>
@@ -410,10 +439,11 @@ footer b { color: var(--ink-strong); font-weight: 800; letter-spacing: -0.03em; 
     <section class="panel tile">
       <div class="glyph" aria-hidden="true">
         <svg viewBox="0 0 340 150" preserveAspectRatio="xMinYMid slice">
-          <rect class="deep" x="32" y="104" width="240" height="14" rx="7"/>
-          <rect class="deep" x="32" y="78" width="180" height="14" rx="7"/>
-          <rect class="rung" x="32" y="52" width="210" height="14" rx="7"/>
-          <rect class="rung" x="32" y="26" width="140" height="14" rx="7"/>
+          <rect class="rail" x="32" y="18" width="12" height="132" rx="6"/>
+          <rect class="deep" x="60" y="118" width="210" height="14" rx="7"/>
+          <rect class="deep" x="60" y="90" width="210" height="14" rx="7"/>
+          <rect class="rung" x="60" y="62" width="210" height="14" rx="7"/>
+          <rect class="rung" x="60" y="34" width="210" height="14" rx="7"/>
         </svg>
       </div>
       <div class="words"><h3>A reveal is a walk</h3><p>Each press uncovers one blank, then the next side. <em>forgot</em> is there from the first step; <em>remembered</em> waits until you have seen it all.</p></div>
@@ -449,9 +479,11 @@ footer b { color: var(--ink-strong); font-weight: 800; letter-spacing: -0.03em; 
     <section class="panel tile">
       <div class="glyph" aria-hidden="true">
         <svg viewBox="0 0 340 150" preserveAspectRatio="xMinYMid slice">
-          <rect class="deep" x="32"  y="30" width="150" height="106" rx="20"/>
-          <rect class="rail" x="198" y="54" width="54"  height="82"  rx="14"/>
-          <rect class="rung" x="268" y="88" width="40"  height="14"  rx="7"/>
+          <rect class="deep" x="40" y="36" width="148" height="92" rx="12"/>
+          <rect class="rail" x="26" y="128" width="176" height="10" rx="5"/>
+          <circle class="rung" cx="214" cy="86" r="5"/>
+          <circle class="rung" cx="230" cy="86" r="5"/>
+          <rect class="deep" x="252" y="42" width="54" height="96" rx="12"/>
         </svg>
       </div>
       <div class="words"><h3>On your device</h3><p>The whole database lives in the browser and works offline. A laptop and a phone catch each other up whenever they next connect.</p></div>
@@ -459,10 +491,9 @@ footer b { color: var(--ink-strong); font-weight: 800; letter-spacing: -0.03em; 
     <section class="panel tile">
       <div class="glyph" aria-hidden="true">
         <svg viewBox="0 0 340 150" preserveAspectRatio="xMinYMid slice">
-          <circle class="deep" cx="70" cy="84" r="38"/>
-          <rect class="rung" x="108" y="78" width="70" height="12" rx="6"/>
-          <circle class="sunk" cx="214" cy="84" r="38"/>
-          <rect class="rung" x="250" y="78" width="40" height="12" rx="6"/>
+          <rect class="deep" x="32" y="36" width="104" height="100" rx="20"/>
+          <rect class="rung" x="136" y="80" width="72" height="12" rx="6"/>
+          <rect class="rail" x="208" y="36" width="104" height="100" rx="20"/>
         </svg>
       </div>
       <div class="words"><h3>Cards that link</h3><p>Link one card to another, see what links back, and keep the sentence where you first found a word. Ctrl+K finds anything.</p></div>
@@ -473,13 +504,13 @@ footer b { color: var(--ink-strong); font-weight: 800; letter-spacing: -0.03em; 
   <section class="panel slab" aria-labelledby="t-figs">
     <div class="art" aria-hidden="true">
       <svg viewBox="0 0 420 380" preserveAspectRatio="xMaxYMid slice">
-        <rect class="rung" x="200" y="-20" width="12" height="420" rx="6"/>
-        <rect class="rung" x="232" y="300" width="160" height="14" rx="7"/>
-        <rect class="rung" x="232" y="260" width="160" height="14" rx="7"/>
-        <rect class="rung" x="232" y="220" width="160" height="14" rx="7"/>
-        <rect class="rung" x="232" y="180" width="160" height="14" rx="7"/>
-        <rect class="rung" x="232" y="140" width="160" height="14" rx="7"/>
-        <circle class="live-ring" cx="312" cy="76" r="28"/>
+        <rect class="shape" x="280" y="-40" width="180" height="228" rx="28"/>
+        <rect class="rung" x="180" y="124" width="12" height="280" rx="6"/>
+        <rect class="rung" x="206" y="330" width="150" height="14" rx="7"/>
+        <rect class="rung" x="206" y="290" width="150" height="14" rx="7"/>
+        <rect class="rung" x="206" y="250" width="150" height="14" rx="7"/>
+        <rect class="rung" x="206" y="210" width="60" height="14" rx="7"/>
+        <circle class="live-ring" cx="186" cy="76" r="26"/>
       </svg>
     </div>
     <div class="words">
