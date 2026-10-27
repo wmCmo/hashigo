@@ -4933,9 +4933,15 @@ input[data-answer="incorrect"] {
    whose two kanji each link to their 漢字 card, came out ruri with a row of
    120px dots under it — `--accent-text` and the dotted underline, scaled by the
    hero size. In a hero the word is the point: the link keeps the word's ink and
-   says "link" with one thin ink-3 line, which stays the same 2px at any size. */
+   says "link" with one thin ink-3 line, which stays the same 2px at any size.
+   The same on a DISPLAY side (his tablet, 変動, a hidden-word card after the
+   reveal): side 2 holds the linked word over its furigana twin, too long to be a
+   hero, so the link was ruri with dotted underlining at 40px. Display sides are
+   the short ones — head words — so a card link there is the word, not a
+   reference. External links (JPDB, IKD) keep ruri everywhere: they leave. */
 .hashigo-side[data-hero] .hashigo-card-link,
-.hashigo-side[data-hero] .hashigo-link {
+.hashigo-side[data-hero] .hashigo-link,
+.hashigo-side[data-scale="display"] .hashigo-card-link {
   color: inherit;
   text-decoration-color: var(--ink-3);
   text-decoration-line: underline;
