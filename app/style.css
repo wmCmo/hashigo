@@ -4974,3 +4974,20 @@ select.edit-input {
   border-radius: var(--radius-full);
   padding: 10px 16px;
 }
+
+/* A preview's card is its own size container, so a hero there sizes against the
+   panel, not the viewport. Scoped to the card element: the layer body holds the
+   editor too, whose absolute link menu must not gain a new containing block. */
+.layer .hashigo-card {
+  container-type: inline-size;
+}
+
+/* 漢字's canvas: a recessed `--sunk` well with the sheet radius. The 1px hairline
+   was its only edge (the system's "never the sole edge of a control"); the fill
+   is the edge now, and the outline stays declared but transparent — decision 40's
+   test pins that the frame is an outline, never a border, because `draw.ts`
+   measures the box. */
+.hashigo-draw {
+  border-radius: var(--radius-md);
+  outline-color: transparent;
+}

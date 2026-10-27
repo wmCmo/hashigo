@@ -3209,6 +3209,11 @@ async function openPreview(cardId: string): Promise<void> {
   // (decision 30), so `型` reading as a second head word is the same complaint on
   // this surface as on the review screen.
   markAccentLabel(mounted);
+  // THE SAME TYPE SCALE AS THE REVIEW CARD. His tablet, 2026-10-27: a 漢字
+  // preview set 為 at body size in the corner, because only the review card was
+  // ever scaled. A preview is where he LOOKS at a card (decision 30), so the head
+  // word is the hero here too (decision 57).
+  scaleSides(mounted);
 
   body.appendChild(mounted.result.root);
   layerHost.appendChild(root);
