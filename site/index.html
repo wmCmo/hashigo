@@ -10,8 +10,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&family=Noto+Sans+JP:wght@400;500&display=swap">
 <style>
-/* Layout: one column of prose beside one live flashcard; everything else is grey on grey.
-   Tokens are design-system/tokens.json, verbatim. Ruri appears only on what is live. */
+/* Layout: every section is a panel cut from the Cover component — a 28px slab of
+   `card`, a flat composition of slabs, pills and discs bleeding off one edge, and
+   heavy Latin type sitting low and left. Ruri is one disc per panel, at most.
+   Tokens are design-system/tokens.json, verbatim. */
 :root {
   --canvas: #f2f2f2;
   --card: #fcfcfc;
@@ -25,7 +27,6 @@
   --accent-text: #1f5fe0;
   --on-accent: #fcfcfc;
   --accent-head: #b33717;
-  --danger: #a8261b;
   --shadow-card: 0 1px 2px rgba(0,0,0,.04), 0 16px 40px rgba(0,0,0,.05);
   --shadow-live: 0 6px 16px rgba(31,95,224,.35);
 
@@ -33,13 +34,14 @@
   --sans: "Hanken Grotesk", "Noto Sans JP", system-ui, sans-serif;
 
   --r-sm: 6px; --r-md: 14px; --r-lg: 28px; --r-full: 999px;
+  --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px; --s8: 64px;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --canvas: #262626; --card: #323232; --sunk: #3d3d3d; --hairline: #444444;
     --ink: #e8e8e8; --ink-strong: #ffffff; --ink-2: #adadad; --ink-3: #626262;
     --accent: #5b8cff; --accent-text: #8cb0ff; --on-accent: #141414;
-    --accent-head: #ff8c6b; --danger: #ff8f80;
+    --accent-head: #ff8c6b;
     --shadow-card: none;
     --shadow-live: 0 0 0 7px rgba(0,0,0,.22), 0 6px 16px rgba(91,140,255,.30);
     color-scheme: dark;
@@ -49,7 +51,7 @@
   --canvas: #262626; --card: #323232; --sunk: #3d3d3d; --hairline: #444444;
   --ink: #e8e8e8; --ink-strong: #ffffff; --ink-2: #adadad; --ink-3: #626262;
   --accent: #5b8cff; --accent-text: #8cb0ff; --on-accent: #141414;
-  --accent-head: #ff8c6b; --danger: #ff8f80;
+  --accent-head: #ff8c6b;
   --shadow-card: none;
   --shadow-live: 0 0 0 7px rgba(0,0,0,.22), 0 6px 16px rgba(91,140,255,.30);
   color-scheme: dark;
@@ -63,88 +65,120 @@ body {
   font: 400 16px/1.6 var(--sans);
   -webkit-font-smoothing: antialiased;
 }
-.wrap {
-  max-width: 1080px;
+.page {
+  max-width: 1120px;
   margin: 0 auto;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
-}
-@media (min-width: 640px) {
-  .wrap { padding-left: max(32px, env(safe-area-inset-left, 0px)); padding-right: max(32px, env(safe-area-inset-right, 0px)); }
+  padding-block: var(--s5) var(--s7);
+  display: grid;
+  gap: var(--s4);
 }
 h1, h2, h3 { margin: 0; text-wrap: balance; color: var(--ink-strong); }
 p { margin: 0; }
 a { color: var(--accent-text); text-underline-offset: 3px; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .jp { font-family: var(--jp); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* ── chrome ───────────────────────────────────────── */
-.top {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding-block: 24px;
+/* ── the shared vocabulary: panel, slab, pill, disc ─────────────────── */
+.panel {
+  position: relative;
+  overflow: hidden;
+  background: var(--card);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+  min-width: 0;
 }
-.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink-strong); }
-.brand svg { width: 32px; height: 32px; display: block; }
-.brand b { font-weight: 800; font-size: 20px; letter-spacing: -0.03em; }
+.art { position: absolute; pointer-events: none; }
+.art svg { display: block; width: 100%; height: 100%; }
+.deep { fill: var(--ink); }
+.rail { fill: var(--ink-2); }
+.rung { fill: var(--ink-3); }
+.sunk { fill: var(--sunk); }
+.live { fill: var(--accent); }
+.words {
+  position: relative;
+  display: grid;
+  gap: var(--s3);
+  align-content: end;
+  padding: var(--s6);
+}
+.label {
+  font-family: var(--jp);
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.big {
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: .95;
+}
+.lede { color: var(--ink-2); font-size: 16px; line-height: 1.6; max-width: 34em; }
+.lede strong { color: var(--ink); font-weight: 600; }
+
+/* ── chrome ─────────────────────────────────────────────────────────── */
+.top {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s4);
+  padding-block: 4px var(--s3);
+}
+.menu {
+  width: 40px; height: 40px; border-radius: var(--r-md);
+  background: var(--card); box-shadow: var(--shadow-card);
+  display: grid; place-items: center; color: var(--ink);
+  text-decoration: none;
+}
+.menu svg { width: 18px; height: 18px; }
 .status {
   display: inline-flex; align-items: center; gap: 8px;
-  background: var(--sunk); color: var(--ink-2);
-  border-radius: var(--r-full); padding: 6px 14px;
-  font-size: 13px; font-weight: 600;
+  font-size: 14px; font-weight: 700; color: var(--ink-2);
 }
+.status b { color: var(--ink-strong); font-weight: 800; letter-spacing: -0.02em; }
 .status i {
   width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
   box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
-/* ── hero ─────────────────────────────────────────── */
-.hero {
-  display: grid; gap: 48px; align-items: center;
-  padding-block: 40px 88px;
+/* ── 1 · the cover ──────────────────────────────────────────────────── */
+.cover { min-height: 460px; display: grid; }
+.cover .art { top: 0; right: 0; width: min(560px, 62%); height: 100%; }
+.cover .words { padding: var(--s7) var(--s6) var(--s6); max-width: 620px; }
+.cover h1 { font-size: clamp(72px, 13vw, 156px); }
+.cover .tag { font-size: 15px; color: var(--ink-2); margin-left: 4px; }
+@media (max-width: 640px) {
+  .cover { min-height: 0; }
+  .cover .art { position: relative; width: 100%; height: 240px; }
+  .cover .words { padding-top: 0; }
 }
-@media (min-width: 900px) { .hero { grid-template-columns: 1fr 420px; gap: 72px; padding-block: 56px 112px; } }
-.hero > * { min-width: 0; }
-.kicker {
-  font-family: var(--jp); font-size: 15px; color: var(--ink-2); margin-bottom: 20px;
-}
-.hero h1 {
-  font-size: clamp(40px, 6.4vw, 68px); line-height: 1.02; font-weight: 800; letter-spacing: -0.035em;
-}
-.lede { margin-top: 24px; font-size: 18px; line-height: 1.6; color: var(--ink-2); max-width: 34em; }
-.lede strong { color: var(--ink); font-weight: 600; }
 
-/* ── the demo card ────────────────────────────────── */
-.demo { display: grid; gap: 14px; }
-.demo-chrome { display: flex; justify-content: space-between; align-items: center; padding-inline: 6px; }
-.chip {
-  background: var(--sunk); color: var(--ink-2); border-radius: var(--r-full);
-  padding: 3px 12px; font-size: 12px; font-weight: 600;
-}
-.count { font-weight: 800; color: var(--ink-strong); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-.count span { color: var(--ink-2); font-weight: 700; }
+/* ── 2 · the card, live ─────────────────────────────────────────────── */
+.duo { display: grid; gap: var(--s4); }
+@media (min-width: 900px) { .duo { grid-template-columns: 1fr 1fr; } }
+.try { display: grid; min-height: 560px; }
+.try .art { inset: 0; }
+.try .words { align-content: start; padding-bottom: 0; }
+.try h2 { font-size: clamp(36px, 4.6vw, 52px); }
+.demo-wrap { position: relative; padding: var(--s5) var(--s6) var(--s6); align-self: end; }
+
+.demo { display: grid; gap: var(--s3); max-width: 400px; margin-left: auto; }
 .card {
   position: relative;
-  background: var(--card); border-radius: var(--r-lg); box-shadow: var(--shadow-card);
-  padding: 44px 32px 92px; min-height: 440px;
-  display: flex; flex-direction: column; gap: 22px;
+  background: var(--card); border-radius: var(--r-lg);
+  box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 18px 44px rgba(0,0,0,.10);
+  outline: 1px solid var(--hairline);
+  padding: 32px 26px 84px; min-height: 340px;
+  display: flex; flex-direction: column; gap: 16px;
   container-type: inline-size;
 }
 .head {
   font-family: var(--jp); font-weight: 400; text-align: center;
-  font-size: min(120px, 34cqi); line-height: 1.05; color: var(--ink); padding-block: 8px 4px;
+  font-size: min(112px, 34cqi); line-height: 1.05; color: var(--ink);
 }
-.side { display: grid; gap: 10px; transition: opacity .2s; }
-.side + .side { border-top: 1px solid var(--hairline); padding-top: 18px; }
-.side[hidden] { display: none; }
-.cloze {
-  display: inline-block; min-width: 4.2em; height: 1.5em; vertical-align: middle;
-  background: var(--sunk); border-radius: var(--r-sm);
-}
-.reading-row { display: flex; align-items: baseline; justify-content: center; gap: 14px; font-size: 22px; }
-.reading-row .jp { color: var(--ink); }
-.kata { font-family: var(--jp); font-size: 14px; color: var(--ink-2); background: var(--sunk); border-radius: var(--r-full); padding: 2px 12px; }
-.sentence { font-family: var(--jp); font-size: 18px; color: var(--ink); text-align: center; }
-.ojad { font-family: var(--jp); font-size: 15px; line-height: 1.9; color: var(--ink-2); text-align: center; }
+.side { display: grid; gap: 8px; }
+.side + .side { border-top: 1px solid var(--hairline); padding-top: 14px; }
+.reading-row { display: flex; align-items: baseline; justify-content: center; gap: 12px; font-size: 21px; font-family: var(--jp); }
+.chip { font-family: var(--jp); font-size: 13px; color: var(--ink-2); background: var(--sunk); border-radius: var(--r-full); padding: 2px 12px; }
+.sentence { font-family: var(--jp); font-size: 17px; text-align: center; }
+.ojad { font-family: var(--jp); font-size: 14px; line-height: 1.9; color: var(--ink-2); text-align: center; }
 .ojad .gap { display: inline-block; width: .5em; }
 .m-head { color: var(--accent-head); font-weight: 600; position: relative; }
 .m-head::after {
@@ -152,24 +186,21 @@ a { color: var(--accent-text); text-underline-offset: 3px; }
   border-top: 2px solid currentColor; border-right: 2px solid currentColor;
 }
 .m-dv { border: 1px solid currentColor; border-radius: 50%; padding: 0 .1em; opacity: .85; }
-.gloss { text-align: center; font-weight: 700; font-size: 18px; color: var(--ink); }
+.gloss { text-align: center; font-weight: 700; font-size: 17px; }
 .disc {
-  position: absolute; right: 22px; bottom: 22px;
-  width: 60px; height: 60px; border-radius: 50%; border: 0;
+  position: absolute; right: 18px; bottom: 18px;
+  width: 56px; height: 56px; border-radius: 50%; border: 0;
   background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow-live);
-  display: grid; place-items: center; cursor: pointer;
-  transition: transform .12s;
+  display: grid; place-items: center; cursor: pointer; transition: transform .12s;
 }
 .disc:active { transform: scale(.92); }
-.disc svg { width: 20px; height: 20px; margin-left: 3px; }
-.note {
-  position: absolute; left: 32px; bottom: 36px; right: 100px;
-  font-size: 13px; color: var(--ink-2);
-}
+.disc svg { width: 18px; height: 18px; margin-left: 3px; }
+.note { position: absolute; left: 26px; bottom: 34px; right: 90px; font-size: 13px; color: var(--ink-2); }
 .bar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .btn {
   font: 600 16px/1 var(--sans); border: 0; border-radius: var(--r-full);
-  padding: 17px 16px; white-space: nowrap; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 10px;
+  padding: 16px; white-space: nowrap; cursor: pointer;
+  display: flex; justify-content: center; align-items: center; gap: 10px;
   transition: transform .12s;
 }
 .btn:active { transform: scale(.97); }
@@ -177,244 +208,311 @@ a { color: var(--accent-text); text-underline-offset: 3px; }
 .btn-1 { background: var(--ink); color: var(--card); }
 .kbd { font-size: 12px; opacity: .85; font-weight: 600; border: 1px solid currentColor; border-radius: 5px; padding: 1px 5px; }
 @media (hover: none), (max-width: 420px) { .kbd { display: none; } }
-.progress { height: 3px; background: var(--sunk); border-radius: 2px; overflow: hidden; margin-inline: 6px; }
-.progress i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .28s cubic-bezier(.2,.7,.2,1); }
 
-/* ── sections ─────────────────────────────────────── */
-section { padding-block: 80px; border-top: 1px solid var(--hairline); }
-.sec-head { display: grid; gap: 14px; max-width: 40em; margin-bottom: 44px; }
-.eyebrow { font-family: var(--jp); color: var(--ink-2); font-size: 15px; }
-.sec-head h2 { font-size: clamp(28px, 4vw, 40px); line-height: 1.1; font-weight: 800; letter-spacing: -0.03em; }
-.sec-head p { color: var(--ink-2); font-size: 17px; }
-
-/* the 花 / 鼻 pair */
-.pair { display: grid; gap: 20px; }
-@media (min-width: 760px) { .pair { grid-template-columns: 1fr 1fr; } }
-.pitch {
-  background: var(--card); border-radius: var(--r-lg); box-shadow: var(--shadow-card);
-  padding: 28px; display: grid; gap: 18px; min-width: 0;
+/* ── 3 · 花 and 鼻, drawn in blocks ─────────────────────────────────── */
+.pitch { display: grid; min-height: 560px; }
+.pitch .words { align-content: start; }
+.pitch h2 { font-size: clamp(36px, 4.6vw, 52px); }
+.pairs { display: grid; gap: var(--s5); padding: 0 var(--s6) var(--s6); align-self: end; }
+.pair { display: grid; grid-template-columns: 104px 1fr; gap: var(--s4); align-items: center; }
+.pair-word { font-family: var(--jp); font-size: 56px; line-height: 1; color: var(--ink); }
+.pair-word small { display: block; font: 700 13px/1.4 var(--sans); color: var(--ink-2); margin-top: 6px; }
+.morae {
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: 44px 44px;
+  gap: 8px; position: relative;
 }
-.pitch-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-.pitch-word { font-family: var(--jp); font-size: 56px; line-height: 1; color: var(--ink); }
-.pitch-word small { font-size: 18px; color: var(--ink-2); margin-left: 10px; font-family: var(--sans); font-weight: 700; }
-.pitch svg { width: 100%; height: auto; display: block; overflow: visible; }
-.pitch svg .line { fill: none; stroke: var(--ink-2); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-.pitch svg .dot { fill: var(--ink); }
-.pitch svg .dot.after { fill: var(--card); stroke: var(--ink-2); stroke-width: 2.5; }
-.pitch svg .drop { fill: var(--accent-head); }
-.pitch svg text { font-family: var(--jp); font-size: 20px; fill: var(--ink); text-anchor: middle; }
-.pitch svg text.after { fill: var(--ink-2); }
-.pitch svg .hl { font-family: var(--sans); font-size: 12px; font-weight: 700; fill: var(--ink-3); text-anchor: end; letter-spacing: .06em; }
-.pitch p { color: var(--ink-2); font-size: 15px; }
-.aside { margin-top: 28px; color: var(--ink-2); max-width: 44em; font-size: 15px; }
-
-/* features */
-.feats { display: grid; gap: 36px 48px; }
-@media (min-width: 700px) { .feats { grid-template-columns: 1fr 1fr; } }
-@media (min-width: 1000px) { .feats { grid-template-columns: 1fr 1fr 1fr; } }
-.feat { display: grid; gap: 8px; align-content: start; min-width: 0; }
-.feat h3 { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
-.feat p { color: var(--ink-2); font-size: 15px; }
-.feat .jp-term { font-family: var(--jp); color: var(--ink); }
-
-/* figures */
-.figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 24px; }
-@media (min-width: 800px) { .figs { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-.fig b { display: block; font-size: clamp(32px, 4.4vw, 48px); font-weight: 800; letter-spacing: -0.04em; color: var(--ink-strong); font-variant-numeric: tabular-nums; line-height: 1.1; }
-.fig span { color: var(--ink-2); font-size: 14px; }
-
-/* closing */
-.closing { display: grid; gap: 28px; }
-@media (min-width: 860px) { .closing { grid-template-columns: 1.1fr 1fr; gap: 64px; align-items: start; } }
-.closing > * { min-width: 0; }
-.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; counter-reset: s; }
-.steps li {
-  counter-increment: s; background: var(--card); border-radius: var(--r-md);
-  padding: 16px 20px 16px 58px; position: relative; font-size: 15px; color: var(--ink);
+.mora {
+  border-radius: var(--r-full); display: grid; place-items: center;
+  font-family: var(--jp); font-size: 18px; position: relative;
 }
-.steps li::before {
-  content: counter(s); position: absolute; left: 18px; top: 14px;
-  width: 26px; height: 26px; border-radius: 50%; background: var(--sunk); color: var(--ink-2);
-  display: grid; place-items: center; font-weight: 700; font-size: 13px;
+.mora.hi { grid-row: 1; }
+.mora.lo { grid-row: 2; }
+.mora.on { background: var(--ink); color: var(--card); }
+.mora.off { background: var(--sunk); color: var(--ink-2); }
+.mora.fall::after {
+  content: ""; position: absolute; right: 14px; top: 9px; width: 8px; height: 10px;
+  border-top: 2.5px solid var(--accent-head); border-right: 2.5px solid var(--accent-head);
 }
-.steps li.done::before { background: var(--ink); color: var(--card); }
-.steps li small { display: block; color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+@media (max-width: 480px) { .pair { grid-template-columns: 64px 1fr; gap: 10px; } .pair-word { font-size: 44px; } .mora { font-size: 15px; } }
+.pair-note { grid-column: 2; font-size: 14px; color: var(--ink-2); }
+.pair-note .jp { font-family: var(--jp); color: var(--ink); }
 
-footer { padding-block: 40px 56px; border-top: 1px solid var(--hairline); color: var(--ink-2); font-size: 14px; display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: space-between; }
-footer .jp { color: var(--ink); }
+/* ── 4 · what it does, as a bento of small panels ──────────────────── */
+.bento { display: grid; gap: var(--s4); }
+@media (min-width: 700px) { .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1000px) { .bento { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.tile { display: grid; grid-template-rows: 150px auto; }
+.tile .glyph { position: relative; }
+.tile .glyph svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tile .words { padding-top: var(--s4); align-content: start; gap: 8px; }
+.tile h3 { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; }
+.tile p { color: var(--ink-2); font-size: 15px; }
+.tile em { font-style: normal; font-weight: 700; color: var(--ink); }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition: none !important; }
+/* ── 5 · the numbers, on the ink slab ───────────────────────────────── */
+.slab {
+  background: var(--ink); color: var(--card); box-shadow: none;
+  display: grid; min-height: 380px;
 }
+.slab .art { right: 0; top: 0; width: min(420px, 50%); height: 100%; }
+.slab .rung { fill: color-mix(in srgb, var(--card) 18%, var(--ink)); }
+.slab .live-ring { fill: none; stroke: var(--accent); stroke-width: 10; }
+.slab .words { gap: var(--s6); padding: var(--s7) var(--s6) var(--s6); }
+.slab .label { color: color-mix(in srgb, var(--card) 70%, var(--ink)); }
+.slab h2 { color: var(--card); font-size: clamp(32px, 4.4vw, 48px); max-width: 14em; }
+.figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s5) var(--s6); max-width: 640px; }
+.fig b { display: block; font-size: clamp(36px, 5vw, 56px); font-weight: 800; letter-spacing: -0.045em; line-height: 1; font-variant-numeric: tabular-nums; }
+.fig span { font-size: 14px; color: color-mix(in srgb, var(--card) 70%, var(--ink)); }
+@media (max-width: 640px) { .slab .art { display: none; } }
+
+/* ── 6 · the climb still to go ──────────────────────────────────────── */
+.climb { display: grid; min-height: 460px; }
+@media (min-width: 900px) { .climb { grid-template-columns: 1fr 1fr; } }
+.climb .words { align-content: end; }
+.climb h2 { font-size: clamp(44px, 7vw, 88px); }
+.ladder { position: relative; display: grid; align-content: end; gap: 12px; padding: var(--s7) var(--s6) var(--s6); }
+.ladder::before {
+  content: ""; position: absolute; top: var(--s8); bottom: 0; left: var(--s6); width: 12px;
+  border-radius: var(--r-full) var(--r-full) 0 0; background: var(--ink-2);
+}
+.step {
+  margin-left: 36px; border-radius: var(--r-full); background: var(--sunk);
+  padding: 12px 20px; font-size: 15px; color: var(--ink); font-weight: 600;
+  display: flex; justify-content: space-between; gap: 12px; align-items: center;
+}
+.step small { color: var(--ink-2); font-weight: 400; font-size: 13px; white-space: nowrap; }
+.step.done { background: var(--ink); color: var(--card); }
+.step.done small { color: color-mix(in srgb, var(--card) 70%, var(--ink)); }
+.ladder .top-disc {
+  position: absolute; left: calc(var(--s6) + 6px); top: var(--s5); width: 44px; height: 44px;
+  transform: translateX(-50%); border-radius: 50%; background: var(--accent); box-shadow: var(--shadow-live);
+}
+
+footer {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px;
+  padding: var(--s5) 4px 0; font-size: 14px; color: var(--ink-2);
+}
+footer b { color: var(--ink-strong); font-weight: 800; letter-spacing: -0.03em; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
 </style>
 </head>
 <body>
+<div class="page">
 
-<div class="wrap">
   <header class="top">
-    <a class="brand" href="#" aria-label="Hashigo">
-      <svg viewBox="0 0 100 100" aria-hidden="true">
-        <g fill="none" stroke="currentColor" stroke-linecap="round">
-          <path d="M16 87L27.5 32" stroke-width="10"/>
-          <path d="M84 87L72.5 32" stroke-width="10"/>
-          <path d="M18.09 77H81.91" stroke-width="9"/>
-          <path d="M22.27 57H77.73" stroke-width="9"/>
-          <path d="M25.83 40H74.17" stroke-width="9"/>
-        </g>
-        <path d="M31.47 13H68.53" fill="none" stroke="var(--accent)" stroke-width="9" stroke-linecap="round"/>
-      </svg>
-      <b>hashigo</b>
+    <a class="menu" href="#" aria-label="Hashigo">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </a>
-    <span class="status"><i></i>in private use</span>
+    <span class="status"><i></i><b>1</b> user, in private use</span>
   </header>
 
-  <div class="hero">
-    <div>
-      <p class="kicker">はしご · a ladder</p>
-      <h1>Learn the word, and how it rises and falls.</h1>
-      <p class="lede">Hashigo is a flashcard app for Japanese built around <strong>pitch accent</strong>. Every word carries its accent pattern, every example sentence is marked mora by mora, and the audio waits until you have said the word yourself.</p>
+  <!-- 1 · cover -->
+  <section class="panel cover" aria-labelledby="t-cover">
+    <div class="art" aria-hidden="true">
+      <svg viewBox="0 0 560 460" preserveAspectRatio="xMaxYMid slice">
+        <rect class="deep" x="372" y="-40" width="228" height="352" rx="28"/>
+        <rect class="rail" x="150" y="92" width="12" height="400" rx="6"/>
+        <rect class="rung" x="176" y="372" width="172" height="14" rx="7"/>
+        <rect class="rung" x="176" y="332" width="172" height="14" rx="7"/>
+        <rect class="rung" x="176" y="292" width="172" height="14" rx="7"/>
+        <rect class="rung" x="176" y="252" width="172" height="14" rx="7"/>
+        <rect class="rung" x="176" y="212" width="172" height="14" rx="7"/>
+        <rect class="rung" x="176" y="172" width="172" height="14" rx="7"/>
+        <rect class="rung" x="176" y="132" width="172" height="14" rx="7"/>
+        <rect class="rung" x="176" y="92" width="172" height="14" rx="7"/>
+        <circle class="live" cx="156" cy="46" r="26"/>
+      </svg>
     </div>
+    <div class="words">
+      <p class="label">はしご · a ladder</p>
+      <h1 class="big" id="t-cover">Hashigo</h1>
+      <p class="tag">One card, one word, one rung higher.</p>
+    </div>
+  </section>
 
-    <div class="demo" aria-label="A sample review">
-      <div class="demo-chrome">
-        <span class="chip jp" id="deck">単語</span>
-        <span class="count"><span id="n">1</span> / 2</span>
+  <div class="duo">
+    <!-- 2 · try it -->
+    <section class="panel try" aria-labelledby="t-try">
+      <div class="words">
+        <p class="label">練習</p>
+        <h2 class="big" id="t-try">Say it before you hear it.</h2>
+        <p class="lede">Read the kanji, say the reading and its rise and fall aloud, then reveal. The clip stays silent until you do.</p>
       </div>
-      <div class="progress" aria-hidden="true"><i id="prog"></i></div>
-      <article class="card" id="card" aria-live="polite">
-        <div class="head" id="head">花</div>
-        <div class="side" data-step="1" hidden>
-          <div class="reading-row"><span class="jp" id="reading">はな</span><span class="kata" id="kata">尾高(2)</span></div>
+      <div class="demo-wrap">
+        <div class="demo" aria-label="A sample review">
+          <article class="card" aria-live="polite">
+            <div class="head" id="head">花</div>
+            <div class="side" data-step="1" hidden>
+              <div class="reading-row"><span id="reading">はな</span><span class="chip" id="kata">尾高(2)</span></div>
+            </div>
+            <div class="side" data-step="2" hidden>
+              <p class="sentence" id="sentence">庭の花が咲きました。</p>
+              <p class="ojad" id="ojad"></p>
+            </div>
+            <div class="side" data-step="3" hidden>
+              <p class="gloss" id="gloss">flower; blossom</p>
+            </div>
+            <p class="note" id="note">Say the reading aloud first.</p>
+            <button class="disc" id="disc" type="button" aria-label="play the word (no audio on this page)">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3.5v13l11-6.5z" fill="currentColor"/></svg>
+            </button>
+          </article>
+          <div class="bar">
+            <button class="btn btn-2" id="forgot" type="button">forgot <span class="kbd">f</span></button>
+            <button class="btn btn-1" id="go" type="button">reveal <span class="kbd">space</span></button>
+          </div>
         </div>
-        <div class="side" data-step="2" hidden>
-          <p class="sentence" id="sentence">庭の花が咲きました。</p>
-          <p class="ojad" id="ojad"></p>
-        </div>
-        <div class="side" data-step="3" hidden>
-          <p class="gloss" id="gloss">flower; blossom</p>
-        </div>
-        <p class="note" id="note">Say the reading aloud first.</p>
-        <button class="disc" id="disc" type="button" aria-label="play the word (no audio on this page)">
-          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 3.5v13l11-6.5z" fill="currentColor"/></svg>
-        </button>
-      </article>
-      <div class="bar">
-        <button class="btn btn-2" id="forgot" type="button">forgot <span class="kbd">f</span></button>
-        <button class="btn btn-1" id="go" type="button">reveal <span class="kbd">space</span></button>
       </div>
-    </div>
+      <span hidden id="n">1</span><span hidden id="prog"></span>
+    </section>
+
+    <!-- 3 · 花 and 鼻 -->
+    <section class="panel pitch" aria-labelledby="t-pitch">
+      <div class="words">
+        <p class="label">花 と 鼻</p>
+        <h2 class="big" id="t-pitch">Same sound, until the particle.</h2>
+        <p class="lede">On their own, 花 and 鼻 both go low then high. After 花 the pitch drops; after 鼻 it stays up. A bare clip cannot carry that, so the card does: <strong>2,148</strong> of the 3,830 labelled words depend on it.</p>
+      </div>
+      <div class="pairs">
+        <div class="pair">
+          <div class="pair-word">花<small>尾高 · flower</small></div>
+          <div class="morae" role="img" aria-label="は low, な high, が low">
+            <span class="mora on lo" style="grid-column:1">は</span>
+            <span class="mora on hi fall" style="grid-column:2">な</span>
+            <span class="mora off lo" style="grid-column:3">が</span>
+          </div>
+        </div>
+        <div class="pair">
+          <div class="pair-word">鼻<small>平板 · nose</small></div>
+          <div class="morae" role="img" aria-label="は low, な high, が high">
+            <span class="mora on lo" style="grid-column:1">は</span>
+            <span class="mora on hi" style="grid-column:2">な</span>
+            <span class="mora off hi" style="grid-column:3">が</span>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
-</div>
 
-<section>
-  <div class="wrap">
-    <div class="sec-head">
-      <p class="eyebrow">花 と 鼻</p>
-      <h2>Two words that sound the same until a particle follows.</h2>
-      <p>Said on their own, 花 and 鼻 are both low then high. The difference appears on the next syllable: after 花 the pitch drops, after 鼻 it stays up. A clip of the bare word cannot carry that, so Hashigo puts the pattern on the card.</p>
-    </div>
-    <div class="pair">
-      <div class="pitch">
-        <div class="pitch-top"><span class="pitch-word">花<small>flower</small></span><span class="kata">尾高</span></div>
-        <svg viewBox="0 0 300 120" role="img" aria-label="は low, な high, が low: the pitch falls after な">
-          <text class="hl" x="24" y="34">H</text><text class="hl" x="24" y="84">L</text>
-          <polyline class="line" points="70,80 160,30 250,80"/>
-          <circle class="dot" cx="70" cy="80" r="7"/>
-          <circle class="dot" cx="160" cy="30" r="7"/>
-          <circle class="dot after" cx="250" cy="80" r="7"/>
-          <path class="drop" d="M178 22 l8 0 l0 8 z"/>
-          <text x="70" y="114">は</text><text x="160" y="114">な</text><text class="after" x="250" y="114">が</text>
+  <!-- 4 · what it does -->
+  <div class="bento">
+    <section class="panel tile">
+      <div class="glyph" aria-hidden="true">
+        <svg viewBox="0 0 340 150" preserveAspectRatio="xMinYMid slice">
+          <rect class="deep" x="32" y="40" width="96" height="96" rx="28"/>
+          <rect class="rung" x="148" y="62" width="120" height="14" rx="7"/>
+          <rect class="rung" x="148" y="90" width="76" height="14" rx="7"/>
         </svg>
-        <p>はな＼が. The fall lands on the particle, so 尾高 and 平板 only part ways in a sentence.</p>
       </div>
-      <div class="pitch">
-        <div class="pitch-top"><span class="pitch-word">鼻<small>nose</small></span><span class="kata">平板</span></div>
-        <svg viewBox="0 0 300 120" role="img" aria-label="は low, な high, が high: the pitch stays up">
-          <text class="hl" x="24" y="34">H</text><text class="hl" x="24" y="84">L</text>
-          <polyline class="line" points="70,80 160,30 250,30"/>
-          <circle class="dot" cx="70" cy="80" r="7"/>
-          <circle class="dot" cx="160" cy="30" r="7"/>
-          <circle class="dot after" cx="250" cy="30" r="7"/>
-          <text x="70" y="114">は</text><text x="160" y="114">な</text><text class="after" x="250" y="114">が</text>
+      <div class="words"><h3>Or hear it, then name it</h3><p>Identify mode plays the word and hides it. You find the kanji from the sound. When the <span class="jp">型</span> shows you had it wrong, one switch moves the card to the other mode.</p></div>
+    </section>
+    <section class="panel tile">
+      <div class="glyph" aria-hidden="true">
+        <svg viewBox="0 0 340 150" preserveAspectRatio="xMinYMid slice">
+          <rect class="deep" x="32" y="104" width="240" height="14" rx="7"/>
+          <rect class="deep" x="32" y="78" width="180" height="14" rx="7"/>
+          <rect class="rung" x="32" y="52" width="210" height="14" rx="7"/>
+          <rect class="rung" x="32" y="26" width="140" height="14" rx="7"/>
         </svg>
-        <p>はなが. No fall at all. On the review card, a 平板 phrase carries no mark.</p>
       </div>
-    </div>
-    <p class="aside">In this corpus, 2,148 of the 3,830 labelled words are 平板 or 尾高. For all of them, the label is the only place the difference shows.</p>
+      <div class="words"><h3>A reveal is a walk</h3><p>Each press uncovers one blank, then the next side. <em>forgot</em> is there from the first step; <em>remembered</em> waits until you have seen it all.</p></div>
+    </section>
+    <section class="panel tile">
+      <div class="glyph" aria-hidden="true">
+        <svg viewBox="0 0 340 150" preserveAspectRatio="xMinYMid slice">
+          <rect class="rail" x="32"  y="70" width="12" height="40" rx="6"/>
+          <rect class="rail" x="54"  y="44" width="12" height="92" rx="6"/>
+          <rect class="rail" x="76"  y="32" width="12" height="104" rx="6"/>
+          <rect class="rail" x="98"  y="58" width="12" height="62" rx="6"/>
+          <rect class="rail" x="120" y="80" width="12" height="30" rx="6"/>
+          <rect class="rung" x="160" y="70" width="12" height="40" rx="6"/>
+          <rect class="rung" x="182" y="48" width="12" height="84" rx="6"/>
+          <rect class="rung" x="204" y="36" width="12" height="100" rx="6"/>
+          <rect class="rung" x="226" y="62" width="12" height="56" rx="6"/>
+          <rect class="rung" x="248" y="82" width="12" height="28" rx="6"/>
+        </svg>
+      </div>
+      <div class="words"><h3>Shadow the clip</h3><p>Loop it, slow it to 0.75×, record yourself and play the two side by side. No 0.5×: stretching that far smears the fall you are listening for.</p></div>
+    </section>
+    <section class="panel tile">
+      <div class="glyph" aria-hidden="true">
+        <svg viewBox="0 0 340 150" preserveAspectRatio="xMinYMid slice">
+          <rect class="sunk" x="32"  y="106" width="52" height="30" rx="15"/>
+          <rect class="rung" x="92"  y="84"  width="52" height="52" rx="26"/>
+          <rect class="rail" x="152" y="56"  width="52" height="80" rx="26"/>
+          <rect class="deep" x="212" y="22"  width="52" height="114" rx="26"/>
+        </svg>
+      </div>
+      <div class="words"><h3>FSRS-6, two buttons</h3><p>Remembered or forgot. Intervals grow to a year, aimed at 90% recall. Ten new cards a day, and a word waits until you have met its kanji.</p></div>
+    </section>
+    <section class="panel tile">
+      <div class="glyph" aria-hidden="true">
+        <svg viewBox="0 0 340 150" preserveAspectRatio="xMinYMid slice">
+          <rect class="deep" x="32"  y="30" width="150" height="106" rx="20"/>
+          <rect class="rail" x="198" y="54" width="54"  height="82"  rx="14"/>
+          <rect class="rung" x="268" y="88" width="40"  height="14"  rx="7"/>
+        </svg>
+      </div>
+      <div class="words"><h3>On your device</h3><p>The whole database lives in the browser and works offline. A laptop and a phone catch each other up whenever they next connect.</p></div>
+    </section>
+    <section class="panel tile">
+      <div class="glyph" aria-hidden="true">
+        <svg viewBox="0 0 340 150" preserveAspectRatio="xMinYMid slice">
+          <circle class="deep" cx="70" cy="84" r="38"/>
+          <rect class="rung" x="108" y="78" width="70" height="12" rx="6"/>
+          <circle class="sunk" cx="214" cy="84" r="38"/>
+          <rect class="rung" x="250" y="78" width="40" height="12" rx="6"/>
+        </svg>
+      </div>
+      <div class="words"><h3>Cards that link</h3><p>Link one card to another, see what links back, and keep the sentence where you first found a word. Ctrl+K finds anything.</p></div>
+    </section>
   </div>
-</section>
 
-<section>
-  <div class="wrap">
-    <div class="sec-head">
-      <p class="eyebrow">練習</p>
-      <h2>Built for one way of studying.</h2>
+  <!-- 5 · numbers -->
+  <section class="panel slab" aria-labelledby="t-figs">
+    <div class="art" aria-hidden="true">
+      <svg viewBox="0 0 420 380" preserveAspectRatio="xMaxYMid slice">
+        <rect class="rung" x="200" y="-20" width="12" height="420" rx="6"/>
+        <rect class="rung" x="232" y="300" width="160" height="14" rx="7"/>
+        <rect class="rung" x="232" y="260" width="160" height="14" rx="7"/>
+        <rect class="rung" x="232" y="220" width="160" height="14" rx="7"/>
+        <rect class="rung" x="232" y="180" width="160" height="14" rx="7"/>
+        <rect class="rung" x="232" y="140" width="160" height="14" rx="7"/>
+        <circle class="live-ring" cx="312" cy="76" r="28"/>
+      </svg>
     </div>
-    <div class="feats">
-      <div class="feat">
-        <h3>Say it, then hear it</h3>
-        <p>A card in produce mode shows the kanji and stays silent. You say the reading and the contour aloud, reveal, and compare. Audio before the reveal would hand you the answer.</p>
-      </div>
-      <div class="feat">
-        <h3>Or hear it, then name it</h3>
-        <p>A card in identify mode plays the word and hides it. You find the kanji from the sound. When the <span class="jp-term">型</span> label shows you had an accent wrong, one switch moves the card to produce mode.</p>
-      </div>
-      <div class="feat">
-        <h3>A reveal is a walk</h3>
-        <p>Each press uncovers one blank, then the next side. <em>forgot</em> is there from the first step. <em>remembered</em> waits until everything is on screen.</p>
-      </div>
-      <div class="feat">
-        <h3>Shadow the clip</h3>
-        <p>Replay, loop, 0.75× and 1.25×, and record yourself to play back beside the clip. No 0.5×: stretching the audio that far smears the very fall you are trying to hear.</p>
-      </div>
-      <div class="feat">
-        <h3>FSRS-6, two buttons</h3>
-        <p>Remembered or forgot. Intervals up to a year, aimed at 90% recall. Ten new cards a day, and a word waits until you have met its kanji.</p>
-      </div>
-      <div class="feat">
-        <h3>Yours, on your device</h3>
-        <p>The database runs in the browser and stays there. Reviews work offline, and a phone and a laptop keep each other up to date when they next connect.</p>
+    <div class="words">
+      <p class="label">数字</p>
+      <h2 class="big" id="t-figs">Built on four years of one person's study.</h2>
+      <div class="figs">
+        <div class="fig"><b>7,716</b><span>cards</span></div>
+        <div class="fig"><b>103,110</b><span>reviews brought over from Mochi</span></div>
+        <div class="fig"><b>3,830</b><span>words with an accent label</span></div>
+        <div class="fig"><b>86,627</b><span>morae marked in example sentences</span></div>
       </div>
     </div>
-  </div>
-</section>
+  </section>
 
-<section>
-  <div class="wrap">
-    <div class="sec-head">
-      <p class="eyebrow">数字</p>
-      <h2>Tested on four years of real study.</h2>
-      <p>Hashigo was built against one person's complete Mochi history and has replaced Mochi for that person since September 2026.</p>
+  <!-- 6 · not open yet -->
+  <section class="panel climb" aria-labelledby="t-climb">
+    <div class="words">
+      <p class="label">これから</p>
+      <h2 class="big" id="t-climb">Not open yet.</h2>
+      <p class="lede">Hashigo has one user today. It opens to others, free, once it has climbed these. There is nothing to sign up for in the meantime.</p>
     </div>
-    <div class="figs">
-      <div class="fig"><b>7,716</b><span>cards</span></div>
-      <div class="fig"><b>103,110</b><span>reviews imported</span></div>
-      <div class="fig"><b>3,830</b><span>words with an accent label</span></div>
-      <div class="fig"><b>86,627</b><span>morae marked in example sentences</span></div>
+    <div class="ladder" aria-label="What has to happen first">
+      <span class="top-disc" aria-hidden="true"></span>
+      <p class="step">Cost, accounts, licence and support settled</p>
+      <p class="step">A friend starts from an empty deck, unhelped</p>
+      <p class="step">A month of daily use with nothing to fix</p>
+      <p class="step done">Replaces Mochi, daily <small>since Sep 2026</small></p>
     </div>
-  </div>
-</section>
+  </section>
 
-<section>
-  <div class="wrap closing">
-    <div class="sec-head" style="margin:0">
-      <p class="eyebrow">これから</p>
-      <h2>Not open yet.</h2>
-      <p>Hashigo has one user today. It will open to others, free, once it has earned it. There is nothing to sign up for in the meantime.</p>
-    </div>
-    <ol class="steps">
-      <li class="done">Daily use replaces Mochi<small>Since September 2026</small></li>
-      <li>A month of daily use with almost nothing to fix</li>
-      <li>A friend starts from an empty deck without help</li>
-      <li>Cost, accounts, licence and support are settled</li>
-    </ol>
-  </div>
-</section>
-
-<div class="wrap">
   <footer>
-    <span><span class="jp">はしご</span> · one card, one word, one rung higher.</span>
-    <span>Accent data from OpenJTalk and UniDic, checked against OJAD. <a href="https://github.com/wmCmo/hashigo">Source on GitHub</a></span>
+    <span><b>hashigo</b> · accent data from OpenJTalk and UniDic, checked against OJAD</span>
+    <a href="https://github.com/wmCmo/hashigo">Source on GitHub</a>
   </footer>
 </div>
 
