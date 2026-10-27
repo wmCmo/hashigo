@@ -435,9 +435,11 @@ describe("which sides are set as the hero (decision 57)", () => {
     expect(heroLength("[…]")).toBe(0);
   });
 
-  it("stops at four, and an empty side is not a hero", () => {
+  it("covers the three head-word steps and stops at twelve; an empty side is not a hero", () => {
     expect(heroLength("気が付く")).toBe(4);
-    expect(heroLength("一から十まで")).toBe(0);
+    expect(heroLength("一から十まで")).toBe(6); // headword-sm
+    expect(heroLength("あいうえおかきくけこさし")).toBe(12);
+    expect(heroLength("あいうえおかきくけこさしす")).toBe(0);
     expect(heroLength("")).toBe(0);
     expect(heroLength("   ")).toBe(0);
   });

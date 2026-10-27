@@ -3,7 +3,7 @@ Hashigo (はしご, "ladder") is a flashcard app for studying Japanese, one card
 ## Principles
 
 1. **The word is the hero.** The headword takes `headword` (120px) and the centre of the card. Nothing else on the screen comes close in size, colour or weight.
-2. **One ruri, two places.** `accent` belongs only to the live dot beside the `Counter` and the `PlayButton` disc, plus the focus ring. It is never a background and never decoration, and as text only through `accent-text` on an `accent` chip. If a third blue thing appears, one of them is wrong.
+2. **Ruri only on what is live or leads somewhere.** `accent` belongs to the `PlayButton` disc, the live dot or progress fill, the mark's top rung and the focus ring; as `accent-text`, to links and an accent chip. It is never a surface, a heading, a selected row or decoration.
 3. **Grey does the structure.** Hierarchy comes from the `ink` → `ink-2` → `ink-3` steps and from size, not from colour, boxes or lines.
 4. **One card, one screen.** A screen has the chrome (menu and count), the word rail, one `FlashCard` and the `GradeBar`. Nothing else.
 
@@ -28,7 +28,9 @@ Two themes, light and dark, with the same roles in each. Light is the first them
 | text | `ink`, `ink-strong`, `ink-2` | Words and body text, the counter numerals, then readings, translations and labels. |
 | off | `ink-3` | Disabled controls, a missing clip, fading rail words. Never text a person must read. |
 | live | `accent`, `on-accent`, `accent-text` | Ruri: the dot, the disc and focus. `accent-text` is for the rare time it must be read as text. |
-| destroy | `danger` | Delete, and a forgotten-grade chip, always paired with its word. |
+| destroy, error | `danger` | Delete, a forgotten-grade chip, an error message, an open microphone; always paired with its word. |
+| done | `success` | A finished or correct state that is a word on screen. Never chrome. |
+| dim | `scrim` | Behind a sheet or drawer. |
 
 Every text token's note names the grounds it holds 4.5:1 on, in both themes. `ink-2` on `sunk` is the tightest pair (4.67:1 light, 4.84:1 dark). Ruri is deeper in light (`#1f5fe0`) and brighter in dark (`#5b8cff`), so it holds at least 4:1 on both grounds. Ruri and `danger` are blue against red, a pair that stays apart under red–green colour blindness.
 
@@ -51,7 +53,8 @@ Load the families with:
 
 - Spacing runs `space-1` (4px) to `space-8` (64px). The card pads `space-6` on the sides and `space-7` above the headword. The phone gutter is `space-4`.
 - Corners: `radius-lg` (28px) for the card, `radius-full` for every control (buttons, chips, the disc, the dot), `radius-md` for menus and sheets, `radius-sm` for the cloze. There are no square controls.
-- Depth: in light, the card lifts off `canvas` with `shadow-card`, a whisper of shadow. In dark it has no shadow and is set apart by tone alone (`card` on `canvas`). The play disc carries `shadow-accent`, its ruri glow plus a soft halo ring in dark, and the live dot carries `shadow-dot`. Nothing else casts a shadow.
+- Depth: in light, the card lifts off `canvas` with `shadow-card`, a whisper of shadow. In dark it has no shadow and is set apart by tone alone (`card` on `canvas`). The play disc carries `shadow-accent`, its ruri glow plus a soft halo ring in dark, and the live dot carries `shadow-dot`. Nothing else casts a shadow: sheets and menus sit on the `scrim` as `card`, list tiles are flat `card` on `canvas`, a toast is a dark `ink` pill.
+- Edges: a control is never an outline on nothing. Secondary controls are a `sunk` fill; ghost controls are text only; the hairline is for the rare divider. Single-line fields are `sunk` pills, multi-line fields `radius-md`.
 
 ## Layout
 
@@ -82,3 +85,15 @@ The mark is a ladder: two rails leaning in, three rungs, and a loose top rung in
 - Strokes are round-capped. The rails and rungs are `ink`; only the top rung is `accent`. On a dark ground the rails follow `ink` (they turn light) and the rung follows the dark `accent`.
 - Beside the mark, set the name as the wordmark: lowercase "hashigo" in `sans` at 800, tracked -0.03em, in `ink-strong`.
 - The app icon is the one place the mark sits on a container: a rounded square of `card`.
+
+## In the app
+
+The app (`app/style.css`) is this system applied to a working review screen, and a few things differ on purpose:
+
+- **No word rail.** Listing the upcoming head words would print the answer on cards where the word is the question (a hidden-word card, a reverse card). `WordRail` stays a component of the system, but the app does not use it.
+- **The count counts up and has no live dot.** The header shows `answered/planned` in heavy numerals at header size; the day's progress is the 2px bar under the header, filled in `accent` with the misses in `danger`.
+- **The replay disc is 60px, fixed bottom-right, with a play triangle.** It is the only audio control under a one-handed right thumb; a card's own clips are small `sunk` discs in their line.
+- **The footer carries three rows:** ghost operation buttons (back, more, undo, next; loop, speed, record), then the grade bar. Only the grade bar is filled.
+- **Pitch-accent marks in example sentences are brick red** (`#b33717` / `#ff8c6b`). They are notation, not chrome, so they must not read as the live colour.
+- **Hero sizes** follow the head-word scale by length (1–2 / 3–4 / 5–12 characters), on any side that is only Japanese script, sized against the card's width.
+- **The token names in `app/style.css` are older than these values:** `--paper` is `canvas`, `--paper-sunk` is `sunk`, `--hair` is `hairline`, `--ink-bright` is `ink-strong`, `--muted` is `ink-2`, `--indigo` is `ink` (the primary fill), `--vermilion` is `accent`, `--on-live` is `on-accent`, `--good` is `success`.

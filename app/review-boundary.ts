@@ -169,7 +169,7 @@ export function sideScale(text: string): SideScale {
 /**
  * DECISION 57 — THE WORD IS THE HERO. A side that is nothing but a short run of
  * Japanese script (a head word like 東京, a kanji like 慈) is set huge and centred,
- * the way the reference sets its card. Returns the length in code points, 1-4,
+ * the way the reference sets its card. Returns the length in code points, 1-12,
  * or 0 for every other side, which keeps its `data-scale` size untouched.
  *
  * SCRIPT, NOT ONLY LENGTH, and that is what keeps decision 35 intact: `protein`
@@ -178,12 +178,14 @@ export function sideScale(text: string): SideScale {
  * a cloze is never a hero either — its text carries the `[…]` mask, so the walk
  * cannot reveal a word into a size it was not laid out for.
  *
- * The cap is 4 because 4 kanji is the widest run that still fits a 375px phone at
- * the smallest hero step; 5 and up stay in `display`, as before.
+ * The three steps are the design system's head-word scale: 1-2 characters
+ * `headword`, 3-4 `headword-md`, 5-12 `headword-sm` (the CSS keys on the number).
+ * The cap is 12 because a Japanese-only run longer than that is a sentence or a
+ * long phrase, not a head word, and stays in `display`.
  */
 export function heroLength(text: string): number {
   const compact = text.replace(/\s+/g, "");
   if (!/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー々〆ヶ]+$/u.test(compact)) return 0;
   const length = [...compact].length;
-  return length <= 4 ? length : 0;
+  return length <= 12 ? length : 0;
 }

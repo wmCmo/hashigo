@@ -137,7 +137,7 @@ const page = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OJAD preview — ${rendered} real cards</title>
 <style>${readFileSync('app/style.css', 'utf8')}</style>
-<style>${fontFace('Zen Maru Gothic', 'app/fonts/zenmaru-med.woff2')}
+<style>${fontFace('Noto Sans JP', 'app/fonts/notosansjp-400.woff2')}
 ${fontFace('Zen Kaku Gothic New', 'app/fonts/zenkaku-med.woff2')}
 </style>
 <style>
@@ -197,7 +197,7 @@ ${fontFace('Zen Kaku Gothic New', 'app/fonts/zenkaku-med.woff2')}
   </div>
   <div class="preview-control">
     <span class="preview-label">Japanese face</span>
-    <button type="button" data-face="&quot;Zen Maru Gothic&quot;">Zen Maru <i>app default</i></button>
+    <button type="button" data-face="&quot;Noto Sans JP&quot;">Noto Sans JP <i>app default</i></button>
     <button type="button" data-face="&quot;Zen Kaku Gothic New&quot;">Zen Kaku</button>
     <button type="button" data-face="system-ui">your system font <i>what you saw</i></button>
   </div>

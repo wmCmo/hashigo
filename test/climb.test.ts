@@ -100,3 +100,24 @@ describe("the climb's motion is the brief's, and the brief forbids two changes",
     expect(accent / below).toBeCloseTo(1.59, 1);
   });
 });
+
+describe("the done screen's climb takes its colours from the theme (decision 57)", () => {
+  const climb = readFileSync(new URL("../app/climb.ts", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../app/style.css", import.meta.url), "utf8");
+
+  it("bakes no colour into the rungs", () => {
+    // It used to write `stroke="rgb(224,69,29)"`, the retired vermilion, so the
+    // done screen kept the decision-32 palette through decision 57 and ignored
+    // the dark theme entirely.
+    const code = climb.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+    // The rails' `currentColor` is the theme's ink, so it is the one stroke allowed.
+    expect(code).not.toMatch(/rgb\(|#[0-9a-f]{6}\b|"stroke",(?!\s*"currentColor")/i);
+    expect(code).toContain('setProperty("--t"');
+  });
+
+  it("is painted by the same ruri-to-ink ramp as the boot rungs", () => {
+    expect(css).toMatch(
+      /\.climb-mark \.rung\s*\{[^}]*color-mix\(in srgb, var\(--indigo\) calc\(var\(--t, 1\) \* 100%\), var\(--vermilion\)\)/,
+    );
+  });
+});

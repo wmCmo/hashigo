@@ -9,10 +9,11 @@
  *
  *   · GREY DOES THE STRUCTURE. Neutral grounds (`--paper`, `--card`, `--sunk`),
  *     three inks (`--ink-bright`, `--ink`, `--muted`). No hue carries hierarchy.
- *   · ONE COLOUR, 瑠璃 (ruri, lapis), and only on what is LIVE: the replay disc,
- *     the mark's top rung, the progress dot and the focus ring. He picked it over
- *     orange, which read as Claude's. If two resting things on a screen are ruri,
- *     one of them is wrong.
+ *   · ONE COLOUR, 瑠璃 (ruri, lapis), and only on what is LIVE or LEADS
+ *     SOMEWHERE: the replay disc, the mark's top rung, the day's progress fill,
+ *     the focus ring and — as `--accent-text` — links on the card. Never a
+ *     surface, a heading, a selected row or decoration. He picked it over
+ *     orange, which read as Claude's.
  *   · THE WORD IS THE HERO. A side that is a short run of kanji/kana is set huge
  *     and centred (`[data-hero]`, see `heroLength` in `app/review-boundary.ts`).
  *   · SOFT SHAPES. The card is a 28px-radius raised surface with a whisper of
@@ -65,6 +66,9 @@
   --card: #fcfcfc;
   --ink: #3a3a3a;
   --muted: #686868;
+  /* ink-3: off. Disabled controls and a clip with no audio — never text a person
+     has to read (1.85:1 on paper). */
+  --ink-3: #b4b4b4;
   --hair: #e0e0e0;
   /* THE ACCENT HEAD — decision 43's per-mora pitch mark in example sentences.
      Kept warm on purpose: it is notation, not chrome, and it must not read as
@@ -78,7 +82,9 @@
   --ink-bright: #262626;
   --line: var(--hair);
   --line-soft: var(--hair);
-  --edge: #c2c2c2;
+  /* Kept as a NAME for the rules that speak it; decision 57 has no fourth grey,
+     so it is ink-3. No control uses it as its only edge any more. */
+  --edge: var(--ink-3);
   --indigo: var(--ink);
   --indigo-deep: var(--ink-bright);
   --vermilion: var(--ruri);
@@ -86,6 +92,11 @@
   --focus: var(--vermilion);
   /* The label colour on a `--vermilion` fill: the replay disc's icon. */
   --on-live: var(--card);
+  /* Ruri as TEXT: links on the card. The system's `accent-text`. 4.97 on paper,
+     4.67 on sunk, 5.43 on card in light. */
+  --accent-text: var(--ruri);
+  /* What a layer, sheet or drawer dims the screen with. */
+  --scrim: rgb(0 0 0 / 45%);
 
   /* ── STATES, and they are NOT decoration ────────────────────────────────
      `--ok`/`--no` were never only the two grade buttons — the answer verdict,
@@ -120,7 +131,6 @@
   --radius-full: 999px;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 4%), 0 16px 40px rgb(0 0 0 / 5%);
   --shadow-live: 0 6px 16px rgb(31 95 224 / 35%);
-  --shadow-layer: 0 24px 64px rgb(0 0 0 / 18%);
 
   /* ── the rail ──
      TWO NAMES, BECAUSE THEY ANSWER TWO QUESTIONS. `--rail-width` is how wide
@@ -174,13 +184,14 @@
     --muted: #adadad;
     --hair: #444444;
     --ink-bright: #ffffff;
-    --edge: #5a5a5a;
+    --ink-3: #626262;
+    --accent-text: #8cb0ff;
     --good: #7cc296;
     --danger: #ff8f80;
     --on-live: #141414;
     --shadow-card: none;
     --shadow-live: 0 0 0 7px rgb(0 0 0 / 22%), 0 6px 16px rgb(91 140 255 / 30%);
-    --shadow-layer: 0 24px 64px rgb(0 0 0 / 50%);
+    --scrim: rgb(0 0 0 / 60%);
   }
 }
 
@@ -195,13 +206,14 @@
   --muted: #adadad;
   --hair: #444444;
   --ink-bright: #ffffff;
-  --edge: #5a5a5a;
+  --ink-3: #626262;
+  --accent-text: #8cb0ff;
   --good: #7cc296;
   --danger: #ff8f80;
   --on-live: #141414;
   --shadow-card: none;
   --shadow-live: 0 0 0 7px rgb(0 0 0 / 22%), 0 6px 16px rgb(91 140 255 / 30%);
-  --shadow-layer: 0 24px 64px rgb(0 0 0 / 50%);
+  --scrim: rgb(0 0 0 / 60%);
 }
 
 /* ── the faces, self-hosted. `python tools/fonts.py` builds app/fonts/. ──
@@ -599,7 +611,7 @@ body {
 .review header .mark {
   /* `currentColor` on the rails and rungs so the mark follows the theme; only
      the top rung is pinned, to `var(--vermilion)`, which is itself re-derived on
-     dark (#F05A2E — lifted at constant hue, not dimmed). */
+     dark (ruri #5B8CFF since decision 57). */
   color: var(--indigo);
   display: block;
   flex: none;
@@ -691,6 +703,7 @@ body {
 
 /* His request 6. Shares the chip shape so the row reads as one thing, and takes
    the LINK blue rather than a fourth colour — the accent yellow is the thing
+   [DECISION 57 OVERRIDES THE LOOK THIS DESCRIBES — see the block at the end of this file.]
    being learned and the green is `remembered`. Direction is metadata about the
    card, which is what the blue already means here. */
 .reversetag {
@@ -816,6 +829,7 @@ body {
 
 /* THE ONE RAISED SURFACE IN THE APP. The brief: "Flashcards themselves are the
    one raised surface: --card background, 1px --hair border, square corners."
+   [DECISION 57 OVERRIDES THE LOOK THIS DESCRIBES — see the block at the end of this file.]
    It is raised by being LIGHTER than the paper with a hairline round it — there
    is no shadow anywhere in this design, so elevation is carried by value. */
 .cardhost {
@@ -1134,6 +1148,7 @@ body {
    mark would not survive being copied out of the card.
 
    Square corners, hairline, no shadow — decision 32.
+   [DECISION 57 OVERRIDES THE LOOK THIS DESCRIBES — see the block at the end of this file.]
 
    `--ink` and not `--muted`, and the pair was measured rather than assumed:
    `--ink` on `--sunk` is **10.86:1 light / 14.88:1 dark**, and the hover pair
@@ -1272,6 +1287,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
  * `mountClipButtons` carries the rest of the argument.
  *
  * SQUARE, hairline, no fill — the brief's button, at the size of a line of text
+ * [DECISION 57 OVERRIDES THE LOOK THIS DESCRIBES — see the block at the end of this file.]
  * rather than a control bar. It is deliberately quieter than `.replay`: that one
  * is the primary gesture and earns its circle; this is a precision tap. */
 /* ── generate what Mochi never generated ────────────────────────────────────
@@ -1470,6 +1486,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
  * `inherit` rather than a token: inside a revealed cloze that is `--ink-bright`,
  * on side 1 it is the side's own ink, and in a preview it is the layer's. The
  * head word should be whatever the brightest text around it is, always. The
+ * [DECISION 57 OVERRIDES THE LOOK THIS DESCRIBES — see the block at the end of this file.]
  * READING keeps its own colour — `ruby rt` is indigo, two rules below. */
 .hashigo-furigana {
   color: inherit;
@@ -1504,6 +1521,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
 }
 
 /* The brief's button: 1px indigo border on transparent, filling solid indigo on
+   [DECISION 57 OVERRIDES THE LOOK THIS DESCRIBES — see the block at the end of this file.]
    hover. Square, because every control here is square except the replay. */
 .bar button {
   background: none;
@@ -1621,6 +1639,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
    `border-radius: 0` on buttons; decision 23 put this one round and bottom-RIGHT
    because he reviews one-handed with his right thumb. Shape follows the hand
    here, so the hand wins. It is also the one raised-looking control, and it
+   [DECISION 57 OVERRIDES THE LOOK THIS DESCRIBES — see the block at the end of this file.]
    earns that by sitting on --card against --paper with a hairline — no shadow. */
 .replay {
   background: var(--card);
@@ -3667,6 +3686,7 @@ input[data-answer="incorrect"] {
 
    RECESSED AND RULED OFF, so it reads as an apparatus attached to the card
    rather than as more card. The hairline is the only separator — decision 32's
+   [DECISION 57 OVERRIDES THE LOOK THIS DESCRIBES — see the block at the end of this file.]
    flat ground, no shadow, square corners. */
 .backlinks {
   border-top: 1px solid var(--hair);
@@ -4019,6 +4039,7 @@ input[data-answer="incorrect"] {
 
 /* DEVOICED: the vowel is whispered away. 5.7% of morae.
    GRAY RATHER THAN BLUE, and he asked which. Blue is already this app's meaning
+   [DECISION 57 OVERRIDES THE LOOK THIS DESCRIBES — see the block at the end of this file.]
    of "you can touch this" — links, buttons, the cloze underline, the wordmark —
    so a blue kana inside a sentence reads as a link. Gray is also iconic:
    devoicing is a REDUCTION, and `--muted` means de-emphasised everywhere else
@@ -4053,12 +4074,26 @@ input[data-answer="incorrect"] {
 
 /* ═══ DECISION 57 — THE PINTEREST SYSTEM, APPLIED ═════════════════════════════
    The tokens at the top of this file carry the palette and the faces. This
-   section carries the SHAPES: a raised card with a big radius, pills and discs
-   for every control, a hero head word. It sits last so that it wins at equal
-   specificity over the decision-32 rules it replaces, which keeps every
-   behavioural rule above (states, gating, the walk, the measured footer) exactly
-   where its comment explains it. Nothing here hides, shows or moves a control
-   between states — that is all still decided above. */
+   section carries everything else the system says — `design-system/README.md`
+   is the source, read it before changing anything here. It sits LAST so that it
+   wins at equal specificity over the decision-32 rules above it, which keeps
+   every behavioural rule above (states, gating, the walk, the measured footer)
+   exactly where its comment explains it. Nothing here hides, shows or moves a
+   control between states — that is all still decided above.
+
+   THE RULES IT ENFORCES, in the system's words:
+     · "There are no square controls" — every button, field and chip is a pill
+       (`--radius-full`); menus, sheets and tiles are `--radius-md`; the card is
+       `--radius-lg`; the cloze is `--radius-sm`.
+     · "Nothing else casts a shadow" — only the card (light only) and the ruri
+       disc. Sheets separate by TONE (`--card` over the scrim), not by lift.
+     · hairline: "Rare dividers. Decorative only — never the sole edge of a
+       control." So a secondary control is a `--sunk` FILL with `--ink` text,
+       not an outline; the old ruled lists lose their rules and space instead.
+     · Latin is `--sans` (Hanken), Japanese is Noto at 400; weights live at the
+       extremes (400 / 600 buttons / 700-800 numerals); no tracking except the
+       uppercase label.
+     · Spacing on the 4/8/12/16/24/32/48/64 steps. */
 
 /* ── the chrome sits on the paper ──
    The reference has no rule under its header: the count and the menu float on
@@ -4069,12 +4104,18 @@ input[data-answer="incorrect"] {
   padding: 12px 16px;
 }
 
-.review header .wordmark-ui {
+.review header .wordmark-ui,
+.rail-brand .wordmark-ui {
   color: var(--ink-bright);
+}
+
+.review header .wordmark-ui {
   font-size: 17px;
 }
 
-/* The count is the reference's "248": heavy, tight, tabular. */
+/* The count is the reference's "248": heavy, tight, tabular. Kept at header
+   size rather than the system's 44px counter — that would double the height of
+   a sticky header on a phone, which is a layout change and his call. */
 #progress {
   color: var(--ink-bright);
   font-size: 15px;
@@ -4082,89 +4123,245 @@ input[data-answer="incorrect"] {
   letter-spacing: -0.01em;
 }
 
+/* THE DAY'S BAR IS LIVE, SO IT IS RURI. Decision 48 put the misses on it in red
+   and relied on the boundary being carried by HUE — blue against red, the pair
+   that survives every common colour-vision deficiency. An ink fill beside the
+   red lost that. The track is `--sunk`, the system's progress track. */
 .progressbar,
-.progressbar i {
+.fetchtrack,
+.glance-deck-track {
+  background: var(--sunk);
+}
+.progressbar,
+.progressbar i,
+.bootbar,
+.bootbar > i,
+.fetchtrack,
+.fetchfill,
+.glance-deck-track,
+.glance-deck-fill {
   border-radius: var(--radius-full);
 }
+.progressbar i {
+  background: var(--vermilion);
+}
 
-/* ── the deck line's chips ── pills, same border, same words. */
+/* ── the deck line's chips ── the system's Chip: 22px pills. `new card`,
+   `again`, `reversed` are NEUTRAL (ink on sunk); `late` and `seen` are QUIET
+   (muted with a hairline ring) — decision 46's "quiet, not a warning". */
+.deck {
+  gap: var(--space-2, 8px);
+  margin-bottom: 24px;
+}
 .latetag,
 .newtag,
 .reasktag,
 .reversetag,
 .seentag {
+  align-items: center;
+  border: 0;
   border-radius: var(--radius-full);
+  display: inline-flex;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  padding: 2px 9px;
+  font-weight: 700;
+  height: 22px;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 0 10px;
+  vertical-align: middle;
+}
+.newtag,
+.reasktag,
+.reversetag {
+  background: var(--sunk);
+  color: var(--ink);
+}
+.latetag,
+.seentag {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--hair);
+  color: var(--muted);
 }
 
 /* ── THE CARD ──
    The one raised surface: `--card` on `--paper`, 28px corners, a whisper of
    shadow in light and none in dark (the dark card is lifted by tone alone, as in
    the reference). No hairline round it and none between sides — the space does
-   that job. `container-type` is what lets the hero size itself to the card. */
+   that job. `container-type` is what lets the hero size itself to the card; it
+   was measured to move nothing else (no fixed or sticky descendant lives in the
+   card — the selection button is appended to <body>).
+
+   LATIN IN HANKEN. The card used to set everything in the Japanese stack, so an
+   English meaning came out in Noto's Latin. `--sans` falls back to Noto per
+   glyph, so every kana and kanji is unchanged. */
 .cardhost {
   border: 0;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
   container-type: inline-size;
-  padding: 36px 24px 28px;
+  font-family: var(--sans);
+  padding: 48px 24px 24px;
+}
+@media (min-width: 640px) {
+  .cardhost {
+    padding: 48px 32px 32px;
+  }
 }
 
 .hashigo-side {
   border-top: 0;
-  padding: 18px 0;
+  padding: 12px 0;
+}
+.hashigo-side p,
+.hashigo-side ol,
+.hashigo-side ul,
+.hashigo-side table {
+  margin-bottom: 8px;
+}
+.hashigo-side li + li {
+  margin-top: 4px;
+}
+.hashigo-rule {
+  margin: 16px 0;
 }
 
-/* THE HERO. `data-hero` is the side's length in code points, 1-4, and only on a
-   side that is nothing but Japanese script (`heroLength`). Sized against the
-   CARD's width rather than the viewport, so four kanji still fit a 375px phone
-   and one kanji does not become a billboard on the laptop. */
+/* Japanese has ONE weight here (400): emphasis is carried by `--ink-bright`,
+   never by a synthesized bold smearing the strokes. Latin gets real Hanken 700. */
+.hashigo-side strong,
+.hashigo-side b,
+.hashigo-side th {
+  color: var(--ink-bright);
+  font-synthesis: none;
+  font-weight: 700;
+}
+.hashigo-mora-head {
+  font-synthesis: none;
+}
+
+/* THE HERO — the system's head-word scale, keyed on `data-hero`, the side's
+   length in code points (`heroLength`, only for a side that is nothing but
+   Japanese script). 1-2 `headword` 120px · 3-4 `headword-md` 72px · 5-12
+   `headword-sm` 44px. Sized against the CARD, so four kanji still fit a 375px
+   phone and one kanji does not become a billboard on the laptop. */
 .hashigo-side[data-hero] {
   color: var(--ink);
   font-family: var(--jp-display);
+  font-size: min(44px, 11cqi);
   font-weight: 400;
-  letter-spacing: 0.02em;
-  line-height: 1.1;
-  padding-bottom: 28px;
+  letter-spacing: 0;
+  line-height: 1.15;
+  padding-bottom: 32px;
   text-align: center;
 }
-.hashigo-side[data-hero="1"] { font-size: min(128px, 44cqi); }
-.hashigo-side[data-hero="2"] { font-size: min(120px, 40cqi); }
-.hashigo-side[data-hero="3"] { font-size: min(96px, 30cqi); }
-.hashigo-side[data-hero="4"] { font-size: min(76px, 22cqi); }
-.hashigo-side[data-hero] ruby rt {
+.hashigo-side[data-hero="1"],
+.hashigo-side[data-hero="2"] {
+  font-size: min(120px, 40cqi);
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+.hashigo-side[data-hero="3"],
+.hashigo-side[data-hero="4"] {
+  font-size: min(72px, 22cqi);
+  line-height: 1.05;
+}
+/* The reading is `ink-2`, at every scale — it annotates the word, it is not as
+   loud as the word. */
+.hashigo-side ruby rt,
+.hashigo-side[data-scale="display"] ruby rt,
+.hashigo-side[data-scale="mid"] ruby rt {
   color: var(--muted);
+}
+.hashigo-side[data-hero] ruby rt {
   font-size: 0.24em;
-  letter-spacing: 0.04em;
 }
 
-/* The mask: a recessed block, as in the system's Cloze. The dashed underline
-   was decision 32's only cue on a flat card; on a raised card the well reads. */
+/* 型 is a jp chip (decision 27: it is load-bearing, so it keeps a legible 15px).
+   The old loose tracking was decision 32's label voice. */
+.hashigo-side .accent-label {
+  background: var(--sunk);
+  border-radius: var(--radius-full);
+  font-family: var(--jp);
+  font-size: 15px;
+  letter-spacing: 0;
+  line-height: 1.6;
+  margin-right: 0;
+  padding: 0 12px;
+}
+
+/* The mask: a recessed block, as in the system's Cloze. */
 .hashigo-cloze-mask {
   border-bottom: 0;
   border-radius: var(--radius-sm);
   padding: 0 0.4em;
 }
+.hashigo-cloze-answer,
+.layer .hashigo-cloze-answer {
+  color: inherit;
+}
 
-/* An inline clip button: a small disc in the line it belongs to. Ink, not ruri
-   — a card can carry several clips, and the one ruri on the screen is the big
-   disc under his thumb. */
-.clip {
+/* LINKS LEAD SOMEWHERE, SO THEY ARE RURI — the system's `accent-text`. With the
+   primary repointed to ink, both kinds of link had become the colour of the
+   sentence around them. The underline still tells them apart: dotted stays in
+   the app, solid leaves it. Hover goes to ink. */
+.hashigo-card-link,
+.hashigo-link,
+.backlinks-more {
+  color: var(--accent-text);
+}
+.hashigo-card-link:hover,
+.hashigo-card-link:focus-visible,
+.hashigo-link:hover,
+.hashigo-link:focus-visible {
+  color: var(--ink);
+}
+
+.hashigo-tag {
+  border: 0;
   border-radius: var(--radius-full);
+  padding: 0 8px;
+}
+.hashigo-code {
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+}
+
+/* An answer field on the card (数字): a recessed pill, not the browser's box. */
+.hashigo-side .hashigo-input {
+  background: var(--sunk);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  color: var(--ink);
+  font: inherit;
+  padding: 8px 16px;
+}
+
+/* An inline clip button: a small recessed disc in the line it belongs to. Ink,
+   not ruri — a card can carry several clips, and the live disc is the big one
+   under his thumb. */
+.clip {
+  background: var(--sunk);
+  border: 0;
+  border-radius: var(--radius-full);
+  color: var(--ink);
+  min-height: 40px;
+  min-width: 40px;
+  padding: 0;
 }
 .clip::after {
   border-radius: var(--radius-full);
   left: 25%;
   max-width: 50%;
 }
+.clip:active,
+.clip[data-clip="playing"] {
+  background: var(--indigo);
+  color: var(--card);
+}
 
 /* ── THE RURI DISC ──
    Decision 23's round, bottom-right replay, now the system's play disc: the one
-   live colour, its glow, and the icon in `--on-live`. Same place, same size of
-   target, so his thumb finds it where it always was. */
+   live colour, its glow, and the icon in `--on-live`. 60px, not the system's
+   48px target: decision 23 sized it for a one-handed right thumb, and that wins. */
 .replay {
   background: var(--vermilion);
   border: 0;
@@ -4179,7 +4376,7 @@ input[data-answer="incorrect"] {
   transform: scale(0.94);
 }
 .replay[disabled] {
-  background: var(--edge);
+  background: var(--ink-3);
   box-shadow: none;
   opacity: 1;
 }
@@ -4194,25 +4391,65 @@ input[data-answer="incorrect"] {
 .bar {
   border-top: 0;
 }
-
-.op {
-  border-radius: var(--radius-full);
-  padding: 10px 6px;
+.ops,
+.shadowbar {
+  gap: 8px;
+  padding: 8px 16px;
 }
 
-/* The grade row: two pills. `forgot` and the walk's `next`/`reveal` are the
-   secondary — a recessed fill, ink label. `remembered` is the primary — the ink
-   fill. The `!important`s answer the ones decision 32 put on `.no`/`.ok`. */
+/* The operation rows are the system's GHOST buttons — text only, `ink-2`, 600 —
+   so they recede and the grade bar's pills are the only filled controls under
+   the card. 13px rather than 15px because four of them share a 375px row. A
+   press shows the recessed fill. */
+.op {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-full);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 44px;
+  padding: 0 12px;
+}
+.op:active {
+  background: var(--sunk);
+}
+.op.on {
+  color: var(--ink);
+}
+
+/* The grade row: two 52px pills, 12px apart. `forgot` and the walk's
+   `next`/`reveal` are the secondary — a recessed fill, ink label. `remembered` is
+   the primary — the ink fill. The `!important`s answer the ones decision 32 put on
+   `.no`/`.ok`. */
+.bar,
+.grades {
+  gap: 12px;
+}
+.bar {
+  padding: 12px 16px;
+}
 .bar button {
+  align-items: center;
   background: var(--sunk);
   border: 1px solid transparent;
   border-radius: var(--radius-full);
   color: var(--ink);
+  display: inline-flex;
+  font-size: 15px;
   font-weight: 600;
-  padding: 16px 10px;
+  gap: 8px;
+  justify-content: center;
+  letter-spacing: 0;
+  line-height: 20px;
+  min-height: 52px;
+  padding: 0 24px;
 }
+/* THE DASH STAYS, AS AN EDGE. Mid-walk `forgot` and `next` are both secondary
+   pills, and the dashed outline is what still tells "go on" from "I failed" —
+   decision 32 called it the only thing distinguishing the reveal control. */
 .reveal-zone {
-  border-style: solid !important;
+  border: 1px dashed var(--edge) !important;
 }
 .no {
   border-color: transparent !important;
@@ -4220,16 +4457,35 @@ input[data-answer="incorrect"] {
 }
 @media (hover: hover) and (pointer: fine) {
   .bar button:hover {
-    background: var(--hair);
+    background: var(--edge);
     color: var(--ink);
   }
 }
+/* A press FILLS — the old feedback, in the new primary. A hover-to-hairline
+   change measured ~1.1:1 and read as no feedback at all. */
 .bar button:active {
-  background: var(--hair);
-  color: var(--ink);
+  background: var(--indigo);
+  color: var(--card);
 }
 
-/* ── everything else that is a button, a field or a panel ── same language. */
+/* Keycap hints become keycaps: a small ringed key beside the label rather than a
+   second line under it. Colour and opacity stay decision 38's: inherited, 0.85. */
+@media (hover: hover) and (pointer: fine) {
+  .kbd {
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px currentColor;
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 16px;
+    margin-top: 0;
+    padding: 0 5px;
+  }
+}
+
+/* ── SECONDARY BUTTONS EVERYWHERE ELSE ── the system's Button: a recessed pill,
+   ink label, 600. They used to be outlines on nothing — a hairline or the old
+   `--edge` grey as the control's only edge. */
 .banner button,
 .bootskip,
 .focuschip,
@@ -4237,48 +4493,408 @@ input[data-answer="incorrect"] {
 .done button,
 .confirm-bar button,
 .gallery-back,
-.gallery-review-go,
 .gcard-op,
 .layer-op,
-.newcard-submit,
 .draw-button,
-.regen {
+.regen,
+.tree-add,
+.gallery-review-go + .gallery-review-go {
+  background: var(--sunk);
+  border: 0;
   border-radius: var(--radius-full);
+  color: var(--ink);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.done button,
+.confirm-bar button,
+.bootskip {
+  font-size: 15px;
+  min-height: 52px;
+  padding: 0 24px;
+}
+.readingtoggle,
+.gallery-back,
+.draw-button,
+.layer-op,
+.gcard-op,
+.regen,
+.tree-add {
+  font-size: 13px;
+  min-height: 36px;
+  padding: 0 16px;
+}
+.focuschip {
+  min-height: 32px;
+  padding: 0 12px;
+}
+.tree-add {
+  margin: 12px 8px 4px;
+  width: calc(100% - 16px);
+}
+.confirm-bar button.danger,
+.gcard-op.danger,
+.op.danger,
+.layer-op.danger {
+  background: var(--sunk);
+  border: 0;
+  color: var(--danger);
+}
+/* The primary fills that were still square. */
+.peek-back,
+.selection-newcard,
+.gallery-review-go,
+.newcard-submit {
+  border: 0;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.peek-back,
+.selection-newcard {
+  padding: 0 16px;
+}
+.selection-newcard {
+  min-height: 40px;
+}
+.newcard-submit {
+  min-height: 52px;
 }
 
+/* Icon-only buttons are the system's MenuButton: a 44px round target with no
+   edge and no fill at rest. */
 .layer-close,
-.gcard-more,
-.sidebartoggle {
+.sidebartoggle,
+.gcard-more {
+  background: transparent;
+  border: 0;
   border-radius: var(--radius-full);
+  color: var(--ink);
+}
+.layer-close,
+.sidebartoggle {
+  height: 44px;
+  width: 44px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .layer-close:hover,
+  .sidebartoggle:hover,
+  .gcard-more:hover {
+    background: var(--sunk);
+  }
 }
 
-.edit-input,
+/* Disabled is `ink-3` on `sunk`, everywhere — not a fainter copy of the button. */
+.bar button[disabled],
+.op[disabled],
+.clip[disabled],
+.gallery-review-go:disabled,
+.regen[disabled] {
+  background: var(--sunk) !important;
+  border-color: transparent !important;
+  color: var(--ink-3) !important;
+  opacity: 1;
+}
+
+/* ── FIELDS ── single-line fields are pills, multi-line ones `--radius-md`; all
+   recessed, no hairline box. Text is `--ink`; `--ink-bright` is the count's. */
 .searchbox,
+.newcard-title,
 .newcard-select,
 .gallery-search,
+.gallery-sort,
+.palette-input {
+  background: var(--sunk);
+  border: 0;
+  border-radius: var(--radius-full);
+  color: var(--ink);
+  padding: 10px 16px;
+}
+.searchbox {
+  margin: 8px;
+  width: calc(100% - 16px);
+}
+.palette-input {
+  margin: 12px 12px 4px;
+  width: calc(100% - 24px);
+}
 .gallery-sort {
-  border-radius: var(--radius-sm);
+  font-family: var(--sans);
 }
-
-.gcard {
-  border-color: transparent;
+.edit-input {
+  border: 0;
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-card);
+  color: var(--ink);
+}
+.edit-field {
+  border: 0;
+  border-radius: var(--radius-md);
+}
+.edit-mirror .edit-link {
+  background: var(--sunk);
+}
+.edit-field.has-links.mod .edit-mirror .edit-link {
+  background: var(--hair);
 }
 
+/* Field labels and template names are UI chrome, so `--sans`, not mono. Mono
+   stays where the text is authored: template bodies, code, math source. */
+.edit-label {
+  font-family: var(--sans);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+.tree-row.is-template .tree-name,
+.tpl-setting-value {
+  font-family: var(--sans);
+}
+
+/* ── SHEETS, MENUS, TILES ── `--radius-md`, separated by tone, no shadow. */
+.layer-backdrop,
+.sidebar-scrim {
+  background: var(--scrim);
+}
 .layer-panel,
 .confirm-panel,
 .palette-panel {
+  background: var(--card);
+  border: 0;
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-layer);
   overflow: hidden;
 }
-
-.say {
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-layer);
+.confirm-panel h2 {
+  color: var(--ink);
+  font-family: var(--sans);
+}
+.layer-head {
+  border-bottom: 0;
+  letter-spacing: 0;
+  padding: 12px 16px;
+}
+.layer-body {
+  padding: 16px 16px 24px;
+}
+.menu-item {
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+}
+.menu-item:hover {
+  border-color: transparent;
+}
+.menu-item b {
+  font-weight: 600;
+}
+.link-menu {
+  background: var(--card);
+  border: 0;
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  padding: 4px;
+}
+.link-item {
+  border-radius: var(--radius-md);
+}
+.link-item.on {
+  border-left: 0;
+}
+.palette-row {
+  border-radius: var(--radius-md);
+  border-top: 0;
+  margin: 0 8px;
+  padding: 8px 12px;
+  width: calc(100% - 16px);
+}
+.palette-row.on {
+  box-shadow: none;
+}
+.palette-foot {
+  border-top: 0;
+}
+.edit-row,
+.redo-row,
+.settings-state,
+.tpl-settings,
+.tpl-head,
+.edit-template,
+.link-create {
+  border-bottom: 0;
+  border-top: 0;
+}
+.tpl-head,
+.peek,
+.backlinks-head,
+.edit-type {
+  letter-spacing: 0;
+}
+.tpl-field,
+.glance-tile {
+  background: var(--sunk);
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+}
+.peek {
+  background: var(--sunk);
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  margin-top: 16px;
+  padding: 12px 16px;
+}
+.backlinks {
+  border-top: 0;
+  margin-top: 32px;
+}
+.backlinks-list .link-item + .link-item {
+  border-top: 0;
 }
 
-.boot-lockup {
+/* The toast: a dark pill of ink, separated by tone instead of a smear of shadow.
+   `--radius-md`, not a full pill — an error message can wrap to five lines on a
+   phone, and a 999px radius on a tall box is an oval the text spills out of. */
+.say {
+  background: var(--indigo);
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--card);
+  font-size: 13px;
+}
+.say.bad {
+  background: var(--danger);
+  color: var(--card);
+}
+
+/* ── THE GALLERY ── tiles are flat `--card` on paper: "never put a card inside a
+   list", so they carry no shadow — only the review card is raised. */
+.gallery-head {
+  border-bottom: 0;
+}
+.gallery-grid {
+  gap: 12px;
+}
+.gcard {
+  border: 0;
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  gap: 8px;
+  padding: 16px;
+}
+.gcard.is-pinned {
+  box-shadow: inset 0 0 0 1px var(--ink-3);
+}
+.gcard-gist {
+  font-family: var(--sans);
+}
+.gcard-name {
+  color: var(--ink);
+}
+
+/* ── THE SIDEBAR ── a list on the paper, not a ruled table: no rule between
+   rows, rows are rounded and inset, the selected row is a recessed fill. */
+.sidebar {
+  border-right: 0;
+}
+.sidebar-head,
+.rail-brand,
+.deck-list,
+.sidebar-action,
+.sidebar-note {
+  border-bottom: 0;
+  border-top: 0;
+}
+.sidebar-head,
+.result-head,
+.tree-header {
+  letter-spacing: 0;
+}
+.sidebar-action {
+  border-radius: var(--radius-full);
+  margin: 0 8px;
+  padding: 12px 16px;
+  width: calc(100% - 16px);
+}
+.tree-row,
+.result-row {
+  border-radius: var(--radius-full);
+  border-top: 0;
+  margin: 0 8px;
+  padding: 8px 12px;
+  width: calc(100% - 16px);
+}
+.deck-row.on {
+  box-shadow: none;
+}
+.tree-more {
+  border-radius: var(--radius-full);
+  padding: 4px 8px;
+}
+.result-name {
+  color: var(--ink);
+}
+
+/* ── BOOT, BANNER, DONE ── */
+.banner {
+  border-bottom: 0;
+}
+.bootstall,
+.bootlog {
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+}
+.bootlog {
+  background: var(--sunk);
+}
+.boot-lockup .wordmark {
   color: var(--ink-bright);
+}
+.done h2 {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 36px;
+}
+
+/* The dashboard's figures are the system's numerals: heavy, tight, tabular. */
+.glance-value {
+  color: var(--ink);
+  font-size: 32px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.glance-swatch {
+  border-radius: var(--radius-full);
+}
+
+/* The done screen's climb: the same ruri-to-ink ramp as `#bootrungs`, driven by
+   `--t`, which `app/climb.ts` sets per rung. */
+.climb-mark .rung {
+  stroke: color-mix(in srgb, var(--indigo) calc(var(--t, 1) * 100%), var(--vermilion));
+}
+
+/* The example sentence is what the card is ABOUT, so it is ink; the generated
+   translation under it stays the quieter `ink-2`. */
+.hashigo-generator.hashigo-ai {
+  color: var(--ink);
+}
+
+/* The mask is a recessed well and nothing else — the bracket glyph inside it was
+   noise at display size. The well keeps its place in the line. */
+.hashigo-cloze:not([data-state="revealed"]) .hashigo-cloze-mask {
+  color: transparent;
+}
+
+/* Synced is the RESTING state, so it takes no colour; only a failure does. The
+   icon's shape and its label already say which (decision 33). */
+.syncdot[data-state="ok"] i {
+  color: var(--muted);
+}
+
+/* No emoji (the system's voice). The meta line already says "pinned", and the
+   tile carries an ink-3 ring. */
+.gcard.is-pinned .gcard-name::before {
+  content: none;
 }

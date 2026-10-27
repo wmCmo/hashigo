@@ -729,8 +729,8 @@ seeded file fails the suite until `sw.js` knows about it.
 only stores what actually crossed the network — measured 2026-09-12, the shell
 and the CSS cached and the wordmark font did not, purely because that load never
 re-requested it. The hole only appears on the train. `serviceWorkerPrecache()` in
-`vite.app.config.ts` prepends the emitted asset list (17 URLs: both fonts, the
-wasm, the worker, the icons) to `sw.js`, hashed into the cache name so a new
+`vite.app.config.ts` prepends the emitted asset list (the fonts, the wasm, the
+worker, the icons — `npm run app:build` prints the count) to `sw.js`, hashed into the cache name so a new
 build retires the old cache.
 
 ```bash

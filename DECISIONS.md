@@ -2443,6 +2443,23 @@ right**: it holds his verbatim reasoning and this quotes it.
     The word rail from the reference was NOT built: listing upcoming head words
     would print the answer on a mode-2 or reverse card.
 
+    **THE SAME NIGHT, TWO REVIEWS AND A FIDELITY PASS** — a five-way bug review
+    with a skeptic per area, then a four-lens audit of every surface against
+    `design-system/`. What changed because of them: ruri also fills the day's
+    progress bar (decision 48's red misses need a HUE boundary, and ink beside red
+    had lost it) and colours links on the card as `--accent-text`; controls are
+    never an outline on nothing — secondary controls are `--sunk` fills, the
+    footer's operation rows are ghost buttons so only the grade bar is filled;
+    sheets, tiles and the toast lose their shadows and separate by tone; Latin on
+    the card is Hanken; the hero follows the head-word scale (1-2 / 3-4 / 5-12);
+    the done screen's climb stopped baking the decision-32 hexes into its rungs.
+    **KEPT, AND ADDED TO THE SYSTEM rather than removed:** `--good` as `success`
+    (decision 33's sync dot and the 数字 verdict rely on it; the resting sync icon
+    went grey), red for errors and the open microphone. **LEFT AS HIS:** the
+    copy (decision 52 kept the developer-voiced wording), the icons on labelled
+    controls (he asked for them 2026-09-26/28), the counter's size/direction/dot,
+    the card's laptop width, and the review screen's density.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

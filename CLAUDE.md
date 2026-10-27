@@ -1099,7 +1099,9 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     + Hanken Grotesk. Token NAMES kept, values repointed (`--indigo` → ink,
     `--vermilion` → ruri). `heroLength()` sets a 1-4 character Japanese-only side
     huge and centred. Decision 23's hand and all review behaviour are unchanged.
-    See `DECISIONS.md` 57.
+    Ruri also fills the progress bar and colours card links (`--accent-text`);
+    controls are fills or ghosts, never outlines; `--good` stays, as the system's
+    `success`. See `DECISIONS.md` 57.
 
 **Five small calls an agent had made without authority were ratified 2026-08-22**
 — the `---` horizontal rule, the CommonMark emphasis deviations, the dashboard's

@@ -173,8 +173,9 @@ export function railX(y: number): readonly [number, number] {
  *
  * **A NUMBER, NOT A COLOUR, AND THAT IS THE WHOLE POINT.** His prototype lerps
  * `[224,69,29] → [27,59,111]` in JavaScript, which are the LIGHT theme's
- * `--vermilion` and `--indigo`. Dark overrides both (`#f05a2e`, `#7fa4e1`), and
- * measured against the dark ground `#1B3B6F` is **1.60:1** — the landed rungs
+ * `--vermilion` and `--indigo` of decision 32. Dark overrides both (then `#f05a2e`,
+ * `#7fa4e1`; since decision 57 ruri `#5b8cff` and ink `#e8e8e8`), and
+ * measured against the dark ground `#1B3B6F` was **1.60:1** — the landed rungs
  * would be invisible on the screen he actually reviews on, every screenshot he
  * has ever sent being dark.
  *

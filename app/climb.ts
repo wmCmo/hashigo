@@ -40,9 +40,6 @@ const NS = "http://www.w3.org/2000/svg";
  *  accent settle last was tested and rejected as poor per-action feedback. */
 export const DURATION_MS = 520;
 
-const VERMILION = [0xe0, 0x45, 0x1d] as const;
-const INDIGO = [0x1b, 0x3b, 0x6f] as const;
-
 /** Exported so `test/climb.test.ts` can re-derive the committed mark from it —
  *  the brief says these numbers are derived and must not be "cleaned up". */
 export const railX = (y: number): [number, number] => {
@@ -53,12 +50,6 @@ export const railX = (y: number): [number, number] => {
 /** No overshoot, deliberately. See the header. */
 export const easeOutCubic = (p: number): number => 1 - (1 - p) ** 3;
 
-const mix = (t: number): string => {
-  const clamped = Math.min(1, Math.max(0, t));
-  const c = VERMILION.map((v, i) => Math.round(v + ((INDIGO[i] as number) - v) * clamped));
-  return `rgb(${c[0]},${c[1]},${c[2]})`;
-};
-
 interface Rung {
   slot: number;
   el: SVGPathElement;
@@ -66,13 +57,18 @@ interface Rung {
 
 /**
  * Paint one rung. `tint` is the slot-space position used for the colour ramp —
- * vermilion at slot 0, indigo from slot 1 on — so a rung crossing 0 -> 1 during
- * a climb lerps rather than switching.
+ * `--vermilion` (ruri, the live colour) at slot 0, `--indigo` (ink) from slot 1
+ * on — so a rung crossing 0 -> 1 during a climb lerps rather than switching.
+ *
+ * THE COLOUR IS THE STYLESHEET'S, through `--t`, exactly as `#bootrungs` does it.
+ * This used to bake the decision-32 hexes into a `stroke` attribute, so the done
+ * screen kept the retired orange and navy through decision 57's palette change
+ * and could not follow the dark theme at all.
  */
 function place(el: SVGPathElement, y: number, tint: number, opacity: number): void {
   const [left, right] = railX(y);
   el.setAttribute("d", `M${left.toFixed(2)} ${y.toFixed(2)}H${right.toFixed(2)}`);
-  el.setAttribute("stroke", mix(tint));
+  el.style.setProperty("--t", Math.min(1, Math.max(0, tint)).toFixed(3));
   el.setAttribute("opacity", opacity.toFixed(3));
 }
 
@@ -109,6 +105,8 @@ export function mountClimb(host: SVGSVGElement): Climb {
     // Round caps are load-bearing — they are why the wordmark is set at maximum
     // softness. Never butt or square.
     path.setAttribute("stroke-linecap", "round");
+    // `.climb-mark .rung` in app/style.css turns `--t` into the stroke.
+    path.setAttribute("class", "rung");
     host.appendChild(path);
     return path;
   };
