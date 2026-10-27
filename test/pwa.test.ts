@@ -308,3 +308,91 @@ describe("the seed-file route", () => {
     }
   });
 });
+
+/**
+ * Zach, 2026-10-27: *"except for the very first time … the rest just only
+ * downloads the 差分, not 4mb everytime"*. Install used to re-fetch every precache
+ * URL into the new build's cache, so a CSS-only deploy re-downloaded the 2.2 MB
+ * Japanese face, the sqlite wasm and both workers. Run the real install handler
+ * against a fake Cache Storage and count what goes to the network.
+ */
+describe("a new build downloads only the files it has not seen", () => {
+  type Handler = (event: { waitUntil(p: Promise<unknown>): void }) => void;
+
+  async function install(precache: string[], held: Record<string, string>) {
+    const stores = new Map<string, Map<string, Response>>();
+    const old = new Map<string, Response>();
+    for (const [url, type] of Object.entries(held)) {
+      old.set(url, new Response("bytes", { headers: { "content-type": type } }));
+    }
+    stores.set("hashigo-shell-old", old);
+    const fetched: string[] = [];
+    const caches = {
+      async open(name: string) {
+        const store = stores.get(name) ?? new Map<string, Response>();
+        stores.set(name, store);
+        return {
+          async put(url: string, response: Response) { store.set(url, response); },
+          async add(request: Request) {
+            const path = new URL(request.url).pathname;
+            fetched.push(path);
+            store.set(path, new Response("fresh"));
+          },
+        };
+      },
+      async match(url: string) {
+        for (const store of stores.values()) if (store.has(url)) return store.get(url);
+        return undefined;
+      },
+    };
+    const handlers: Record<string, Handler> = {};
+    const self = {
+      __HASHIGO_VERSION__: "hashigo-shell-new",
+      __HASHIGO_PRECACHE__: precache,
+      location: { origin: "https://hashigo.test" },
+      addEventListener: (type: string, fn: Handler) => { handlers[type] = fn; },
+      skipWaiting: () => undefined,
+      clients: { claim: () => undefined },
+    };
+    const RequestAt = class extends Request {
+      constructor(url: string, init?: RequestInit) { super(new URL(url, self.location.origin), init); }
+    };
+    new Function("self", "caches", "Request", sw)(self, caches, RequestAt);
+    let done: Promise<unknown> = Promise.resolve();
+    handlers.install?.({ waitUntil: (p) => { done = p; } });
+    await done;
+    return { fetched, fresh: stores.get("hashigo-shell-new") ?? new Map() };
+  }
+
+  it("copies an unchanged hashed asset from the old cache instead of fetching it", async () => {
+    const font = "/assets/notosansjp-400-DEBxyHjG.woff2";
+    const wasm = "/assets/sqlite3-BVKGSWc-.wasm";
+    const css = "/assets/index-NEW.css";
+    const { fetched, fresh } = await install(["/", font, wasm, css], {
+      [font]: "font/woff2",
+      [wasm]: "application/wasm",
+    });
+    expect(fetched.sort()).toEqual(["/", css].sort());
+    expect([...fresh.keys()].sort()).toEqual(["/", css, font, wasm].sort());
+  });
+
+  it("still re-fetches the unhashed shell, which must be the current one", async () => {
+    const { fetched } = await install(["/", "/icons/icon-192.png"], {
+      "/": "text/html",
+      "/icons/icon-192.png": "image/png",
+    });
+    expect(fetched.sort()).toEqual(["/", "/icons/icon-192.png"]);
+  });
+
+  it("never copies a cached HTML page posing as an asset", async () => {
+    const js = "/assets/index-C2oUWW91.js";
+    const { fetched } = await install([js], { [js]: "text/html" });
+    expect(fetched).toEqual([js]);
+  });
+
+  it("fetches everything on a device's very first install", async () => {
+    const list = ["/", "/assets/a-1.js", "/assets/b-2.woff2"];
+    const { fetched } = await install(list, {});
+    expect(fetched.sort()).toEqual([...list].sort());
+  });
+});

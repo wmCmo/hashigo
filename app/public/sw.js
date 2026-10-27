@@ -110,6 +110,37 @@ function isDevPlumbing(pathname, search) {
   );
 }
 
+/**
+ * A DEPLOY DOWNLOADS ONLY WHAT CHANGED. Zach, 2026-10-27: *"except for the very
+ * first time … the rest just only downloads the 差分, not 4mb everytime"*.
+ *
+ * Every build gets a new cache, and install used to fetch the WHOLE precache
+ * list into it with `cache: "reload"` — so a one-line CSS change re-downloaded
+ * the 2.2 MB Japanese face, the 0.86 MB sqlite wasm and both workers, ~4 MB,
+ * then `activate` threw the old copies away.
+ *
+ * A name under /assets/ carries Vite's content hash, so the same name IS the
+ * same bytes (the same argument `/assets/*` being cache-first rests on). Those
+ * are copied out of whichever older cache already holds them; only names this
+ * device has never seen go to the network. Unhashed URLs (`/`, the manifest, the
+ * icons) are still re-fetched every time — they are small, and `/` is exactly
+ * the file that must be current.
+ */
+function isHashedAsset(url) {
+  return new URL(url, self.location.origin).pathname.startsWith("/assets/");
+}
+
+async function precacheOne(cache, url) {
+  if (isHashedAsset(url)) {
+    const held = await caches.match(url);
+    if (held !== undefined && held.ok && !isHtml(held)) {
+      await cache.put(url, held);
+      return;
+    }
+  }
+  await cache.add(new Request(url, { cache: "reload" }));
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
@@ -118,11 +149,7 @@ self.addEventListener("install", (event) => {
         // NOT `addAll`: it is atomic, so one 404 throws away the whole precache
         // and the app silently loses offline support. Each URL is stored on its
         // own and a miss costs only that file.
-        Promise.all(
-          PRECACHE.map((url) =>
-            cache.add(new Request(url, { cache: "reload" })).catch(() => undefined),
-          ),
-        ),
+        Promise.all(PRECACHE.map((url) => precacheOne(cache, url).catch(() => undefined))),
       )
       .catch(() => undefined)
       .then(() => self.skipWaiting()),
