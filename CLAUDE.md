@@ -138,7 +138,9 @@ Cover vocabulary: 28px panels, flat slabs/pills/discs bleeding off an edge, heav
 type low and left, at most one ruri disc per panel. `.github/workflows/pages.yml` deploys
 `site/` to <https://wmcmo.github.io/hashigo/> on every push to `main` that touches it;
 `npm run site:dev` serves it on 127.0.0.1:5275. Its figures are as of 2026-10-27 and are
-quoted, not computed. Check a change at 390, 780 and 1280px, light and dark.
+quoted, not computed. Check a change at 390, 780 and 1280px, light and dark. Its
+`favicon.svg` is `app/brand/favicon.svg` with colours that follow the browser theme;
+change the mark in both.
 
 ## The commands
 
