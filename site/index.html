@@ -174,17 +174,16 @@ a { color: var(--accent-text); text-underline-offset: 3px; }
   background: var(--card); border-radius: var(--r-lg);
   box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 18px 44px rgba(0,0,0,.10);
   outline: 1px solid var(--hairline);
-  padding: 32px 26px 84px; min-height: 340px;
-  display: flex; flex-direction: column; gap: 16px;
+  /* The height of the fully revealed card, kept from the start so the walk never
+     makes it jump; the stack sits in the middle of it at every step. */
+  padding: 32px 26px 84px; min-height: 408px;
+  display: flex; flex-direction: column; justify-content: center; gap: 16px;
   container-type: inline-size;
 }
 .head {
   font-family: var(--jp); font-weight: 400; text-align: center;
   font-size: min(112px, 34cqi); line-height: 1.05; color: var(--ink);
 }
-/* Before the first reveal the word is the whole card, so it sits in the middle of
-   the height the card keeps for its answers, as it does in the app. */
-.card[data-step="0"] .head { margin-block: auto; }
 .side { display: grid; gap: 8px; }
 .side[hidden] { display: none; }
 .side + .side { border-top: 1px solid var(--hairline); padding-top: 14px; }
