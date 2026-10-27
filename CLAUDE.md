@@ -124,10 +124,13 @@ and a live preview. **Read its README before touching anything visual.**
 is ink, `--vermilion` is ruri — the stylesheet's header has the mapping), so a palette
 or shape change goes into BOTH. Published copy (a Design System artifact, with the
 mark in its Logos group): <https://claude.ai/artifact/Nd9wzUTDFdMP5aquZZGvJR> — to
-revise, edit the files here and republish with that URL as `url`, `root` = the repo,
-`file_path` = `design-system/design-system.json`, and `files` mapping each changed
-`project/<path>` to `design-system/<path>`. Never write `tokens.css`, `manifest.json`
-or `api/` — the artifact page generates them.
+revise, edit the files here, copy `design-system/` to `<scratch>/project/`, and
+republish with that URL as `url`, `root` = `<scratch>`, `file_path` =
+`<scratch>/project/design-system.json` (read the live index first and keep its keys;
+bump `lastChange`), and `files` listing each changed `project/<path>`. **`file_path` is
+served at its path RELATIVE TO `root`** — publishing with `root` = the repo put the index
+at `design-system/design-system.json` instead of `project/` (2026-10-27). Never write
+`tokens.css`, `manifest.json` or `api/` — the artifact page generates them.
 
 ## The commands
 
