@@ -160,13 +160,13 @@ a { color: var(--accent-text); text-underline-offset: 3px; }
 
 /* ── 2 · the card, live ─────────────────────────────────────────────── */
 .try { display: grid; }
-@media (min-width: 900px) { .try { grid-template-columns: 1fr 460px; min-height: 600px; } }
+@media (min-width: 780px) { .try { grid-template-columns: 1fr minmax(360px, 460px); min-height: 600px; } }
 .try .art { left: 0; bottom: 0; width: min(520px, 52%); height: 300px; }
 .try .words { align-content: start; padding-top: var(--s7); padding-bottom: 0; }
 .try h2 { font-size: clamp(40px, 6vw, 72px); }
 .demo-wrap { position: relative; padding: var(--s5) var(--s6) var(--s6); align-self: end; }
-@media (min-width: 900px) { .demo-wrap { padding-top: var(--s7); align-self: center; } }
-@media (max-width: 899px) { .try .art { display: none; } }
+@media (min-width: 780px) { .demo-wrap { padding-top: var(--s7); align-self: center; } }
+@media (max-width: 779px) { .try .art { display: none; } .demo { margin-inline: auto; } }
 
 .demo { display: grid; gap: var(--s3); max-width: 400px; margin-left: auto; }
 .card {
