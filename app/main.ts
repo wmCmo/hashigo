@@ -1556,6 +1556,16 @@ function mountClipButtons(card: MountedCard<HTMLElement>): void {
       };
       media.addEventListener("timeupdate", paint);
       media.addEventListener("ended", () => button.style.setProperty("--played", "0%"));
+      // `timeupdate` fires ~4 times a second, which a straight line hid and a
+      // ring (decision 57's disc) does not: a 1.6s word clip would sweep in four
+      // jumps. Per-frame while it plays, and only then — the loop ends with it.
+      media.addEventListener("play", () => {
+        const frame = (): void => {
+          paint();
+          if (!media.paused && !media.ended) requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      });
 
       button.addEventListener("click", (event) => {
         event.preventDefault();
