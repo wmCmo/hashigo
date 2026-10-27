@@ -2399,7 +2399,9 @@ right**: it holds his verbatim reasoning and this quotes it.
     design system around this … you might find documents about the decision that
     i have made about the design but you can ignore them, we'll start from
     scratch"*. The system was built as a Design System artifact (its README is the
-    brand book) and then applied: *"apply this design to the actual app"*.
+    brand book) and then applied: *"apply this design to the actual app"*. Its
+    source lives in `design-system/` so the next session reads it rather than
+    rediscovering it — his question, *"so that next session picks it up"*.
 
     **WHAT IT IS.** Neutral grey grounds and three inks; ONE colour, used only on
     what is live (the replay disc, the mark's top rung, the focus ring); the head

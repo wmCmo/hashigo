@@ -1,0 +1,14 @@
+<!-- @dsCard group="Review" height=120 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Cloze — preview</title></head>
+<body>
+<div id="root" class="hs-stage-col" style="background:var(--card);max-width:360px"></div>
+<script>
+  var H = window.Hashigo, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h(React.Fragment, null,
+    h('p', { className: 'hs-example-jp', lang: 'ja' }, h(H.Cloze, null, '東京'), 'に行くことになっています。'),
+    h('p', { className: 'hs-example-jp', lang: 'ja' }, h(H.Cloze, { revealed: true }, '東京'), 'に行くことになっています。')));
+</script>
+</body>
+</html>

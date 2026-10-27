@@ -1,0 +1,14 @@
+<!-- @dsCard group="Labels" height=72 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Chip — preview</title></head>
+<body>
+<div id="root" class="hs-stage" style="background:var(--card)"></div>
+<script>
+  var H = window.Hashigo, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h(React.Fragment, null,
+    h(H.Chip, null, 'new card'), h(H.Chip, { tone: 'quiet' }, '5 days late'), h(H.Chip, { tone: 'accent', lang: 'ja' }, '平板'),
+    h(H.Chip, { tone: 'quiet', lang: 'ja' }, '中高 ③'), h(H.Chip, { tone: 'danger' }, 'forgot')));
+</script>
+</body>
+</html>

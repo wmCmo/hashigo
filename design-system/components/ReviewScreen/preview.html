@@ -1,0 +1,22 @@
+<!-- @dsCard group="Screens" height=780 page subtitle="The review screen, assembled" -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>ReviewScreen — preview</title></head>
+<body>
+<div id="root"></div>
+<script>
+  var H = window.Hashigo, h = React.createElement;
+  function Screen() {
+    var words = ['上手', '今日', '時間', '東京', '日本', '午前', '午後'];
+    return h('div', { className: 'hs-screen' },
+      h('div', { className: 'hs-screen-chrome' }, h(H.MenuButton), h(H.Counter, { value: 248, total: 500 })),
+      h('div', { className: 'hs-screen-rail' }, h(H.WordRail, { words: words, current: 3 })),
+      h(H.FlashCard, { className: 'hs-screen-card', head: '東京', gloss: 'Tokyo', reading: 'とうきょう', pos: 'Noun', action: h(H.PlayButton) },
+        h(H.Example, { jp: '東京に行くことになっています。', en: 'I am supposed to go to Tokyo.' }),
+        h(H.Example, { jp: '来週私は仕事で東京にいます。', en: "I'll be in Tokyo on business next week." })),
+      h('div', { className: 'hs-screen-grade' }, h(H.GradeBar, { remaining: 0 })));
+  }
+  ReactDOM.createRoot(document.getElementById('root')).render(h(Screen));
+</script>
+</body>
+</html>

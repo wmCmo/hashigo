@@ -1,0 +1,13 @@
+<!-- @dsCard group="Actions" height=150 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>GradeBar — preview</title></head>
+<body>
+<div id="root" class="hs-stage-col" style="max-width:360px"></div>
+<script>
+  var H = window.Hashigo, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h(React.Fragment, null,
+    h(H.GradeBar, { remaining: 2, keys: true }), h(H.GradeBar, { remaining: 0, keys: true })));
+</script>
+</body>
+</html>

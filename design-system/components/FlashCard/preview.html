@@ -1,0 +1,16 @@
+<!-- @dsCard group="Review" height=600 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>FlashCard — preview</title></head>
+<body>
+<div id="root" class="hs-stage" style="justify-content:center"></div>
+<script>
+  var H = window.Hashigo, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    h('div', { style: { width: 328 } },
+      h(H.FlashCard, { head: '東京', gloss: 'Tokyo', reading: 'とうきょう', pos: 'Noun', action: h(H.PlayButton) },
+        h(H.Example, { jp: '東京に行くことになっています。', en: 'I am supposed to go to Tokyo.' }),
+        h(H.Example, { jp: '来週私は仕事で東京にいます。', en: "I'll be in Tokyo on business next week." }))));
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+<!-- @dsCard group="Review" height=150 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Example — preview</title></head>
+<body>
+<div id="root" class="hs-stage-col" style="background:var(--card);max-width:360px"></div>
+<script>
+  var H = window.Hashigo, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h(React.Fragment, null,
+    h(H.Example, { jp: '東京に行くことになっています。', en: 'I am supposed to go to Tokyo.' }),
+    h(H.Example, { jp: '駅まで歩いて十分です。' })));
+</script>
+</body>
+</html>

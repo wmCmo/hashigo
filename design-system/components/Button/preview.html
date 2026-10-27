@@ -1,0 +1,15 @@
+<!-- @dsCard group="Actions" height=96 -->
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Button — preview</title></head>
+<body>
+<div id="root" class="hs-stage"></div>
+<script>
+  var H = window.Hashigo, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h(React.Fragment, null,
+    h(H.Button, { variant: 'primary', kbd: 'j' }, 'remembered'), h(H.Button, { kbd: 'f' }, 'forgot'),
+    h(H.Button, { variant: 'ghost' }, 'skip'), h(H.Button, { variant: 'danger' }, 'delete card'),
+    h(H.Button, { disabled: true }, 'syncing')));
+</script>
+</body>
+</html>

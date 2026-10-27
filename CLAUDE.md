@@ -117,6 +117,18 @@ estimated. Published copy:
 edit `SPEC.html` and republish **the same file path**, passing that URL as the `url`
 argument, or a second artifact gets created instead of updating this one.
 
+**[design-system/](design-system/README.md) is the design system** (decision 57): the
+brand book (`README.md`), `tokens.json`, and a component per folder with its guidelines
+and a live preview. **Read its README before touching anything visual.**
+`app/style.css` is that system APPLIED, under older token NAMES on purpose (`--indigo`
+is ink, `--vermilion` is ruri — the stylesheet's header has the mapping), so a palette
+or shape change goes into BOTH. Published copy (a Design System artifact, with the
+mark in its Logos group): <https://claude.ai/artifact/Nd9wzUTDFdMP5aquZZGvJR> — to
+revise, edit the files here and republish with that URL as `url`, `root` = the repo,
+`file_path` = `design-system/design-system.json`, and `files` mapping each changed
+`project/<path>` to `design-system/<path>`. Never write `tokens.css`, `manifest.json`
+or `api/` — the artifact page generates them.
+
 ## The commands
 
 ```bash

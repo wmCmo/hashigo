@@ -1,0 +1,50 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hashigo</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--canvas); color: var(--ink); font-family: var(--font-sans); overflow: hidden; }
+  .cover { position: relative; width: 960px; height: 288px; overflow: hidden; }
+  .art { position: absolute; top: 0; left: 480px; width: 480px; height: 288px; overflow: hidden; }
+  .art svg { display: block; width: 480px; height: 288px; }
+  .deep { fill: var(--ink); }
+  .rail { fill: var(--ink-2); }
+  .rung { fill: var(--ink-3); }
+  .live { fill: var(--accent); }
+  .slab { rx: var(--radius-lg); }
+  .pill { rx: 6px; }
+  .words { position: absolute; left: var(--space-6); bottom: var(--space-6); max-width: 440px; }
+  .name { margin: 0; font-size: 104px; line-height: .92; font-weight: 800; letter-spacing: -0.035em; color: var(--ink-strong); }
+  .tag { margin: var(--space-3) 0 0 4px; font-size: 14px; line-height: 20px; color: var(--ink-2); }
+</style>
+</head>
+<body>
+<div class="cover">
+  <div class="art" aria-hidden="true">
+    <svg viewBox="0 0 480 288" width="480" height="288">
+      <!--
+        blocks      ink slab 200×272 (radius-lg) bleeding off the top and right — the deep block; ink-2 rail 12 wide bleeding off the bottom; accent disc 48 across — the one live colour, smallest and highest
+        arrangement a ladder: the slab is one rail, the thin ink-2 bar the other, rungs bridging them; the ruri disc waits at the top of the climb
+        pattern     literal motif (はしご = ladder) → five ink-3 pills, 12 tall, at a space-6 (32px) pitch, inset space-3 from each rail
+        scales      space-3 12 · space-6 32 · radius-lg 28 · radius-full on rail, rungs and disc
+      -->
+      <rect class="deep slab" x="312" y="-40" width="200" height="272"/>
+      <rect class="rail pill" x="120" y="72" width="12" height="240"/>
+      <rect class="rung pill" x="144" y="200" width="156" height="12"/>
+      <rect class="rung pill" x="144" y="168" width="156" height="12"/>
+      <rect class="rung pill" x="144" y="136" width="156" height="12"/>
+      <rect class="rung pill" x="144" y="104" width="156" height="12"/>
+      <rect class="rung pill" x="144" y="72" width="156" height="12"/>
+      <circle class="live" cx="126" cy="36" r="24"/>
+    </svg>
+  </div>
+  <div class="words">
+    <h1 class="name">Hashigo</h1>
+    <p class="tag">One card, one word, one rung higher.</p>
+  </div>
+</div>
+</body>
+</html>
