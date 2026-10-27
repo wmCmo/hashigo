@@ -41,6 +41,29 @@ reasoning — the SOURCE that CLAUDE.md's decisions were written from — now li
 > 81 seconds in the worker and says so before running, and the template editor refuses
 > two edits on purpose. **He has still never run any of it on his phone.**
 
+## PUBLISHING GATES — when Hashigo opens to other people (agreed 2026-10-27)
+
+Zach, 2026-10-27: *"if i use this for like another month, and there's rarely any change,
+then i think it would be a good sign to publish it right?"* Three gates, in order. The
+landing page (`site/index.html`) shows them as the rungs still to climb, so if one
+passes, update the page too.
+
+1. **A month of daily use with almost nothing to fix.** Checked **2026-11-27** by a
+   scheduled routine (`trig_01QTk6bozJ3LZu3kf1UFphUx`, a fresh session at 10:17 JST).
+   It PASSES if, from 2026-11-13 to 2026-11-27: at most two commits fix something he hit
+   while using the app; none of them involved a lost or corrupted review or a sync that
+   lost data; and nothing suggests a workaround to finish a session. **Raw commit count
+   is not the measure** — 2026-10-27 alone was 25 commits of design work, which says
+   nothing about stability. New features do not count against it.
+2. **A friend starts from an empty database without help.** Not yet possible: the app
+   assumes his imported corpus and sits behind his passphrase.
+3. **Cost, accounts, licence and support are settled.** The repository is already
+   public (it has no licence, so all rights are reserved); the app is not.
+
+Results:
+
+- *(none yet — the first check runs 2026-11-27)*
+
 ## CLOUD — the app runs from Cloudflare (2026-09-26)
 
 **Why:** his apartment wifi drops every Tailscale tunnel packet over ~1,208 bytes (measured
