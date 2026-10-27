@@ -19,8 +19,9 @@ those cards are reviewed since September 2026.
 The database is SQLite running in your browser, stored on your device. Reviews work
 with no network. Two devices stay in step through a small sync mailbox.
 
-> **Status: private, in daily use by one person.** It is not open to sign-ups and the
-> repository has no licence yet. Opening it to other people is a later decision; see
+> **Status: in daily use by one person.** The code is public, but the app is not open
+> to sign-ups and the repository has no licence yet, so all rights are reserved.
+> Opening it to other people is a later decision; see
 > [Publishing](#publishing).
 
 ## What it does
@@ -87,6 +88,7 @@ npm run gates                # tests, both typechecks, both builds, the blob-pat
 | accent | OpenJTalk + UniDic in Python, nothing else in Python. `tools/`, `src/accent` |
 | sync | A per-device mailbox, merged locally: reviews union, schedules follow the last review. `src/sync` |
 | hosting | A Cloudflare Worker behind a passphrase. `cloud/app` |
+| landing page | `site/index.html`, on GitHub Pages at [wmcmo.github.io/hashigo](https://wmcmo.github.io/hashigo/) |
 
 ## Where to read next
 

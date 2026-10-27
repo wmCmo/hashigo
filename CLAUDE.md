@@ -438,7 +438,7 @@ left to adjudicate" rather than "the cross-check is missing". Verified on the v8
     revertible, and it's your job now."* This **supersedes** the old "commit only when
     the user asks" convention. Clean and deliberate: scoped commits with real messages,
     gates green first, never a commit that breaks a gate. **AND PUSH, as of 2026-09-28:**
-    the remote is `https://github.com/wmCmo/hashigo` (private, the `wmCmo` account —
+    the remote is `https://github.com/wmCmo/hashigo` (PUBLIC, the `wmCmo` account —
     never `zach-ct`), and his words were *"yeah push as you go"*. So every gate-green
     commit is pushed to `origin main`. Force-pushing and rewriting pushed history are
     still not authorised.
