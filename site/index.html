@@ -182,7 +182,11 @@ a { color: var(--accent-text); text-underline-offset: 3px; }
   font-family: var(--jp); font-weight: 400; text-align: center;
   font-size: min(112px, 34cqi); line-height: 1.05; color: var(--ink);
 }
+/* Before the first reveal the word is the whole card, so it sits in the middle of
+   the height the card keeps for its answers, as it does in the app. */
+.card[data-step="0"] .head { margin-block: auto; }
 .side { display: grid; gap: 8px; }
+.side[hidden] { display: none; }
 .side + .side { border-top: 1px solid var(--hairline); padding-top: 14px; }
 .reading-row { display: flex; align-items: baseline; justify-content: center; gap: 12px; font-size: 21px; font-family: var(--jp); }
 .chip { font-family: var(--jp); font-size: 13px; color: var(--ink-2); background: var(--sunk); border-radius: var(--r-full); padding: 2px 12px; }
@@ -596,6 +600,7 @@ footer b { color: var(--ink-strong); font-weight: 800; letter-spacing: -0.03em; 
 
   function paint() {
     sides.forEach((s) => (s.hidden = Number(s.dataset.step) > step));
+    document.querySelector(".card").dataset.step = step;
     const left = STEPS - step;
     const go = $("go");
     go.firstChild.textContent = left > 0 ? (step === 0 ? "reveal " : `next · ${left} more `) : "remembered ";
