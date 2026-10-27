@@ -135,11 +135,14 @@ at `design-system/design-system.json` instead of `project/` (2026-10-27). Never 
 ## The commands
 
 ```bash
-npm run gates           # ALL SEVEN GATES, one command, honest verdict. Start here.
+npm run gates           # ALL SIX GATES, one command, honest verdict. Start here.
+                        # (Seven until 2026-10-27: `spike:check` was dropped after an
+                        # injected contract break turned `typecheck` red with 667
+                        # errors — see `test/db-contract.types.ts`.)
                         # `npm run gates -- test` runs just one. app:build is in
                         # here and in nothing else: app:check is `tsc --noEmit` and
                         # cannot see a broken worker or wasm URL.
-npm test                # 63 files, 1559 passed, 1 skipped (the FSRS refit, gated). ~55 s.
+npm test                # 63 files, 1567 passed, 1 skipped (the FSRS refit, gated). ~55 s.
                         # MEASURED 2026-09-17, not arithmetic. The 1127 here before it
                         # was 1117 plus ten new tests, added up rather than run — and it
                         # missed 79 tests from the same day. Run the suite or leave it alone.
@@ -189,7 +192,6 @@ npm run rebuild -- --force   # the schema-bump chore as ONE command, with invari
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
 npm run dashboard -- --db build/hashigo.db --out dashboard.html   # English; --locale ja for the other
 npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths   # exits 1 on any location
-npm run spike:check     # the browser contract; spike/ is excluded from tsconfig.json
 
 # THE APP. This is the thing. `app/README.md` first -- it carries the three findings
 # that only came out of RUNNING it, and P1's per-grade write measurement.

@@ -35,7 +35,7 @@
  * the thing Zach tests has to be the thing that ships. This class is typed
  * against `SqliteHandle` from `src/db/browser.ts`: the synchronous surface that
  * better-sqlite3's `Database` satisfies structurally (proved by tsc in
- * `spike/contract-compat.ts`) and that `openDatabaseBrowser()` returns over
+ * `test/db-contract.types.ts`) and that `openDatabaseBrowser()` returns over
  * `opfs-sahpool`. The import of that type is `import type`, so this file pulls in
  * nothing at runtime — no `node:*`, no `better-sqlite3`, no wasm. The browser
  * build imports it unchanged, and `test/blobs.test.ts` runs the same class the

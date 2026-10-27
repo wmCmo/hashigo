@@ -314,11 +314,11 @@ npm run app:dev -- --host 127.0.0.1       # local
 npm run app:dev -- --host ::              # phone / tunnel
 ```
 
-Gates: run **`npm run gates`** — one command, all seven, cheapest first, and a verdict
+Gates: run **`npm run gates`** — one command, all six, cheapest first, and a verdict
 that means what it says. `app:build` is new and was covered by nothing: `app:check` is
 `tsc --noEmit` and cannot see a broken worker or sqlite-wasm URL. Re-run on this tree 2026-08-26: **`npm test` → 36 files / 934
 passed / 1 skipped** (~97 s) · `npm run typecheck` → 0 · **`npm run app:check` → 0** ·
-`npm run build` → OK, 77 modules, 27 export subpaths · `npm run spike:check` → 0 ·
+`npm run build` → OK, 77 modules, 27 export subpaths · `spike:check` (since dropped) → 0 ·
 `blobs … paths` → 0.
 
 **`npm test` EXITS 0 ON A PASSING RUN as of 2026-08-26**, and both commands now

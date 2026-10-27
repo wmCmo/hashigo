@@ -1,8 +1,13 @@
 /**
- * THROWAWAY (spike harness), and the one file here that is worth keeping in some
- * form: it is the proof that "callers do not branch" is true rather than claimed.
+ * The proof that "callers do not branch" is true rather than claimed — checked by
+ * `npm run typecheck`, which covers `test/`.
  *
- *   npm run spike:check
+ * MOVED HERE FROM `spike/` 2026-10-27, and its own gate (`spike:check`) dropped.
+ * Measured first, not assumed: a method added to `SqliteHandle` and implemented
+ * only by the browser handle turned `typecheck` red with 667 errors and
+ * `app:check` with 3, because scripts and tests hand better-sqlite3 databases to
+ * contract-typed functions everywhere. The gate caught nothing the others did not;
+ * the explicit assertions below are kept because they name the property.
  *
  * `SqliteHandle` / `SqliteStatement` in `src/db/browser.ts` are the surface both
  * halves of `src/db` provide. This file asserts, through tsc and nothing else,

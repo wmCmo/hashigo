@@ -446,7 +446,7 @@ right**: it holds his verbatim reasoning and this quotes it.
      ordering them (structure first, then facts) beats splitting a file by hunk and
      leaving a broken intermediate state.
    * **Gates green BEFORE the commit, not after.** `npm test`, `npm run typecheck`,
-     `npm run build`, `npm run spike:check`. Note that `npm test` **exits 1 on a fully
+     `npm run build`, and then `spike:check` (dropped 2026-10-27). Note that `npm test` **exits 1 on a fully
      passing run** (reporter RPC — see the commands section), so read the pass count.
    * **Messages in this repo's voice** — lowercase `type(scope):`, saying what changed
      and why it was not obvious. `git log --oneline -20` is the reference.
