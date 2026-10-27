@@ -4920,3 +4920,18 @@ input[data-answer="incorrect"] {
 .gcard.is-pinned .gcard-name::before {
   content: none;
 }
+
+/* A HEAD WORD MADE OF LINKS STAYS A HEAD WORD. Zach's phone, 2026-10-27: 画壇,
+   whose two kanji each link to their 漢字 card, came out ruri with a row of
+   120px dots under it — `--accent-text` and the dotted underline, scaled by the
+   hero size. In a hero the word is the point: the link keeps the word's ink and
+   says "link" with one thin ink-3 line, which stays the same 2px at any size. */
+.hashigo-side[data-hero] .hashigo-card-link,
+.hashigo-side[data-hero] .hashigo-link {
+  color: inherit;
+  text-decoration-color: var(--ink-3);
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.12em;
+}
