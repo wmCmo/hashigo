@@ -132,6 +132,14 @@ served at its path RELATIVE TO `root`** — publishing with `root` = the repo pu
 at `design-system/design-system.json` instead of `project/` (2026-10-27). Never write
 `tokens.css`, `manifest.json` or `api/` — the artifact page generates them.
 
+**[site/index.html](site/index.html) is the landing page**, approved by Zach 2026-10-27
+(*"this will be our landing page"*). One static file built from the design system's
+Cover vocabulary: 28px panels, flat slabs/pills/discs bleeding off an edge, heavy Latin
+type low and left, at most one ruri disc per panel. `.github/workflows/pages.yml` deploys
+`site/` to <https://wmcmo.github.io/hashigo/> on every push to `main` that touches it;
+`npm run site:dev` serves it on 127.0.0.1:5275. Its figures are as of 2026-10-27 and are
+quoted, not computed. Check a change at 390, 780 and 1280px, light and dark.
+
 ## The commands
 
 ```bash
