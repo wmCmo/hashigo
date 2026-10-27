@@ -1561,8 +1561,15 @@ function mountClipButtons(card: MountedCard<HTMLElement>): void {
       // jumps. Per-frame while it plays, and only then — the loop ends with it.
       media.addEventListener("play", () => {
         const frame = (): void => {
+          // The LAST frame can land after `ended` has already reset the ring,
+          // with currentTime == duration — which repainted it full and left
+          // every played clip wearing a complete ring. An ended clip reads 0%.
+          if (media.ended) {
+            button.style.setProperty("--played", "0%");
+            return;
+          }
           paint();
-          if (!media.paused && !media.ended) requestAnimationFrame(frame);
+          if (!media.paused) requestAnimationFrame(frame);
         };
         requestAnimationFrame(frame);
       });

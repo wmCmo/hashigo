@@ -4374,10 +4374,18 @@ input[data-answer="incorrect"] {
   pointer-events: none;
   width: auto;
 }
-.clip:active,
-.clip[data-clip="playing"] {
+/* `data-clip="playing"` is set when a clip STARTS and never cleared — it means
+   "this one sounded", not "this one is sounding". Filling on it left every
+   played disc a near-white button in dark. The ring is what says "now"; the
+   icon swaps to its filled weight; only a press fills the disc. */
+.clip:active {
   background: var(--indigo);
   color: var(--card);
+}
+.clip[data-clip="playing"] {
+  background: var(--sunk);
+  border-color: transparent;
+  color: var(--ink);
 }
 
 /* ── THE RURI DISC ──
@@ -4934,4 +4942,29 @@ input[data-answer="incorrect"] {
   text-decoration-style: solid;
   text-decoration-thickness: 2px;
   text-underline-offset: 0.12em;
+}
+
+/* From his phone, 2026-10-27, on the template editor and the dashboard:
+   · a local field was marked by a coloured LEFT BORDER on a rounded tile — the
+     one shape the system names as a trope. Its meta line already says "local".
+   · layers set their text in the Japanese stack, so every Latin word in the
+     dashboard and the editors came out in Noto's Latin. `--sans` falls back to
+     Noto per glyph, so Japanese is unchanged.
+   · the dashboard's tile labels kept decision 32's tracking.
+   · a single-line field in a layer (the template name) is a pill, like every
+     other single-line field; textareas stay `--radius-md`. */
+.tpl-field.is-local {
+  border-left: 0;
+}
+.layer-body {
+  font-family: var(--sans);
+}
+.glance-label {
+  font-size: 12px;
+  letter-spacing: 0;
+}
+input.edit-input,
+select.edit-input {
+  border-radius: var(--radius-full);
+  padding: 10px 16px;
 }
