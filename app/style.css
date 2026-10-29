@@ -144,6 +144,19 @@
   --fs-total: 18px;    /* a total under a figure                   — `counter-total` */
   --fs-gloss: 32px;    /* the big figure: dashboard values, done   — `gloss`         */
   --fs-counter: 44px;  /* the day's counter                        — `counter`       */
+  /* THE SPACING SCALE — design-system/tokens.json's `spacing`, and the same
+     enforcement (`test/spacing-scale.test.ts`). Measured 2026-10-29: 31 distinct
+     px values in padding, margin and gap. Values halfway between two steps (6,
+     10, 14, 20, 28, 40px) went UP, for a little more air; 1-3px optical nudges,
+     negative offsets and layout reserves of 100px and more stay as they are. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
   --shadow-card: 0 1px 2px rgb(0 0 0 / 4%), 0 16px 40px rgb(0 0 0 / 5%);
   --shadow-live: 0 6px 16px rgb(31 95 224 / 35%);
 
@@ -328,7 +341,7 @@ body {
   color: var(--ink);
   font-size: var(--fs-small);
   line-height: 1.5;
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
 }
 
 .banner button {
@@ -337,8 +350,8 @@ body {
   color: var(--ink);
   cursor: pointer;
   font: inherit;
-  margin-left: 8px;
-  padding: 4px 10px;
+  margin-left: var(--space-2);
+  padding: var(--space-1) var(--space-3);
 }
 
 /* ── boot ── */
@@ -346,7 +359,7 @@ body {
 .boot {
   max-width: 720px;
   margin: 0 auto;
-  padding: 40px 16px;
+  padding: var(--space-7) var(--space-4);
 }
 
 /* The first thing he sees on a cold load, and the only place the mark gets to be
@@ -357,8 +370,8 @@ body {
   color: var(--indigo);
   display: flex;
   font-weight: 400;
-  gap: 16px;
-  margin-bottom: 26px;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
 }
 
 .boot-mark {
@@ -379,7 +392,7 @@ body {
   color: var(--muted);
   font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
-  margin: -14px 0 22px;
+  margin: -14px 0 var(--space-5);
 }
 
 /* ─── THE SEED DOWNLOAD, DRAWN — Zach's design, 2026-09-16 ──────────────────
@@ -394,7 +407,7 @@ body {
  * `Content-Length`), filling = measurable bytes.
  */
 .bootfetch {
-  margin: 0 auto 18px;
+  margin: 0 auto var(--space-4);
   max-width: 400px;
   text-align: center;
 }
@@ -402,7 +415,7 @@ body {
 .bootphase {
   color: var(--ink);
   font-size: var(--fs-body);
-  margin: 0 0 14px;
+  margin: 0 0 var(--space-4);
   min-height: 21px;
 }
 
@@ -444,7 +457,7 @@ body {
   font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
   justify-content: space-between;
-  margin-top: 10px;
+  margin-top: var(--space-3);
   min-height: 17px;
 }
 
@@ -452,7 +465,7 @@ body {
   color: var(--muted);
   font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
-  margin: 18px 0 0;
+  margin: var(--space-4) 0 0;
   min-height: 17px;
 }
 
@@ -464,8 +477,8 @@ body {
   border: 1px solid var(--line);
   color: var(--ink);
   font-size: var(--fs-caption);
-  margin: 18px 0 0;
-  padding: 11px 13px;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) var(--space-3);
   text-align: left;
 }
 
@@ -476,9 +489,9 @@ body {
   border: 1px solid var(--edge);
   color: var(--ink);
   font: inherit;
-  margin: 12px 0 0;
+  margin: var(--space-3) 0 0;
   min-height: 44px;
-  padding: 0 16px;
+  padding: 0 var(--space-4);
   width: 100%;
 }
 
@@ -514,7 +527,7 @@ body {
   font-size: var(--fs-small);
   max-height: 60vh;
   overflow-y: auto;
-  padding: 12px;
+  padding: var(--space-3);
 }
 
 .logline {
@@ -542,8 +555,8 @@ body {
 .logline.fetchrow {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 6px 0;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
 }
 
 .fetchlabel {
@@ -594,7 +607,7 @@ body {
 .bootnote {
   color: var(--muted);
   font-size: var(--fs-caption);
-  margin-top: 16px;
+  margin-top: var(--space-4);
 }
 
 /* ── the review screen ── */
@@ -609,9 +622,9 @@ body {
   color: var(--muted);
   display: flex;
   font-size: var(--fs-caption);
-  gap: 9px;
+  gap: var(--space-2);
   justify-content: flex-start;
-  padding: 11px 14px;
+  padding: var(--space-3) var(--space-4);
   /* Positioned, so the progress bar can ride its bottom edge. */
   position: sticky;
   top: 0;
@@ -651,17 +664,17 @@ body {
   font: inherit;
   font-family: var(--jp), sans-serif;
   font-size: var(--fs-caption);
-  gap: 4px;
+  gap: var(--space-1);
   margin-left: auto;
   max-width: 40vw;
   min-height: 32px;
   overflow: hidden;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .focuschip[hidden] { display: none; }
-.focuschip:not([hidden]) + #progress { margin-left: 8px; }
+.focuschip:not([hidden]) + #progress { margin-left: var(--space-2); }
 
 /* Pushed to the right edge; tabular so the count does not jitter as it climbs. */
 #progress {
@@ -676,7 +689,7 @@ body {
      first, ~100 times a day. */
   margin: 0 auto;
   max-width: 720px;
-  padding: 24px 16px 148px;
+  padding: var(--space-5) var(--space-4) 148px;
   width: 100%;
 }
 
@@ -689,8 +702,8 @@ body {
   display: flex;
   flex-wrap: wrap;
   font-size: var(--fs-caption);
-  gap: 6px 10px;
-  margin-bottom: 22px;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-5);
 }
 
 /* Decision 25: `New Card`, and it is PER TRACK. Ink + border, never the accent
@@ -705,7 +718,7 @@ body {
   display: inline-block;
   font-size: var(--fs-label);
   letter-spacing: 0.04em;
-  padding: 2px 7px;
+  padding: 2px var(--space-2);
   vertical-align: 1px;
 }
 
@@ -810,7 +823,7 @@ body {
 .hint {
   color: var(--muted);
   font-size: var(--fs-small);
-  margin-top: 26px;
+  margin-top: var(--space-5);
 }
 
 /* GONE once he has answered, not merely dimmed. It said "then reveal" on a card
@@ -831,8 +844,8 @@ body {
   font: inherit;
   font-size: var(--fs-caption);
   letter-spacing: 0.06em;
-  margin-top: 18px;
-  padding: 8px 12px;
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-3);
 }
 
 /* Decision 29's audit loop only makes sense once he has heard and seen it. */
@@ -851,7 +864,7 @@ body {
   background: var(--card);
   border: 1px solid var(--hair);
   font-family: var(--jp-display), sans-serif;
-  padding: 18px 16px;
+  padding: var(--space-4) var(--space-4);
 }
 
 .hashigo-side {
@@ -869,7 +882,7 @@ body {
      would otherwise overflow, which is the actual rule wanted — and it covers
      every long unbreakable run, not the emoji case alone. */
   overflow-wrap: break-word;
-  padding: 16px 0;
+  padding: var(--space-4) 0;
 }
 
 .hashigo-side:first-of-type {
@@ -963,7 +976,7 @@ body {
 }
 
 .hashigo-side p {
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-3);
 }
 
 .hashigo-side p:last-child {
@@ -973,7 +986,7 @@ body {
 .hashigo-side blockquote {
   border-left: 2px solid var(--line-soft);
   color: var(--ink);
-  padding-left: 12px;
+  padding-left: var(--space-3);
 }
 
 /* ── lists ───────────────────────────────────────────────────────────────────
@@ -993,7 +1006,7 @@ body {
    list that spaced differently from the paragraph above it read as a second card. */
 .hashigo-side ol,
 .hashigo-side ul {
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-3);
   padding-left: 1.4em;
 }
 
@@ -1021,14 +1034,14 @@ body {
    `collapse` so the hairlines do not double up — the brief has one rule weight. */
 .hashigo-side table {
   border-collapse: collapse;
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-3);
   width: 100%;
 }
 
 .hashigo-side th,
 .hashigo-side td {
   border: 1px solid var(--line);
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   text-align: left;
 }
 
@@ -1044,7 +1057,7 @@ body {
 .hashigo-rule {
   border: 0;
   border-top: 1px solid var(--line);
-  margin: 14px 0;
+  margin: var(--space-4) 0;
 }
 
 /* ── LaTeX, the subset ───────────────────────────────────────────────────────
@@ -1178,7 +1191,7 @@ body {
   color: var(--ink);
   cursor: pointer;
   font-size: 0.86em;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   text-decoration: none;
   /* Never let a tag be the thing that widens the column. It sits inside card
      text whose own rule is `overflow-wrap: break-word`, and a chip with a border
@@ -1205,7 +1218,7 @@ body {
   background: var(--sunk);
   font-family: var(--mono);
   font-size: 0.85em;
-  padding: 1px 5px;
+  padding: 1px var(--space-1);
 }
 
 .hashigo-image {
@@ -1330,7 +1343,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
      of a card where his hand already is. `.clip` is 34px because it lives INSIDE
      running text and a taller box would push the lines apart; this does not. */
   min-height: 40px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
 }
 
 .regen:active {
@@ -1390,7 +1403,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
 
 /* メニューの行: アイコンの列、その右に名前と説明の二段。 */
 .menu-item.has-icon {
-  column-gap: 10px;
+  column-gap: var(--space-3);
   display: grid;
   grid-template-columns: 1.25em 1fr;
 }
@@ -1449,7 +1462,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
      of a card apart. The thumb-sized control for the common case is `.replay`. */
   min-height: 34px;
   min-width: 34px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   /* The hairline's containing block. */
   position: relative;
   vertical-align: middle;
@@ -1531,8 +1544,8 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   background: var(--bg);
   border-top: 1px solid var(--line);
   display: flex;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3);
 }
 
 /* The brief's button: 1px indigo border on transparent, filling solid indigo on
@@ -1546,7 +1559,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   flex: 1;
   font: inherit;
   letter-spacing: 0.01em;
-  padding: 17px 10px;
+  padding: var(--space-4) var(--space-3);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -1617,7 +1630,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
 .grades {
   display: flex;
   flex: 1;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 /* GRADING IS NOW WEIGHT AND POSITION, NOT HUE — see the file header.
@@ -1740,7 +1753,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
     color: inherit;
     display: block;
     font-size: var(--fs-chip);
-    margin-top: 5px;
+    margin-top: var(--space-1);
     opacity: 0.85;
   }
 }
@@ -1766,7 +1779,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
 .done {
   margin: 0 auto;
   max-width: 720px;
-  padding: 60px 16px;
+  padding: var(--space-8) var(--space-4);
 }
 
 /* The mark, large, and the only moving thing in the app. It is at rest before
@@ -1775,7 +1788,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   color: var(--indigo);
   display: block;
   height: 104px;
-  margin-bottom: 26px;
+  margin-bottom: var(--space-5);
   width: 104px;
 }
 
@@ -1790,7 +1803,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
 .done p {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  margin: 12px 0 28px;
+  margin: var(--space-3) 0 var(--space-6);
 }
 
 .done button {
@@ -1811,7 +1824,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   color: var(--ink);
   cursor: pointer;
   font: inherit;
-  padding: 14px 18px;
+  padding: var(--space-4) var(--space-4);
 }
 
 /* ── his request 2: preview layers, and they stack ──
@@ -1861,10 +1874,10 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   display: flex;
   flex: none;
   font-size: var(--fs-caption);
-  gap: 12px;
+  gap: var(--space-3);
   justify-content: space-between;
   letter-spacing: 0.06em;
-  padding: 12px 14px;
+  padding: var(--space-3) var(--space-4);
 }
 
 .layer-close {
@@ -1887,7 +1900,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   -webkit-overflow-scrolling: touch;
   font-family: var(--jp), sans-serif;
   overflow-y: auto;
-  padding: 18px 16px 24px;
+  padding: var(--space-4) var(--space-4) var(--space-5);
 }
 
 .layer-missing {
@@ -1942,7 +1955,7 @@ body.layered {
 .edit-row {
   border-top: 1px solid var(--line);
   display: block;
-  padding: 14px 0;
+  padding: var(--space-4) 0;
 }
 
 .edit-row:first-of-type {
@@ -1956,9 +1969,9 @@ body.layered {
   display: flex;
   font-family: var(--mono);
   font-size: var(--fs-caption);
-  gap: 8px;
+  gap: var(--space-2);
   letter-spacing: 0.06em;
-  margin-bottom: 7px;
+  margin-bottom: var(--space-2);
 }
 
 .edit-type {
@@ -1975,7 +1988,7 @@ body.layered {
   /* The JAPANESE stack, not the mono one: he is typing readings and head words,
      and a monospace fallback renders kana at the wrong width. */
   font: 16px/1.6 var(--jp), sans-serif;
-  padding: 10px;
+  padding: var(--space-3);
   resize: vertical;
   width: 100%;
 }
@@ -1995,7 +2008,7 @@ textarea.edit-input:not(.tpl-body) {
    the flex row would still reserve the gap for it. */
 .edit-accent {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .edit-accent select.edit-input {
   appearance: auto;
@@ -2016,7 +2029,7 @@ textarea.edit-input:not(.tpl-body) {
 
 /* "generate" under an empty English example sentence (`app/example-sentence.ts`). */
 .edit-generate {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 .edit-generate[hidden] {
   display: none;
@@ -2040,7 +2053,7 @@ textarea.edit-input:not(.tpl-body) {
   color: var(--ok);
   font-size: var(--fs-caption);
   min-height: 1.5em;
-  padding-top: 14px;
+  padding-top: var(--space-4);
 }
 
 .edit-status.bad {
@@ -2064,7 +2077,7 @@ textarea.edit-input:not(.tpl-body) {
   font-size: var(--fs-body);
   /* A thumb target, not a glyph. */
   height: 34px;
-  margin-right: 10px;
+  margin-right: var(--space-3);
   width: 38px;
 }
 
@@ -2112,8 +2125,8 @@ body.sidebar-open .sidebar-scrim {
   border-bottom: 1px solid var(--line);
   display: none;
   flex: none;
-  gap: 9px;
-  padding: 15px 16px;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4);
 }
 
 .rail-brand .mark {
@@ -2138,7 +2151,7 @@ body.sidebar-open .sidebar-scrim {
   font-size: var(--fs-caption);
   justify-content: space-between;
   letter-spacing: 0.08em;
-  padding: 12px 12px 12px 16px;
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
 }
 
 /* 16px, because iOS Safari zooms the viewport on focus for anything smaller. */
@@ -2149,7 +2162,7 @@ body.sidebar-open .sidebar-scrim {
   color: var(--ink-bright);
   flex: none;
   font: 16px/1.5 var(--jp), sans-serif;
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
   width: 100%;
 }
 
@@ -2173,7 +2186,7 @@ body.sidebar-open .sidebar-scrim {
   cursor: pointer;
   display: flex;
   font: inherit;
-  padding: 10px 16px;
+  padding: var(--space-3) var(--space-4);
   text-align: left;
   width: 100%;
 }
@@ -2181,7 +2194,7 @@ body.sidebar-open .sidebar-scrim {
 .deck-row {
   align-items: baseline;
   font-size: var(--fs-small);
-  gap: 10px;
+  gap: var(--space-3);
   justify-content: space-between;
 }
 
@@ -2219,7 +2232,7 @@ body.sidebar-open .sidebar-scrim {
   font-size: var(--fs-chip);
   justify-content: space-between;
   letter-spacing: 0.1em;
-  padding: 10px 16px 6px;
+  padding: var(--space-3) var(--space-4) var(--space-2);
 }
 
 .result-list {
@@ -2267,7 +2280,7 @@ body.sidebar-open .sidebar-scrim {
   flex: none;
   font-size: var(--fs-chip);
   line-height: 1.6;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom));
 }
 
 /* ── the new-card form ── */
@@ -2275,12 +2288,12 @@ body.sidebar-open .sidebar-scrim {
 .newcard-host {
   border-top: 1px solid var(--line);
   flex: none;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom));
 }
 
 .newcard {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   grid-template-columns: 1fr 1fr;
 }
 
@@ -2297,7 +2310,7 @@ body.sidebar-open .sidebar-scrim {
   border: 1px solid var(--line-soft);
   color: var(--ink-bright);
   font: 16px/1.4 var(--jp), sans-serif;
-  padding: 9px 10px;
+  padding: var(--space-2) var(--space-3);
   width: 100%;
 }
 
@@ -2319,7 +2332,7 @@ body.sidebar-open .sidebar-scrim {
   font: inherit;
   grid-column: 1 / -1;
   letter-spacing: 0.01em;
-  padding: 11px;
+  padding: var(--space-3);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -2405,8 +2418,8 @@ body.sidebar-open .sidebar-scrim {
 
 .draw-bar {
   display: flex;
-  gap: 8px;
-  margin: 8px 0 4px;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 var(--space-1);
 }
 
 .draw-button {
@@ -2416,7 +2429,7 @@ body.sidebar-open .sidebar-scrim {
   cursor: pointer;
   font: inherit;
   font-size: var(--fs-caption);
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
 }
 
 .draw-button:active {
@@ -2434,9 +2447,9 @@ body.sidebar-open .sidebar-scrim {
   display: flex;
   font: inherit;
   font-size: var(--fs-small);
-  gap: 8px;
+  gap: var(--space-2);
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
   text-align: left;
   width: 100%;
 }
@@ -2449,7 +2462,7 @@ body.sidebar-open .sidebar-scrim {
   align-items: flex-start;
   color: var(--indigo);
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 /* The origin warning. NOT vermilion — it would be the second vermilion on a
@@ -2470,7 +2483,7 @@ body.sidebar-open .sidebar-scrim {
   -webkit-overflow-scrolling: touch;
   flex: 1;
   overflow-y: auto;
-  padding: 6px 0;
+  padding: var(--space-2) 0;
 }
 
 .tree-row {
@@ -2482,8 +2495,8 @@ body.sidebar-open .sidebar-scrim {
   display: flex;
   font: inherit;
   font-size: var(--fs-small);
-  gap: 6px;
-  padding: 7px 12px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   text-align: left;
   width: 100%;
 }
@@ -2502,7 +2515,7 @@ body.sidebar-open .sidebar-scrim {
   font-size: var(--fs-label);
   line-height: 1;
   min-width: 18px;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
   text-align: center;
 }
 
@@ -2532,7 +2545,7 @@ body.sidebar-open .sidebar-scrim {
   color: var(--ink-bright);
   flex: none;
   font: 16px/1.5 var(--jp), sans-serif;
-  padding: 14px 16px;
+  padding: var(--space-4) var(--space-4);
   width: 100%;
 }
 
@@ -2549,7 +2562,7 @@ body.sidebar-open .sidebar-scrim {
   flex-direction: column;
   font: inherit;
   gap: 2px;
-  padding: 10px 16px;
+  padding: var(--space-3) var(--space-4);
   text-align: left;
   width: 100%;
 }
@@ -2558,7 +2571,7 @@ body.sidebar-open .sidebar-scrim {
 .palette-row.is-archived .palette-name { color: var(--muted); }
 .palette-name { font-family: var(--jp), sans-serif; font-size: var(--fs-body); }
 .palette-meta { color: var(--muted); font-size: var(--fs-chip); }
-.palette-foot { border-top: 1px solid var(--line); color: var(--muted); flex: none; font-size: var(--fs-chip); padding: 8px 16px; }
+.palette-foot { border-top: 1px solid var(--line); color: var(--muted); flex: none; font-size: var(--fs-chip); padding: var(--space-2) var(--space-4); }
 
 /* ── the gallery (his #6) ── */
 
@@ -2571,20 +2584,20 @@ body[data-view="gallery"] .review { display: none; }
   background: var(--bg);
   border-bottom: 1px solid var(--line);
   display: flex;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   position: sticky;
   top: 0;
   z-index: 4;
 }
 
-.gallery-back { background: none; border: 1px solid var(--line-soft); color: var(--ink); cursor: pointer; font: inherit; font-size: var(--fs-caption); padding: 8px 12px; }
+.gallery-back { background: none; border: 1px solid var(--line-soft); color: var(--ink); cursor: pointer; font: inherit; font-size: var(--fs-caption); padding: var(--space-2) var(--space-3); }
 .gallery-title { color: var(--ink-bright); flex: 1; font-family: var(--jp), sans-serif; font-size: var(--fs-body); }
 .gallery-count { color: var(--muted); font-size: var(--fs-caption); }
 
 /* 2026-10-16: review this deck / silent only. Full-height touch targets — he
    presses these on a train, one-handed. */
-.gallery-review { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 0; }
+.gallery-review { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-3) var(--space-4) 0; }
 .gallery-review:empty { display: none; }
 .gallery-review-go {
   align-items: center;
@@ -2595,33 +2608,33 @@ body[data-view="gallery"] .review { display: none; }
   display: inline-flex;
   font: inherit;
   font-size: var(--fs-small);
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 44px;
-  padding: 8px 14px;
+  padding: var(--space-2) var(--space-4);
 }
 .gallery-review-go + .gallery-review-go { background: none; color: var(--indigo); }
 .gallery-review-go:disabled { cursor: default; opacity: 0.5; }
-.gallery-controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
-.gallery-search { background: var(--sunk); border: 1px solid var(--line-soft); color: var(--ink-bright); flex: 1; font: 16px/1.4 var(--jp), sans-serif; min-width: 160px; padding: 9px 10px; }
-.gallery-sort { background: var(--sunk); border: 1px solid var(--line-soft); color: var(--ink); font: 16px/1.4 var(--mono); padding: 9px 10px; }
-.gallery-toggle { align-items: center; color: var(--muted); display: flex; font-size: var(--fs-caption); gap: 6px; }
+.gallery-controls { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
+.gallery-search { background: var(--sunk); border: 1px solid var(--line-soft); color: var(--ink-bright); flex: 1; font: 16px/1.4 var(--jp), sans-serif; min-width: 160px; padding: var(--space-2) var(--space-3); }
+.gallery-sort { background: var(--sunk); border: 1px solid var(--line-soft); color: var(--ink); font: 16px/1.4 var(--mono); padding: var(--space-2) var(--space-3); }
+.gallery-toggle { align-items: center; color: var(--muted); display: flex; font-size: var(--fs-caption); gap: var(--space-2); }
 
 /* A GRID, which is what "notion gallery view" means. auto-fill so it is one
    column on a phone and four on the laptop without a breakpoint to maintain. */
 .gallery-grid {
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  padding: 0 16px 40px;
+  padding: 0 var(--space-4) var(--space-7);
 }
 
-.gcard { background: var(--card); border: 1px solid var(--line-soft); cursor: pointer; display: flex; flex-direction: column; gap: 6px; padding: 12px; }
+.gcard { background: var(--card); border: 1px solid var(--line-soft); cursor: pointer; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); }
 .gcard:active { background: var(--sunk); }
 .gcard.is-archived { opacity: .6; }
 .gcard-name { color: var(--ink-bright); font: 400 17px/1.35 var(--jp), sans-serif; }
 .gcard-meta { color: var(--muted); font-size: var(--fs-chip); }
 .gcard-snippet { color: var(--muted); font-family: var(--jp), sans-serif; font-size: var(--fs-caption); line-height: 1.5; max-height: 3em; overflow: hidden; }
-.gcard-top { align-items: flex-start; display: flex; gap: 8px; }
+.gcard-top { align-items: flex-start; display: flex; gap: var(--space-2); }
 .gcard-top .gcard-name { flex: 1; min-width: 0; }
 /* The heading's button is the tile's keyboard stop. It looks like the heading it
    replaces; the focus ring is the global one. */
@@ -2635,9 +2648,9 @@ body[data-view="gallery"] .review { display: none; }
    below-AA pairing lives (decision 32). */
 .gcard-gist { color: var(--ink); display: -webkit-box; font-family: var(--jp), sans-serif; font-size: var(--fs-small); -webkit-line-clamp: 2; line-clamp: 2; line-height: 1.5; overflow: hidden; -webkit-box-orient: vertical; }
 .gcard-meta { margin-top: auto; }
-.gcard-op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; font: inherit; font-size: var(--fs-chip); padding: 6px 8px; }
+.gcard-op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; font: inherit; font-size: var(--fs-chip); padding: var(--space-2) var(--space-2); }
 .gcard-op.danger { border-color: var(--no-edge); color: var(--no); }
-.gallery-empty { color: var(--muted); grid-column: 1 / -1; padding: 30px 0; }
+.gallery-empty { color: var(--muted); grid-column: 1 / -1; padding: var(--space-6) 0; }
 
 /* ── the review op bar (his #7, #9, #13 on MOBILE) ── */
 
@@ -2645,8 +2658,8 @@ body[data-view="gallery"] .review { display: none; }
   background: var(--bg);
   border-top: 1px solid var(--line);
   display: flex;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
 }
 
 /* ── the shadowing row ──
@@ -2657,11 +2670,11 @@ body[data-view="gallery"] .review { display: none; }
   background: var(--bg);
   border-top: 1px solid var(--line);
   display: flex;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
 }
 
-.op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; flex: 1; font: inherit; font-size: var(--fs-caption); padding: 10px 4px; }
+.op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; flex: 1; font: inherit; font-size: var(--fs-caption); padding: var(--space-3) var(--space-1); }
 .op:active { background: var(--sunk); }
 .op[disabled] { opacity: .35; }
 .op.danger { border-color: var(--no-edge); color: var(--no); }
@@ -2670,7 +2683,7 @@ body[data-view="gallery"] .review { display: none; }
    ResizeObserver — so a longer button label, a bigger font or a second row of
    operations moves all three of these at once and none of them can drift. */
 body[data-view="review"] .review main {
-  padding-bottom: calc(var(--footer-h, 150px) + 24px);
+  padding-bottom: calc(var(--footer-h, 150px) + var(--space-5));
 }
 
 .replay {
@@ -2687,7 +2700,7 @@ body[data-view="review"] .review main {
   font-size: var(--fs-caption);
   left: 50%;
   max-width: calc(100% - 32px);
-  padding: 10px 14px;
+  padding: var(--space-3) var(--space-4);
   position: fixed;
   transform: translateX(-50%);
   z-index: 25;
@@ -2706,7 +2719,7 @@ body[data-view="review"] .review main {
   cursor: pointer;
   font: inherit;
   font-size: var(--fs-small);
-  padding: 6px 12px;
+  padding: var(--space-2) var(--space-3);
   position: fixed;
   touch-action: manipulation;
   z-index: 30;
@@ -2721,17 +2734,17 @@ body[data-view="review"] .review main {
   border: 1px solid var(--line-soft);
   margin: 0 auto;
   max-width: 440px;
-  padding: 20px;
+  padding: var(--space-5);
   position: relative;
   top: 50%;
   transform: translateY(-50%);
   width: calc(100% - 32px);
 }
 
-.confirm-panel h2 { color: var(--ink-bright); font: 400 18px/1.4 var(--jp), sans-serif; margin-bottom: 10px; }
+.confirm-panel h2 { color: var(--ink-bright); font: 400 18px/1.4 var(--jp), sans-serif; margin-bottom: var(--space-3); }
 .confirm-panel p { color: var(--muted); font-size: var(--fs-small); line-height: 1.6; }
-.confirm-bar { display: flex; gap: 10px; margin-top: 20px; }
-.confirm-bar button { background: none; border: 1px solid var(--edge); color: var(--ink); cursor: pointer; flex: 1; font: inherit; padding: 12px; }
+.confirm-bar { display: flex; gap: var(--space-3); margin-top: var(--space-5); }
+.confirm-bar button { background: none; border: 1px solid var(--edge); color: var(--ink); cursor: pointer; flex: 1; font: inherit; padding: var(--space-3); }
 .confirm-bar button.danger { border-color: var(--no-edge); color: var(--no); }
 
 /* ── his #6/#7: pin ─────────────────────────────────────────────────────────
@@ -2787,9 +2800,9 @@ body[data-view="review"] .review main {
 .layer-ops {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
   margin-left: auto;
-  margin-right: 8px;
+  margin-right: var(--space-2);
 }
 
 .layer-op {
@@ -2799,7 +2812,7 @@ body[data-view="review"] .review main {
   cursor: pointer;
   font: inherit;
   font-size: var(--fs-caption);
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
 }
 
 .layer-op:hover,
@@ -2809,7 +2822,7 @@ body[data-view="review"] .review main {
 
 /* A step of air after `delete`, so it reads as apart from the flags beside it. */
 .layer-op.danger {
-  margin-right: 8px;
+  margin-right: var(--space-2);
 }
 
 .layer-op.danger:hover,
@@ -2828,7 +2841,7 @@ body[data-view="review"] .review main {
   color: var(--muted);
   font-size: var(--fs-caption);
   line-height: 1.5;
-  margin: 6px 0 0;
+  margin: var(--space-2) 0 0;
   max-width: 62ch;
 }
 
@@ -2845,20 +2858,20 @@ body[data-view="review"] .review main {
   color: var(--no);
   font-size: var(--fs-small);
   line-height: 1.5;
-  margin: 0 0 14px;
-  padding: 8px 10px;
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
 }
 
 .settings-state {
   border-top: 1px solid var(--line);
-  margin-top: 20px;
-  padding-top: 14px;
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
 }
 
 .settings-line {
   color: var(--ink);
   font-size: var(--fs-small);
-  margin: 0 0 6px;
+  margin: 0 0 var(--space-2);
 }
 
 .settings-line b {
@@ -2883,8 +2896,8 @@ body[data-view="review"] .review main {
   flex: 0 0 auto;
   font-size: var(--fs-body);
   line-height: 1;
-  margin-left: 6px;
-  padding: 4px 6px;
+  margin-left: var(--space-2);
+  padding: var(--space-1) var(--space-2);
 }
 
 .tree-more:hover,
@@ -2900,8 +2913,8 @@ body[data-view="review"] .review main {
   cursor: pointer;
   font: inherit;
   font-size: var(--fs-small);
-  margin: 10px 0 4px;
-  padding: 6px 10px;
+  margin: var(--space-3) 0 var(--space-1);
+  padding: var(--space-2) var(--space-3);
   text-align: left;
   width: 100%;
 }
@@ -2919,9 +2932,9 @@ body[data-view="review"] .review main {
   align-items: center;
   border-bottom: 1px solid var(--line);
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   grid-template-columns: auto 1fr auto;
-  padding: 8px 0;
+  padding: var(--space-2) 0;
 }
 
 .redo-row .clip {
@@ -2939,7 +2952,7 @@ body[data-view="review"] .review main {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 14px;
+  margin-top: var(--space-4);
 }
 
 .menu-item {
@@ -2949,7 +2962,7 @@ body[data-view="review"] .review main {
   cursor: pointer;
   display: block;
   font: inherit;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
   text-align: left;
   width: 100%;
 }
@@ -3002,23 +3015,23 @@ body[data-view="review"] .review main {
   font-size: var(--fs-small);
   font-weight: 400;
   letter-spacing: 0.04em;
-  margin: 22px 0 10px;
-  padding-top: 14px;
+  margin: var(--space-5) 0 var(--space-3);
+  padding-top: var(--space-4);
   text-transform: lowercase;
 }
 
 .tpl-fields {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .tpl-field {
   border: 1px solid var(--line);
   display: grid;
-  gap: 4px 10px;
+  gap: var(--space-1) var(--space-3);
   grid-template-columns: minmax(10ch, 24ch) 1fr auto;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
 }
 
 /* Decision 9's fields are the ones a re-import cannot take away. Marked, because
@@ -3044,7 +3057,7 @@ body[data-view="review"] .review main {
 .tpl-ops {
   align-self: center;
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
   grid-column: 3;
   grid-row: 1;
 }
@@ -3058,15 +3071,15 @@ body[data-view="review"] .review main {
   border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
   grid-column: 1 / -1;
-  margin-top: 4px;
-  padding-top: 8px;
+  margin-top: var(--space-1);
+  padding-top: var(--space-2);
 }
 
 .tpl-setting {
   display: grid;
-  gap: 2px 10px;
+  gap: 2px var(--space-3);
   grid-template-columns: minmax(8ch, 14ch) 1fr;
 }
 
@@ -3110,7 +3123,7 @@ body[data-view="review"] .review main {
   display: flex;
   flex-wrap: wrap;
   font-size: var(--fs-caption);
-  gap: 6px;
+  gap: var(--space-2);
   margin: 0;
 }
 
@@ -3126,7 +3139,7 @@ body[data-view="review"] .review main {
 .tpl-voice {
   align-items: center;
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .tpl-voice select {
@@ -3219,11 +3232,11 @@ body[data-view="review"] .review main {
   display: flex;
   flex-wrap: wrap;
   font-size: var(--fs-caption);
-  gap: 10px;
+  gap: var(--space-3);
   justify-content: space-between;
   letter-spacing: 0.04em;
-  margin: 14px 0 0;
-  padding: 8px 10px;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-2) var(--space-3);
 }
 
 /* Solid, because it is the primary action of this state — everything else on
@@ -3238,7 +3251,7 @@ body[data-view="review"] .review main {
   font: inherit;
   font-size: var(--fs-caption);
   min-height: 44px;
-  padding: 8px 14px;
+  padding: var(--space-2) var(--space-4);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -3280,13 +3293,13 @@ input[data-answer="incorrect"] {
    argument. */
 .glance-tiles {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }
 
 .glance-tile {
   border: 1px solid var(--line);
-  padding: 12px;
+  padding: var(--space-3);
 }
 
 .glance-label {
@@ -3303,7 +3316,7 @@ input[data-answer="incorrect"] {
   font-size: var(--fs-gloss);
   font-weight: 400;
   line-height: 1.25;
-  margin: 4px 0 2px;
+  margin: var(--space-1) 0 2px;
 }
 
 .glance-note {
@@ -3336,7 +3349,7 @@ input[data-answer="incorrect"] {
   display: block;
   font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
   min-height: 1.5em;
 }
 
@@ -3395,8 +3408,8 @@ input[data-answer="incorrect"] {
   color: var(--muted);
   display: flex;
   font-size: var(--fs-chip);
-  gap: 6px;
-  margin-top: 8px;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 .glance-swatch {
@@ -3409,7 +3422,7 @@ input[data-answer="incorrect"] {
 .glance-tick {
   color: var(--muted);
   font-size: var(--fs-label);
-  margin-top: 4px;
+  margin-top: var(--space-1);
   overflow: hidden;
   white-space: nowrap;
 }
@@ -3441,7 +3454,7 @@ input[data-answer="incorrect"] {
      `minmax(0, 1fr)` and not `1fr`: a grid item's default `min-width: auto` is its
      content, so a long deck name would push the bar out of alignment instead of
      ellipsing. */
-  gap: 10px;
+  gap: var(--space-3);
   grid-template-columns: minmax(0, 1fr) 84px auto;
   padding: 3px 0;
 }
@@ -3452,7 +3465,7 @@ input[data-answer="incorrect"] {
   overflow: hidden;
   /* Depth as indentation, and the rows arrive in path order, so nesting reads
      without drawing a single rule. */
-  padding-left: calc(var(--deck-depth, 0) * 12px);
+  padding-left: calc(var(--deck-depth, 0) * var(--space-3));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3511,14 +3524,14 @@ input[data-answer="incorrect"] {
    carries its own cost. `templateRow` in main.ts has the measurement. */
 .edit-template {
   border-bottom: 1px solid var(--line);
-  margin-bottom: 18px;
-  padding-bottom: 16px;
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-4);
 }
 
 .tpl-pick {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 /* The completion menu is positioned against the field's row, so `.edit-row` has
@@ -3556,7 +3569,7 @@ input[data-answer="incorrect"] {
      see the note there about iOS zooming the viewport below 16px. */
   font: 16px/1.6 var(--jp), sans-serif;
   letter-spacing: normal;
-  padding: 10px;
+  padding: var(--space-3);
   /* A scrollbar appearing on the textarea alone would narrow ITS content box and
      nothing else, so the two would wrap at different characters. Reserving the
      gutter on both keeps them identical whether it is there or not — and the
@@ -3628,7 +3641,7 @@ input[data-answer="incorrect"] {
   cursor: pointer;
   display: block;
   font: inherit;
-  padding: 7px 10px;
+  padding: var(--space-2) var(--space-3);
   text-align: left;
   width: 100%;
 }
@@ -3639,7 +3652,7 @@ input[data-answer="incorrect"] {
 .link-item:hover {
   background: var(--sunk);
   border-left: 2px solid var(--indigo);
-  padding-left: 8px;
+  padding-left: var(--space-2);
 }
 
 .link-item b {
@@ -3685,7 +3698,7 @@ input[data-answer="incorrect"] {
 .newcard-dialog {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* ── what links here (Zach, 2026-09-14) ─────────────────────────────────────
@@ -3705,8 +3718,8 @@ input[data-answer="incorrect"] {
    flat ground, no shadow, square corners. */
 .backlinks {
   border-top: 1px solid var(--hair);
-  margin-top: 30px;
-  padding-top: 16px;
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
 }
 
 /* Not a heading in the card's voice: it is a caption for a list, so it takes the
@@ -3718,7 +3731,7 @@ input[data-answer="incorrect"] {
   font-size: var(--fs-caption);
   font-weight: 400;
   letter-spacing: 0.02em;
-  margin-bottom: 6px;
+  margin-bottom: var(--space-2);
 }
 
 /* Full-bleed rows on a hairline-separated stack. `.link-item` already carries
@@ -3739,7 +3752,7 @@ input[data-answer="incorrect"] {
   display: block;
   font: inherit;
   font-size: var(--fs-caption);
-  padding: 9px 10px;
+  padding: var(--space-2) var(--space-3);
   text-align: left;
   width: 100%;
 }
@@ -3753,7 +3766,7 @@ input[data-answer="incorrect"] {
   display: block;
   font-size: var(--fs-caption);
   font-style: normal;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
 }
 
 /* ── stage 11: the sync indicator (decision 33) ──────────────────────────────
@@ -3835,7 +3848,7 @@ input[data-answer="incorrect"] {
 .sidebar-action-sync {
   align-items: flex-start;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 /* Off-screen but reachable: the dot's state in words. */
@@ -3968,7 +3981,7 @@ input[data-answer="incorrect"] {
   .ops,
   .shadowbar,
   .bar {
-    padding-inline: max(12px, calc((100% - 688px) / 2));
+    padding-inline: max(var(--space-3), calc((100% - 688px) / 2));
   }
 
   .say {
@@ -3997,7 +4010,7 @@ input[data-answer="incorrect"] {
      and needs the row to breathe when it wraps on a 375px screen. */
   font-size: 0.92em;
   line-height: 1.9;
-  margin-top: 6px;
+  margin-top: var(--space-2);
 }
 
 /* Pending: the sentence rendered but no annotation arrived. NOTHING is shown —
@@ -4082,8 +4095,8 @@ input[data-answer="incorrect"] {
   background: var(--sunk);
   color: var(--muted);
   font: 11px/1.5 var(--mono);
-  margin: 0 0 10px;
-  padding: 8px 10px;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
   white-space: pre-wrap;
 }
 
@@ -4116,7 +4129,7 @@ input[data-answer="incorrect"] {
    the header's bottom edge, so the edge is still marked — by the bar. */
 .review header {
   border-bottom: 0;
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
 }
 
 .review header .wordmark-ui,
@@ -4165,8 +4178,8 @@ input[data-answer="incorrect"] {
    `again`, `reversed` are NEUTRAL (ink on sunk); `late` and `seen` are QUIET
    (muted with a hairline ring) — decision 46's "quiet, not a warning". */
 .deck {
-  gap: var(--space-2, 8px);
-  margin-bottom: 24px;
+  gap: var(--space-2, var(--space-2));
+  margin-bottom: var(--space-5);
 }
 .latetag,
 .newtag,
@@ -4182,7 +4195,7 @@ input[data-answer="incorrect"] {
   height: 22px;
   letter-spacing: 0.04em;
   line-height: 1;
-  padding: 0 10px;
+  padding: 0 var(--space-3);
   vertical-align: middle;
 }
 .newtag,
@@ -4215,29 +4228,29 @@ input[data-answer="incorrect"] {
   box-shadow: var(--shadow-card);
   container-type: inline-size;
   font-family: var(--sans);
-  padding: 48px 24px 24px;
+  padding: var(--space-7) var(--space-5) var(--space-5);
 }
 @media (min-width: 640px) {
   .cardhost {
-    padding: 48px 32px 32px;
+    padding: var(--space-7) var(--space-6) var(--space-6);
   }
 }
 
 .hashigo-side {
   border-top: 0;
-  padding: 12px 0;
+  padding: var(--space-3) 0;
 }
 .hashigo-side p,
 .hashigo-side ol,
 .hashigo-side ul,
 .hashigo-side table {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 .hashigo-side li + li {
-  margin-top: 4px;
+  margin-top: var(--space-1);
 }
 .hashigo-rule {
-  margin: 16px 0;
+  margin: var(--space-4) 0;
 }
 
 /* Japanese has ONE weight here (400): emphasis is carried by `--ink-bright`,
@@ -4265,7 +4278,7 @@ input[data-answer="incorrect"] {
   font-weight: 400;
   letter-spacing: 0;
   line-height: 1.15;
-  padding-bottom: 32px;
+  padding-bottom: var(--space-6);
   text-align: center;
 }
 .hashigo-side[data-hero="1"],
@@ -4308,7 +4321,7 @@ input[data-answer="incorrect"] {
   letter-spacing: 0;
   line-height: 1.6;
   margin-right: 0;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
 }
 
 /* The mask: a recessed block, as in the system's Cloze. */
@@ -4341,11 +4354,11 @@ input[data-answer="incorrect"] {
 .hashigo-tag {
   border: 0;
   border-radius: var(--radius-full);
-  padding: 0 8px;
+  padding: 0 var(--space-2);
 }
 .hashigo-code {
   border-radius: var(--radius-sm);
-  padding: 0 4px;
+  padding: 0 var(--space-1);
 }
 
 /* An answer field on the card (数字): a recessed pill, not the browser's box. */
@@ -4355,7 +4368,7 @@ input[data-answer="incorrect"] {
   border-radius: var(--radius-full);
   color: var(--ink);
   font: inherit;
-  padding: 8px 16px;
+  padding: var(--space-2) var(--space-4);
 }
 
 /* An inline clip button: a small recessed disc in the line it belongs to. Ink,
@@ -4438,8 +4451,8 @@ input[data-answer="incorrect"] {
 }
 .ops,
 .shadowbar {
-  gap: 8px;
-  padding: 8px 16px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
 }
 
 /* The operation rows are the system's GHOST buttons — text only, `ink-2`, 600 —
@@ -4454,7 +4467,7 @@ input[data-answer="incorrect"] {
   font-size: var(--fs-small);
   font-weight: 600;
   min-height: 44px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
 }
 .op:active {
   background: var(--sunk);
@@ -4469,10 +4482,10 @@ input[data-answer="incorrect"] {
    `.no`/`.ok`. */
 .bar,
 .grades {
-  gap: 12px;
+  gap: var(--space-3);
 }
 .bar {
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
 }
 .bar button {
   align-items: center;
@@ -4483,12 +4496,12 @@ input[data-answer="incorrect"] {
   display: inline-flex;
   font-size: var(--fs-body);
   font-weight: 600;
-  gap: 8px;
+  gap: var(--space-2);
   justify-content: center;
   letter-spacing: 0;
   line-height: 20px;
   min-height: 52px;
-  padding: 0 24px;
+  padding: 0 var(--space-5);
 }
 /* THE DASH STAYS, AS AN EDGE. Mid-walk `forgot` and `next` are both secondary
    pills, and the dashed outline is what still tells "go on" from "I failed" —
@@ -4524,7 +4537,7 @@ input[data-answer="incorrect"] {
     font-weight: 700;
     line-height: 16px;
     margin-top: 0;
-    padding: 0 5px;
+    padding: 0 var(--space-1);
   }
 }
 
@@ -4556,7 +4569,7 @@ input[data-answer="incorrect"] {
 .bootskip {
   font-size: var(--fs-body);
   min-height: 52px;
-  padding: 0 24px;
+  padding: 0 var(--space-5);
 }
 .readingtoggle,
 .gallery-back,
@@ -4567,14 +4580,14 @@ input[data-answer="incorrect"] {
 .tree-add {
   font-size: var(--fs-small);
   min-height: 36px;
-  padding: 0 16px;
+  padding: 0 var(--space-4);
 }
 .focuschip {
   min-height: 32px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
 }
 .tree-add {
-  margin: 12px 8px 4px;
+  margin: var(--space-3) var(--space-2) var(--space-1);
   width: calc(100% - 16px);
 }
 .confirm-bar button.danger,
@@ -4597,7 +4610,7 @@ input[data-answer="incorrect"] {
 }
 .peek-back,
 .selection-newcard {
-  padding: 0 16px;
+  padding: 0 var(--space-4);
 }
 .selection-newcard {
   min-height: 40px;
@@ -4653,14 +4666,14 @@ input[data-answer="incorrect"] {
   border: 0;
   border-radius: var(--radius-full);
   color: var(--ink);
-  padding: 10px 16px;
+  padding: var(--space-3) var(--space-4);
 }
 .searchbox {
-  margin: 8px;
+  margin: var(--space-2);
   width: calc(100% - 16px);
 }
 .palette-input {
-  margin: 12px 12px 4px;
+  margin: var(--space-3) var(--space-3) var(--space-1);
   width: calc(100% - 24px);
 }
 .gallery-sort {
@@ -4714,15 +4727,15 @@ input[data-answer="incorrect"] {
 .layer-head {
   border-bottom: 0;
   letter-spacing: 0;
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
 }
 .layer-body {
-  padding: 16px 16px 24px;
+  padding: var(--space-4) var(--space-4) var(--space-5);
 }
 .menu-item {
   border: 0;
   border-radius: var(--radius-md);
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
 }
 .menu-item:hover {
   border-color: transparent;
@@ -4735,7 +4748,7 @@ input[data-answer="incorrect"] {
   border: 0;
   border-radius: var(--radius-md);
   box-shadow: inset 0 0 0 1px var(--hair);
-  padding: 4px;
+  padding: var(--space-1);
 }
 .link-item {
   border-radius: var(--radius-md);
@@ -4746,8 +4759,8 @@ input[data-answer="incorrect"] {
 .palette-row {
   border-radius: var(--radius-md);
   border-top: 0;
-  margin: 0 8px;
-  padding: 8px 12px;
+  margin: 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
   width: calc(100% - 16px);
 }
 .palette-row.on {
@@ -4777,15 +4790,15 @@ input[data-answer="incorrect"] {
   background: var(--sunk);
   border: 0;
   border-radius: var(--radius-md);
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
 }
 .peek {
   background: var(--sunk);
   border: 0;
   border-radius: var(--radius-md);
   color: var(--ink);
-  margin-top: 16px;
-  padding: 12px 16px;
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
 }
 
 /* THE DASHBOARD SKELETON (`glanceSkeleton` in dashboard.ts) — Zach, 2026-10-29:
@@ -4825,7 +4838,7 @@ input[data-answer="incorrect"] {
 }
 .backlinks {
   border-top: 0;
-  margin-top: 32px;
+  margin-top: var(--space-6);
 }
 .backlinks-list .link-item + .link-item {
   border-top: 0;
@@ -4852,14 +4865,14 @@ input[data-answer="incorrect"] {
   border-bottom: 0;
 }
 .gallery-grid {
-  gap: 12px;
+  gap: var(--space-3);
 }
 .gcard {
   border: 0;
   border-radius: var(--radius-md);
   box-shadow: none;
-  gap: 8px;
-  padding: 16px;
+  gap: var(--space-2);
+  padding: var(--space-4);
 }
 .gcard.is-pinned {
   box-shadow: inset 0 0 0 1px var(--ink-3);
@@ -4891,16 +4904,16 @@ input[data-answer="incorrect"] {
 }
 .sidebar-action {
   border-radius: var(--radius-full);
-  margin: 0 8px;
-  padding: 12px 16px;
+  margin: 0 var(--space-2);
+  padding: var(--space-3) var(--space-4);
   width: calc(100% - 16px);
 }
 .tree-row,
 .result-row {
   border-radius: var(--radius-full);
   border-top: 0;
-  margin: 0 8px;
-  padding: 8px 12px;
+  margin: 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
   width: calc(100% - 16px);
 }
 .deck-row.on {
@@ -4908,7 +4921,7 @@ input[data-answer="incorrect"] {
 }
 .tree-more {
   border-radius: var(--radius-full);
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
 }
 .result-name {
   color: var(--ink);
@@ -4922,7 +4935,7 @@ input[data-answer="incorrect"] {
 .bootlog {
   border: 0;
   border-radius: var(--radius-md);
-  padding: 12px 16px;
+  padding: var(--space-3) var(--space-4);
 }
 .bootlog {
   background: var(--sunk);
@@ -5023,7 +5036,7 @@ input[data-answer="incorrect"] {
 input.edit-input,
 select.edit-input {
   border-radius: var(--radius-full);
-  padding: 10px 16px;
+  padding: var(--space-3) var(--space-4);
 }
 
 /* A preview's card is its own size container, so a hero there sizes against the

@@ -683,7 +683,16 @@ describe("every position: fixed rule has an answer for the rail", () => {
     // above them — visible, and unattributable to any one change.
     const mainRule = /\.review main \{([^}]*)\}/.exec(css)?.[1] ?? "";
     const box = Number(/max-width:\s*(\d+)px/.exec(mainRule)?.[1]);
-    const pad = Number(/padding:\s*\d+px\s+(\d+)px/.exec(mainRule)?.[1]);
+    // Spacing is a `--space-N` token since 2026-10-29 (`test/spacing-scale.test.ts`),
+    // so the side padding is resolved through the sheet's own definition — still
+    // read, never retyped.
+    const side = /padding:\s*\S+\s+(\S+)/.exec(mainRule)?.[1] ?? "";
+    const token = /^var\(--(space-\d+)\)$/.exec(side)?.[1];
+    const pad = Number(
+      token === undefined
+        ? /^(\d+)px$/.exec(side)?.[1]
+        : new RegExp(`--${token}:\\s*(\\d+)px`).exec(css)?.[1],
+    );
     expect(box, "cannot read the card column's width").toBeGreaterThan(0);
     expect(pad, "cannot read the card column's padding").toBeGreaterThan(0);
 
