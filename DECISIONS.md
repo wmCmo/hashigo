@@ -2460,6 +2460,29 @@ right**: it holds his verbatim reasoning and this quotes it.
     controls (he asked for them 2026-09-26/28), the counter's size/direction/dot,
     the card's laptop width, and the review screen's density.
 
+58. **A MODE-2 単語 CARD HAS A WRITING CANVAS, AND 漢検 GETS NO TRACK OF ITS OWN.**
+    2026-10-29. The 漢検 tutor session's misses were word-specific: he wrote 波手
+    for 派手 while able to write both 波 and 派. The first proposal was a `問題`
+    field and a third track kind (`停□（たい）` as the prompt). Zach saw it was the
+    漢字 card's reverse track again (reading + meaning → draw the kanji), which he
+    already drills. What neither card tested was choosing the kanji FOR THIS WORD,
+    and mode 2 (decision 29) already asks for the whole word from its sound — it
+    only lacked somewhere to write, so a half-recall survived the reveal.
+
+    So the template gained, under `<< Speech >>` on side 2:
+
+        << ^Reading >>
+        <draw height="240px" brushColor="#FFFFFF" brushRadius="4"/>
+        << /Reading >>
+
+    His *"omg that sounds perfect, yes"*. Brush as on 漢字; 240px rather than 漢字's
+    400 because a word is written across, and this canvas is on the card, not
+    behind a press. Mode 1 renders none (checked on 慈善). Edited live through the
+    template editor, so it lives on the devices; `build/hashigo.db` and any
+    development rebuild from `exports/` have the body without it.
+
+    The pair cards (没頭＝□念 → 専念) remain untested by any track; parked.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

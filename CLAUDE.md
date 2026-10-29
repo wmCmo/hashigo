@@ -291,6 +291,9 @@ npx vite-node scripts/reverse-dormant-apply.ts -- --db build/hashigo.db --apply 
 57. **The Pinterest design system; the one colour is ruri (瑠璃).** Grey grounds, three inks,
     ruri only on the replay disc, the mark's top rung, focus, the progress bar and card
     links. Token names kept, values repointed. Decision 23's hand unchanged.
+58. **A mode-2 単語 card has a writing canvas on side 2** (`<draw>` under `<< Speech >>`,
+    inside `<< ^Reading >>`, 240px). Hear it, WRITE it, reveal. No 問題 track: a word
+    stays one card, and its forward/reverse schedules are untouched.
 
 ## READ THE TEMPLATE. It answers most questions about the screen.
 
