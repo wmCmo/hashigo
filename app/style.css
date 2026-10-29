@@ -4772,6 +4772,42 @@ input[data-answer="incorrect"] {
   margin-top: 16px;
   padding: 12px 16px;
 }
+
+/* THE DASHBOARD SKELETON (`glanceSkeleton` in dashboard.ts) — Zach, 2026-10-29:
+   *"we needs skeleton while loading instead of it freezing"*. The skeleton is the
+   REAL tiles and charts with stand-in text, so these rules only paint: the text
+   that stands in for a number turns into a `--hair` block of exactly its own
+   size, the bars turn grey, and the real headings and labels stay as they are.
+   A slow pulse says "working", not "broken"; none under reduced motion, where a
+   still placeholder is still a placeholder. */
+.glance-skeleton .glance-value,
+.glance-skeleton .glance-note,
+.glance-skeleton .glance-read {
+  animation: skel-pulse 1.4s ease-in-out infinite;
+  background: var(--hair);
+  border-radius: var(--radius-sm);
+  color: transparent;
+  width: fit-content;
+}
+.glance-skeleton .glance-tick {
+  color: transparent;
+}
+.glance-skeleton .glance-bar {
+  animation: skel-pulse 1.4s ease-in-out infinite;
+  background: var(--hair);
+}
+.glance-skeleton .glance-col {
+  cursor: default;
+}
+@keyframes skel-pulse {
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .glance-skeleton .glance-value,
+  .glance-skeleton .glance-note,
+  .glance-skeleton .glance-read,
+  .glance-skeleton .glance-bar { animation: none; }
+}
 .backlinks {
   border-top: 0;
   margin-top: 32px;

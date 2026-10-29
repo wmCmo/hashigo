@@ -31,14 +31,6 @@ import { ask } from "./worker-client.js";
  */
 export async function openDashboard(): Promise<void> {
   closeSidebar();
-  let reply: ReplyFor["glance"];
-  try {
-    reply = await ask<"glance">({ kind: "glance" });
-  } catch (cause) {
-    say((cause as Error).message, true);
-    return;
-  }
-  const g = reply.glance;
 
   const root = document.createElement("div");
   root.className = "layer layer-edit layer-glance";
@@ -56,7 +48,7 @@ export async function openDashboard(): Promise<void> {
   const head = document.createElement("div");
   head.className = "layer-head";
   const title = document.createElement("span");
-  title.textContent = `dashboard · ${reply.elapsedMs.toFixed(0)} ms`;
+  title.textContent = "dashboard";
   const close = document.createElement("button");
   close.type = "button";
   close.className = "layer-close";
@@ -70,6 +62,30 @@ export async function openDashboard(): Promise<void> {
   body.className = "layer-body";
   panel.appendChild(body);
   root.appendChild(panel);
+
+  // THE PANEL OPENS NOW, AS A SKELETON. Zach, 2026-10-29: *"we needs skeleton while
+  // loading instead of it freezing"*. The figures come from the worker — 162 ms on
+  // the laptop, more on the phone, and longer when it is mid-way through something
+  // else — and until this the tap did nothing visible for all of it.
+  body.setAttribute("aria-busy", "true");
+  body.appendChild(glanceSkeleton());
+  pushLayer(bareLayer(root));
+  close.focus();
+
+  let reply: ReplyFor["glance"];
+  try {
+    reply = await ask<"glance">({ kind: "glance" });
+  } catch (cause) {
+    closeIfTop(root);
+    say((cause as Error).message, true);
+    return;
+  }
+  // Closed while it loaded: nothing to fill.
+  if (!root.isConnected) return;
+  const g = reply.glance;
+  title.textContent = `dashboard · ${reply.elapsedMs.toFixed(0)} ms`;
+  body.replaceChildren();
+  body.removeAttribute("aria-busy");
 
   const pct = (r: number | null): string => (r === null ? "—" : `${(100 * r).toFixed(1)}%`);
   // The readout says what the tone was computed over, so "95 reviews · 77.8%"
@@ -212,9 +228,59 @@ export async function openDashboard(): Promise<void> {
   full.textContent = "build the full report";
   full.addEventListener("click", () => void buildDashboard());
   body.append(glanceHead("the four-year report"), note, full);
+}
 
-  pushLayer(bareLayer(root));
-  close.focus();
+/**
+ * What the dashboard looks like before its figures arrive — BUILT BY THE SAME
+ * FUNCTIONS as the real render (`glanceTiles`, `glanceHead`, `glanceBars`), with
+ * the real headings and labels, which never change, and stand-in text of the real
+ * length where a number goes. `.glance-skeleton` paints those stand-ins as grey
+ * blocks. So every box is the size it will be and nothing moves when the numbers
+ * land: a first cut drew fixed-height blocks and came out 84px per tile against
+ * the real 118, with the charts 38px higher, measured.
+ *
+ * Bar heights are fixed and varied — a row of equal stubs reads as a chart of
+ * equal days.
+ */
+function glanceSkeleton(): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "glance-skeleton";
+  wrap.setAttribute("aria-hidden", "true");
+  wrap.appendChild(
+    glanceTiles([
+      ["due now", "000", "0,000 new waiting"],
+      ["done today", "000", "000% kept"],
+      ["streak", "00", "through yesterday"],
+      ["learned", "0,000", "of 00,000 live · 0,000 to go"],
+    ]),
+  );
+  const charts: readonly (readonly [string, readonly number[]])[] = [
+    ["tracks learned, last 12 months", [8, 10, 12, 30, 72, 70, 74, 48, 76, 40, 30, 62]],
+    ["the last 14 days you studied", [50, 42, 44, 6, 96, 90, 90, 90, 86, 90, 90, 92, 90, 6]],
+    ["scheduled, next 14 days", [96, 84, 46, 60, 46, 76, 40, 66, 70, 90, 40, 64, 46, 54]],
+  ];
+  for (const [heading, heights] of charts) {
+    wrap.appendChild(glanceHead(heading));
+    const chart = glanceBars(
+      heights.map((value) => ({ label: "00", value, good: null, detail: "0000-00-00 · 00 reviews" })),
+    );
+    // Not pressable while it stands in: a column here has no day behind it.
+    for (const column of chart.querySelectorAll("button")) column.disabled = true;
+    wrap.appendChild(chart);
+    // The real render keys this one chart; without the line the next one sits higher.
+    if (heading === "the last 14 days you studied") {
+      wrap.appendChild(glanceLegend("under 85% remembered, not counting new cards"));
+    }
+  }
+  const status = document.createElement("span");
+  status.className = "visually-hidden";
+  status.textContent = "loading the dashboard";
+  const live = document.createElement("div");
+  live.setAttribute("role", "status");
+  live.appendChild(status);
+  const outer = document.createElement("div");
+  outer.append(live, wrap);
+  return outer;
 }
 
 function glanceHead(text: string): HTMLElement {
