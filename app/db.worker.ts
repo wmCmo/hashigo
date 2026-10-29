@@ -59,10 +59,12 @@ import {
 } from "../src/db/browser.js";
 import {
   backlinksOf,
-  ensureSourceField,
+  createCard as createCardRow,
+  createTemplate,
+  DuplicateCardError,
   foundInOf,
+  newCardId,
   reconcileCardLinks,
-  sourceValue,
 } from "../src/cards/index.js";
 import { decodeFieldOptions } from "../src/cards/index.js";
 import { cardAudioResolver } from "../src/cards/index.js";
@@ -1428,127 +1430,58 @@ function newDeckId(db: BrowserDb): string {
 }
 
 /**
- * A card id. Eight base62 characters, the same shape Mochi uses.
- *
- * **Deliberately NOT namespaced**, and an earlier version of this file argued at
- * length for a `local-` prefix to make collision impossible. That was solving a
- * problem Zach does not have and has now said four times: he never imports a
- * single card or deck. The import is WHOLESALE, and after decision 16's one final
- * import no Mochi id ever arrives again. Uniqueness inside this database is the
- * entire requirement, and `cards.id UNIQUE` enforces it — a repeat is a failed
- * insert, not silent corruption.
- *
- * Same shape as Mochi's because uniformity is free here: ids appear in
- * wiki-links, in the search index and in the backup, and one format is one thing
- * to reason about.
+ * A card id: `newCardId` in `src/cards/create.ts`, eight base62 characters in
+ * Mochi's shape. **Deliberately NOT namespaced** — he never imports a single
+ * card, and after decision 16's final import no Mochi id ever arrives again, so
+ * uniqueness inside this database is the whole requirement. This alphabet is
+ * shared with the deck and field ids minted here.
  */
 const ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-function newCardId(db: BrowserDb): string {
-  const taken = db.prepare("SELECT 1 FROM cards WHERE id = ?");
-  for (let attempt = 0; attempt < 32; attempt += 1) {
-    const bytes = crypto.getRandomValues(new Uint8Array(8));
-    let id = "";
-    for (const byte of bytes) id += ID_ALPHABET[byte % ID_ALPHABET.length];
-    if (taken.get(id) === undefined) return id;
-  }
-  throw new Error("could not find a free card id in 32 tries, which should be impossible");
-}
-
 /**
- * Make a card, and OPEN ITS TRACKS — which is the half that is easy to forget.
+ * Make a card — `createCard` in `src/cards/create.ts`, which opens its tracks and
+ * writes any values in the same transaction, and refuses a second card of the
+ * same name on the same template unless `allowDuplicate` says so. That refusal is
+ * a REPLY here, not an error: the form offers to open the card that exists.
  *
- * A card with no `card_tracks` row is invisible to the scheduler forever: it is
- * never due, never new, and never appears in a session. So this opens `forward`
- * always and `reverse` when the deck resolves to it, using the SAME view the
- * importer and the loader use (`card_reverse_resolved`) rather than re-deriving
- * the inheritance walk — a second definition is how two answers start to differ.
- *
- * `due_at` is NULL and `reps` is 0, which is exactly what `newTracks` looks for:
- * the card enters the NEW queue and is subject to decision 12's 10-a-day limit,
- * rather than arriving already overdue.
+ * The session was built before this card existed, so it will not appear until
+ * the next one. Said in the reply rather than silently rebuilt: rebuilding
+ * mid-session would reshuffle the queue under him.
  */
 function createCard(request: CreateCardRequest): void {
   const db = requireCards();
-  const deck = db.prepare("SELECT id FROM decks WHERE id = ?").get(request.deckId);
-  if (deck === undefined) throw new Error(`no deck ${request.deckId}`);
-  if (
-    request.templateId !== null &&
-    db.prepare("SELECT id FROM templates WHERE id = ?").get(request.templateId) === undefined
-  ) {
-    throw new Error(`no template ${request.templateId}`);
+  let created;
+  try {
+    created = createCardRow(
+      db,
+      {
+        deckId: request.deckId,
+        templateId: request.templateId,
+        name: request.name,
+        ...(request.values === undefined ? {} : { values: request.values }),
+        ...(request.source === undefined ? {} : { source: request.source }),
+      },
+      { allowDuplicate: request.allowDuplicate === true },
+    );
+  } catch (cause) {
+    if (!(cause instanceof DuplicateCardError)) throw cause;
+    post({
+      kind: "createCard",
+      id: request.id,
+      cardId: null,
+      tracks: [],
+      card: null,
+      duplicate: { message: cause.message, existing: cause.existing },
+    });
+    return;
   }
-
-  const cardId = newCardId(db);
-  const tracks: string[] = [];
-  db.transaction(() => {
-    db.prepare(
-      // `local = 1`: schema v9, and the reason is the backup. `src/backup/archive.ts`
-      // carries only what `exports/` cannot rebuild, so it archives no cards — right
-      // for the 7,716 imported ones and silent loss for this one. Nothing else can
-      // tell them apart; a locally-created card is otherwise an ordinary row.
-      `INSERT INTO cards (id, deck_id, template_id, name, content, archived, local)
-       VALUES (?, ?, ?, ?, '', 0, 1)`,
-    ).run(cardId, request.deckId, request.templateId, request.name);
-
-    // The template's PRIMARY field carries the head word on every template here
-    // (`name` is its id, and it is what `<<単語>>` / `<<言葉>>` / `<<Kanji>>`
-    // resolve to), so the title he typed goes there as well — otherwise the card
-    // renders blank and he has to type it twice.
-    if (request.templateId !== null && request.name !== "") {
-      const primary = db
-        .prepare("SELECT id FROM template_fields WHERE template_id = ? AND id = 'name'")
-        .get(request.templateId) as { id: string } | undefined;
-      if (primary !== undefined) {
-        db.prepare(
-          "INSERT INTO card_field_values (card_id, field_id, value) VALUES (?, 'name', ?)",
-        ).run(cardId, request.name);
-      }
-    }
-
-    // `出典` — the card he found this word in (`src/cards/found-in.ts`). In the
-    // same transaction, so a card never exists without the reason he made it.
-    if (request.templateId !== null && request.source !== undefined) {
-      const from = db.prepare("SELECT name FROM cards WHERE id = ?").get(request.source.cardId) as
-        | { name: string }
-        | undefined;
-      if (from !== undefined) {
-        const fieldId = ensureSourceField(db, request.templateId);
-        db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES (?, ?, ?)").run(
-          cardId,
-          fieldId,
-          sourceValue(request.source.cardId, from.name, request.source.sentence),
-        );
-      }
-    }
-
-    const reverse = db
-      .prepare("SELECT reverse FROM card_reverse_resolved WHERE card_id = ?")
-      .get(cardId) as { reverse: string } | undefined;
-    const kinds = reverse?.reverse === "on" ? ["forward", "reverse"] : ["forward"];
-    for (const kind of kinds) {
-      db.prepare(
-        `INSERT INTO card_tracks
-           (card_id, kind, dormant, needs_rereview, due_at, scheduled_days, reps, lapses,
-            last_reviewed_at, scheduler, scheduler_state)
-         VALUES (?, ?, 0, 0, NULL, NULL, 0, 0, NULL, NULL, NULL)`,
-      ).run(cardId, kind);
-      tracks.push(kind);
-    }
-  })();
-
-  // Indexed with its generations from the start, not left on the raw-field
-  // fallback — so a card made on the laptop is found the same way an imported one is.
-  refreshSearchText(db, [cardId]);
-  // The session was built before this card existed, so it will not appear until
-  // the next one. Said in the reply rather than silently rebuilt: rebuilding
-  // mid-session would reshuffle the queue under him.
   post({
     kind: "createCard",
     id: request.id,
-    cardId,
-    tracks,
-    card: prepareCard({ db, cardId, direction: "forward" }),
+    cardId: created.cardId,
+    tracks: created.tracks,
+    card: prepareCard({ db, cardId: created.cardId, direction: "forward" }),
+    duplicate: null,
   });
 }
 
@@ -3173,6 +3106,13 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "createCard":
           createCard(request);
+          break;
+        case "createTemplate":
+          post({
+            kind: "createTemplate",
+            id: request.id,
+            templateId: createTemplate(requireCards(), request.name).templateId,
+          });
           break;
         case "accentPlan":
           accentPlan(request);

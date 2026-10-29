@@ -123,6 +123,17 @@ caller that wants audio must pass a store, and one that wants furigana need not.
 bug visible instead of making every card silent, which looks identical to "no
 audio yet". Both halves are tested with a fake store.
 
+## Making cards and templates — `./create.ts`
+
+`createCard` writes a card, its field values and its tracks in ONE transaction,
+and refuses a second card of the same name on the same template unless
+`allowDuplicate` says so (`DuplicateCardError` carries the ones that exist).
+`createTemplate` makes a template with two plain fields, Front (`name`, the
+primary the title fills) and Back, on two sides. The app's worker and
+`scripts/cards-add.ts` both call these, so a card made without a browser is made
+by the same code as one made in the app. `test/create-card.test.ts` pins both,
+including a template made on one device reaching the other through sync.
+
 ## What it deliberately does not do
 
 **It does not START audio.** Resolving bytes and playing them are different

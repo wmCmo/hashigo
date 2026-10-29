@@ -506,7 +506,7 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
   const restoreTemplate = db.prepare(RESTORE_TEMPLATE);
   for (const incoming of remote.archive.templates ?? []) {
     const local = localTemplates.get(incoming.id);
-    if (local === undefined) continue; // the apply reported it orphaned
+    if (local === undefined) continue; // new here: the apply made it, with its body and clock
     if (incoming.updatedAt !== undefined && isNewer(incoming.updatedAt, local.updatedAt)) {
       // The apply already wrote the body; write the REMOTE'S clock with it, so
       // this device does not then claim to be the author on the next sync.

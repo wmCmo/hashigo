@@ -109,7 +109,7 @@ function printReport(report: ReturnType<typeof applyLocalArchive> | null): void 
     `  reviews        ${report.reviewsInserted} inserted, ${report.reviewsSkipped} already there\n` +
       `  track state    ${report.trackStateApplied} applied\n` +
       `  fields         ${report.fieldsUpserted} upserted\n` +
-      `  templates      ${report.templatesApplied} applied\n` +
+      `  templates      ${report.templatesApplied} applied, ${report.templatesInserted} of them new here\n` +
       `  cards made here ${report.localCardsInserted} inserted, ${report.localCardsSkipped} already there\n` +
       `  field values   ${report.fieldValuesUpserted} upserted\n` +
       `  settings       ${report.settingsUpserted} upserted\n` +

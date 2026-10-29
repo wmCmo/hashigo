@@ -2362,6 +2362,46 @@ body.sidebar-open .sidebar-scrim {
   color: var(--no);
 }
 
+/* A NAME THAT IS ALREADY A CARD: the message, then quiet choices under it —
+   use the one that exists, or create anyway. Secondary controls, so `--sunk`
+   pills with ink text: never an outline on nothing, and nothing here is live. */
+.newcard-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.newcard-choice {
+  background: var(--sunk);
+  border: 0;
+  border-radius: var(--radius-full);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-chip);
+  font-weight: 600;
+  padding: var(--space-1) var(--space-3);
+}
+
+/* The sidebar's own ground IS `--sunk` on the rail (and `--bg` in the drawer),
+   so a sunk pill there is text on nothing — measured, #3d3d3d on #3d3d3d. On
+   that plane the control is the card tone, which differs from both grounds in
+   both themes. */
+.sidebar .newcard-choice {
+  background: var(--card);
+}
+
+.newcard-choice:focus-visible {
+  color: var(--ink-bright);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .newcard-choice:hover {
+    color: var(--ink-bright);
+  }
+}
+
 /* What `出典` will record: the source card, then the sentence in full ink — it is
    Japanese, and a muted small sentence is the low-contrast kanji the palette
    rules forbid. */

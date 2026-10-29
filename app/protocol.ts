@@ -336,15 +336,41 @@ export interface CreateCardRequest {
    * fields to hold it.
    */
   readonly source?: { readonly cardId: string; readonly sentence: string };
+  /** Field values by field id, written in the same transaction as the card. */
+  readonly values?: Readonly<Record<string, string>>;
+  /** Make it even though a card of this name is already on the template. */
+  readonly allowDuplicate?: boolean;
+}
+
+/** A new template, two plain fields and two sides — `createTemplate` in `src/cards/create.ts`. */
+export interface CreateTemplateRequest {
+  readonly kind: "createTemplate";
+  readonly id: number;
+  readonly name: string;
+}
+
+export interface CreateTemplateMessage {
+  readonly kind: "createTemplate";
+  readonly id: number;
+  readonly templateId: string;
 }
 
 export interface CreateCardMessage {
   readonly kind: "createCard";
   readonly id: number;
-  readonly cardId: string;
+  /** Null when nothing was made — see `duplicate`. */
+  readonly cardId: string | null;
   /** Tracks opened for it — `forward`, plus `reverse` when the deck says so. */
   readonly tracks: readonly string[];
   readonly card: PreparedCard | null;
+  /**
+   * Set when a card of this name is already on the template and
+   * `allowDuplicate` was not: nothing was made, and these are the ones that exist.
+   */
+  readonly duplicate: {
+    readonly message: string;
+    readonly existing: readonly { readonly cardId: string; readonly deckPath: string; readonly archived: boolean }[];
+  } | null;
 }
 
 /** Templates a new card can be given, with the deck list. */
@@ -1255,6 +1281,7 @@ export type AppRequest =
   | DecksRequest
   | BrowseRequest
   | CreateCardRequest
+  | CreateTemplateRequest
   | CardOpRequest
   | DeckOpRequest
   | UngradeRequest
@@ -1501,6 +1528,7 @@ export type AppMessage =
   | DeckOpMessage
   | UngradedMessage
   | CreateCardMessage
+  | CreateTemplateMessage
   | DecksMessage
   | BrowseMessage
   | SetFieldMessage
@@ -1574,6 +1602,7 @@ export interface ReplyFor {
   readonly decks: DecksMessage;
   readonly browse: BrowseMessage;
   readonly createCard: CreateCardMessage;
+  readonly createTemplate: CreateTemplateMessage;
   readonly cardOp: CardOpMessage;
   readonly deckOp: DeckOpMessage;
   readonly ungrade: UngradedMessage;

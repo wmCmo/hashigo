@@ -62,7 +62,7 @@ npm run gates           # ALL SIX GATES, one command, honest verdict. Start here
                         # wasm URL. (spike:check was dropped 2026-10-27 — an injected
                         # contract break turned `typecheck` red with 667 errors; see
                         # `test/db-contract.types.ts`.)
-npm test                # 67 files, 1583 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
+npm test                # 68 files, 1592 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
                         # MEASURED, never added up — run the suite or leave the line alone
                         # (`test/docs-figures.test.ts` checks it). A wrapper
                         # (`scripts/test.mjs`) that reads vitest's SUMMARY: the run must
@@ -122,6 +122,11 @@ npx vite-node scripts/accent-push.ts -- --apply   # after `ojad` + `write`: send
 # the same code, self-check the merge, and send only their values from their own sync
 # slot. Dry by default.
 npx vite-node scripts/ojad-fill.ts -- --apply      # OJAD for cards made in the app
+npx vite-node scripts/cards-add.ts -- --in cards.jsonl --apply
+                        # NEW CARDS without a browser (one JSON per line: deck, template,
+                        # name, values by field name). Same code as the app's form:
+                        # values in one transaction, a repeated name refused. Run the
+                        # kanji first; their ids print, and the next run sees them.
 npx vite-node scripts/sync-set.ts -- --card <id> --field <id> --from <deviceId> --apply
                         # settle a value two devices hold at the SAME clock
 ```

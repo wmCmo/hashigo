@@ -31,7 +31,7 @@ import {
   type SyncPorts,
   type SyncProgress,
 } from "./sync-client.js";
-import { openTemplateEditor } from "./template-editor.js";
+import { openTemplateEditor, openTemplateEditorById } from "./template-editor.js";
 import { mib, openPrompt, say } from "./ui.js";
 import { ask } from "./worker-client.js";
 import { refreshAfterOp } from "./ops.js";
@@ -209,6 +209,32 @@ function paintTree(total: number): void {
       row.addEventListener("click", () => openTemplateEditor(template));
       group.appendChild(row);
     }
+    // MAKING ONE, which until 2026-10-30 nothing could: every template came from
+    // Mochi, so someone who never had Mochi could make cards that held nothing.
+    // It starts as Front / Back on two sides and opens straight in the editor,
+    // because the next thing anyone does with a new template is shape it.
+    const make = document.createElement("button");
+    make.type = "button";
+    make.className = "tree-add";
+    make.textContent = "new template";
+    prependIcon(make, "plus");
+    make.addEventListener("click", () => {
+      openPrompt(
+        "New template",
+        "It starts with two fields, Front and Back, one per side. Add fields and shape the body in the editor that opens next.",
+        "name",
+        "",
+        (name) =>
+          void ask<"createTemplate">({ kind: "createTemplate", name })
+            .then(async (reply) => {
+              say(`made template ${name.trim()}`);
+              await loadDecks(true);
+              await openTemplateEditorById(reply.templateId);
+            })
+            .catch((cause: Error) => say(cause.message, true)),
+      );
+    });
+    group.appendChild(make);
   }
   deckList.appendChild(group);
 }

@@ -13,7 +13,7 @@
 
 import type { PreparedCard } from "../src/review/index.js";
 import type { Trigger } from "./links.js";
-import type { BrowseHit, CardOp, TemplateChoice } from "./protocol.js";
+import type { BrowseHit, CardOp, CreateCardMessage, TemplateChoice } from "./protocol.js";
 import { el } from "./dom.js";
 import { paintGallery } from "./gallery.js";
 import { bareLayer, closeIfTop, closeTop, layers, pushLayer } from "./layers.js";
@@ -50,6 +50,53 @@ interface UndoEntry {
 
 const undoStack: UndoEntry[] = [];
 const undoButton = el<HTMLButtonElement>("opundo");
+
+/**
+ * A NAME THAT IS ALREADY A CARD. `createCard` refuses a second card of the same
+ * name on the same template and says which exist (`src/cards/create.ts`). The
+ * form shows that, then two quiet choices: use the card that is there — open it,
+ * or link it, whichever the form was for — or make the second one anyway, for a
+ * homograph that really is another word. `duplicate` null (a reply with no card
+ * and no reason) is said as a failure rather than offered.
+ */
+export function offerDuplicate(
+  said: HTMLElement,
+  duplicate: CreateCardMessage["duplicate"],
+  actions: {
+    readonly use: { readonly label: string; readonly run: (cardId: string) => void };
+    readonly anyway: () => void;
+  },
+): void {
+  said.replaceChildren();
+  if (duplicate === null) {
+    said.classList.add("bad");
+    said.textContent = "no card was made, and the worker did not say why";
+    return;
+  }
+  said.classList.remove("bad");
+  said.append(duplicate.message);
+  const choices = document.createElement("span");
+  choices.className = "newcard-choices";
+  for (const existing of duplicate.existing) {
+    const use = document.createElement("button");
+    use.type = "button";
+    use.className = "newcard-choice";
+    use.textContent =
+      duplicate.existing.length === 1
+        ? `${actions.use.label} it`
+        : `${actions.use.label} the one in ${existing.deckPath}`;
+    use.dataset["cardId"] = existing.cardId;
+    use.addEventListener("click", () => actions.use.run(existing.cardId));
+    choices.appendChild(use);
+  }
+  const anyway = document.createElement("button");
+  anyway.type = "button";
+  anyway.className = "newcard-choice";
+  anyway.textContent = "create anyway";
+  anyway.addEventListener("click", () => actions.anyway());
+  choices.appendChild(anyway);
+  said.appendChild(choices);
+}
 
 export function pushUndo(entry: UndoEntry): void {
   undoStack.push(entry);
@@ -779,8 +826,7 @@ export function openNewCardDialog(options: {
   go.textContent = "create";
   bar.append(cancel, go);
 
-  panel.addEventListener("submit", (event) => {
-    event.preventDefault();
+  const submit = (allowDuplicate: boolean): void => {
     const name = title.value.trim();
     if (name === "" || deck.value === "") return;
     go.disabled = true;
@@ -789,30 +835,52 @@ export function openNewCardDialog(options: {
       deckId: deck.value,
       templateId: template.value === "" ? null : template.value,
       name,
+      allowDuplicate,
       ...(options.source === undefined
         ? {}
         : { source: { cardId: options.source.cardId, sentence: options.source.sentence } }),
     })
       .then((reply) => {
+        go.disabled = false;
+        if (reply.duplicate !== null || reply.cardId === null) {
+          // He came here to LINK a word, so the card that exists is the answer:
+          // link it, exactly as a new one would have been.
+          offerDuplicate(said, reply.duplicate, {
+            use: {
+              label: "link",
+              run: (cardId) => {
+                closeIfTop(root);
+                options.onCreated(cardId);
+              },
+            },
+            anyway: () => submit(true),
+          });
+          return;
+        }
+        const cardId = reply.cardId;
         pushUndo({
-          describe: `new card ${reply.cardId}`,
+          describe: `new card ${cardId}`,
           run: async () => {
-            await ask<"cardOp">({ kind: "cardOp", op: "delete", cardId: reply.cardId });
+            await ask<"cardOp">({ kind: "cardOp", op: "delete", cardId });
             await refreshAfterOp();
           },
         });
         closeIfTop(root);
         // Link first, while the field he came from is still the one under this
         // layer; then the new card's editor goes on top of it.
-        options.onCreated(reply.cardId);
+        options.onCreated(cardId);
         void loadDecks(true);
-        void openEditorById(reply.cardId);
+        void openEditorById(cardId);
       })
       .catch((cause: Error) => {
         said.classList.add("bad");
         said.textContent = cause.message;
         go.disabled = false;
       });
+  };
+  panel.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submit(false);
   });
 
   // Says what `出典` will record, so the link is not a surprise in the editor.

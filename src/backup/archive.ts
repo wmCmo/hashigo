@@ -332,7 +332,12 @@ export interface ApplyReport {
   /** Cards whose DECK is not in this database. Restoring would invent one. */
   readonly localCardsOrphaned: number;
   readonly templatesApplied: number;
-  /** Templates the archive holds that this database no longer has. */
+  /** Of those applied, how many this database did not have and so were made. */
+  readonly templatesInserted: number;
+  /**
+   * Templates the archive holds that this database still does not have. Zero
+   * since templates are inserted; kept so a report reads the same shape.
+   */
   readonly templatesOrphaned: number;
   readonly cardStateApplied: number;
   /** Cards the archive marks that this database no longer has. */
@@ -713,6 +718,11 @@ UPDATE templates
        updated_at = COALESCE(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
  WHERE id = ?`;
 
+/** A template made on another device. Its body is written by `UPDATE_TEMPLATE`. */
+const INSERT_TEMPLATE = `
+INSERT INTO templates (id, name, content, updated_at)
+VALUES (?, ?, '', COALESCE(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')))`;
+
 const UPSERT_VALUE = `
 INSERT INTO card_field_values (card_id, field_id, value) VALUES (?, ?, ?)
 ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value
@@ -768,6 +778,22 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
 
   const cardExists = db.prepare(CARD_EXISTS);
   const templateExists = db.prepare(TEMPLATE_EXISTS);
+
+  // A TEMPLATE THIS DATABASE HAS NEVER HAD is made, before its fields. Until
+  // 2026-10-30 it was counted orphaned and skipped — right while every template
+  // came from Mochi and both devices held the same ten, wrong the moment the app
+  // could make one: a template made on the laptop never reached the phone, and
+  // every card on it arrived as a card with no fields. It is inserted with an
+  // EMPTY body here and given its body by the loop below, after the fields, so
+  // the order that keeps a restored body's `<<Field>>` markers resolvable holds
+  // for a new template too.
+  let templatesInserted = 0;
+  const insertTemplate = db.prepare(INSERT_TEMPLATE);
+  for (const t of archive.templates ?? []) {
+    if (templateExists.get(t.id) !== undefined) continue;
+    insertTemplate.run(t.id, t.name, t.updatedAt ?? null);
+    templatesInserted += 1;
+  }
 
   let fieldsUpserted = 0;
   let fieldsOrphaned = 0;
@@ -955,6 +981,7 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
     localCardsSkipped,
     localCardsOrphaned,
     templatesApplied,
+    templatesInserted,
     templatesOrphaned,
     cardStateApplied,
     cardStateOrphaned,

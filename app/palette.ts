@@ -12,7 +12,7 @@ import { shell } from "./shell.js";
 import { loadDecks, templateChoices } from "./sidebar.js";
 import { readVisits } from "./visits.js";
 import { ask } from "./worker-client.js";
-import { pushUndo, refreshAfterOp } from "./ops.js";
+import { offerDuplicate, pushUndo, refreshAfterOp } from "./ops.js";
 
 /**
  * *"i want notion, obsidian like searching feature, so like ctrl +k and it pops
@@ -129,6 +129,9 @@ function paintPalette(list: HTMLElement): void {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "palette-row";
+    // The row's text is name and deck path run together (`篤日本語/漢字`); the id
+    // is what something driving the page should match on.
+    row.dataset["cardId"] = hit.cardId;
     if (index === paletteIndex) row.classList.add("on");
     if (hit.archived) row.classList.add("is-archived");
     const name = document.createElement("span");
@@ -213,8 +216,7 @@ export function buildNewCardForm(): HTMLElement {
 
   form.append(title, deck, template, submit, said);
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
+  const create = (allowDuplicate: boolean): void => {
     if (deck.value === "") return;
     submit.disabled = true;
     void ask<"createCard">({
@@ -222,20 +224,36 @@ export function buildNewCardForm(): HTMLElement {
       deckId: deck.value,
       templateId: template.value === "" ? null : template.value,
       name: title.value.trim(),
+      allowDuplicate,
     })
       .then((reply) => {
+        if (reply.duplicate !== null || reply.cardId === null) {
+          offerDuplicate(said, reply.duplicate, {
+            use: {
+              label: "open",
+              run: (cardId) => {
+                said.replaceChildren();
+                title.value = "";
+                void shell().openPreview(cardId);
+              },
+            },
+            anyway: () => create(true),
+          });
+          return;
+        }
+        const cardId = reply.cardId;
         said.classList.remove("bad");
         said.textContent =
-          `made ${reply.cardId} · ${reply.tracks.join(" + ")} · ` +
+          `made ${cardId} · ${reply.tracks.join(" + ")} · ` +
           `it joins the NEW queue next session`;
         title.value = "";
         // HIS #13's "create card". Undone by deleting it — which is safe here in a
         // way `delete` generally is not: a card made seconds ago has no review
         // history to lose, which is the whole reason delete is otherwise final.
         pushUndo({
-          describe: `new card ${reply.cardId}`,
+          describe: `new card ${cardId}`,
           run: async () => {
-            await ask<"cardOp">({ kind: "cardOp", op: "delete", cardId: reply.cardId });
+            await ask<"cardOp">({ kind: "cardOp", op: "delete", cardId });
             await refreshAfterOp();
           },
         });
@@ -251,6 +269,10 @@ export function buildNewCardForm(): HTMLElement {
       .finally(() => {
         submit.disabled = false;
       });
+  };
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    create(false);
   });
 
   // Filled when the deck list arrives.

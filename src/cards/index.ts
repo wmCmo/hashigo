@@ -30,6 +30,18 @@ export {
 } from "./audio.js";
 
 export { backlinksOf, type Backlink } from "./backlinks.js";
+export {
+  cardsNamed,
+  createCard,
+  createTemplate,
+  DuplicateCardError,
+  EDITABLE_FIELD_TYPES,
+  newCardId,
+  type CreatedCard,
+  type CreatedTemplate,
+  type ExistingCard,
+  type NewCard,
+} from "./create.js";
 export { reconcileCardLinks, type ReconcileReport } from "./link-index.js";
 export {
   ensureSourceField,

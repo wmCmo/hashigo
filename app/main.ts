@@ -3436,6 +3436,8 @@ function openEditorFor(
   root.setAttribute("role", "dialog");
   root.setAttribute("aria-modal", "true");
   root.setAttribute("aria-label", `edit ${card.loaded.name}`);
+  // Which card this editor is on, for whatever drives the page — see `edit-row`.
+  root.dataset["cardId"] = card.cardId;
 
   const backdrop = document.createElement("div");
   backdrop.className = "layer-backdrop";
@@ -3495,6 +3497,11 @@ function openEditorFor(
     let saved = value;
     const row = document.createElement("label");
     row.className = "edit-row";
+    // A HANDLE FOR ANYTHING THAT DRIVES THE EDITOR. The label's text is the name
+    // and the type run together (`Readingplain`), so an agent filling a 漢検 batch
+    // on 2026-10-29 matched nothing until it read this file. The id is the identity.
+    row.dataset["fieldId"] = field.id;
+    row.dataset["fieldName"] = field.name;
 
     const label = document.createElement("span");
     label.className = "edit-label";
