@@ -129,6 +129,21 @@
   --radius-md: 14px;
   --radius-lg: 28px;
   --radius-full: 999px;
+  /* THE TYPE SCALE — sizes the design system names (design-system/tokens.json,
+     `type`), and nothing between them. Zach, 2026-10-29, after another project
+     counted its drift: this sheet had 41 distinct interface font-sizes in px, rem
+     and em (0.72rem, 0.74rem, 0.76rem, 0.78rem, 12.5px…), each picked in the
+     moment. Every interface rule names a step now; `test/type-scale.test.ts`
+     refuses a raw size outside the card's own content and the wordmark. */
+  --fs-label: 10px;    /* tags, uppercase one-word labels          — `label`         */
+  --fs-chip: 11px;     /* chips, keycaps, counts, meta lines       — `label`, chips  */
+  --fs-caption: 12px;  /* captions, notes, small buttons           — `translation`   */
+  --fs-small: 13px;    /* secondary text, menus, banners           — `reading`       */
+  --fs-body: 15px;     /* body, lists, settings                    — `body`          */
+  --fs-rail: 16px;     /* a result's name, words in a list         — `rail`          */
+  --fs-total: 18px;    /* a total under a figure                   — `counter-total` */
+  --fs-gloss: 32px;    /* the big figure: dashboard values, done   — `gloss`         */
+  --fs-counter: 44px;  /* the day's counter                        — `counter`       */
   --shadow-card: 0 1px 2px rgb(0 0 0 / 4%), 0 16px 40px rgb(0 0 0 / 5%);
   --shadow-live: 0 6px 16px rgb(31 95 224 / 35%);
 
@@ -311,7 +326,7 @@ body {
   background: var(--paper-sunk);
   border-bottom: 1px solid var(--edge);
   color: var(--ink);
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.5;
   padding: 12px 16px;
 }
@@ -362,7 +377,7 @@ body {
    guess. Quiet: it is a fact to check, not something to read every boot. */
 .boot-version {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
   margin: -14px 0 22px;
 }
@@ -386,7 +401,7 @@ body {
 
 .bootphase {
   color: var(--ink);
-  font-size: 14px;
+  font-size: var(--fs-body);
   margin: 0 0 14px;
   min-height: 21px;
 }
@@ -426,7 +441,7 @@ body {
 .bootnums {
   color: var(--muted);
   display: flex;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
   justify-content: space-between;
   margin-top: 10px;
@@ -435,7 +450,7 @@ body {
 
 .booteta {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
   margin: 18px 0 0;
   min-height: 17px;
@@ -448,7 +463,7 @@ body {
   background: var(--sunk);
   border: 1px solid var(--line);
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: var(--fs-caption);
   margin: 18px 0 0;
   padding: 11px 13px;
   text-align: left;
@@ -496,7 +511,7 @@ body {
 
 .bootlog {
   border: 1px solid var(--line);
-  font-size: 13px;
+  font-size: var(--fs-small);
   max-height: 60vh;
   overflow-y: auto;
   padding: 12px;
@@ -578,7 +593,7 @@ body {
 
 .bootnote {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   margin-top: 16px;
 }
 
@@ -593,7 +608,7 @@ body {
   border-bottom: 1px solid var(--hair);
   color: var(--muted);
   display: flex;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   gap: 9px;
   justify-content: flex-start;
   padding: 11px 14px;
@@ -635,7 +650,7 @@ body {
   display: inline-flex;
   font: inherit;
   font-family: var(--jp), sans-serif;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   gap: 4px;
   margin-left: auto;
   max-width: 40vw;
@@ -673,7 +688,7 @@ body {
   color: var(--muted);
   display: flex;
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   gap: 6px 10px;
   margin-bottom: 22px;
 }
@@ -688,7 +703,7 @@ body {
   border: 1px solid var(--edge);
   color: var(--ink);
   display: inline-block;
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.04em;
   padding: 2px 7px;
   vertical-align: 1px;
@@ -794,7 +809,7 @@ body {
 
 .hint {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-small);
   margin-top: 26px;
 }
 
@@ -814,7 +829,7 @@ body {
   cursor: pointer;
   display: none;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   letter-spacing: 0.06em;
   margin-top: 18px;
   padding: 8px 12px;
@@ -1310,7 +1325,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--fs-caption);
   /* Thumb-sized: it can be the only thing on its line, and it sits at the bottom
      of a card where his hand already is. `.clip` is 34px because it lives INSIDE
      running text and a taller box would push the lines apart; this does not. */
@@ -1426,7 +1441,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   color: var(--indigo);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1;
   margin-left: 0.4em;
   /* 34px is below the 44px touch target the round button meets, and that is the
@@ -1724,7 +1739,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   .kbd {
     color: inherit;
     display: block;
-    font-size: 11px;
+    font-size: var(--fs-chip);
     margin-top: 5px;
     opacity: 0.85;
   }
@@ -1767,7 +1782,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
 .done h2 {
   color: var(--ink-bright);
   font-family: var(--display);
-  font-size: 30px;
+  font-size: var(--fs-gloss);
   font-weight: 800;
   letter-spacing: -0.03em;
 }
@@ -1845,7 +1860,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   color: var(--muted);
   display: flex;
   flex: none;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   gap: 12px;
   justify-content: space-between;
   letter-spacing: 0.06em;
@@ -1877,7 +1892,7 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
 
 .layer-missing {
   color: var(--no);
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.6;
 }
 
@@ -1940,7 +1955,7 @@ body.layered {
   color: var(--muted);
   display: flex;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   gap: 8px;
   letter-spacing: 0.06em;
   margin-bottom: 7px;
@@ -1948,7 +1963,7 @@ body.layered {
 
 .edit-type {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-label);
   font-style: normal;
   letter-spacing: 0.04em;
 }
@@ -2017,13 +2032,13 @@ textarea.edit-input:not(.tpl-body) {
    teaches him the app is broken. */
 .edit-readonly {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   line-height: 1.55;
 }
 
 .edit-status {
   color: var(--ok);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   min-height: 1.5em;
   padding-top: 14px;
 }
@@ -2046,7 +2061,7 @@ textarea.edit-input:not(.tpl-body) {
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-body);
   /* A thumb target, not a glyph. */
   height: 34px;
   margin-right: 10px;
@@ -2120,7 +2135,7 @@ body.sidebar-open .sidebar-scrim {
   color: var(--muted);
   display: flex;
   flex: none;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   justify-content: space-between;
   letter-spacing: 0.08em;
   padding: 12px 12px 12px 16px;
@@ -2165,7 +2180,7 @@ body.sidebar-open .sidebar-scrim {
 
 .deck-row {
   align-items: baseline;
-  font-size: 13px;
+  font-size: var(--fs-small);
   gap: 10px;
   justify-content: space-between;
 }
@@ -2190,7 +2205,7 @@ body.sidebar-open .sidebar-scrim {
 .deck-counts {
   color: var(--muted);
   flex: none;
-  font-size: 11px;
+  font-size: var(--fs-chip);
 }
 
 .deck-counts.has-due {
@@ -2201,7 +2216,7 @@ body.sidebar-open .sidebar-scrim {
   color: var(--muted);
   display: flex;
   flex: none;
-  font-size: 11px;
+  font-size: var(--fs-chip);
   justify-content: space-between;
   letter-spacing: 0.1em;
   padding: 10px 16px 6px;
@@ -2222,13 +2237,13 @@ body.sidebar-open .sidebar-scrim {
 .result-name {
   color: var(--ink-bright);
   font-family: var(--jp), sans-serif;
-  font-size: 16px;
+  font-size: var(--fs-rail);
 }
 
 .result-meta,
 .result-snippet {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-chip);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2250,7 +2265,7 @@ body.sidebar-open .sidebar-scrim {
   border-top: 1px solid var(--line);
   color: var(--muted);
   flex: none;
-  font-size: 11px;
+  font-size: var(--fs-chip);
   line-height: 1.6;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
 }
@@ -2325,7 +2340,7 @@ body.sidebar-open .sidebar-scrim {
 
 .newcard-said {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-chip);
   line-height: 1.5;
   min-height: 1em;
 }
@@ -2338,7 +2353,7 @@ body.sidebar-open .sidebar-scrim {
    Japanese, and a muted small sentence is the low-contrast kanji the palette
    rules forbid. */
 .newcard-from {
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.6;
 }
 
@@ -2400,7 +2415,7 @@ body.sidebar-open .sidebar-scrim {
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   padding: 8px 12px;
 }
 
@@ -2418,7 +2433,7 @@ body.sidebar-open .sidebar-scrim {
   cursor: pointer;
   display: flex;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
   gap: 8px;
   justify-content: space-between;
   padding: 12px 16px;
@@ -2442,7 +2457,7 @@ body.sidebar-open .sidebar-scrim {
    is large-text-only and this is 11px. Said in words instead. */
 .sidebar-action-note {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-chip);
   font-style: normal;
   line-height: 1.45;
 }
@@ -2466,7 +2481,7 @@ body.sidebar-open .sidebar-scrim {
   cursor: pointer;
   display: flex;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
   gap: 6px;
   padding: 7px 12px;
   text-align: left;
@@ -2474,7 +2489,7 @@ body.sidebar-open .sidebar-scrim {
 }
 
 .tree-row:active { background: var(--sunk); }
-.tree-header { color: var(--muted); font-size: 11px; letter-spacing: .04em; }
+.tree-header { color: var(--muted); font-size: var(--fs-chip); letter-spacing: .04em; }
 .tree-row.is-archived .tree-name { color: var(--muted); text-decoration: line-through; }
 .tree-row.is-template .tree-name { font-family: var(--mono); }
 
@@ -2484,7 +2499,7 @@ body.sidebar-open .sidebar-scrim {
   color: var(--muted);
   display: inline-block;
   flex: none;
-  font-size: 10px;
+  font-size: var(--fs-label);
   line-height: 1;
   min-width: 18px;
   padding: 4px 0;
@@ -2492,7 +2507,7 @@ body.sidebar-open .sidebar-scrim {
 }
 
 .tree-name { flex: 1; font-family: var(--jp), sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-counts { color: var(--muted); flex: none; font-size: 11px; }
+.tree-counts { color: var(--muted); flex: none; font-size: var(--fs-chip); }
 .tree-counts.has-due { color: var(--accent); }
 
 /* ── the palette (his #3) ── */
@@ -2541,9 +2556,9 @@ body.sidebar-open .sidebar-scrim {
 
 .palette-row.on { background: var(--sunk); box-shadow: inset 2px 0 0 var(--accent); }
 .palette-row.is-archived .palette-name { color: var(--muted); }
-.palette-name { font-family: var(--jp), sans-serif; font-size: 15px; }
-.palette-meta { color: var(--muted); font-size: 11px; }
-.palette-foot { border-top: 1px solid var(--line); color: var(--muted); flex: none; font-size: 11px; padding: 8px 16px; }
+.palette-name { font-family: var(--jp), sans-serif; font-size: var(--fs-body); }
+.palette-meta { color: var(--muted); font-size: var(--fs-chip); }
+.palette-foot { border-top: 1px solid var(--line); color: var(--muted); flex: none; font-size: var(--fs-chip); padding: 8px 16px; }
 
 /* ── the gallery (his #6) ── */
 
@@ -2563,9 +2578,9 @@ body[data-view="gallery"] .review { display: none; }
   z-index: 4;
 }
 
-.gallery-back { background: none; border: 1px solid var(--line-soft); color: var(--ink); cursor: pointer; font: inherit; font-size: 12px; padding: 8px 12px; }
-.gallery-title { color: var(--ink-bright); flex: 1; font-family: var(--jp), sans-serif; font-size: 15px; }
-.gallery-count { color: var(--muted); font-size: 12px; }
+.gallery-back { background: none; border: 1px solid var(--line-soft); color: var(--ink); cursor: pointer; font: inherit; font-size: var(--fs-caption); padding: 8px 12px; }
+.gallery-title { color: var(--ink-bright); flex: 1; font-family: var(--jp), sans-serif; font-size: var(--fs-body); }
+.gallery-count { color: var(--muted); font-size: var(--fs-caption); }
 
 /* 2026-10-16: review this deck / silent only. Full-height touch targets — he
    presses these on a train, one-handed. */
@@ -2579,7 +2594,7 @@ body[data-view="gallery"] .review { display: none; }
   cursor: pointer;
   display: inline-flex;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
   gap: 8px;
   min-height: 44px;
   padding: 8px 14px;
@@ -2589,7 +2604,7 @@ body[data-view="gallery"] .review { display: none; }
 .gallery-controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
 .gallery-search { background: var(--sunk); border: 1px solid var(--line-soft); color: var(--ink-bright); flex: 1; font: 16px/1.4 var(--jp), sans-serif; min-width: 160px; padding: 9px 10px; }
 .gallery-sort { background: var(--sunk); border: 1px solid var(--line-soft); color: var(--ink); font: 16px/1.4 var(--mono); padding: 9px 10px; }
-.gallery-toggle { align-items: center; color: var(--muted); display: flex; font-size: 12px; gap: 6px; }
+.gallery-toggle { align-items: center; color: var(--muted); display: flex; font-size: var(--fs-caption); gap: 6px; }
 
 /* A GRID, which is what "notion gallery view" means. auto-fill so it is one
    column on a phone and four on the laptop without a breakpoint to maintain. */
@@ -2604,8 +2619,8 @@ body[data-view="gallery"] .review { display: none; }
 .gcard:active { background: var(--sunk); }
 .gcard.is-archived { opacity: .6; }
 .gcard-name { color: var(--ink-bright); font: 400 17px/1.35 var(--jp), sans-serif; }
-.gcard-meta { color: var(--muted); font-size: 11px; }
-.gcard-snippet { color: var(--muted); font-family: var(--jp), sans-serif; font-size: 12px; line-height: 1.5; max-height: 3em; overflow: hidden; }
+.gcard-meta { color: var(--muted); font-size: var(--fs-chip); }
+.gcard-snippet { color: var(--muted); font-family: var(--jp), sans-serif; font-size: var(--fs-caption); line-height: 1.5; max-height: 3em; overflow: hidden; }
 .gcard-top { align-items: flex-start; display: flex; gap: 8px; }
 .gcard-top .gcard-name { flex: 1; min-width: 0; }
 /* The heading's button is the tile's keyboard stop. It looks like the heading it
@@ -2618,9 +2633,9 @@ body[data-view="gallery"] .review { display: none; }
 /* The meaning, two lines at most. --ink rather than --muted: it is the content a
    deck listing is scanned for, and --muted at this size is where the brief's one
    below-AA pairing lives (decision 32). */
-.gcard-gist { color: var(--ink); display: -webkit-box; font-family: var(--jp), sans-serif; font-size: 13px; -webkit-line-clamp: 2; line-clamp: 2; line-height: 1.5; overflow: hidden; -webkit-box-orient: vertical; }
+.gcard-gist { color: var(--ink); display: -webkit-box; font-family: var(--jp), sans-serif; font-size: var(--fs-small); -webkit-line-clamp: 2; line-clamp: 2; line-height: 1.5; overflow: hidden; -webkit-box-orient: vertical; }
 .gcard-meta { margin-top: auto; }
-.gcard-op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; font: inherit; font-size: 11px; padding: 6px 8px; }
+.gcard-op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; font: inherit; font-size: var(--fs-chip); padding: 6px 8px; }
 .gcard-op.danger { border-color: var(--no-edge); color: var(--no); }
 .gallery-empty { color: var(--muted); grid-column: 1 / -1; padding: 30px 0; }
 
@@ -2646,7 +2661,7 @@ body[data-view="gallery"] .review { display: none; }
   padding: 8px 12px;
 }
 
-.op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; flex: 1; font: inherit; font-size: 12px; padding: 10px 4px; }
+.op { background: none; border: 1px solid var(--line-soft); color: var(--muted); cursor: pointer; flex: 1; font: inherit; font-size: var(--fs-caption); padding: 10px 4px; }
 .op:active { background: var(--sunk); }
 .op[disabled] { opacity: .35; }
 .op.danger { border-color: var(--no-edge); color: var(--no); }
@@ -2669,7 +2684,7 @@ body[data-view="review"] .review main {
   border: 1px solid var(--line-soft);
   bottom: calc(var(--footer-h, 150px) + 12px);
   color: var(--ink);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   left: 50%;
   max-width: calc(100% - 32px);
   padding: 10px 14px;
@@ -2690,7 +2705,7 @@ body[data-view="review"] .review main {
   color: var(--card);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-small);
   padding: 6px 12px;
   position: fixed;
   touch-action: manipulation;
@@ -2714,7 +2729,7 @@ body[data-view="review"] .review main {
 }
 
 .confirm-panel h2 { color: var(--ink-bright); font: 400 18px/1.4 var(--jp), sans-serif; margin-bottom: 10px; }
-.confirm-panel p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.confirm-panel p { color: var(--muted); font-size: var(--fs-small); line-height: 1.6; }
 .confirm-bar { display: flex; gap: 10px; margin-top: 20px; }
 .confirm-bar button { background: none; border: 1px solid var(--edge); color: var(--ink); cursor: pointer; flex: 1; font: inherit; padding: 12px; }
 .confirm-bar button.danger { border-color: var(--no-edge); color: var(--no); }
@@ -2783,7 +2798,7 @@ body[data-view="review"] .review main {
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--fs-caption);
   padding: 2px 8px;
 }
 
@@ -2811,7 +2826,7 @@ body[data-view="review"] .review main {
    control he has to test on his own review history to understand. */
 .settings-note {
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: var(--fs-caption);
   line-height: 1.5;
   margin: 6px 0 0;
   max-width: 62ch;
@@ -2828,7 +2843,7 @@ body[data-view="review"] .review main {
 .settings-bad {
   border: 1px solid var(--no-edge);
   color: var(--no);
-  font-size: 0.82rem;
+  font-size: var(--fs-small);
   line-height: 1.5;
   margin: 0 0 14px;
   padding: 8px 10px;
@@ -2842,7 +2857,7 @@ body[data-view="review"] .review main {
 
 .settings-line {
   color: var(--ink);
-  font-size: 0.82rem;
+  font-size: var(--fs-small);
   margin: 0 0 6px;
 }
 
@@ -2866,7 +2881,7 @@ body[data-view="review"] .review main {
 .tree-more {
   color: var(--muted);
   flex: 0 0 auto;
-  font-size: 0.9rem;
+  font-size: var(--fs-body);
   line-height: 1;
   margin-left: 6px;
   padding: 4px 6px;
@@ -2884,7 +2899,7 @@ body[data-view="review"] .review main {
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--fs-small);
   margin: 10px 0 4px;
   padding: 6px 10px;
   text-align: left;
@@ -2916,7 +2931,7 @@ body[data-view="review"] .review main {
 .redo-text {
   color: var(--ink);
   font-family: var(--jp);
-  font-size: 0.85rem;
+  font-size: var(--fs-small);
   overflow-wrap: anywhere;
 }
 
@@ -2959,7 +2974,7 @@ body[data-view="review"] .review main {
 .menu-item i {
   color: var(--muted);
   display: block;
-  font-size: 0.76rem;
+  font-size: var(--fs-caption);
   font-style: normal;
   margin-top: 2px;
 }
@@ -2984,7 +2999,7 @@ body[data-view="review"] .review main {
 .tpl-head {
   border-top: 1px solid var(--line);
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: var(--fs-small);
   font-weight: 400;
   letter-spacing: 0.04em;
   margin: 22px 0 10px;
@@ -3020,7 +3035,7 @@ body[data-view="review"] .review main {
 .tpl-facts {
   align-self: center;
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: var(--fs-caption);
   grid-column: 2;
   grid-row: 1;
   margin: 0;
@@ -3057,13 +3072,13 @@ body[data-view="review"] .review main {
 
 .tpl-setting-label {
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: var(--fs-caption);
   grid-column: 1;
 }
 
 .tpl-setting-value {
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: var(--fs-caption);
   grid-column: 2;
   overflow-wrap: anywhere;
 }
@@ -3078,7 +3093,7 @@ body[data-view="review"] .review main {
 
 .tpl-setting-note {
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: var(--fs-chip);
   grid-column: 2;
   margin: 0;
 }
@@ -3094,7 +3109,7 @@ body[data-view="review"] .review main {
   color: var(--ink);
   display: flex;
   flex-wrap: wrap;
-  font-size: 0.78rem;
+  font-size: var(--fs-caption);
   gap: 6px;
   margin: 0;
 }
@@ -3102,7 +3117,7 @@ body[data-view="review"] .review main {
 /* Stage C's controls sit in the value column, so a setting that became editable
    occupies exactly the space its read-only line did — no second layout. */
 .tpl-setting-input {
-  font-size: 0.78rem;
+  font-size: var(--fs-caption);
   grid-column: 2;
   min-width: 0;
   width: 100%;
@@ -3116,7 +3131,7 @@ body[data-view="review"] .review main {
 
 .tpl-voice select {
   flex: 1 1 auto;
-  font-size: 0.78rem;
+  font-size: var(--fs-caption);
   min-width: 0;
 }
 
@@ -3126,7 +3141,7 @@ body[data-view="review"] .review main {
 
 .tpl-source {
   flex: 1 1 12ch;
-  font-size: 0.78rem;
+  font-size: var(--fs-caption);
   min-width: 0;
 }
 
@@ -3156,7 +3171,7 @@ body[data-view="review"] .review main {
    `--mono` already chains to `--jp`, so 単語 and `<<` line up in one box. */
 .tpl-body {
   font-family: var(--mono);
-  font-size: 0.82rem;
+  font-size: var(--fs-small);
   line-height: 1.6;
   min-height: 12em;
   resize: vertical;
@@ -3203,7 +3218,7 @@ body[data-view="review"] .review main {
   color: var(--accent);
   display: flex;
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   gap: 10px;
   justify-content: space-between;
   letter-spacing: 0.04em;
@@ -3221,7 +3236,7 @@ body[data-view="review"] .review main {
   cursor: pointer;
   flex: none;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-caption);
   min-height: 44px;
   padding: 8px 14px;
 }
@@ -3277,7 +3292,7 @@ input[data-answer="incorrect"] {
 .glance-label {
   color: var(--muted);
   display: block;
-  font-size: 0.72rem;
+  font-size: var(--fs-caption);
   letter-spacing: 0.06em;
   text-transform: lowercase;
 }
@@ -3285,7 +3300,7 @@ input[data-answer="incorrect"] {
 .glance-value {
   color: var(--ink-bright);
   display: block;
-  font-size: 1.7rem;
+  font-size: var(--fs-gloss);
   font-weight: 400;
   line-height: 1.25;
   margin: 4px 0 2px;
@@ -3294,7 +3309,7 @@ input[data-answer="incorrect"] {
 .glance-note {
   color: var(--muted);
   display: block;
-  font-size: 0.72rem;
+  font-size: var(--fs-caption);
   font-style: normal;
 }
 
@@ -3319,7 +3334,7 @@ input[data-answer="incorrect"] {
 .glance-read {
   color: var(--ink);
   display: block;
-  font-size: 0.78rem;
+  font-size: var(--fs-caption);
   font-variant-numeric: tabular-nums;
   margin-bottom: 8px;
   min-height: 1.5em;
@@ -3379,7 +3394,7 @@ input[data-answer="incorrect"] {
   align-items: center;
   color: var(--muted);
   display: flex;
-  font-size: 11px;
+  font-size: var(--fs-chip);
   gap: 6px;
   margin-top: 8px;
 }
@@ -3393,7 +3408,7 @@ input[data-answer="incorrect"] {
 
 .glance-tick {
   color: var(--muted);
-  font-size: 9px;
+  font-size: var(--fs-label);
   margin-top: 4px;
   overflow: hidden;
   white-space: nowrap;
@@ -3433,7 +3448,7 @@ input[data-answer="incorrect"] {
 
 .glance-deck-name {
   color: var(--ink);
-  font-size: 0.78rem;
+  font-size: var(--fs-caption);
   overflow: hidden;
   /* Depth as indentation, and the rows arrive in path order, so nesting reads
      without drawing a single rule. */
@@ -3484,7 +3499,7 @@ input[data-answer="incorrect"] {
 
 .glance-deck-num {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--fs-caption);
   /* Tabular figures, so the slash lands in the same place down the column and the
      counts can be read as a column rather than as 39 separate labels. */
   font-variant-numeric: tabular-nums;
@@ -3637,7 +3652,7 @@ input[data-answer="incorrect"] {
 .link-item i {
   color: var(--muted);
   display: block;
-  font-size: 0.72rem;
+  font-size: var(--fs-caption);
   font-style: normal;
 }
 
@@ -3645,7 +3660,7 @@ input[data-answer="incorrect"] {
    it reads at body size in full ink. */
 .link-item.found-in i {
   color: var(--ink);
-  font-size: 0.9rem;
+  font-size: var(--fs-body);
   line-height: 1.6;
 }
 
@@ -3700,7 +3715,7 @@ input[data-answer="incorrect"] {
    is the first landmark in the column and has to name itself. */
 .backlinks-head {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-caption);
   font-weight: 400;
   letter-spacing: 0.02em;
   margin-bottom: 6px;
@@ -3723,7 +3738,7 @@ input[data-answer="incorrect"] {
   cursor: pointer;
   display: block;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--fs-caption);
   padding: 9px 10px;
   text-align: left;
   width: 100%;
@@ -3736,7 +3751,7 @@ input[data-answer="incorrect"] {
 .link-empty {
   color: var(--muted);
   display: block;
-  font-size: 0.76rem;
+  font-size: var(--fs-caption);
   font-style: normal;
   padding: 8px 10px;
 }
@@ -4118,7 +4133,7 @@ input[data-answer="incorrect"] {
    a sticky header on a phone, which is a layout change and his call. */
 #progress {
   color: var(--ink-bright);
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 800;
   letter-spacing: -0.01em;
 }
@@ -4162,7 +4177,7 @@ input[data-answer="incorrect"] {
   border: 0;
   border-radius: var(--radius-full);
   display: inline-flex;
-  font-size: 11px;
+  font-size: var(--fs-chip);
   font-weight: 700;
   height: 22px;
   letter-spacing: 0.04em;
@@ -4436,7 +4451,7 @@ input[data-answer="incorrect"] {
   border: 0;
   border-radius: var(--radius-full);
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-small);
   font-weight: 600;
   min-height: 44px;
   padding: 0 12px;
@@ -4466,7 +4481,7 @@ input[data-answer="incorrect"] {
   border-radius: var(--radius-full);
   color: var(--ink);
   display: inline-flex;
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 600;
   gap: 8px;
   justify-content: center;
@@ -4505,7 +4520,7 @@ input[data-answer="incorrect"] {
     border-radius: 4px;
     box-shadow: inset 0 0 0 1px currentColor;
     display: inline-block;
-    font-size: 11px;
+    font-size: var(--fs-chip);
     font-weight: 700;
     line-height: 16px;
     margin-top: 0;
@@ -4539,7 +4554,7 @@ input[data-answer="incorrect"] {
 .done button,
 .confirm-bar button,
 .bootskip {
-  font-size: 15px;
+  font-size: var(--fs-body);
   min-height: 52px;
   padding: 0 24px;
 }
@@ -4550,7 +4565,7 @@ input[data-answer="incorrect"] {
 .gcard-op,
 .regen,
 .tree-add {
-  font-size: 13px;
+  font-size: var(--fs-small);
   min-height: 36px;
   padding: 0 16px;
 }
@@ -4671,7 +4686,7 @@ input[data-answer="incorrect"] {
    stays where the text is authored: template bodies, code, math source. */
 .edit-label {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-small);
   letter-spacing: 0;
 }
 .tree-row.is-template .tree-name,
@@ -4824,7 +4839,7 @@ input[data-answer="incorrect"] {
   border: 0;
   border-radius: var(--radius-md);
   color: var(--card);
-  font-size: 13px;
+  font-size: var(--fs-small);
 }
 .say.bad {
   background: var(--danger);
@@ -4916,7 +4931,7 @@ input[data-answer="incorrect"] {
   color: var(--ink-bright);
 }
 .done h2 {
-  font-size: 32px;
+  font-size: var(--fs-gloss);
   font-weight: 700;
   letter-spacing: -0.015em;
   line-height: 36px;
@@ -4925,7 +4940,7 @@ input[data-answer="incorrect"] {
 /* The dashboard's figures are the system's numerals: heavy, tight, tabular. */
 .glance-value {
   color: var(--ink);
-  font-size: 32px;
+  font-size: var(--fs-gloss);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   letter-spacing: -0.02em;
@@ -5002,7 +5017,7 @@ input[data-answer="incorrect"] {
   font-family: var(--sans);
 }
 .glance-label {
-  font-size: 12px;
+  font-size: var(--fs-caption);
   letter-spacing: 0;
 }
 input.edit-input,
