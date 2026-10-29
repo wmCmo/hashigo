@@ -4830,11 +4830,39 @@ input[data-answer="incorrect"] {
 @keyframes skel-pulse {
   50% { opacity: 0.45; }
 }
+/* The same treatment for settings (`openSettings`) and a deck's gallery
+   (`gallerySkeleton`): real rows and real tiles, stand-in text painted as blocks.
+   Measured blank before: settings 250-300 ms; a gallery showed the PREVIOUS deck's
+   cards for up to 282 ms, laptop figures both. A stand-in tile is inert — its tile
+   click would open a card with no id. */
+.layer-body.is-loading .edit-input {
+  animation: skel-pulse 1.4s ease-in-out infinite;
+  color: transparent;
+}
+.gallery-grid.is-loading .gcard {
+  pointer-events: none;
+}
+.gallery-grid.is-loading .gcard-open,
+.gallery-grid.is-loading .gcard-gist,
+.gallery-grid.is-loading .gcard-meta {
+  animation: skel-pulse 1.4s ease-in-out infinite;
+  background: var(--hair);
+  border-radius: var(--radius-sm);
+  color: transparent;
+  width: fit-content;
+}
+.gallery-grid.is-loading .gcard-more {
+  visibility: hidden;
+}
 @media (prefers-reduced-motion: reduce) {
   .glance-skeleton .glance-value,
   .glance-skeleton .glance-note,
   .glance-skeleton .glance-read,
-  .glance-skeleton .glance-bar { animation: none; }
+  .glance-skeleton .glance-bar,
+  .layer-body.is-loading .edit-input,
+  .gallery-grid.is-loading .gcard-open,
+  .gallery-grid.is-loading .gcard-gist,
+  .gallery-grid.is-loading .gcard-meta { animation: none; }
 }
 .backlinks {
   border-top: 0;

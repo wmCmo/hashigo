@@ -97,7 +97,19 @@ export async function openGallery(
   options: { readonly fromHistory?: boolean } = {},
 ): Promise<void> {
   const wasOpen = document.body.getAttribute("data-view") === "gallery";
+  const sameDeck = wasOpen && gallery.deckId === deckId;
   gallery.deckId = deckId;
+  // A DIFFERENT DECK STARTS AS A SKELETON. Measured in the pane: the new title was
+  // up in 1 ms while the grid still held the PREVIOUS deck's cards — 177 ms of
+  // English cards under "漢字", 282 ms of a 漢字 card under "単語" — on the laptop,
+  // and longer on his phone. Wrong cards under the right title is worse than none.
+  // Not on a filter keystroke (`paintGallery` alone): that would flicker per key.
+  if (!sameDeck) {
+    galleryCount.textContent = "";
+    galleryGrid.replaceChildren(...gallerySkeleton());
+    galleryGrid.classList.add("is-loading");
+    galleryGrid.setAttribute("aria-busy", "true");
+  }
   if (options.fromHistory !== true) {
     const state = { [GALLERY_STATE]: deckId };
     if (wasOpen) history.replaceState(state, "", galleryHash(deckId));
@@ -192,6 +204,8 @@ export async function paintGallery(): Promise<void> {
       : `${hits.length.toLocaleString()}`;
 
   galleryGrid.replaceChildren();
+  galleryGrid.classList.remove("is-loading");
+  galleryGrid.removeAttribute("aria-busy");
   for (const hit of hits) galleryGrid.appendChild(galleryCard(hit));
   if (hits.length === 0) {
     const empty = document.createElement("p");
@@ -199,6 +213,30 @@ export async function paintGallery(): Promise<void> {
     empty.textContent = gallery.query === "" ? "no cards here" : `nothing matching ${gallery.query}`;
     galleryGrid.appendChild(empty);
   }
+}
+
+/**
+ * Tiles to stand in while a deck's cards load: REAL `galleryCard` tiles with
+ * stand-in text of a typical length, so each is the size it will be, and
+ * `.gallery-grid.is-loading` paints the text as grey blocks. Their buttons are
+ * disabled — a stand-in has no card behind it.
+ */
+function gallerySkeleton(): HTMLElement[] {
+  const tiles: HTMLElement[] = [];
+  for (let i = 0; i < 12; i += 1) {
+    const tile = galleryCard({
+      cardId: "",
+      name: i % 3 === 0 ? "〇〇〇〇" : "〇〇",
+      deckPath: "〇〇〇/〇〇",
+      archived: false,
+      pinned: false,
+      snippet: null,
+      gist: i % 2 === 0 ? "a short gloss of a typical length" : "a gloss",
+    });
+    for (const button of tile.querySelectorAll("button")) button.disabled = true;
+    tiles.push(tile);
+  }
+  return tiles;
 }
 
 function galleryCard(hit: BrowseHit): HTMLElement {

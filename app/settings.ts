@@ -181,8 +181,6 @@ const SETTING_ROWS: readonly SettingRow[] = [
 ];
 
 export async function openSettings(): Promise<void> {
-  const reply = await ask<"settings">({ kind: "settings" });
-
   const root = document.createElement("div");
   root.className = "layer layer-edit layer-settings";
   root.setAttribute("role", "dialog");
@@ -217,6 +215,37 @@ export async function openSettings(): Promise<void> {
   const status = document.createElement("div");
   status.className = "edit-status";
   status.setAttribute("aria-live", "polite");
+
+  // THE PANEL OPENS NOW — the dashboard's skeleton, for the same complaint. Measured
+  // in the pane: 250-300 ms on the laptop with nothing on screen. The theme row is
+  // real at once (it reads no database); every other row has its real label and
+  // note, and a disabled, pulsing control where its value will go.
+  body.classList.add("is-loading");
+  body.setAttribute("aria-busy", "true");
+  body.appendChild(themeRow());
+  for (const row of SETTING_ROWS) {
+    const placeholder = settingRow(row, "", false, status);
+    for (const control of placeholder.querySelectorAll("input, select")) {
+      (control as HTMLInputElement).disabled = true;
+    }
+    body.appendChild(placeholder);
+  }
+  pushLayer(bareLayer(root));
+  close.focus();
+
+  let reply: ReplyFor["settings"];
+  try {
+    reply = await ask<"settings">({ kind: "settings" });
+  } catch (cause) {
+    closeIfTop(root);
+    say((cause as Error).message, true);
+    return;
+  }
+  // Closed while it loaded: nothing to fill.
+  if (!root.isConnected) return;
+  body.replaceChildren();
+  body.classList.remove("is-loading");
+  body.removeAttribute("aria-busy");
 
   // A stored value the session could not use. Loud, at the top, and naming both
   // the text and the substitute — `readSessionSettings` collects these precisely
@@ -260,7 +289,6 @@ export async function openSettings(): Promise<void> {
 
   body.appendChild(settingsState(reply));
   body.appendChild(status);
-  pushLayer(bareLayer(root));
   (body.querySelector(".edit-input") as HTMLElement | null)?.focus();
 }
 
