@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 
 import { openDatabase } from "../src/db/index.js";
 import { collectGlance, compareDeckPaths, shiftDate, shiftMonth } from "../src/dashboard/index.js";
+import { recallOf } from "../src/dashboard/recall.js";
 
 const CORPUS = "build/hashigo.db";
 
@@ -87,6 +88,43 @@ describe("the substring shortcut", () => {
         )
         .get() as { n: number };
       expect(bad.n).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("a day's % remembered leaves out a new card's first press", () => {
+  it("counts the press in the reviews and not in the recall — 2026-10-29", () => {
+    // Zach: "for a new card, if you never know what it means, you can't actually
+    // forget them right...?" Two tracks reviewed on one day: a NEW one forgotten on
+    // its first press, and a learned one remembered. The day is 1 of 2 remembered
+    // by the raw count and 1 of 1 by what the chart now shows.
+    const db = openDatabase(":memory:");
+    try {
+      db.prepare("INSERT INTO decks (id, name) VALUES ('d', 'D')").run();
+      db.prepare("INSERT INTO cards (id, deck_id) VALUES ('new', 'd'), ('old', 'd')").run();
+      db.prepare("INSERT INTO card_tracks (card_id, kind) VALUES ('new', 'forward'), ('old', 'forward')").run();
+      const id = (card: string) =>
+        (db.prepare("SELECT id FROM card_tracks WHERE card_id = ?").get(card) as { id: number }).id;
+      const review = db.prepare(
+        `INSERT INTO reviews (track_id, reviewed_at, tz_offset_minutes, time_unknown,
+                              remembered, elapsed_days, scheduled_days,
+                              next_scheduled_days, due_at, source)
+         VALUES (?, ?, 540, 0, ?, 1, 1, 2, '2026-10-30T00:00:00+09:00', 'local')`,
+      );
+      review.run(id("old"), "2026-10-20T09:00:00+09:00", 1); // learned ten days ago
+      review.run(id("old"), "2026-10-29T09:00:00+09:00", 1);
+      review.run(id("new"), "2026-10-29T09:05:00+09:00", 0); // first press: forgot
+
+      const g = collectGlance(db as never, { today: "2026-10-29" });
+      const day = g.recent.at(-1)!;
+      expect(day).toMatchObject({ reviews: 2, remembered: 1, firsts: 1, firstsRemembered: 0 });
+      expect(recallOf(day)).toBe(1);
+      // The earlier day's only review was that track's first press: nothing left to count.
+      const first = g.recent.find((d) => d.date === "2026-10-20")!;
+      expect(first).toMatchObject({ reviews: 1, firsts: 1 });
+      expect(recallOf(first)).toBeNull();
     } finally {
       db.close();
     }

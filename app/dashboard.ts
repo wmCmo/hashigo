@@ -5,7 +5,8 @@
  * on a phone before it opens, which `./sidebar.ts` owns.
  */
 
-import type { GlanceDeck } from "../src/dashboard/index.js";
+import type { GlanceDay, GlanceDeck } from "../src/dashboard/index.js";
+import { recallOf } from "../src/dashboard/recall.js";
 import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
 import type { ReplyFor } from "./protocol.js";
 import { closeSidebar } from "./sidebar.js";
@@ -71,6 +72,18 @@ export async function openDashboard(): Promise<void> {
   root.appendChild(panel);
 
   const pct = (r: number | null): string => (r === null ? "—" : `${(100 * r).toFixed(1)}%`);
+  // The readout says what the tone was computed over, so "95 reviews · 77.8%"
+  // does not read as 77.8% of all 95.
+  const dayDetail = (day: GlanceDay): string => {
+    if (day.reviews === 0) return `${day.date} · nothing reviewed`;
+    const head = `${day.date} · ${day.reviews.toLocaleString()} reviews`;
+    const recall = recallOf(day);
+    if (day.firsts === 0) return `${head} · ${pct(recall)} remembered`;
+    const fresh = `${day.firsts.toLocaleString()} new`;
+    return recall === null
+      ? `${head} · all ${fresh}`
+      : `${head} · ${pct(recall)} remembered, ${fresh} not counted`;
+  };
 
   // ── today, and the streak ──
   body.appendChild(
@@ -129,15 +142,14 @@ export async function openDashboard(): Promise<void> {
         value: day.reviews,
         // Retention as the bar's TONE, not a second bar. Two bars per day on a
         // 375px screen is four pixels each.
-        good: day.reviews === 0 ? null : day.remembered / day.reviews,
+        // OVER CARDS ALREADY LEARNED: a new card's first press tests no memory,
+        // and counting it turned 4 of his 6 red days red (`recallOf`). The bar's
+        // HEIGHT still counts every review.
+        good: recallOf(day),
         // The readout is where retention becomes a NUMBER. The tone says "this
         // day was below 0.85" and cannot say by how much; a quiet day says so in
         // words rather than showing "0 reviews · —% remembered".
-        detail:
-          day.reviews === 0
-            ? `${day.date} · nothing reviewed`
-            : `${day.date} · ${day.reviews.toLocaleString()} reviews · ` +
-              `${pct(day.remembered / day.reviews)} remembered`,
+        detail: dayDetail(day),
       })),
     ),
   );
@@ -145,7 +157,7 @@ export async function openDashboard(): Promise<void> {
   // The tone needs a KEY. Without one the chart is blue and orange days with nothing
   // to say which is which — and orange reads as "missed" here only if you already
   // know `.is-low` is the 0.85 band, which nothing on the screen said.
-  body.appendChild(glanceLegend("under 85% remembered"));
+  body.appendChild(glanceLegend("under 85% remembered, not counting new cards"));
 
   // ── what is coming ──
   body.appendChild(glanceHead("scheduled, next 14 days"));

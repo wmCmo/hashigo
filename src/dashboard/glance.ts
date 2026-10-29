@@ -68,6 +68,15 @@ export interface GlanceDay {
   readonly date: string;
   readonly reviews: number;
   readonly remembered: number;
+  /**
+   * Of `reviews`, the FIRST press on a track — a new card, which tests no memory.
+   * The chart's "% remembered" leaves them out (`./recall.ts`); the review count
+   * keeps them. COUNTED ONLY FOR THE DAYS `recent` SHOWS — 0 on any older day,
+   * because the lookup is a seek per review and nothing reads it further back.
+   */
+  readonly firsts: number;
+  /** Of `firsts`, the ones pressed "remembered". */
+  readonly firstsRemembered: number;
 }
 
 export interface GlanceForecastDay {
@@ -179,10 +188,21 @@ const WINDOW_DAYS = 400;
  * cut one row at the boundary, and a day of slack is cheaper than being wrong.
  */
 const PER_DAY = `
-SELECT substr(reviewed_at, 1, 10) AS date, count(*) AS reviews,
-       COALESCE(sum(remembered), 0) AS remembered
-  FROM reviews
- WHERE reviewed_at >= ?
+SELECT date, count(*) AS reviews,
+       COALESCE(sum(remembered), 0) AS remembered,
+       COALESCE(sum(first), 0) AS firsts,
+       COALESCE(sum(first * remembered), 0) AS firsts_remembered
+  FROM (
+    SELECT substr(r.reviewed_at, 1, 10) AS date, r.remembered,
+           -- A track's FIRST press: no earlier review of it. One seek on reviews_track,
+           -- and only over the fortnight the chart shows (second bound): across the
+           -- whole 400-day window it cost 151 -> 194 ms on the laptop, measured.
+           CASE WHEN r.reviewed_at >= ? THEN NOT EXISTS (
+             SELECT 1 FROM reviews p WHERE p.track_id = r.track_id AND p.reviewed_at < r.reviewed_at
+           ) ELSE 0 END AS first
+      FROM reviews r
+     WHERE r.reviewed_at >= ?
+  )
  GROUP BY date ORDER BY date`;
 
 /** Two aggregates with no date arithmetic at all. */
@@ -370,11 +390,16 @@ export function collectGlance(db: SqliteHandle, options: GlanceOptions = {}): Gl
   // `PER_DAY`. The extra day costs one group and removes a class of off-by-one.
   const floor = shiftDate(today, -(WINDOW_DAYS + 1));
   const windowStart = shiftDate(today, -(WINDOW_DAYS - 1));
-  const days = (db.prepare(PER_DAY).all(floor) as GlanceDay[])
+  // `firsts` is counted from here on — the 14 days `recent` shows, plus a day of
+  // slack for the same raw-string reason as `floor`.
+  const firstsFrom = shiftDate(today, -14);
+  const days = (db.prepare(PER_DAY).all(firstsFrom, floor) as Record<string, unknown>[])
     .map((row) => ({
-      date: String(row.date),
-      reviews: Number(row.reviews),
-      remembered: Number(row.remembered),
+      date: String(row["date"]),
+      reviews: Number(row["reviews"]),
+      remembered: Number(row["remembered"]),
+      firsts: Number(row["firsts"]),
+      firstsRemembered: Number(row["firsts_remembered"]),
     }))
     .filter((day) => day.date >= windowStart && day.date <= today);
 
@@ -398,7 +423,7 @@ export function collectGlance(db: SqliteHandle, options: GlanceOptions = {}): Gl
   const recent: GlanceDay[] = [];
   for (let i = 13; i >= 0; i -= 1) {
     const date = shiftDate(today, -i);
-    recent.push(byDate.get(date) ?? { date, reviews: 0, remembered: 0 });
+    recent.push(byDate.get(date) ?? { date, reviews: 0, remembered: 0, firsts: 0, firstsRemembered: 0 });
   }
 
   // Count back from today when today is active, otherwise from yesterday — see
