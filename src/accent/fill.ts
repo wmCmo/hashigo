@@ -32,6 +32,7 @@
  * written, because changing an identity after the clip exists orphans the clip.
  */
 import type { Db } from "../db/index.js";
+import { yomiFieldId } from "../fields/yomi.js";
 import { accentKey, readingLooksUnanalysed } from "./key.js";
 import { loadMarks, sentenceFor, type AnnotatedLine, type SentenceRow } from "./marks.js";
 import { applyOjadAdjudications, cardAccentOverrides } from "./ojad.js";
@@ -108,16 +109,14 @@ export function planAccentFill(db: Db, cardIds?: readonly string[]): FillItem[] 
                 undefined,
             )
             .map((id) => ({ id }));
-    const yomi = db
-      .prepare("SELECT id FROM template_fields WHERE template_id = ? AND trim(name) = '読み'")
-      .get(field.template_id) as { id: string } | undefined;
+    const yomi = yomiFieldId(db, field.template_id);
     for (const { id } of cards) {
       const head = value(db, id, field.source_field_id);
       const key = head === "" ? "" : accentKey(head);
       if (key === "") continue;
       const labelField = value(db, id, field.id) === "" ? field.id : null;
       const yomiField =
-        yomi !== undefined && KANJI.test(key) && value(db, id, yomi.id) === "" ? yomi.id : null;
+        yomi !== null && KANJI.test(key) && value(db, id, yomi) === "" ? yomi : null;
       const found = sentenceFor(db, id);
       const ojad = found.status === "ok" && value(db, id, found.row.fieldId) === "" ? found.row : null;
       if (labelField === null && yomiField === null && ojad === null) continue;

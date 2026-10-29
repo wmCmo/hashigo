@@ -18,16 +18,9 @@
  */
 
 import type { ScopedDb } from "./deck-scope.js";
+import { yomiOf } from "../src/fields/yomi.js";
 
-/** The card's non-empty `読み`, trimmed, or null. Matched on the field NAME, as `redoInfo` does. */
+/** The card's non-empty `読み`, trimmed, or null — `src/fields/yomi.ts`, which owns the name. */
 export function readingOverride(db: ScopedDb, cardId: string): string | null {
-  const row = db
-    .prepare(
-      `SELECT v.value AS value FROM card_field_values v
-         JOIN cards c ON c.id = v.card_id
-         JOIN template_fields f ON f.template_id = c.template_id AND f.id = v.field_id
-        WHERE v.card_id = ? AND trim(f.name) = '読み' AND trim(v.value) <> '' LIMIT 1`,
-    )
-    .all(cardId)[0] as { value: string } | undefined;
-  return row === undefined ? null : row.value.trim();
+  return yomiOf(db, cardId);
 }

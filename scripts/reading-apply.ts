@@ -58,6 +58,7 @@
  * is only the ability to NOT match on the brackets.
  */
 import { openDatabase } from "../src/db/index.js";
+import { YOMI_FIELD } from "../src/fields/yomi.js";
 import { hasParenthesis, parseReading, type ParsedReading } from "../src/text/parenthesis.js";
 
 /**
@@ -74,7 +75,7 @@ import { hasParenthesis, parseReading, type ParsedReading } from "../src/text/pa
 const LOCAL_FIELDS = [
   {
     id: "local-yomi",
-    name: "読み",
+    name: YOMI_FIELD,
     type: "plain",
     // After the head word (`pos = 'a'`) and before everything else, because it
     // is a property OF the head word. Mochi's own pos values are short sort

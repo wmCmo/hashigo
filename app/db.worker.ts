@@ -2281,16 +2281,8 @@ function redoInfo(request: RedoInfoRequest): void {
         WHERE c.id = ? LIMIT 1`,
     )
     .get(request.cardId) as { value: string } | undefined;
-  const yomi = db
-    .prepare(
-      `SELECT v.value AS value FROM card_field_values v
-         JOIN cards c ON c.id = v.card_id
-         JOIN template_fields f ON f.template_id = c.template_id AND f.id = v.field_id
-        WHERE v.card_id = ? AND trim(f.name) = '読み' AND trim(v.value) <> '' LIMIT 1`,
-    )
-    .get(request.cardId) as { value: string } | undefined;
   const base = head?.value.replace(/[\u200b-\u200f\ufeff]/g, "").trim() ?? "";
-  let alias = yomi?.value.trim() ?? "";
+  let alias = readingOverride(db, request.cardId) ?? "";
   if (alias === "" && base !== "") {
     const row = db.prepare("SELECT reading FROM accents WHERE text = ? AND reading IS NOT NULL LIMIT 1").get(base) as
       | { reading: string }

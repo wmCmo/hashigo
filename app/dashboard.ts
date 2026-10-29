@@ -16,6 +16,14 @@ import { say } from "./ui.js";
 import { ask } from "./worker-client.js";
 
 /**
+ * A day under this recall is tinted. ONE number: the bar's tone and the legend
+ * that explains it read the same constant, so changing it cannot leave the legend
+ * naming a band the chart no longer uses.
+ */
+export const LOW_RECALL = 0.85;
+const LOW_RECALL_LEGEND = `under ${Math.round(LOW_RECALL * 100)}% remembered, not counting new cards`;
+
+/**
  * His #1, and the answer to *"what about just simple dashboard in mobile app and
  * full suit dashboard on laptop?"*
  *
@@ -173,7 +181,7 @@ export async function openDashboard(): Promise<void> {
   // The tone needs a KEY. Without one the chart is blue and orange days with nothing
   // to say which is which — and orange reads as "missed" here only if you already
   // know `.is-low` is the 0.85 band, which nothing on the screen said.
-  body.appendChild(glanceLegend("under 85% remembered, not counting new cards"));
+  body.appendChild(glanceLegend(LOW_RECALL_LEGEND));
 
   // ── what is coming ──
   body.appendChild(glanceHead("scheduled, next 14 days"));
@@ -269,7 +277,7 @@ function glanceSkeleton(): HTMLElement {
     wrap.appendChild(chart);
     // The real render keys this one chart; without the line the next one sits higher.
     if (heading === "the last 14 days you studied") {
-      wrap.appendChild(glanceLegend("under 85% remembered, not counting new cards"));
+      wrap.appendChild(glanceLegend(LOW_RECALL_LEGEND));
     }
   }
   const status = document.createElement("span");
@@ -459,7 +467,7 @@ function glanceBars(days: readonly GlanceColumn[]): HTMLElement {
     // A zero-review day still gets a hairline, so a GAP reads as a gap rather
     // than as a day the chart forgot.
     bar.style.height = `${Math.max(2, Math.round((100 * day.value) / peak))}%`;
-    if (day.good !== null && day.good < 0.85) bar.classList.add("is-low");
+    if (day.good !== null && day.good < LOW_RECALL) bar.classList.add("is-low");
     const label = document.createElement("span");
     label.className = "glance-tick";
     label.textContent = day.label;
