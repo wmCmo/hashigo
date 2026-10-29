@@ -100,11 +100,15 @@ export function systemPrompt(descriptor: LlmDescriptor): string {
  * <reasoning_effort>medium</reasoning_effort>👔📉🏢➡️🏝️😞`, was cached in KV and
  * rendered on the card as is — 1 of the 54 cloud text generations at the time.
  * They are settings, not content, so each pair goes and what follows stays.
+ *
+ * AND `<thinking>`, THE LONG SPELLING. 2026-10-29, 朗報's 例文 rendered as
+ * `<thinking>Create a natural example sentence using 朗報.</thinking>試験に…`:
+ * the `<think>` rule never matched it, so the card and the OJAD fill both got it.
  */
 export function stripThinking(text: string): string {
   return text
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .replace(/<think>[\s\S]*$/i, "")
+    .replace(/<(think|thinking)>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<think(?:ing)?>[\s\S]*$/i, "")
     .replace(/<(thinking_mode|reasoning_effort)>[^<]*<\/\1>/gi, "")
     .trim();
 }

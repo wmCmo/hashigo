@@ -1133,6 +1133,17 @@ describe("the text provider and its prompt", () => {
     expect(stripThinking("📖💡✨")).toBe("📖💡✨");
   });
 
+  it("strips the long spelling, <thinking>, that leaked into 朗報's 例文", () => {
+    // Verbatim from the card, 2026-10-29.
+    const leaked =
+      "<thinking>Create a natural example sentence using 朗報.</thinking>試験に合格したという朗報が届いた。";
+    expect(stripThinking(leaked)).toBe("試験に合格したという朗報が届いた。");
+    expect(stripThinking("<thinking>I should consider whether")).toBe("");
+    // Mismatched pairs are not a block: `<think>…</thinking>` is left for the
+    // unclosed rule, which takes the rest.
+    expect(stripThinking("<think>a</thinking>📖")).toBe("");
+  });
+
   it("strips the control tags a hosted model echoed into 左遷's emoji", () => {
     // Verbatim from the Worker's KV, 2026-10-21.
     const leaked =
