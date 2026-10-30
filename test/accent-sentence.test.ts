@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { loadMarks } from "../src/accent/marks.js";
 import {
   AnnotationError,
+  applyReadingOverrides,
   cleanSentence,
   flatten,
   formatAnnotation,
@@ -144,6 +145,26 @@ describe("cleaning the generated sentence", () => {
     expect(cleanSentence("「私は猫が好きです。」")).toBe("私は猫が好きです。");
     // 「」 inside a sentence is dialogue and belongs to the reading.
     expect(cleanSentence("彼は「おはよう」と言った。")).toBe("彼は「おはよう」と言った。");
+  });
+});
+
+describe("reading overrides, applied before the analyser", () => {
+  it("rewrites the volitional 助けよう, which OpenJTalk reads すけよう", () => {
+    // 殉職's line read `す_けよ*ーとし_て`, 2026-10-31. The sentence on screen keeps
+    // its kanji; only the analyser's input changes.
+    expect(applyReadingOverrides("住民を助けようとして殉職した。")).toBe("住民をたすけようとして殉職した。");
+  });
+
+  it("leaves the forms the analyser already reads right", () => {
+    // 助ける → たす_け*る and 助けて → たす*けて, measured. A key of 助け would
+    // have rewritten them for nothing.
+    for (const right of ["人を助ける仕事だ。", "頼む、助けてください！", "彼女の怒りっぷり"]) {
+      expect(applyReadingOverrides(right)).toBe(right);
+    }
+  });
+
+  it("applies the longest key first", () => {
+    expect(applyReadingOverrides("至れり尽くせりで")).toBe("いたれりつくせりで");
   });
 });
 

@@ -66,7 +66,7 @@ npm run gates           # ALL SIX GATES, one command, honest verdict. Start here
                         # wasm URL. (spike:check was dropped 2026-10-27 — an injected
                         # contract break turned `typecheck` red with 667 errors; see
                         # `test/db-contract.types.ts`.)
-npm test                # 68 files, 1592 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
+npm test                # 68 files, 1595 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
                         # MEASURED, never added up — run the suite or leave the line alone
                         # (`test/docs-figures.test.ts` checks it). A wrapper
                         # (`scripts/test.mjs`) that reads vitest's SUMMARY: the run must

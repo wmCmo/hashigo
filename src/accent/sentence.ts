@@ -360,6 +360,11 @@ export const READING_OVERRIDES: ReadonlyMap<string, string> = new Map([
   // 否 alone is ヒ; か否か is かいなか, and the string is specific enough to be
   // its own key.
   ["か否か", "かいなか"],
+  // 2026-10-31, from Zach on 殉職's reading line (`す_けよ*ーとし_て`): OpenJTalk
+  // reads the VOLITIONAL 助けよう as すけよう, in every context tried. 助ける
+  // (`たす_け*る`) and 助けて (`たす*けて`) read right, so the key is the
+  // volitional itself — there is no word in which 助けよう is すけよう.
+  ["助けよう", "たすけよう"],
 ]);
 
 /**
