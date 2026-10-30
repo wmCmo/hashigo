@@ -28,7 +28,28 @@ Results:
 
 - *(none yet — the first check runs 2026-11-27)*
 
-## Version — 0.5.0, late alpha (set 2026-09-25)
+## How the version moves (decision 59, 2026-10-31)
+
+**Every deploy is a release.** `npm run release -- patch` (fixes only) or
+`npm run release -- minor "what he can now do"` (a milestone), push the commit and the
+tag, then deploy. `npm run app:build:cloud` refuses anything else.
+
+| part | moves when |
+|---|---|
+| major | stays **0** until 1.0 (below). Asked for by name: `--one-point-oh` |
+| minor | a milestone, OR a change to `SCHEMA_VERSION` / `SYNC_VERSION` / `ARCHIVE_VERSION` — both devices must update, and `release` refuses a patch for it |
+| patch | a deploy that only fixes things — per deploy, not per commit |
+
+**The changelog is the tags.** Each release's tag message lists every commit since the
+last one: `git tag -n99 v0.6.0`. Nothing here repeats it.
+
+## Version — 0.6.0, late alpha (2026-10-31)
+
+0.5.0 → 0.6.0 was one catch-up bump for 35 days and ~100 commits: the cloud move, grade
+deltas, the design system, 優先 and kanji-first, 出典, the accent helper, the writing
+canvas, and templates from scratch. The tag lists them.
+
+### Before that — 0.5.0, set 2026-09-25
 
 Zach asked *"what version of hashigo should we be on? have we escape alpha yet?"* —
 nothing had ever been numbered (`0.0.0`, no tags). The history was tagged after the fact,
@@ -41,6 +62,7 @@ local tags only, annotated with what each milestone was:
 | `v0.3.0` | `d03b66c` 09-12 | design brief (decision 32) + sync transport (33) |
 | `v0.4.0` | `e7cd272` 09-13 | decision 41: the final import happened, Hashigo is the system of record |
 | `v0.5.0` | `fd7358d` 09-25 | editor, search index, `[[` create, preview ⇄ editor |
+| `v0.6.0` | its release commit, 10-31 | catch-up: cloud, deltas, design system, 優先, 出典, helper, canvas, templates — `git tag -n99 v0.6.0` |
 
 `package.json`'s `version` is the number; `app/version.ts` shows it beside the build
 commit in Settings → versions.

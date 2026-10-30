@@ -66,7 +66,7 @@ npm run gates           # ALL SIX GATES, one command, honest verdict. Start here
                         # wasm URL. (spike:check was dropped 2026-10-27 — an injected
                         # contract break turned `typecheck` red with 667 errors; see
                         # `test/db-contract.types.ts`.)
-npm test                # 68 files, 1595 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
+npm test                # 69 files, 1603 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
                         # MEASURED, never added up — run the suite or leave the line alone
                         # (`test/docs-figures.test.ts` checks it). A wrapper
                         # (`scripts/test.mjs`) that reads vitest's SUMMARY: the run must
@@ -91,10 +91,13 @@ npx vite-node scripts/app-bootstrap.ts -- --speech-bytes 650000000   # the seed 
                         # Default 200 MiB takes each card's CHEAPEST clip first, so no card
                         # gets a second before every card has a first (98.2% coverage).
 npm run app:dev -- --host 127.0.0.1       # local only
+npm run release -- patch                  # decision 59: EVERY deploy is a release first.
+                        # `-- minor "what he can now do"` for a milestone. Then push the
+                        # commit AND the tag: git push origin HEAD:main; git push origin vX.Y.Z
 npm run app:build:cloud                   # then, in cloud/app/: npx wrangler@4 deploy
-                        # Deploy when Zach asks. Confirm via Settings → versions
-                        # (`app v0.5.0 · <commit>`). A running app picks a deploy up on its
-                        # own (`app/update-check.ts`).
+                        # Refuses unless HEAD is the tagged release. Deploy when Zach asks.
+                        # Confirm via Settings → versions (`app v0.6.0 · <commit>`). A
+                        # running app picks a deploy up on its own (`app/update-check.ts`).
 npm run accent:helper                     # decision 56's helper on 127.0.0.1:47474
                         # (starts at login from a Startup-folder shortcut on his laptop)
 npm run phone                             # dev server to the phone through a fixed tunnel
@@ -303,6 +306,11 @@ npx vite-node scripts/reverse-dormant-apply.ts -- --db build/hashigo.db --apply 
 58. **A mode-2 単語 card has a writing canvas on side 2** (`<draw>` under `<< Speech >>`,
     inside `<< ^Reading >>`, 240px). Hear it, WRITE it, reveal. No 問題 track: a word
     stays one card, and its forward/reverse schedules are untouched.
+59. **Every deploy is a release: `npm run release -- patch|minor`, then deploy.** Major
+    stays 0 until 1.0 (RELEASE.md). Minor = a milestone, or any change to SCHEMA/SYNC/
+    ARCHIVE_VERSION (enforced). Patch = a fixes-only deploy — per DEPLOY, not per commit.
+    `app:build:cloud` refuses a commit that is not the tagged release; the tag's message
+    is the changelog. Never write a changelog by hand.
 
 ## READ THE TEMPLATE. It answers most questions about the screen.
 

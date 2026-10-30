@@ -2483,6 +2483,37 @@ right**: it holds his verbatim reasoning and this quotes it.
 
     The pair cards (没頭＝□念 → 専念) remain untested by any track; parked.
 
+59. **EVERY DEPLOY IS A RELEASE, AND THE RULES ARE CODE.** 2026-10-31. Zach asked
+    whether to use major / minor / patch and *"we need rules for future development
+    too"*. The version had sat at 0.5.0 for 35 days and ~100 commits, and NEXT.md —
+    the file meant to track it — said "none is met today" of beta criteria three of
+    four had met. A rule only a document states drifts, so this one is enforced.
+
+    **What each part means.** Hashigo has no API anyone depends on, so SemVer's
+    "breaking change" has nothing to attach to. What devices DO depend on is already
+    versioned on its own: `SCHEMA_VERSION`, `SYNC_VERSION`, `ARCHIVE_VERSION`. So:
+
+    * **major** stays 0 until 1.0 — RELEASE.md's "he could hand a friend the link and
+      explain nothing". A bump to 1 must be asked for by name (`--one-point-oh`).
+    * **minor** is a milestone: something new he can do, OR any change to one of the
+      three contracts (both devices must update). `npm run release -- patch` refuses
+      when a contract moved since the last tag.
+    * **patch** is a deploy that only fixes things — one per DEPLOY, not per commit.
+      Settings already shows the build commit; the version says which release a
+      device is on, so "phone 0.6.2, laptop 0.6.3" means something.
+
+    **How.** `npm run release -- patch` or `-- minor "what he can now do"` bumps
+    `package.json` and the lock, commits `release: vX.Y.Z`, and tags it with every
+    commit subject since the last release — the changelog, kept by git so it cannot go
+    stale. `npm run app:build:cloud` runs `scripts/release-check.ts` first and refuses
+    unless HEAD is that tag with a clean tree. Rules in `scripts/release-rules.ts`,
+    pinned by `test/release.test.ts`.
+
+    **0.6.0 was one honest catch-up bump**, not a reconstruction: the cloud move, grade
+    deltas, the design system, 優先 and kanji-first, 出典, the helper, the writing
+    canvas and templates from scratch would each have been a minor. Inventing tags for
+    them after the fact adds nothing.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach
