@@ -2,7 +2,7 @@
  * どのビルドか — 起動画面と設定に出す。Zach, 2026-09-27: *"i want the app version to
  * be visible on the loading screen and on setting page"*。
  *
- * 版は package.json の `version`（NEXT.md の VERSION 節が決める）、その後ろに
+ * 版は package.json の `version`（RELEASE.md の Version 節が決める）、その後ろに
  * ビルドした commit の短い hash。版だけでは「再読み込みで新しいデプロイを拾ったか」が
  * 分からない — 0.5.0 のまま何度もデプロイしているので。作業ツリーに未コミットの
  * 変更があれば `-dirty` が付く。

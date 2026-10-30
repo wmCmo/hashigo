@@ -113,7 +113,7 @@ const expanded = readExpanded();
  * worker was still opening the database, e.g. a window that crossed 1024px
  * during boot (`railStanding`'s listener below) — left the tree EMPTY and every
  * later call returning early. That was "the sidebar is empty after boot until
- * `/` is pressed" (NEXT.md, 2026-09-18): only `/`'s forced reload ever repaired
+ * `/` is pressed" (notes/archive/NEXT-retired-2026-10-30.md, 2026-09-18): only `/`'s forced reload ever repaired
  * it. A failure now leaves the flag down, so the next call simply tries again —
  * and boot's own `fillSidebar`, which runs after `open`, is that next call.
  * Concurrent calls share one request rather than racing two paints.

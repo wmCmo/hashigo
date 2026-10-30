@@ -20,7 +20,7 @@
 # Formatting these by hand is fine. Reflowing them mechanically is not.
 CLAUDE.md
 DECISIONS.md
-NEXT.md
+RELEASE.md
 BACKTEST.md
 SPEC.html
 notes/

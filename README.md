@@ -96,7 +96,8 @@ npm run gates                # tests, both typechecks, both builds, the blob-pat
 |---|---|
 | [`CLAUDE.md`](CLAUDE.md) | Working rules for this repository, and the index of settled decisions |
 | [`DECISIONS.md`](DECISIONS.md) | Why each decision was made, with the measurements behind it |
-| [`NEXT.md`](NEXT.md) | Current figures and what is left, in dependency order |
+| [`RELEASE.md`](RELEASE.md) | The version, the beta criteria and the publishing gates |
+| [`cloud/README.md`](cloud/README.md) | What runs on Cloudflare, and how to deploy it |
 | [`SPEC.html`](SPEC.html) | The build specification |
 | [`design-system/`](design-system/README.md) | Colour, type, components and the mark |
 | [`app/README.md`](app/README.md) | The app: running it, deploying it, what running it taught us |

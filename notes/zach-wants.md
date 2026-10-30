@@ -16,14 +16,14 @@ caveat rather than a claim:**
 * **1, the dashboard, costs 81 seconds in the worker** (10.3 s for the same `collect`
   in Node). sqlite-wasm is synchronous and there is one worker, so for that whole time
   nothing can grade. It therefore asks before it runs and says the number. The
-  optimisation is real work in `src/dashboard/metrics.ts` and is in `NEXT.md`.
+  optimisation is real work in `src/dashboard/metrics.ts` and is in `notes/archive/NEXT-retired-2026-10-30.md`.
 * **11 refuses two things on purpose** — changing a field's TYPE, and renaming the
   `Reading` field on an accent-drill template. The second was found by running the
   editor: `src/review/mode.ts` finds that field BY NAME, so a rename would have
   flipped all 692 of decision 29's produce cards to identify mode, silently, while
   the template still rendered perfectly.
 
-**Read `NEXT.md` for what actually runs — this file is the WANT, not the state**, and
+**Read the code and `git log` for what actually runs — this file is the WANT, not the state**, and
 the gap between the two is what made it misleading before.
 
 > honestly, i haven't opened my phone yet, ive been using it on desktop, but man,

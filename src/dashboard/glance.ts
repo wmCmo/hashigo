@@ -19,7 +19,7 @@
  *
  * ─── THE FULL REPORT'S "OBVIOUS" REPAIR IS WRONG, AND IT WAS MEASURED ───────
  *
- * `NEXT.md` said to materialise `review_log` into a TEMP TABLE once per `collect`,
+ * `notes/archive/NEXT-retired-2026-10-30.md` said to materialise `review_log` into a TEMP TABLE once per `collect`,
  * since the cost is ~14 passes each recomputing a date per row. **That was written
  * without trying it, and trying it falsified it:**
  *

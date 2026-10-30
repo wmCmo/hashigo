@@ -13,7 +13,7 @@
  *
  * Both of those do the mechanism correctly and both are labelled THROWAWAY. The
  * app is not, and an asset pipeline that a shipping page depends on should not
- * live in a directory whose README tells you to delete it. `NEXT.md` says it
+ * live in a directory whose README tells you to delete it. `notes/archive/next-history.md` says it
  * plainly: reuse the mechanism, not the code. So the two hard-won facts are
  * reused explicitly and named:
  *

@@ -31,7 +31,7 @@ import { SCHEMA_VERSION } from "../src/schema/index.js";
  */
 
 const ROOT = resolve(import.meta.dirname, "..");
-const DOCS = ["CLAUDE.md", "NEXT.md", "DECISIONS.md", "app/README.md"] as const;
+const DOCS = ["CLAUDE.md", "RELEASE.md", "DECISIONS.md", "app/README.md", "cloud/README.md"] as const;
 
 function read(name: string): string {
   return readFileSync(join(ROOT, name), "utf8");
@@ -42,8 +42,8 @@ function read(name: string): string {
  *
  * A document may keep a record of what was true at the time below a HISTORY heading,
  * and those figures are allowed to be old. Nothing carries one today — NEXT.md's moved
- * to `notes/archive/next-history.md` — so in practice every figure is held to the
- * present, which is the stricter reading.
+ * to `notes/archive/next-history.md`, and NEXT.md itself was retired to the archive on
+ * 2026-10-30 — so in practice every figure is held to the present, the stricter reading.
  *
  * The boundary is honoured rather than forbidden because someone may reasonably start
  * a new record, and gating on its ABSENCE would be a gate on formatting rather than on
@@ -58,13 +58,9 @@ function liveHalf(name: string): string {
 describe("the figures a routine change invalidates", () => {
   it("every stated test-file count is the real number of test files", () => {
     const real = countTestFiles();
-    const claims = [...liveHalf("CLAUDE.md").matchAll(/(\d+) files, [\d,]+ passed/g)].map((m) =>
+    const all = [...liveHalf("CLAUDE.md").matchAll(/(\d+) files, [\d,]+ passed/g)].map((m) =>
       Number(m[1]),
     );
-    const nextClaims = [...liveHalf("NEXT.md").matchAll(/(\d+) files \/ [\d,]+ passed/g)].map((m) =>
-      Number(m[1]),
-    );
-    const all = [...claims, ...nextClaims];
     expect(all.length, "no test-file-count claim found — did the phrasing change?").toBeGreaterThan(
       0,
     );
@@ -83,7 +79,7 @@ describe("the figures a routine change invalidates", () => {
     // was CLAUDE.md and NEXT.md drifting apart from the truth together, but they
     // have also drifted apart from EACH OTHER before (734 vs 757).
     const counts = new Set<number>();
-    for (const doc of ["CLAUDE.md", "NEXT.md"]) {
+    for (const doc of ["CLAUDE.md", "RELEASE.md"]) {
       for (const m of liveHalf(doc).matchAll(/([\d,]{3,}) passed/g)) {
         counts.add(Number(m[1]!.replace(/,/g, "")));
       }
@@ -116,7 +112,7 @@ describe("the figures a routine change invalidates", () => {
 
   it("any stated decision count is the real one", () => {
     const real = [...read("DECISIONS.md").matchAll(/^(\d+)\. /gm)].length;
-    // Deliberately scans the WHOLE of NEXT.md, history included: "There are N
+    // Deliberately scans the WHOLE of each, history included: "There are N
     // decisions; read them before proposing anything" is an instruction to the
     // reader wherever it sits, and a low N means a cold session under-reads.
     // Deliberately broad. The first version of this matched only "There are N
@@ -125,7 +121,7 @@ describe("the figures a routine change invalidates", () => {
     // what CLAUDE.md is. A narrow regex on a gate is worse than no gate, because the
     // green tick is then evidence of nothing.
     const claims = [
-      ...`${read("CLAUDE.md")}\n${read("NEXT.md")}`.matchAll(/(\d+)\s+decisions\b/g),
+      ...`${read("CLAUDE.md")}\n${read("RELEASE.md")}`.matchAll(/(\d+)\s+decisions\b/g),
     ].map((m) => Number(m[1]));
     for (const claimed of claims) {
       expect(
@@ -149,7 +145,7 @@ describe("the figures a routine change invalidates", () => {
  * A comment is worse than a document for this, not better. Nobody greps comments when
  * renaming a file, no reviewer reads all 11,354, and they carry the same volatile
  * figures — "3,850 openjtalk", "102,020 reviews", "12.07 statements per graded card" —
- * with none of the "every status figure lives in NEXT.md" discipline the docs have.
+ * with none of the discipline the gated docs have.
  *
  * It found one on the first run: `src/db/browser.ts` pointed at a
  * browser-portable test file whose name was missing its ".test" segment, where four

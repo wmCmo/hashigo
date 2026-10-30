@@ -27,7 +27,7 @@
  * `npm run gates` decided this correctly and `npm test` did not, so the two
  * disagreed about the same run — the honest answer was reachable only by knowing
  * which command to type. Both import this now. A rule with two implementations is
- * a rule that drifts (`NEXT.md`'s SSOT section is about exactly this).
+ * a rule that drifts (`notes/archive/NEXT-retired-2026-10-30.md`'s SSOT section is about exactly this).
  */
 
 /** Strip ANSI so the summary can be matched. */

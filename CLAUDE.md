@@ -19,8 +19,12 @@ devices synced through a mailbox (decision 33). Live at
 <https://hashigo.titan-zp4.workers.dev> (Cloudflare Worker `cloud/app`, passphrase lock, R2
 seed). `app/README.md` is the entry point for the app; `src/*/README.md` for each module.
 
-- **Every status figure lives in [NEXT.md](NEXT.md), not here** — queue counts, gate
-  results, what landed when, what is left. Change the state there.
+- **There is no status file.** `NEXT.md` was retired on 2026-10-30: it was edited three
+  times in October against ~100 commits, and was wrong the one time it was needed. What
+  landed is `git log`; what is settled is below and in DECISIONS.md. **[RELEASE.md](RELEASE.md)**
+  holds the version, the beta criteria and the publishing gates (a routine writes gate 1's
+  result there on 2026-11-27). The cloud runbook is [cloud/README.md](cloud/README.md). The
+  old file is `notes/archive/NEXT-retired-2026-10-30.md`, verbatim.
 - **[SPEC.html](SPEC.html) is the design document** (draft 8, figures measured from
   `exports/`). Published copy:
   <https://claude.ai/code/artifact/c8416a42-779a-49da-81c1-54459067d94b> — revise by editing

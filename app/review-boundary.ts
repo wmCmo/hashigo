@@ -2,7 +2,7 @@
  * WHERE THE QUESTION ENDS AND THE ANSWER BEGINS. THIS RULE HAS BEEN WRONG ONCE, IN
  * FRONT OF HIM, AND IT WAS THE FIRST CARD THE FIRST REAL SESSION SERVED.
  *
- * `NEXT.md` records the failure: a first version took the boundary to be "every side
+ * `notes/archive/NEXT-retired-2026-10-30.md` records the failure: a first version took the boundary to be "every side
  * up to the first one that hides or sounds something", and a REVERSE track — order
  * permuted to Meaning → Example → Vocab, whose Example side carries audio — pulled
  * the sentence *"time constraints make it impossible to do everything"* into the
