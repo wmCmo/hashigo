@@ -66,7 +66,7 @@ npm run gates           # ALL SIX GATES, one command, honest verdict. Start here
                         # wasm URL. (spike:check was dropped 2026-10-27 — an injected
                         # contract break turned `typecheck` red with 667 errors; see
                         # `test/db-contract.types.ts`.)
-npm test                # 69 files, 1603 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
+npm test                # 69 files, 1604 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
                         # MEASURED, never added up — run the suite or leave the line alone
                         # (`test/docs-figures.test.ts` checks it). A wrapper
                         # (`scripts/test.mjs`) that reads vitest's SUMMARY: the run must
@@ -311,6 +311,9 @@ npx vite-node scripts/reverse-dormant-apply.ts -- --db build/hashigo.db --apply 
     ARCHIVE_VERSION (enforced). Patch = a fixes-only deploy — per DEPLOY, not per commit.
     `app:build:cloud` refuses a commit that is not the tagged release; the tag's message
     is the changelog. Never write a changelog by hand.
+60. **A mode-2 単語 card shows its emoji on the question side**, unmasked, at the top of
+    side 2 inside `<< ^Reading >>`; mode 1 keeps it behind side 4's cloze. Homophones:
+    *"when i heard words like かんしゅう i genuinely don't know which one it is"*.
 
 ## READ THE TEMPLATE. It answers most questions about the screen.
 

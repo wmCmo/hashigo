@@ -2474,10 +2474,26 @@ function markAccentLabel(card: MountedCard<HTMLElement>): void {
   }
 }
 
+/**
+ * What a side SAYS, without the labels of its controls. Decision 35 sizes a side by
+ * its content, and `textContent` also counted the canvas's "undo stroke" and
+ * "clear": 16 characters that, from decision 58 on, set the word on every mode-2
+ * 単語 card one size smaller (携わる's side: 15 characters of content, 31 counted).
+ */
+function contentText(element: HTMLElement): string {
+  let text = "";
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    if (node.parentElement?.closest("button") !== null) continue;
+    text += node.textContent ?? "";
+  }
+  return text;
+}
+
 /** Size every side from what it actually says. See `sideScale` and `heroLength`. */
 function scaleSides(card: MountedCard<HTMLElement>): void {
   for (const side of card.result.sides) {
-    const text = side.element.textContent ?? "";
+    const text = contentText(side.element);
     side.element.setAttribute("data-scale", sideScale(text));
     const hero = heroLength(text);
     if (hero > 0) side.element.setAttribute("data-hero", String(hero));

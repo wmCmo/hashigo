@@ -444,7 +444,7 @@ describe("which sides are set as the hero (decision 57)", () => {
     expect(heroLength("   ")).toBe(0);
   });
 
-  it("counts CODE POINTS, like `sideScale`", () => {
+  it("counts 𠮟 once — a code point, which for Japanese is what `sideScale`'s graphemes are too", () => {
     expect(heroLength("𠮟る")).toBe(2);
   });
 });
@@ -461,6 +461,15 @@ describe("how big the text on a side should be", () => {
     ]) {
       expect(sideScale(text), text).toBe("display");
     }
+  });
+
+  it("counts an emoji as what a reader sees, not as its joined code points", () => {
+    // 携わる's question side once the emoji hint moved onto it, 2026-10-31, with the
+    // canvas's button labels left out (`contentText` in app/main.ts). 🤝👩‍💼👨‍💼🤝 is
+    // 14 code points and 4 symbols; counted as 14 the side fell to `mid`.
+    const side = "🤝👩‍💼👨‍💼🤝[…]携わる[…]携たずさわる中高 (4)";
+    expect([...side].length).toBe(29);
+    expect(sideScale(side)).toBe("display");
   });
 
   it("drops the reverse prompt that started all this out of display", () => {

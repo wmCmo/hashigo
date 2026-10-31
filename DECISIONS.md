@@ -2514,6 +2514,30 @@ right**: it holds his verbatim reasoning and this quotes it.
     canvas and templates from scratch would each have been a minor. Inventing tags for
     them after the fact adds nothing.
 
+60. **A MODE-2 単語 CARD SHOWS ITS EMOJI WITH THE QUESTION.** 2026-10-31. Zach: *"when i
+    heard words like かんしゅう i genuinely don't know which one it is … if it's
+    reading=false then the emoji is moved to the top"*. 観衆 / 慣習 / 監修 sound the
+    same, and on a mode-2 card the sound IS the prompt (decision 29), so without a
+    hint the card asks a question with three right answers.
+
+    The 単語 body now carries `#### <ai>Describe a word << 単語 >> using emojis only</ai>`
+    as the first line of side 2's `<< ^Reading >>` block — unmasked, the hint — and
+    side 4's masked emoji line is wrapped in `<< #Reading >>`, so a mode-2 card shows
+    it once. The instruction text is unchanged, so every card keeps the emoji it
+    already had (decision 7: the text IS the generation's identity).
+
+    **SIDE 2, NOT SIDE 1, and the first attempt proved why.** Put on side 1 (empty on a
+    mode-2 card) it made side 1 non-empty, and the review boundary — "the first
+    non-empty side, and nothing else", `app/review-boundary.ts`, because `---` is his —
+    then showed the emoji ALONE, with the word and the audio a press away.
+
+    **It exposed two sizing defects, both fixed in the same change.** `scaleSides`
+    measured a side's whole `textContent`, which since decision 58 included the
+    canvas's "undo stroke" / "clear": 16 characters that set every mode-2 word one
+    size smaller. It now reads content only (`contentText`, no button labels). And
+    `sideScale` counted code points, so 🤝👩‍💼👨‍💼🤝 was 14 long; it counts graphemes
+    now (4), identical for kana, kanji and Latin.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

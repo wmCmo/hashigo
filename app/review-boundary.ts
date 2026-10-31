@@ -155,15 +155,31 @@ export function promptPositions(sides: readonly BoundarySide[]): number[] {
 export type SideScale = "display" | "mid" | "body";
 
 /**
- * Counted in CODE POINTS, not UTF-16 units — `[...text].length`, so 𠮟 counts
- * once. A surrogate pair counted twice would push short kanji prompts a bucket
- * down, which is precisely the direction that hurts.
+ * Counted in what a reader SEES — graphemes — not UTF-16 units, so 𠮟 counts once.
+ * A surrogate pair counted twice would push short kanji prompts a bucket down,
+ * which is precisely the direction that hurts.
+ *
+ * Code points were the first fix for that, and they are still one per character
+ * for every kana, kanji and Latin letter, so the thresholds above are unchanged.
+ * They are NOT one per emoji: 👩‍💼 is three joined code points and one symbol, and
+ * 🤝👩‍💼👨‍💼🤝 measured 14 where a reader sees 4. That mattered once the emoji
+ * hint moved onto the question side of a `Reading = false` 単語 card (2026-10-31):
+ * counted in code points it pushed 携わる's side from `display` to `mid`.
  */
 export function sideScale(text: string): SideScale {
-  const length = [...text.trim().replace(/\s+/g, " ")].length;
+  const length = graphemes(text.trim().replace(/\s+/g, " "));
   if (length <= 28) return "display";
   if (length <= 64) return "mid";
   return "body";
+}
+
+function graphemes(text: string): number {
+  // Every engine the app runs on has it (Chrome, Samsung Internet, Node). Code
+  // points are the fallback, and are exact for everything but joined emoji.
+  if (typeof Intl.Segmenter !== "function") return [...text].length;
+  let count = 0;
+  for (const _ of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)) count += 1;
+  return count;
 }
 
 /**
