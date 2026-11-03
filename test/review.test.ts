@@ -1,4 +1,6 @@
-import { existsSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -1361,19 +1363,45 @@ describe("booleanValue — the one rule the gate and the mode share", () => {
 
 /**
  * `cardGaps` — what the app's auto-fill asks of one card (`autoFill` in
- * `app/main.ts`). Over the real corpus, so the cards named here are real: the
- * three with a gap are English Vocabulary cards whose sentence clip Mochi never
- * made, found by `scripts/fill-generations.ts -- --dry`.
+ * `app/main.ts`).
+ *
+ * THE GAP IS MADE HERE, ON A COPY, not found in the corpus. The first version named
+ * a real card whose clip Mochi never made (engulf, `1LnWMegi`) — and on 2026-11-02 the
+ * laptop database was refilled from the cloud, its gaps went from 128 to 2, and the
+ * test failed for a reason that had nothing to do with `cardGaps`. A complete card
+ * (係数) with its head word changed renders requests nobody has generated, which is
+ * the situation auto-fill exists for, and stays true whatever gets filled later.
  */
 describe.skipIf(!HAS_CORPUS)("cardGaps", () => {
-  it("names the clip a card renders and nothing has made", () => {
-    const db = openDatabase(DB, { readOnly: true, applySchema: false });
+  const withNewWord = (word: string) => {
+    const dir = mkdtempSync(join(tmpdir(), "hashigo-gaps-"));
+    const copy = join(dir, "corpus.db");
+    copyFileSync(DB, copy);
+    const db = openDatabase(copy, { applySchema: false });
+    db.prepare(
+      `UPDATE card_field_values SET value = ?
+        WHERE card_id = '01HxiZut'
+          AND field_id = (SELECT f.id FROM template_fields f JOIN cards c ON c.template_id = f.template_id
+                           WHERE c.id = '01HxiZut' AND f.name = '単語')`,
+    ).run(word);
+    return {
+      db,
+      done: () => {
+        db.close();
+        rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  };
+
+  it("names what a card renders and nothing has made — speech for the new word among it", () => {
+    const { db, done } = withNewWord("係数テスト");
     try {
-      const gaps = cardGaps(db, "1LnWMegi"); // engulf
+      const gaps = cardGaps(db, "01HxiZut");
       expect(gaps.length).toBeGreaterThan(0);
-      expect(gaps.every((gap) => gap.kind === "speech" && gap.text.trim() !== "")).toBe(true);
+      expect(gaps.every((gap) => gap.text.trim() !== "")).toBe(true);
+      expect(gaps.some((gap) => gap.kind === "speech" && gap.text.includes("係数テスト"))).toBe(true);
     } finally {
-      db.close();
+      done();
     }
   });
 
@@ -1388,14 +1416,16 @@ describe.skipIf(!HAS_CORPUS)("cardGaps", () => {
   });
 
   it("never offers furigana — the Worker cannot make one, and a reading is drilled", () => {
-    const db = openDatabase(DB, { readOnly: true, applySchema: false });
+    const { db, done } = withNewWord("係数テスト");
     try {
-      const all = cardGaps(db, "1LnWMegi", new Set(["ai", "translate", "speech", "furigana"]));
-      const shipped = cardGaps(db, "1LnWMegi");
+      const all = cardGaps(db, "01HxiZut", new Set(["ai", "translate", "speech", "furigana"]));
+      const shipped = cardGaps(db, "01HxiZut");
+      expect(shipped.length).toBeGreaterThan(0);
       expect(shipped.some((gap) => gap.kind === "furigana")).toBe(false);
-      expect(all.length).toBeGreaterThanOrEqual(shipped.length);
+      // 単語 has a furigana mount on the head word, so asking for it does find one.
+      expect(all.some((gap) => gap.kind === "furigana")).toBe(true);
     } finally {
-      db.close();
+      done();
     }
   });
 });
