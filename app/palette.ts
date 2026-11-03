@@ -12,7 +12,7 @@ import { shell } from "./shell.js";
 import { loadDecks, templateChoices } from "./sidebar.js";
 import { readVisits } from "./visits.js";
 import { ask } from "./worker-client.js";
-import { offerDuplicate, pushUndo, refreshAfterOp } from "./ops.js";
+import { offerDuplicate, openEditorById, pushUndo, refreshAfterOp } from "./ops.js";
 
 /**
  * *"i want notion, obsidian like searching feature, so like ctrl +k and it pops
@@ -259,7 +259,13 @@ export function buildNewCardForm(): HTMLElement {
         });
         // Straight into the editor on the card just made: a title with no fields
         // is not yet a card, and this is always the next thing he wants.
-        if (reply.card !== null) shell().openEditorFor(reply.card);
+        //
+        // Through `openEditorById`, the path `e` and the `[[` dialog take, and not
+        // `openEditorFor(reply.card)`: that passed NO template choices, so the
+        // editor's header read "template none" on every card made here — a 単語
+        // card rendering as 単語, labelled as having no template (seen 2026-10-21
+        // on all 漢検 cards). The worker's preview reply carries the choices.
+        void openEditorById(cardId);
         void loadDecks(true);
       })
       .catch((cause: Error) => {

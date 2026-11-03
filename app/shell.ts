@@ -48,7 +48,10 @@ export interface Shell {
   readonly paintLayerOps: (layer: Layer, host: HTMLElement) => void;
   readonly openEditorFor: (
     card: PreparedCard,
-    choices?: readonly TemplateChoice[],
+    // REQUIRED. It defaulted to `[]`, and a caller that left it out got an editor
+    // labelled "template none" on a card that has one — `palette.ts` did, for
+    // every card made from the sidebar until 2026-11-04.
+    choices: readonly TemplateChoice[],
     options?: { readonly fromPreview?: boolean },
   ) => void;
 }

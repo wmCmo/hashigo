@@ -3442,7 +3442,7 @@ function openEditor(): void {
 
 function openEditorFor(
   card: PreparedCard,
-  choices: readonly TemplateChoice[] = [],
+  choices: readonly TemplateChoice[],
   options: { readonly fromPreview?: boolean } = {},
 ): void {
   const fields = card.loaded.template?.fields ?? [];
