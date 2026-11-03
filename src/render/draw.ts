@@ -257,9 +257,40 @@ export function attachDraw(
     context.stroke();
   }
 
+  /**
+   * ─── THE CONTEXT FORGETS ITS SCALE: "it only clears that space" ────────────
+   *
+   * Zach, 2026-11-03, on his phone: strokes drawn at the bottom right landed
+   * shrunk into the top left, and `clear` wiped only a square there — sometimes.
+   * Both are one fault. The transform below was set ONCE, in `resize()`, and
+   * trusted for the life of the card. Android Chrome can reset a 2D context
+   * (it drops canvas backing stores under memory pressure or in the background,
+   * then restores them with DEFAULT state), and the identity transform that
+   * comes back makes every CSS-pixel point land at 1 / devicePixelRatio of where
+   * it belongs — 2.8125 on his handset, so a third of the way in — and makes
+   * `clearRect(0, 0, width / ratio, height / ratio)` cover the same third. The
+   * brush survived because `onDown` already re-applied it every stroke; the
+   * transform was the one piece of state nothing re-asserted.
+   *
+   * So nothing trusts it now: `prime()` re-applies scale and brush before every
+   * stroke and every replay, and the wipe is done in DEVICE pixels under an
+   * explicit identity transform, so it covers the whole backing store whatever
+   * state the context is in. `contextrestored` replays the strokes, because the
+   * pixels went with the state.
+   */
+  function prime(): void {
+    if (context === null) return;
+    // One unit of drawing = one CSS pixel, on any display. Everything that
+    // draws works in CSS pixels and never has to know the ratio.
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    brush();
+  }
+
   function repaint(): void {
     if (context === null) return;
-    context.clearRect(0, 0, surface.width / ratio, surface.height / ratio);
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, surface.width, surface.height);
+    prime();
     for (const stroke of strokes) paint(stroke.points, 0);
     if (current !== null) paint(current, 0);
   }
@@ -290,12 +321,7 @@ export function attachDraw(
     const rect = surface.getBoundingClientRect();
     surface.width = Math.max(1, Math.round(rect.width * ratio));
     surface.height = Math.max(1, Math.round(rect.height * ratio));
-    if (context !== null) {
-      // One unit of drawing = one CSS pixel, on any display. Everything above
-      // this line works in CSS pixels and never has to know the ratio.
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      brush();
-    }
+    // Writing the size resets the context; `repaint()` primes it again.
     repaint();
   }
 
@@ -382,7 +408,7 @@ export function attachDraw(
     currentType = event.pointerType;
     current = [pointOf(event)];
     capture(true, event.pointerId);
-    brush();
+    prime();
     paint(current, 0);
   };
 
@@ -431,6 +457,8 @@ export function attachDraw(
     ["pointerup", onUp],
     ["pointercancel", onUp],
     ["lostpointercapture", onLostCapture],
+    // The browser gives a reset 2D context back blank and in default state.
+    ["contextrestored", () => repaint()],
   ];
   for (const [type, listener] of listeners) {
     surface.addEventListener(type, listener, { passive: false });

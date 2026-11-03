@@ -742,6 +742,9 @@ describe("the canvas accepts a stroke from a finger", () => {
       // `lostpointercapture` is not decoration: it is the event that fires when
       // Android takes the gesture away mid-stroke, and without it the stroke is
       // never closed. See the dead-canvas regression below.
+      // `contextrestored` is the same kind of event for the PIXELS: Android hands
+      // a reset context back blank and unscaled. See the shrunk-stroke regression.
+      "contextrestored",
       "lostpointercapture",
       "pointercancel",
       "pointerdown",
@@ -766,7 +769,12 @@ describe("the canvas accepts a stroke from a finger", () => {
       devicePixelRatio: 3,
     });
     expect([canvas.width, canvas.height]).toEqual([900, 1200]);
-    expect(canvas.context.ops[0]).toBe("setTransform(3,0,0,3,0,0)");
+    // The wipe is in device pixels under identity, then the scale goes on.
+    expect(canvas.context.ops.slice(0, 3)).toEqual([
+      "setTransform(1,0,0,1,0,0)",
+      "clearRect(0,0,900,1200)",
+      "setTransform(3,0,0,3,0,0)",
+    ]);
     // brushRadius is a RADIUS, so the stroke is twice as wide.
     expect(canvas.context.lineWidth).toBe(8);
     expect(canvas.context.strokeStyle).toBe("#FF0000");
@@ -806,8 +814,10 @@ describe("the canvas accepts a stroke from a finger", () => {
     expect(canvas.captured).toEqual([7]);
     expect(canvas.released).toEqual([7]);
     expect(canvas.attributes.get(DRAW_DATA.strokes)).toBe("1");
-    // The 2D calls, in order: a dot at pointerdown, then one segment per move.
+    // The 2D calls, in order: the scale re-asserted (never trusted), a dot at
+    // pointerdown, then one segment per move.
     expect(canvas.context.ops).toEqual([
+      "setTransform(1,0,0,1,0,0)",
       "beginPath",
       "moveTo(100,100)",
       "lineTo(100,100)",
@@ -821,6 +831,43 @@ describe("the canvas accepts a stroke from a finger", () => {
       "lineTo(140,100)",
       "stroke",
     ]);
+  });
+
+  it("survives Android resetting the context: strokes stay put, clear wipes everything", () => {
+    // Zach, 2026-11-03, dpr 2.8125: strokes drawn bottom-right landed shrunk in
+    // the top-left, and `clear` wiped only a square there. Chrome had reset the
+    // context to an identity transform and the widget never put its scale back.
+    const canvas = new FakeCanvas({ left: 0, top: 0, width: 320, height: 400 });
+    const handle = attachDraw(null, canvas, { devicePixelRatio: 2.8125 });
+    expect([canvas.width, canvas.height]).toEqual([900, 1125]);
+    canvas.fire("pointerdown", pointer(10, 10));
+    canvas.fire("pointerup", pointer(10, 10));
+
+    // The reset: nothing the widget can see happens, the box does not move.
+    canvas.context.ops.length = 0;
+    canvas.fire("pointerdown", pointer(300, 380));
+    // The scale goes back on BEFORE the first point is drawn.
+    expect(canvas.context.ops.slice(0, 2)).toEqual(["setTransform(2.8125,0,0,2.8125,0,0)", "beginPath"]);
+    canvas.fire("pointerup", pointer(300, 380));
+
+    // Clear wipes the whole backing store in device pixels, not ratio-scaled CSS
+    // pixels under whatever transform happens to be live.
+    canvas.context.ops.length = 0;
+    handle.clear();
+    expect(canvas.context.ops.slice(0, 2)).toEqual(["setTransform(1,0,0,1,0,0)", "clearRect(0,0,900,1125)"]);
+    expect(handle.strokes).toEqual([]);
+
+    // And a restored context, which comes back blank, gets the strokes replayed.
+    canvas.fire("pointerdown", pointer(50, 50));
+    canvas.fire("pointerup", pointer(50, 50));
+    canvas.context.ops.length = 0;
+    canvas.fire("contextrestored", pointer(0, 0));
+    expect(canvas.context.ops.slice(0, 3)).toEqual([
+      "setTransform(1,0,0,1,0,0)",
+      "clearRect(0,0,900,1125)",
+      "setTransform(2.8125,0,0,2.8125,0,0)",
+    ]);
+    expect(canvas.context.ops.filter((op) => op === "stroke")).toHaveLength(1);
   });
 
   it("leaves a dot for a tap — 点 is a stroke", () => {
@@ -963,11 +1010,15 @@ describe("the canvas accepts a stroke from a finger", () => {
     const handle = attachDraw(null, canvas, { devicePixelRatio: 1 });
     canvas.context.ops.length = 0;
 
-    // Same box: no setTransform, because a resize clears the backing store and
-    // replaying strokes for nothing would cost battery on every single stroke.
+    // Same box: no wipe and no replay, because a resize clears the backing store
+    // and replaying strokes for nothing would cost battery on every stroke. (The
+    // scale IS re-asserted per stroke — one call, no pixels touched.)
     canvas.fire("pointerdown", pointer(10, 10));
     canvas.fire("pointerup", pointer(10, 10));
-    expect(canvas.context.ops.filter((op) => op.startsWith("setTransform"))).toEqual([]);
+    expect(canvas.context.ops.filter((op) => op.startsWith("clearRect"))).toEqual([]);
+    expect(canvas.context.ops.filter((op) => op.startsWith("setTransform"))).toEqual([
+      "setTransform(1,0,0,1,0,0)",
+    ]);
 
     // A rotation DOES move it, and the strokes have to survive the re-measure.
     canvas.rect = { left: 0, top: 0, width: 400, height: 300 };
