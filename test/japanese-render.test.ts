@@ -814,18 +814,20 @@ describe("the canvas accepts a stroke from a finger", () => {
     expect(canvas.captured).toEqual([7]);
     expect(canvas.released).toEqual([7]);
     expect(canvas.attributes.get(DRAW_DATA.strokes)).toBe("1");
-    // The 2D calls, in order: the scale re-asserted (never trusted), a dot at
-    // pointerdown, then one segment per move.
+    // The 2D calls, in order: the scale re-asserted (never trusted) before the dot
+    // at pointerdown AND before each move's segment.
     expect(canvas.context.ops).toEqual([
       "setTransform(1,0,0,1,0,0)",
       "beginPath",
       "moveTo(100,100)",
       "lineTo(100,100)",
       "stroke",
+      "setTransform(1,0,0,1,0,0)",
       "beginPath",
       "moveTo(100,100)",
       "lineTo(120,120)",
       "stroke",
+      "setTransform(1,0,0,1,0,0)",
       "beginPath",
       "moveTo(120,120)",
       "lineTo(140,100)",
@@ -848,7 +850,12 @@ describe("the canvas accepts a stroke from a finger", () => {
     canvas.fire("pointerdown", pointer(300, 380));
     // The scale goes back on BEFORE the first point is drawn.
     expect(canvas.context.ops.slice(0, 2)).toEqual(["setTransform(2.8125,0,0,2.8125,0,0)", "beginPath"]);
-    canvas.fire("pointerup", pointer(300, 380));
+    // And a reset in the MIDDLE of the stroke: the next segment re-asserts it too,
+    // rather than drawing the rest of the stroke a third of the way in.
+    canvas.context.ops.length = 0;
+    canvas.fire("pointermove", pointer(310, 390));
+    expect(canvas.context.ops.slice(0, 2)).toEqual(["setTransform(2.8125,0,0,2.8125,0,0)", "beginPath"]);
+    canvas.fire("pointerup", pointer(310, 390));
 
     // Clear wipes the whole backing store in device pixels, not ratio-scaled CSS
     // pixels under whatever transform happens to be live.

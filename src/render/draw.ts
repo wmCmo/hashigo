@@ -417,6 +417,11 @@ export function attachDraw(
     event.preventDefault();
     const from = current.length - 1;
     current.push(pointOf(event));
+    // Per segment, not only per stroke: a context reset in the MIDDLE of a stroke
+    // drew the rest of it at 1/devicePixelRatio until the next pointerdown primed
+    // it (2026-11-04, the gap v0.6.2's fix left). One setTransform and four
+    // property writes per move event, next to the stroke itself.
+    prime();
     paint(current, from);
   };
 
