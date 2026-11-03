@@ -12,7 +12,7 @@ import { closeSidebar, deckIndex, loadDecks } from "./sidebar.js";
 import { ask } from "./worker-client.js";
 import { confirmDelete, openEditorById, runCardOp } from "./ops.js";
 import { icon, setIcon, type IconName } from "./icons.js";
-import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
+import { bareLayer, closeIfTop, closeTop, layers, pushLayer } from "./layers.js";
 import { paintDeckReview } from "./focus.js";
 
 /**
@@ -149,8 +149,23 @@ new MutationObserver(() => {
 
 window.addEventListener("popstate", () => {
   const deckId = deckFromHash(location.hash);
-  if (deckId !== undefined) void openGallery(deckId, { fromHistory: true });
-  else if (document.body.getAttribute("data-view") === "gallery") closeGallery();
+  if (deckId !== undefined) {
+    void openGallery(deckId, { fromHistory: true });
+    return;
+  }
+  if (document.body.getAttribute("data-view") !== "gallery") return;
+  // BACK CLOSES WHAT IS ON TOP FIRST. A preview (or any layer) opened from a tile
+  // has no history entry of its own — layers are dismissed, not visited — so Back
+  // used to take the GALLERY away and leave the preview floating over review.
+  // Decision 52 recorded it as a known gap; on his phone Back is the system
+  // gesture, so it was the common case. Close the top layer and put the gallery's
+  // entry back, so the next Back leaves the gallery as before.
+  if (layers.length > 0) {
+    closeTop();
+    history.pushState({ [GALLERY_STATE]: gallery.deckId }, "", galleryHash(gallery.deckId));
+    return;
+  }
+  closeGallery();
 });
 
 /**

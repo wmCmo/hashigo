@@ -2237,8 +2237,10 @@ right**: it holds his verbatim reasoning and this quotes it.
     system gesture — means "back to review" instead of leaving the app. **The URL
     follows `data-view`**, watched by one observer, because three different things
     leave the gallery and only one of them is Back. Layers get no address on
-    purpose: they are dismissed, not visited. **Known gap:** Back with a preview
-    open over the gallery leaves the gallery under the preview.
+    purpose: they are dismissed, not visited. **Back closes a layer first**
+    (closed 2026-11-04): with a preview open over the gallery, Back closes the
+    preview and puts the gallery's entry back, so the next Back leaves the gallery.
+    It used to take the gallery away and leave the preview floating over review.
 
     **Smaller, same review:** deck paths sort with numbers as numbers (`第2章`
     before `第10章`) and **nothing else moved** — a Japanese collator was tried and
