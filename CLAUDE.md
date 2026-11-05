@@ -106,7 +106,10 @@ npm run app:build:cloud                   # then, in cloud/app/: npx wrangler@4 
                         # Confirm via Settings → versions (`app v0.6.0 · <commit>`). A
                         # running app picks a deploy up on its own (`app/update-check.ts`).
 npm run accent:helper                     # decision 56's helper on 127.0.0.1:47474
-                        # (starts at login from a Startup-folder shortcut on his laptop)
+                        # A scheduled task, "Hashigo accent helper", starts it at logon and
+                        # retries every 30 min (ignored while running) — since 2026-11-05,
+                        # when it died unnoticed. Log: build/accent-helper.log (timestamped).
+                        # The app toasts on the laptop when it is down and cards wait.
 npm run phone                             # dev server to the phone through a fixed tunnel
                         # Historical; the phone uses the cloud app now. OPFS is keyed by
                         # ORIGIN, so a new address is a new empty database and a full

@@ -14,11 +14,15 @@
  * nothing. So a touch-first device never asks. Cards made there are filled the
  * next time the laptop opens the app, by the boot sweep.
  *
- * ─── SILENT WHEN THE HELPER IS NOT RUNNING ──────────────────────────────────
+ * ─── NOT SILENT ANY MORE WHEN IT IS DOWN — 2026-11-05 ───────────────────────
  *
- * A refused connection is the normal state when it is not started, and a
- * convenience that failed is not worth a red line on his review screen. It is
- * logged quietly and the session goes on.
+ * It used to be: a refused connection was logged to the boot log and nothing
+ * else. Then the helper stopped some time on 2026-11-05 and nobody knew until
+ * 興隆 came up with no OJAD — 58 cards had gone without (*"ojad is not here"*,
+ * *"will it happen again tho"*). So when there IS something to fill and the
+ * helper does not answer, `warn` says so where he looks (a toast), on the laptop
+ * only. It restarts itself now: a scheduled task, "Hashigo accent helper", starts
+ * it at logon and every 30 minutes (ignored while it runs).
  */
 import { ask } from "./worker-client.js";
 import type { DeriveResult } from "../src/accent/fill.js";
@@ -53,6 +57,7 @@ let running: Promise<unknown> = Promise.resolve();
 export function fillAccents(
   cardIds?: readonly string[],
   log: (text: string) => void = () => undefined,
+  warn: (text: string) => void = () => undefined,
 ): Promise<{ labels: number; yomi: number; ojad: number } | null> {
   const next = running.then(async () => {
     if (!onLaptop()) return null;
@@ -67,6 +72,11 @@ export function fillAccents(
       if (texts.length > 0) lines = (await post<{ lines: AnnotatedLine[] }>("/sentences", { texts })).lines;
     } catch {
       log("accent helper not running — reading, 型 and OJAD left for later");
+      const cards = new Set(plan.items.map((item) => item.cardId)).size;
+      warn(
+        `the accent helper isn't running on this laptop — 読み, 型 and OJAD stay empty on ` +
+          `${cards} card${cards === 1 ? "" : "s"} until it is (it restarts itself within 30 minutes)`,
+      );
       return null;
     }
     const { report } = await ask<"accentFill">({

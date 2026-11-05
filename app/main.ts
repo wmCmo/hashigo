@@ -3907,7 +3907,7 @@ function openEditorFor(
       // Then the laptop's accent helper (`./accent-helper.ts`) — after the
       // generations, because OJAD annotates the example sentence they make.
       void autoFill(card.cardId, { force: true })
-        .then(() => fillAccents([card.cardId], (text) => line(text, "good")))
+        .then(() => fillAccents([card.cardId], (text) => line(text, "good"), (text) => say(text, true)))
         .then((filled) => {
           if (filled !== null && filled.labels + filled.yomi + filled.ojad > 0) refreshShown(card.cardId);
         });
@@ -4351,7 +4351,7 @@ async function boot(): Promise<void> {
     watchForUpdates();
     // Cards made in the app that still lack 読み / 型 / OJAD — made on the phone,
     // or before the helper was running. Laptop only, in the background.
-    void fillAccents(undefined, (text) => line(text, "good"));
+    void fillAccents(undefined, (text) => line(text, "good"), (text) => say(text, true));
   } catch (cause) {
     line(String((cause as Error).message), "bad");
     line("nothing was written. Fix the above and reload.", "bad");

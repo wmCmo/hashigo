@@ -165,15 +165,28 @@ class Handler(BaseHTTPRequestHandler):
         pass  # one line per card is noise; errors come back in the reply
 
 
+def stamp(text):
+    """One log line with the local time. 2026-11-05: the helper stopped that day and
+    its log could not say when — every line was undated."""
+    from datetime import datetime
+
+    print(f"{datetime.now().isoformat(timespec='seconds')}  {text}", flush=True)
+
+
 def main():
     try:
         server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     except OSError:
-        # Already running (the login copy, or a second start): nothing to do.
-        print(f"port {PORT} is taken — another helper is already running", flush=True)
+        # Already running (an earlier start of the scheduled task, or a hand start):
+        # nothing to do. Exit 0, so the task does not count it as a failure.
+        stamp(f"port {PORT} is taken — another helper is already running")
         return 0
-    print(f"accent helper on http://127.0.0.1:{PORT} ({VERSION})", flush=True)
-    server.serve_forever()
+    stamp(f"accent helper on http://127.0.0.1:{PORT} ({VERSION}), pid {os.getpid()}")
+    try:
+        server.serve_forever()
+    except BaseException as error:  # noqa: BLE001 - say WHY it stopped, then stop
+        stamp(f"stopped: {type(error).__name__}: {error}")
+        raise
     return 0
 
 
