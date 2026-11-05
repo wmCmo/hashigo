@@ -90,7 +90,7 @@ import {
   sideIndex,
 } from "../src/template/index.js";
 import { positionKeys, FIELD_TYPES, type FieldType } from "../src/schema/index.js";
-import { effectiveRole, fieldKind, kindOf, roleOf, withRole } from "../src/fields/index.js";
+import { effectiveRole, fieldKind, kindOf, ROLE_KEY, roleOf, withRole } from "../src/fields/index.js";
 // The SQL fragments for "live" and "due", from the module that owns them. This
 // query is why that module exists: it used to spell the due comparison with
 // `date()`, which converts an offset timestamp to UTC and made this count 704
@@ -2692,7 +2692,24 @@ function templateOp(request: TemplateOpRequest): void {
 
     case "addField": {
       const name = (request.name ?? "").trim();
-      const type = request.fieldType ?? "plain";
+      // A KIND, which is a stored type for most and a role for `reading` (decision
+      // 61). A Reading and a Pitch accent read from the head word — the first Text
+      // field with no role — so a new one is filled by the helper from day one.
+      const asked = request.fieldType ?? "plain";
+      const type = asked === "reading" ? "plain" : asked;
+      const options = asked === "reading" ? JSON.stringify({ [ROLE_KEY]: "reading" }) : "{}";
+      let source: string | null = null;
+      if (asked === "reading" || asked === "accent") {
+        source =
+          templateFields(db, before.id).find(
+            (entry) =>
+              entry.type === "plain" &&
+              effectiveRole({ ...entry, options: decodeFieldOptions(entry.options) }) === null,
+          )?.id ?? null;
+        if (source === null) {
+          throw new Error(`${before.name} has no Text field for it to read from — add the word's field first`);
+        }
+      }
       if (name === "") throw new Error("a field needs a name");
       if (before.fields.some((entry) => entry.name === name)) {
         // The resolver binds by name and takes the FIRST match, so a duplicate name
@@ -2712,11 +2729,15 @@ function templateOp(request: TemplateOpRequest): void {
           // had. Without it a re-import silently threw away 3,454 型 labels.
           `INSERT INTO template_fields (template_id, id, name, type, source_field_id,
                                         options, pos, local)
-           VALUES (?, ?, ?, ?, NULL, '{}', ?, 1)`,
-        ).run(before.id, id, name, type, keys[before.fields.length]);
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+        ).run(before.id, id, name, type, source, options, keys[before.fields.length]);
         renumber(db, before.id, [...before.fields.map((entry) => entry.id), id]);
       })();
-      describe = `added ${name} (${type}) to ${before.name} — put <<${name}>> in the body to show it`;
+      const kindLabel = fieldKind({ type, options: decodeFieldOptions(options) }).label;
+      const reads = before.fields.find((entry) => entry.id === source)?.name;
+      describe =
+        `added ${name} (${kindLabel}${reads === undefined ? "" : `, reading ${reads}`}) to ${before.name}` +
+        ` — put <<${name}>> in the body to show it`;
       undo = { op: "deleteField", templateId: before.id, fieldId: id };
       break;
     }

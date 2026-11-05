@@ -828,17 +828,22 @@ async function confirmPriced(
 }
 
 function openAddField(detail: TemplateDetail, run: TemplateRunner): void {
-  // Only the types a person AUTHORS. The generated ones (`speech`, `ai`,
-  // `translate`, `furigana`, `dictionary`, `image-search`) need options and a source
-  // that this form cannot ask for sensibly, and their VALUES are empty by design —
-  // Mochi keeps generated output in `component-cache`, addressed by generation
-  // identity. Offering them here would create a field that can never show anything.
+  // KINDS, named as everywhere else (decision 61). Zach, 2026-11-05, at this very
+  // dialog: *"why are we missing furigana here? bro..."* — it kept its own list of
+  // storage types after the rest of the app moved to kinds, and still offered
+  // Long text. A Reading and a Pitch accent are wired to the head word by the
+  // worker (`addField`), so neither arrives as a field that can never fill.
+  //
+  // The generated kinds (`speech`, `ai`, `translate`) need a source and settings
+  // this form cannot ask for sensibly, and their values live in the generation
+  // cache, not on the card — so they are not offered here.
+  const reading = fieldKind({ type: "plain", options: { [ROLE_KEY]: "reading" } }).label;
   const TYPES: readonly (readonly [string, string])[] = [
-    ["plain", "plain — one line of text"],
-    ["text", "text — several lines"],
-    ["boolean", "boolean — true/false, gates <<#Field>> blocks"],
-    ["number", "number"],
-    ["accent", "accent — 平板 / 頭高 / 中高 / 尾高 (decision 20's 型)"],
+    ["plain", `${FIELD_KINDS.plain.label} — what you write`],
+    ["boolean", `${FIELD_KINDS.boolean.label} — a checkbox; gates <<#Field>> blocks`],
+    ["number", FIELD_KINDS.number.label],
+    ["reading", `${reading} — the head word's kana, filled for you`],
+    ["accent", `${FIELD_KINDS.accent.label} — 平板 / 頭高 / 中高 / 尾高, filled for you`],
   ];
 
   const root = document.createElement("div");
