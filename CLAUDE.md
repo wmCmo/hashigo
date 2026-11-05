@@ -66,7 +66,14 @@ npm run gates           # ALL SIX GATES, one command, honest verdict. Start here
                         # wasm URL. (spike:check was dropped 2026-10-27 — an injected
                         # contract break turned `typecheck` red with 667 errors; see
                         # `test/db-contract.types.ts`.)
-npm test                # 68 files, 1628 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
+npm run gates -- --quick   # the same, minus dashboard + roundtrip (the two corpus
+                        # re-imports) WHEN nothing changed can reach them — decided by
+                        # walking their imports (`scripts/corpus-deps.mjs`), refused
+                        # and run in full otherwise. ~85 s instead of ~2 min (2026-11-05).
+                        # ONE gates run per commit: never `npm test` first to read the
+                        # count and then the gates again. The pass count below comes
+                        # from a FULL run only; a quick run reports fewer, on purpose.
+npm test                # 68 files, 1629 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
                         # MEASURED, never added up — run the suite or leave the line alone
                         # (`test/docs-figures.test.ts` checks it). A wrapper
                         # (`scripts/test.mjs`) that reads vitest's SUMMARY: the run must

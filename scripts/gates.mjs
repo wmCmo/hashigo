@@ -37,12 +37,33 @@
 import { spawnSync } from "node:child_process";
 
 import { testVerdict } from "./test-verdict.mjs";
+import { CORPUS_TESTS, corpusTouched } from "./corpus-deps.mjs";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const HAVE_DB = existsSync(resolve(ROOT, "build/hashigo.db"));
 const only = process.argv.slice(2).filter((a) => !a.startsWith("-"));
+
+/**
+ * `--quick`: skip the two corpus re-import tests (~80 s of a ~90 s suite) when the
+ * change cannot reach them — decided by following their imports
+ * (`./corpus-deps.mjs`), never by a list. If it can, quick is REFUSED, loudly, and
+ * the full suite runs. Zach, 2026-11-05: *"it takes so much time"*.
+ */
+let quick = process.argv.includes("--quick");
+let quickNote = "";
+if (quick) {
+  const touched = corpusTouched(ROOT);
+  if (touched.length > 0) {
+    quick = false;
+    quickNote = `quick REFUSED — ${touched.slice(0, 3).join(", ")}${touched.length > 3 ? ` (+${touched.length - 3})` : ""} feed the corpus tests, so they run`;
+  } else {
+    quickNote = `quick — ${CORPUS_TESTS.join(" and ")} skipped: nothing changed can reach them`;
+  }
+  console.log(`gates: ${quickNote}`);
+}
+const TEST_CMD = quick ? `npm test -- ${CORPUS_TESTS.map((file) => `--exclude ${file}`).join(" ")}` : "npm test";
 
 /**
  * ONE STRING, `shell: true`, AND BOTH HALVES OF THAT ARE FORCED.
@@ -68,7 +89,7 @@ const GATES = [
     why: "app/ actually bundles — worker and wasm URLs resolve",
     cmd: "npm run app:build",
   },
-  { name: "test", why: "the suite", cmd: "npm test" },
+  { name: "test", why: quick ? "the suite, minus the two corpus re-imports" : "the suite", cmd: TEST_CMD },
   {
     name: "blobs:paths",
     why: "no absolute path anywhere in the database",
@@ -173,6 +194,6 @@ if (failed.length > 0) {
   console.log(`gates: FAILED — ${failed.join(", ")}`);
 } else {
   const skipped = results.filter((r) => r.verdict === "SKIP").length;
-  console.log(`gates: all green${skipped > 0 ? ` (${skipped} skipped)` : ""}`);
+  console.log(`gates: all green${skipped > 0 ? ` (${skipped} skipped)` : ""}${quickNote === "" ? "" : ` — ${quickNote}`}`);
 }
 process.exit(hardFailure ? 1 : 0);
