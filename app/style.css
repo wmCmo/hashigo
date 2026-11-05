@@ -4855,6 +4855,24 @@ input[data-answer="incorrect"] {
 @keyframes skel-pulse {
   50% { opacity: 0.45; }
 }
+/* GENERATED TEXT ON ITS WAY — Zach, 2026-11-05: *"i want some skeleton are loading
+   animation... something to let me know that it's not freezing"*. An example
+   sentence or a translation that the lookup has not answered yet (`pending`, still
+   empty) or that is being made (`generating`) is the same pulsing block as the
+   dashboard's. `missing` — tried and not there — does not pulse; it carries its
+   "try again" button instead. Furigana is not here: an empty one is normal. */
+.hashigo-generator.hashigo-ai[data-state="pending"]:empty,
+.hashigo-generator.hashigo-translate[data-state="pending"]:empty,
+.hashigo-generator.hashigo-ai[data-state="generating"],
+.hashigo-generator.hashigo-translate[data-state="generating"] {
+  animation: skel-pulse 1.4s ease-in-out infinite;
+  background: var(--hair);
+  border-radius: var(--radius-sm);
+  display: inline-block;
+  min-height: 1em;
+  vertical-align: middle;
+  width: min(100%, 16em);
+}
 /* The same treatment for settings (`openSettings`) and a deck's gallery
    (`gallerySkeleton`): real rows and real tiles, stand-in text painted as blocks.
    Measured blank before: settings 250-300 ms; a gallery showed the PREVIOUS deck's
@@ -4887,7 +4905,9 @@ input[data-answer="incorrect"] {
   .layer-body.is-loading .edit-input,
   .gallery-grid.is-loading .gcard-open,
   .gallery-grid.is-loading .gcard-gist,
-  .gallery-grid.is-loading .gcard-meta { animation: none; }
+  .gallery-grid.is-loading .gcard-meta,
+  .hashigo-generator[data-state="pending"],
+  .hashigo-generator[data-state="generating"] { animation: none; }
 }
 .backlinks {
   border-top: 0;

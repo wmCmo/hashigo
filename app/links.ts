@@ -160,11 +160,12 @@ export function triggerAt(text: string, caret: number): Trigger | null {
 /**
  * Replace a trigger with a finished link.
  *
- * `display` is seeded by the caller from the target's name and is the part he edits
- * afterwards — see the header for why that 6% matters. The caret lands just before
- * the closing `]]`, on the display text, because that is the only part worth
- * changing and putting it there saves the one keystroke that makes an inflection
- * link cheap to write.
+ * `display` is seeded by the caller from the target's name. The caret lands AFTER
+ * the closing `]]`, so he keeps typing the sentence. It used to land on the display
+ * text, to make editing an inflection one keystroke cheaper; Zach, 2026-11-05:
+ * *"when i type [[ to search for cards and hit enter, the cursor doesn't move to
+ * the end of the link it will be like [[char*|idhere]] and the cursor is at the *"*
+ * — writing on is the common case, and an inflection is a click away.
  */
 export function completeLink(
   text: string,
@@ -174,5 +175,5 @@ export function completeLink(
 ): { text: string; caret: number } {
   const link = `[[${display}|${target}]]`;
   const next = text.slice(0, trigger.start) + link + text.slice(trigger.end);
-  return { text: next, caret: trigger.start + 2 + display.length };
+  return { text: next, caret: trigger.start + link.length };
 }

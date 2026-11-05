@@ -1,9 +1,12 @@
+import Database from "better-sqlite3";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { MEMORY, checkIntegrity, openDatabase, type Db } from "../src/db/index.js";
+import type { SqliteHandle } from "../src/db/browser.js";
+import { refreshCardTags, tagsInText } from "../src/cards/tags.js";
 import {
   cardLinks,
   importLinks,
@@ -785,5 +788,50 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     expect(buddhism).toMatchObject({ cards_direct: 8, depth: 0 });
 
     expect(checkIntegrity(db)).toEqual([]);
+  });
+});
+
+/**
+ * A TYPED `#tag` BECOMES A TAG (2026-11-05, `src/cards/tags.ts`). Zach: *"the
+ * tagging is not working anymore"* — nothing had ever added a tag after the import.
+ */
+describe("tags read off a card's text", () => {
+  it("finds the tags a value carries, normalised, and nothing that is not one", () => {
+    expect(tagsInText("to fish (in a river, etc.) #Fishing")).toEqual(["Fishing"]);
+    expect(tagsInText("#Dialect/Kansai and #四字熟語")).toEqual(["Dialect/Kansai", "四字熟語"]);
+    // A heading needs a space after `#`; it is not a tag.
+    expect(tagsInText("# Heading")).toEqual([]);
+  });
+
+  it("adds the tag, its ancestors and the card's row — and is idempotent", () => {
+    const db = new Database(":memory:");
+    try {
+      db.exec(`
+        CREATE TABLE cards (id TEXT PRIMARY KEY);
+        CREATE TABLE card_field_values (card_id TEXT, field_id TEXT, value TEXT);
+        CREATE TABLE tags (
+          path TEXT PRIMARY KEY, parent_path TEXT REFERENCES tags (path), name TEXT NOT NULL,
+          CHECK (path = COALESCE(parent_path || '/', '') || name));
+        CREATE TABLE card_tags (card_id TEXT REFERENCES cards (id), tag_path TEXT REFERENCES tags (path),
+          manual INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (card_id, tag_path));
+        PRAGMA foreign_keys = ON;
+        INSERT INTO cards VALUES ('c1');
+        INSERT INTO card_field_values VALUES ('c1', 'f', 'to fish #Fishing #Sport/Angling'), ('c1', 'g', 'no tags');
+      `);
+      const handle = db as unknown as SqliteHandle;
+      expect(refreshCardTags(handle, ["c1"])).toBe(2);
+      expect(refreshCardTags(handle, ["c1"])).toBe(0);
+      expect(db.prepare("SELECT path FROM tags ORDER BY path").all().map((r) => (r as { path: string }).path)).toEqual([
+        "Fishing",
+        "Sport",
+        "Sport/Angling",
+      ]);
+      expect(db.prepare("SELECT tag_path, manual FROM card_tags ORDER BY tag_path").all()).toEqual([
+        { tag_path: "Fishing", manual: 0 },
+        { tag_path: "Sport/Angling", manual: 0 },
+      ]);
+    } finally {
+      db.close();
+    }
   });
 });

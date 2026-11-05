@@ -1086,8 +1086,8 @@ export interface RedoInfoMessage {
 
 /**
  * What this card still needs generated — `cardGaps` in `src/review/gaps.ts`.
- * Asked by the page's auto-fill (`autoFill` in `main.ts`), only ever for a card
- * created HERE: the 785 clips Mochi never made are his to fill, not a screen's.
+ * Asked by the page's auto-fill (`autoFill` in `main.ts`) for any card on screen —
+ * since 2026-11-05 (decision 62) not only a card created here.
  */
 export interface CardGapsRequest {
   readonly kind: "cardGaps";

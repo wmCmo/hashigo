@@ -138,6 +138,7 @@
 
 import type { SqliteHandle } from "../db/browser.js";
 import { refreshSearchText } from "../generate/search-text.js";
+import { refreshCardTags } from "../cards/tags.js";
 
 /** Bumped only for a change no reader could otherwise survive. */
 export const ARCHIVE_VERSION = 1;
@@ -891,6 +892,8 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
     if (Number(result.changes ?? 0) > 0) retextCards.add(v.cardId);
   }
   refreshSearchText(db, retextCards);
+  // Tags are not in the payload; the text is. Each device derives them (`src/cards/tags.ts`).
+  refreshCardTags(db, retextCards);
 
   let reviewsInserted = 0;
   let reviewsSkipped = 0;

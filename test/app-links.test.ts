@@ -131,14 +131,20 @@ describe("the trigger", () => {
 });
 
 describe("completing a link", () => {
-  it("replaces the trigger and lands the caret on the display text", () => {
+  it("replaces the trigger and lands the caret after the link", () => {
     const text = "見る [[越";
     const trigger = triggerAt(text, text.length)!;
     const out = completeLink(text, trigger, "越す", "4nKAg2kH");
     expect(out.text).toBe("見る [[越す|4nKAg2kH]]");
-    // Just after the display text, before the pipe — the only part worth editing,
-    // which is what makes an inflection link one keystroke instead of four.
-    expect(out.text.slice(0, out.caret)).toBe("見る [[越す");
+    // After `]]`, so he keeps typing the sentence — Zach, 2026-11-05. It used to
+    // sit before the pipe, which left him typing INSIDE the link.
+    expect(out.text.slice(0, out.caret)).toBe("見る [[越す|4nKAg2kH]]");
+  });
+
+  it("lands after the link with text following it, not at the end of the field", () => {
+    const text = "a [[越 trailing";
+    const out = completeLink(text, triggerAt(text, 5)!, "越す", "X");
+    expect(out.text.slice(out.caret)).toBe(" trailing");
   });
 
   it("works for `@` and removes the `@` itself", () => {

@@ -66,7 +66,7 @@ npm run gates           # ALL SIX GATES, one command, honest verdict. Start here
                         # wasm URL. (spike:check was dropped 2026-10-27 — an injected
                         # contract break turned `typecheck` red with 667 errors; see
                         # `test/db-contract.types.ts`.)
-npm test                # 68 files, 1620 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
+npm test                # 68 files, 1623 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
                         # MEASURED, never added up — run the suite or leave the line alone
                         # (`test/docs-figures.test.ts` checks it). A wrapper
                         # (`scripts/test.mjs`) that reads vitest's SUMMARY: the run must
@@ -321,6 +321,11 @@ npx vite-node scripts/reverse-dormant-apply.ts -- --db build/hashigo.db --apply 
     fields read the same in the editor (`filled from 例文 — …`). **Editing a field
     empties the derived fields downstream of it** (to `""`, never deleted) for the
     helper to refill — a derived value no longer outlives the word it was made for.
+62. **A missing generated part is MADE when its card is shown — any card, not only
+    one made here — and there is no "generate" button while it is being made.** It
+    pulses (`pending` / `generating`); only a fill that was tried and failed shows
+    `missing` with "try again". Existing clips are never redone (do-not-ask #2 is
+    about REgeneration). A typed `#tag` becomes a tag (`src/cards/tags.ts`, add-only).
 
 ## READ THE TEMPLATE. It answers most questions about the screen.
 

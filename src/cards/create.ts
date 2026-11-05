@@ -29,6 +29,7 @@
 
 import type { SqliteHandle } from "../db/browser.js";
 import { refreshSearchText } from "../generate/search-text.js";
+import { refreshCardTags } from "./tags.js";
 import { ensureSourceField, sourceValue } from "./found-in.js";
 
 /** Field types whose value is stored on the card. The rest live in the generation cache. */
@@ -278,5 +279,7 @@ export function createCard(
   // Indexed with its values from the start, so a card made in bulk is found the
   // same way an imported one is.
   refreshSearchText(db, [cardId]);
+  // A `#tag` typed into the new card becomes a tag (`./tags.ts`).
+  refreshCardTags(db, [cardId]);
   return { cardId, tracks };
 }

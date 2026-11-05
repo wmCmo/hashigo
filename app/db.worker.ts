@@ -82,6 +82,7 @@ import { searchCards } from "../src/search/index.js";
 // `cards.search_text` over the live fields, so a write that skips this leaves an
 // edited card findable only by its OLD text — see src/generate/search-text.ts.
 import { refreshSearchText } from "../src/generate/index.js";
+import { refreshCardTags } from "../src/cards/tags.js";
 import { collect, collectGlance, compareDeckPaths, renderDashboard } from "../src/dashboard/index.js";
 import {
   countReferences,
@@ -765,6 +766,21 @@ async function open(request: OpenRequest): Promise<void> {
   await applyGenerations(refetchGen);
   // File 4, insert-only. See `applyLocalFields` for why it may never overwrite.
   await applyLocalFields();
+  // TAGS TYPED BEFORE TAGS WERE READ OFF THE TEXT (2026-11-05). `#Fishing` was
+  // typed on a card while nothing turned a typed `#` into a tag; edits and syncs
+  // do it now (`src/cards/tags.ts`), and this catches what is already on the
+  // device. Add-only and idempotent, and only over values carrying a `#`.
+  try {
+    const tagged = (
+      cards.prepare("SELECT DISTINCT card_id FROM card_field_values WHERE instr(value, '#') > 0").all() as {
+        card_id: string;
+      }[]
+    ).map((row) => row.card_id);
+    refreshCardTags(cards, tagged);
+  } catch (cause) {
+    // A tag that will not write must not cost him the review session.
+    log(`tags: could not read #tags off the cards — ${(cause as Error).message}`);
+  }
 
   const cardCount = Number(
     (cards.prepare("SELECT count(*) AS n FROM cards").get() as { n: number }).n,
@@ -1229,6 +1245,7 @@ function cardOp(request: CardOpRequest): void {
              SELECT ?, field_id, value FROM card_field_values WHERE card_id = ?`,
           ).run(copyId, card.id);
           refreshSearchText(db, [copyId]);
+          refreshCardTags(db, [copyId]);
           // Fresh tracks, NOT the original's schedule: a duplicate is a new card
           // he has never seen, and inheriting a 300-day interval would hide it.
           const reverse = db
@@ -1807,6 +1824,8 @@ function setField(request: SetFieldRequest): void {
   // other device still uploads, and the last payload merged decides.
   touchCard(db, request.cardId);
   refreshSearchText(db, [request.cardId]);
+  // A `#tag` he typed becomes a tag (`src/cards/tags.ts`) — "the tagging is not working".
+  refreshCardTags(db, [request.cardId]);
   post({
     kind: "setField",
     id: request.id,
@@ -2133,7 +2152,10 @@ function cardGapsFor(request: CardGapsRequest): void {
     | { local: number }
     | undefined;
   const local = row?.local === 1;
-  post({ kind: "cardGaps", id: request.id, local, gaps: local ? cardGaps(db, request.cardId) : [] });
+  // EVERY CARD'S GAPS since 2026-11-05 (decision 62), not only a card made here:
+  // *"if we can see the button it means something is not generated, and we might
+  // as well generate them right now"*. `local` is still reported, for the reader.
+  post({ kind: "cardGaps", id: request.id, local, gaps: cardGaps(db, request.cardId) });
 }
 
 /** See `FieldOutputsRequest`. Read-only. Text cleaned the way `generatedText` cleans it. */

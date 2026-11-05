@@ -1626,7 +1626,11 @@ const REFUSAL: Record<AnswerRefusal, string> = {
  * they were before this existed.
  */
 async function fillGeneratedText(card: MountedCard<HTMLElement>): Promise<void> {
-  if (card.textSlots.length === 0) return;
+  if (card.textSlots.length === 0) {
+    // No text to look up, but a clip may still be missing — `autoFill` makes it.
+    void autoFill(card.cardId);
+    return;
+  }
   try {
     const reply = await ask<"generatedText">({
       kind: "generatedText",
@@ -1640,10 +1644,28 @@ async function fillGeneratedText(card: MountedCard<HTMLElement>): Promise<void> 
       })),
     });
     card.fillText(reply.texts);
-    offerMissingGenerations(card, reply.texts);
-    // A card made here fills its own gaps — see `autoFill`. Fire-and-forget: the
-    // card is usable as it is, and the redraw comes when the fill lands.
-    void autoFill(card.cardId);
+    // WHAT IS MISSING IS MADE NOW, NOT OFFERED — Zach, 2026-11-05: *"generate
+    // button is probably useless, even, because if we can see the button it means
+    // something is not generated, and we might as well generate them right now"*.
+    // A missing slot keeps its loading look (`generating`) while `autoFill` makes
+    // it; the redraw comes when the fill lands. Only once that has been TRIED and
+    // still left a hole does the slot say so, with a button to try again — so a
+    // button never sits next to something that is merely on its way.
+    const tried = autoFillTried.has(card.cardId) && !autoFilling.has(card.cardId);
+    if (tried) {
+      settleMissing(card);
+      offerMissingGenerations(card, reply.texts);
+    } else {
+      markGenerating(card, reply.texts);
+      void autoFill(card.cardId).then(() => {
+        // A fill that MADE something has already redrawn the card (`redrawFilled`
+        // runs before this resolves), so this mount is detached and settling it
+        // changes nothing anyone sees. One that failed, or made nothing, redrew
+        // nothing — and without this its slots would pulse for ever.
+        settleMissing(card);
+        offerMissingGenerations(card, reply.texts);
+      });
+    }
     // RE-SCALE, AND THIS IS NOT OPTIONAL. `sideScale` measures rendered text, and
     // an `ai` slot is EMPTY at render time by contract — so 単語's example-sentence
     // side measures as a two-character stub, lands in `display`, and then the
@@ -1770,6 +1792,41 @@ async function askLaptop(
 const GENERATABLE: ReadonlySet<string> = new Set(["ai", "translate"]);
 
 /**
+ * THE LOADING LOOK — Zach, 2026-11-05: *"when all the generated properties are
+ * loading, i want some skeleton are loading animation... something to let me know
+ * that it's not freezing … i have to know which one is genuinely hasn't generated
+ * and which one is loading"*.
+ *
+ * Three states on a text generator, each a fact: `pending` (the lookup has not
+ * answered — the stylesheet pulses an empty one), `generating` (nothing was
+ * stored, and `autoFill` is making it — still pulsing), `missing` (it was tried
+ * and is still not there — no pulse, and `offerMissingGenerations` puts a button
+ * in it). `ready` is `fillTextSlots`'.
+ */
+function markGenerating(card: MountedCard<HTMLElement>, texts: readonly (string | null)[]): void {
+  card.textSlots.forEach((slot, index) => {
+    if (texts[index] !== null || !GENERATABLE.has(slot.kind)) return;
+    const target = card.result.generations.find(
+      (mount) => mount.request?.text === slot.text && mount.request?.kind === slot.kind,
+    );
+    target?.element.setAttribute("data-state", "generating");
+  });
+}
+
+/**
+ * Every text generator still empty after a fill was tried is `missing` — including
+ * one whose input never arrived (a Translate whose 例文 could not be made), which
+ * has no slot of its own and would otherwise pulse for ever.
+ */
+function settleMissing(card: MountedCard<HTMLElement>): void {
+  for (const mount of card.result.generations) {
+    if (mount.request === null || !GENERATABLE.has(mount.request.kind)) continue;
+    const state = mount.element.getAttribute("data-state");
+    if (state === "pending" || state === "generating") mount.element.setAttribute("data-state", "missing");
+  }
+}
+
+/**
  * Put a `generate` control in every slot that came back empty.
  *
  * Takes the REPLY rather than re-reading the DOM: `texts[i] === null` is the
@@ -1796,11 +1853,11 @@ function offerMissingGenerations(
     const button = document.createElement("button");
     button.type = "button";
     button.className = "regen";
-    // Just "generate". `slot.name` is the RENDERER's element name — `ai`,
-    // `translate` — so "generate ai" is the internals leaking into the card. The
-    // button stands in the hole its content belongs in, which is the only label
-    // it needs; the prompt goes on `title` for a pointer that has one.
-    button.textContent = "generate";
+    // "try again", since 2026-11-05: this button only appears once making it
+    // was already tried (`fillGeneratedText`), so "generate" would say the wrong
+    // thing. It stands in the hole its content belongs in; the prompt goes on
+    // `title` for a pointer that has one.
+    button.textContent = "try again";
     button.title = slot.text;
     button.addEventListener("click", () => {
       void requestGeneration(card, slot, button);
@@ -1853,11 +1910,24 @@ function offerMissingClip(
   const button = document.createElement("button");
   button.type = "button";
   button.className = "regen";
-  button.textContent = "generate audio";
+  // Decision 62: a missing clip is made when its card is shown, so a press that
+  // finds none usually means it is still being made — say so instead of offering
+  // a second request (*"i have to know which one is genuinely hasn't generated and
+  // which one is loading"*). Only a fill that finished without it gets the button.
+  button.textContent = "try again";
   button.title = request.text;
   button.addEventListener("click", () => {
     void requestClip(card, mount, request, button, clipButton);
   });
+  const running = autoFillRuns.get(card.cardId);
+  if (running !== undefined) {
+    button.disabled = true;
+    button.textContent = "making it…";
+    void running.then(() => {
+      button.disabled = false;
+      button.textContent = "try again";
+    });
+  }
   clipButton.insertAdjacentElement("afterend", button);
 }
 
@@ -2139,13 +2209,14 @@ async function redoClip(
  * that automatically generates should also be created when we created the card,
  * no need to wait for users to click it"*.
  *
- * ─── ONLY FOR CARDS CREATED IN THIS APP ─────────────────────────────────────
+ * ─── EVERY CARD HE SEES, SINCE 2026-11-05 (decision 62) ─────────────────────
  *
- * The worker answers for `cards.local = 1` and nothing else. The 785 clips and
- * 1,311 texts Mochi never made are a different matter, and his: audio
- * regeneration happens after the app is finished (CLAUDE.md, "do not ask again"
- * #2). A screen that silently synthesised them on view would spend his money on
- * a decision he has made the other way.
+ * It was for `cards.local = 1` only: the 785 clips and 1,311 texts Mochi never
+ * made were held back as his call (CLAUDE.md "do not ask again" #2 defers audio
+ * REGENERATION — redoing clips that exist). He made the call: *"if we can see the
+ * button it means something is not generated, and we might as well generate them
+ * right now"*. So a missing piece is made the first time its card is on screen,
+ * once, and stored. Nothing that exists is redone — a gap is by definition absent.
  *
  * ─── A LOOP, BECAUSE THE FIELDS CHAIN ───────────────────────────────────────
  *
@@ -2171,17 +2242,33 @@ async function redoClip(
  */
 const autoFilling = new Set<string>();
 const autoFillTried = new Set<string>();
+/** The fill in flight per card, so a second caller waits on the same answer. */
+const autoFillRuns = new Map<string, Promise<boolean>>();
 
-async function autoFill(cardId: string, options: { readonly force?: boolean } = {}): Promise<void> {
-  if (autoFilling.has(cardId)) return;
-  if (options.force !== true && autoFillTried.has(cardId)) return;
+/**
+ * Fill the card's gaps. Resolves TRUE when nothing failed (made something or
+ * there was nothing to make), FALSE when a generation failed — the caller marks
+ * the slots on screen `missing` then, because a failed fill redraws nothing.
+ */
+function autoFill(cardId: string, options: { readonly force?: boolean } = {}): Promise<boolean> {
+  const running = autoFillRuns.get(cardId);
+  if (running !== undefined) return running;
+  if (options.force !== true && autoFillTried.has(cardId)) return Promise.resolve(true);
+  const run = fillGaps(cardId).finally(() => autoFillRuns.delete(cardId));
+  autoFillRuns.set(cardId, run);
+  return run;
+}
+
+async function fillGaps(cardId: string): Promise<boolean> {
   autoFilling.add(cardId);
   autoFillTried.add(cardId);
   let made = 0;
   try {
     for (let pass = 0; pass < 3; pass += 1) {
+      // EVERY CARD, since 2026-11-05 — see the header's "ONLY FOR CARDS CREATED IN
+      // THIS APP", which this replaced.
       const reply = await ask<"cardGaps">({ kind: "cardGaps", cardId });
-      if (!reply.local || reply.gaps.length === 0) break;
+      if (reply.gaps.length === 0) break;
       let progress = 0;
       // Sequential, for `fill-generations.ts`'s reason: a 429 halfway through
       // costs more than the seconds a parallel burst would save.
@@ -2189,7 +2276,7 @@ async function autoFill(cardId: string, options: { readonly force?: boolean } = 
         const result = await generateGap(gap);
         if ("failure" in result) {
           say(`could not fill this card's generated parts: ${result.failure}`, true);
-          return;
+          return false;
         }
         if ("text" in result) {
           await ask<"storeGeneration">({ kind: "storeGeneration", cardId, slot: gap, text: result.text });
@@ -2207,10 +2294,12 @@ async function autoFill(cardId: string, options: { readonly force?: boolean } = 
     }
   } catch (cause) {
     say(`could not fill this card's generated parts: ${(cause as Error).message}`, true);
+    return false;
   } finally {
     autoFilling.delete(cardId);
     if (made > 0) await redrawFilled(cardId, made);
   }
+  return true;
 }
 
 /** One generation from the Worker, read the way `requestGeneration` / `requestClip` read it. */

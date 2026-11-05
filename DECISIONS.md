@@ -2582,6 +2582,35 @@ right**: it holds his verbatim reasoning and this quotes it.
     again for the new word. Undo restores them with the word. On the phone they stay
     empty until the laptop's helper runs: no label rather than a wrong one (decision 8).
 
+62. **A MISSING GENERATED PART IS MADE WHEN ITS CARD IS SHOWN, AND NOTHING OFFERS TO
+    MAKE IT WHILE IT IS BEING MADE.** 2026-11-05. Zach: *"when all the generated
+    properties are loading, i want some skeleton are loading animation... something
+    to let me know that it's not freezing, and it shows the generate button, so i
+    might accidentally click them, i have to know which one is genuinely hasn't
+    generated and which one is loading, i mean, generate button is probably
+    useless, even, because if we can see the button it means something is not
+    generated, and we might as well generate them right now"*.
+
+    It reverses the 2026-09-14 "a button and not a silent auto-fill" and the
+    2026-10-21 "only for cards created in this app": `autoFill` now asks
+    `cardGaps` for every card on screen, makes what is missing once, and stores it.
+    "Audio regeneration happens after the app is finished" (do-not-ask #2) is
+    untouched — that is redoing clips that EXIST, and a gap is by definition absent.
+
+    A text generator says what it is: `pending` (lookup not answered) and
+    `generating` (being made) pulse like the dashboard skeleton; `missing` (tried,
+    still absent) stops pulsing and carries "try again"; `ready` is filled. A clip
+    pressed while its card's fill is running says "making it…" rather than offering
+    a second request.
+
+    **Same message, two more.** *"the tagging is not working anymore"* — it never
+    worked for a new tag: only the import ever wrote `tags`, and the renderer draws a
+    `#` as a chip only when the tag exists. A typed `#tag` is now added when the text
+    lands (edit, new card, duplicate, sync, restore, and once at boot for what is
+    already there) — add-only, because imported `card_tags` came from Mochi's arrays,
+    not the text (`src/cards/tags.ts`). And `[[` completion lands the caret AFTER the
+    link, not on its display text.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach
