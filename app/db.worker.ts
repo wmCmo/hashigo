@@ -124,6 +124,8 @@ import {
   kindChange,
   optionsRefusal,
   sameExceptRole,
+  staleDerived,
+  fieldOutputs,
   type KindChange,
   priceFieldChange,
   priceVoiceChange,
@@ -144,6 +146,7 @@ import type {
   PriceFieldRequest,
   RedoInfoRequest,
   CardGapsRequest,
+  FieldOutputsRequest,
   VoiceRequest,
   BrowseRequest,
   CardOpMessage,
@@ -1776,6 +1779,29 @@ function setField(request: SetFieldRequest): void {
        ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`,
     ).run(request.cardId, request.fieldId, request.value);
   }
+  // DERIVED FIELDS FOLLOW THEIR WORD (decision 61). The helper fills only EMPTY
+  // values, so a 読み / 型 / OJAD made for the old word would stay for ever once
+  // 単語 changed — while 例文 and the audio, keyed by their input, move on their
+  // own. So an edit that CHANGES a field empties every derived field downstream
+  // of it (through generators too: 単語 → 例文 → OJAD), for the helper to fill
+  // again. Emptied to "", never deleted: a deleted row does not travel, and the
+  // other device's payload would put the old value straight back.
+  const changed = (before?.value ?? null) !== request.value;
+  const cleared: { fieldId: string; name: string; previous: string | null }[] = [];
+  if (changed) {
+    const templateId = (db.prepare("SELECT template_id FROM cards WHERE id = ?").get(request.cardId) as
+      | { template_id: string | null }
+      | undefined)?.template_id;
+    const downstream = templateId == null ? [] : staleDerived(templateFields(db, templateId), request.fieldId);
+    const held = db.prepare("SELECT value FROM card_field_values WHERE card_id = ? AND field_id = ?");
+    const empty = db.prepare("UPDATE card_field_values SET value = '' WHERE card_id = ? AND field_id = ?");
+    for (const target of downstream) {
+      const row = held.get(request.cardId, target.id) as { value: string } | undefined;
+      if (row === undefined || row.value === "") continue;
+      empty.run(request.cardId, target.id);
+      cleared.push({ fieldId: target.id, name: target.name, previous: row.value });
+    }
+  }
   // THE EDIT'S CLOCK. Sync keeps field values by card clock (`src/sync/merge.ts`);
   // without this stamp an edit is indistinguishable from the stale copy every
   // other device still uploads, and the last payload merged decides.
@@ -1789,6 +1815,7 @@ function setField(request: SetFieldRequest): void {
     value: request.value,
     created: !existed,
     previous: before?.value ?? null,
+    cleared,
   });
 }
 
@@ -2107,6 +2134,14 @@ function cardGapsFor(request: CardGapsRequest): void {
     | undefined;
   const local = row?.local === 1;
   post({ kind: "cardGaps", id: request.id, local, gaps: local ? cardGaps(db, request.cardId) : [] });
+}
+
+/** See `FieldOutputsRequest`. Read-only. Text cleaned the way `generatedText` cleans it. */
+function fieldOutputsFor(request: FieldOutputsRequest): void {
+  const outputs = fieldOutputs(requireCards(), request.cardId).map((output) =>
+    output.text === null ? output : { ...output, text: stripThinking(output.text) },
+  );
+  post({ kind: "fieldOutputs", id: request.id, outputs });
 }
 
 /**
@@ -3067,6 +3102,7 @@ const LINK_SAFE: ReadonlySet<string> = new Set([
   "backlinks",
   "redoInfo",
   "cardGaps",
+  "fieldOutputs",
   "accentPlan",
   "decks",
   "browse",
@@ -3153,6 +3189,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "cardGaps":
           cardGapsFor(request);
+          break;
+        case "fieldOutputs":
+          fieldOutputsFor(request);
           break;
         case "priceField":
           priceField(request);

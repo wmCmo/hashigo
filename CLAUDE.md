@@ -66,7 +66,7 @@ npm run gates           # ALL SIX GATES, one command, honest verdict. Start here
                         # wasm URL. (spike:check was dropped 2026-10-27 — an injected
                         # contract break turned `typecheck` red with 667 errors; see
                         # `test/db-contract.types.ts`.)
-npm test                # 68 files, 1616 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
+npm test                # 68 files, 1620 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
                         # MEASURED, never added up — run the suite or leave the line alone
                         # (`test/docs-figures.test.ts` checks it). A wrapper
                         # (`scripts/test.mjs`) that reads vitest's SUMMARY: the run must
@@ -317,7 +317,10 @@ npx vite-node scripts/reverse-dormant-apply.ts -- --db build/hashigo.db --apply 
 61. **A field shows its KIND (type + role, `fieldKind`), and a derived kind — Reading
     (読み), Pitch accent (型), Accent marks (OJAD) — is read-only in the editor.** No
     override (YAGNI, his call); Long text is not offered; Text ⇄ Reading is the one
-    kind switch. 読み carries role `reading`; by name until a device has it.
+    kind switch. 読み carries role `reading`; by name until a device has it. Generated
+    fields read the same in the editor (`filled from 例文 — …`). **Editing a field
+    empties the derived fields downstream of it** (to `""`, never deleted) for the
+    helper to refill — a derived value no longer outlives the word it was made for.
 
 ## READ THE TEMPLATE. It answers most questions about the screen.
 

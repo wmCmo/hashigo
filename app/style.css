@@ -2029,6 +2029,10 @@ textarea.edit-input:not(.tpl-body) {
   font-size: var(--fs-caption);
   line-height: 1.55;
 }
+/* A generated clip's play button, inline after "filled from 単語 — audio". */
+.edit-readonly .edit-play {
+  margin-left: var(--space-2);
+}
 
 .edit-status {
   color: var(--ok);

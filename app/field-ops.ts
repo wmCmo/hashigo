@@ -39,6 +39,8 @@
  */
 
 import { generationIdentity, lookupGeneration } from "../src/blobs/generation.js";
+import { resolveAudioHash } from "../src/cards/audio.js";
+import type { BlobKind } from "../src/schema/index.js";
 import { decodeFieldOptions } from "../src/cards/index.js";
 import type { SqliteHandle } from "../src/db/browser.js";
 import { effectiveRole, fieldKind, ROLE_KEY, settingsOf } from "../src/fields/index.js";
@@ -174,6 +176,20 @@ export function consumersOf(fields: readonly FieldState[], fieldId: string): Fie
     }
   }
   return found;
+}
+
+/**
+ * The DERIVED fields an edit of `fieldId` makes stale — decision 61.
+ *
+ * Every derived kind (Reading, Pitch accent, Accent marks) downstream of it, by
+ * either kind of dependency, so editing 単語 reaches OJAD through 例文's prompt.
+ * Generated fields are not here: their input is part of their cache key, so a new
+ * input is already a new lookup and nothing has to be cleared.
+ */
+export function staleDerived(fields: readonly FieldState[], fieldId: string): FieldState[] {
+  return consumersOf(fields, fieldId).filter(
+    (field) => fieldKind({ ...field, options: decodeFieldOptions(field.options) }).derived,
+  );
 }
 
 /**
@@ -753,4 +769,81 @@ export function describeVoicePrice(price: VoicePrice, voice: string | null): str
   }
   if (price.gained > 0) lines.push(`${price.gained} start playing: clips in that voice already exist.`);
   return lines;
+}
+
+/** What one generated field holds on one card — for the card editor (decision 61). */
+export interface FieldOutput {
+  readonly fieldId: string;
+  /** The field(s) it is made from, by name: its input, or the prompt's markers. */
+  readonly from: readonly string[];
+  /** A text kind's stored output, or null when nothing is made yet. */
+  readonly text: string | null;
+  /**
+   * A speech field's clip, as the address the review screen plays it by, or null
+   * when no clip is on this device.
+   */
+  readonly audio: {
+    readonly kind: BlobKind;
+    readonly text: string;
+    readonly lang: string | null;
+    readonly voice: string | null;
+    readonly options: Readonly<Record<string, string>>;
+  } | null;
+}
+
+/**
+ * EVERY GENERATED FIELD'S OUTPUT ON ONE CARD, so the editor can say "filled from
+ * 例文 — <the sentence>" instead of "its content lives in the generation cache".
+ *
+ * Zach, 2026-11-05: *"Filled for you, read-only, and Generated … are basically the
+ * same thing"* — to him they are, so the editor shows them the same way. Read
+ * through the shipping resolvers (`fieldGenerationRequest`, `resolveDescriptorText`,
+ * `resolveAudioHash` with the card's voice first), never a copy of them.
+ * Read-only: writes nothing.
+ */
+export function fieldOutputs(db: SqliteHandle, cardId: string): FieldOutput[] {
+  const templateId = (db.prepare(CARD_TEMPLATE).get(cardId) as { template_id: string | null } | undefined)
+    ?.template_id;
+  if (templateId === null || templateId === undefined) return [];
+  const states = templateFields(db, templateId);
+  const fields = states.map(asGenerator);
+  const values = new Map<string, string>();
+  for (const row of db.prepare(VALUES).all(cardId) as { field_id: string; value: string }[]) {
+    values.set(row.field_id, row.value);
+  }
+  const context: FieldContext = {
+    fields,
+    values,
+    resolveGenerated: (request) => resolveDescriptorText(db, request),
+  };
+  const out: FieldOutput[] = [];
+  for (const field of fields) {
+    if (!isGeneratorType(field.type)) continue;
+    const prompt = field.options?.["ai-custom-prompt"];
+    const from =
+      field.type === "ai"
+        ? typeof prompt === "string"
+          ? promptDependencies(prompt).map((name) => name.trim())
+          : []
+        : states.filter((entry) => entry.id === field.sourceFieldId).map((entry) => entry.name);
+    const request = fieldGenerationRequest(field, context);
+    if (request === null) {
+      out.push({ fieldId: field.id, from, text: null, audio: null });
+      continue;
+    }
+    const descriptor = {
+      kind: request.kind,
+      text: request.text,
+      lang: request.lang,
+      voice: request.voice,
+      options: request.options,
+    };
+    if (field.type === "speech") {
+      const present = resolveAudioHash(db, cardId, { origin: "generator", request: descriptor }) !== null;
+      out.push({ fieldId: field.id, from, text: null, audio: present ? descriptor : null });
+    } else {
+      out.push({ fieldId: field.id, from, text: resolveDescriptorText(db, descriptor), audio: null });
+    }
+  }
+  return out;
 }

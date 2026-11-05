@@ -176,6 +176,7 @@ import type {
   TemplateChoice,
   ReplyFor,
 } from "./protocol.js";
+import type { FieldOutput } from "./field-ops.js";
 
 // ─── the page ────────────────────────────────────────────────────────────────
 
@@ -3438,6 +3439,56 @@ function openEditor(): void {
   void openEditorById(target.card.cardId, replacing === undefined ? {} : { replacing });
 }
 
+/**
+ * Fill the editor's GENERATED rows: "filled from 例文 — <the sentence>", and for
+ * speech the clip with a play button (decision 61). A failure leaves the rows
+ * saying so; the editor is fully usable without them.
+ *
+ * The clip plays ONLY on a press — the editor is not a review, but decision 29's
+ * rule (nothing sounds by itself) costs nothing to keep everywhere.
+ */
+async function fillGeneratedNotes(cardId: string, notes: ReadonlyMap<string, HTMLElement>): Promise<void> {
+  let outputs: readonly FieldOutput[];
+  try {
+    outputs = (await ask<"fieldOutputs">({ kind: "fieldOutputs", cardId })).outputs;
+  } catch {
+    for (const note of notes.values()) note.textContent = "filled for you — could not look it up";
+    return;
+  }
+  for (const output of outputs) {
+    const note = notes.get(output.fieldId);
+    if (note === undefined) continue;
+    const from = output.from.length === 0 ? "filled for you" : `filled from ${output.from.join(", ")}`;
+    if (output.audio !== null) {
+      const address = { origin: "generator" as const, request: output.audio };
+      note.textContent = `${from} — audio `;
+      const play = document.createElement("button");
+      play.type = "button";
+      play.className = "gcard-op edit-play";
+      play.textContent = "play";
+      play.addEventListener("click", (event) => {
+        event.preventDefault();
+        void ask<"payload">({ kind: "payload", cardId, address }).then(({ payload }) => {
+          if (payload === null) {
+            play.disabled = true;
+            play.title = "no clip on this device";
+            return;
+          }
+          const url = URL.createObjectURL(new Blob([payload.bytes as BlobPart], { type: payload.mime }));
+          const audio = new Audio(url);
+          audio.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
+          void audio.play();
+        });
+      });
+      note.appendChild(play);
+    } else if (output.text !== null && output.text.trim() !== "") {
+      note.textContent = `${from} — ${output.text.trim()}`;
+    } else {
+      note.textContent = `${from} — not made yet; it is made when the card is shown or the editor closes`;
+    }
+  }
+}
+
 function openEditorFor(
   card: PreparedCard,
   choices: readonly TemplateChoice[],
@@ -3499,6 +3550,10 @@ function openEditorFor(
 
   /** Each text field's box, so a button can read what he has typed, not what was loaded. */
   const liveValues = new Map<string, HTMLTextAreaElement>();
+  /** Generated rows, filled once `fieldOutputs` answers. */
+  const generatedNotes = new Map<string, HTMLElement>();
+  /** Derived rows, redrawn when an edit upstream empties them. */
+  const derivedNotes = new Map<string, (value: string) => void>();
   for (const field of fields) {
     const value = card.loaded.values.get(field.id) ?? "";
     /**
@@ -3529,12 +3584,15 @@ function openEditorFor(
     label.appendChild(type);
     row.appendChild(label);
 
+    // GENERATED FIELDS READ LIKE DERIVED ONES (decision 61). Zach, 2026-11-05:
+    // *"Filled for you, read-only, and Generated … are basically the same thing"*.
+    // Their output lives in the generation cache, so it arrives after the editor
+    // opens (`fieldOutputs`, below); until then the row says it is looking.
     if (!EDITABLE_FIELD_TYPES.has(field.type)) {
       const note = document.createElement("p");
       note.className = "edit-readonly";
-      note.textContent =
-        `generated — its content lives in the generation cache, not on the card, ` +
-        `so there is nothing here to edit`;
+      note.textContent = "filled for you — looking it up…";
+      generatedNotes.set(field.id, note);
       row.appendChild(note);
       body.appendChild(row);
       continue;
@@ -3551,10 +3609,16 @@ function openEditorFor(
       const from = fields.find((entry) => entry.id === field.sourceFieldId)?.name;
       const note = document.createElement("p");
       note.className = "edit-readonly";
-      note.textContent =
-        value.trim() === ""
-          ? `filled for you — empty: ${kind.whenEmpty ?? "nothing has filled it yet"}. Nothing to type here`
-          : `${from === undefined ? "filled for you" : `filled from ${from}`} — ${value.trim()}`;
+      const show = (now: string): void => {
+        note.textContent =
+          now.trim() === ""
+            ? `filled for you — empty: ${kind.whenEmpty ?? "nothing has filled it yet"}. Nothing to type here`
+            : `${from === undefined ? "filled for you" : `filled from ${from}`} — ${now.trim()}`;
+      };
+      show(value);
+      // An edit upstream can empty it (`cleared` on the setField reply), and the
+      // row has to say so while the editor is still open.
+      derivedNotes.set(field.id, show);
       row.appendChild(note);
       body.appendChild(row);
       continue;
@@ -3568,12 +3632,21 @@ function openEditorFor(
       saved = next;
       void ask<"setField">({ kind: "setField", cardId: card.cardId, fieldId: field.id, value: next })
         .then((reply) => {
-          status.textContent = `saved ${field.name}`;
+          // DERIVED FIELDS THIS EDIT EMPTIED (decision 61): said in the status line
+          // and on their rows, so a 型 that vanished is never a surprise.
+          for (const gone of reply.cleared) derivedNotes.get(gone.fieldId)?.("");
+          status.textContent =
+            reply.cleared.length === 0
+              ? `saved ${field.name}`
+              : `saved ${field.name} — emptied ${reply.cleared.map((gone) => gone.name).join(", ")} ` +
+                `for the laptop's helper to fill for the new word`;
           status.classList.remove("bad");
           // HIS #13. `previous` comes from the worker because the page's copy of a
           // field value is whatever it last rendered, not what is on disk. A null
           // previous means the row did not exist, and the undo REMOVES it rather
           // than writing "" — `<<#field>>` gates on presence, not on emptiness.
+          // The emptied derived fields come back with it, AFTER it: putting the
+          // word back empties them again, and their old values are right for it.
           pushUndo({
             describe: `edit of ${field.name} on ${card.loaded.name || card.cardId}`,
             run: async () => {
@@ -3583,6 +3656,14 @@ function openEditorFor(
                 fieldId: field.id,
                 value: reply.previous,
               });
+              for (const gone of reply.cleared) {
+                await ask<"setField">({
+                  kind: "setField",
+                  cardId: card.cardId,
+                  fieldId: gone.fieldId,
+                  value: gone.previous,
+                });
+              }
               await refreshAfterOp();
             },
           });
@@ -3690,6 +3771,7 @@ function openEditorFor(
     }
     body.appendChild(row);
   }
+  if (generatedNotes.size > 0) void fillGeneratedNotes(card.cardId, generatedNotes);
 
   body.appendChild(status);
   layerHost.appendChild(root);

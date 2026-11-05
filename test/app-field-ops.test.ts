@@ -8,6 +8,8 @@ import {
   optionsRefusal,
   patchOptions,
   sameExceptRole,
+  staleDerived,
+  fieldOutputs,
   priceFieldChange,
   sourceChoices,
   sourceRefusal,
@@ -370,5 +372,47 @@ describe("kindChange switches Text and Reading by role and input alone", () => {
     expect(sameExceptRole('{"a":1,"hashigo-role":"reading"}', '{"a":1}')).toBe(true);
     expect(sameExceptRole('{"a":1}', '{"a":2,"hashigo-role":"reading"}')).toBe(false);
     expect(sameExceptRole("{}", "not json")).toBe(false);
+  });
+});
+
+/**
+ * DERIVED FIELDS FOLLOW THEIR WORD (decision 61): what an edit empties. The worker
+ * runs it inside `setField`; the rule itself is pinned here.
+ */
+describe("staleDerived finds what an edit leaves stale", () => {
+  const fields = [
+    field({ id: "head", name: "単語" }),
+    field({ id: "yomi", name: "読み", options: '{"hashigo-role":"reading"}', sourceFieldId: "head" }),
+    field({ id: "kata", name: "型", type: "accent", sourceFieldId: "head" }),
+    field({ id: "imi", name: "意味" }),
+    field({ id: "rei", name: "例文", type: "ai", options: '{"ai-custom-prompt":"Use <<単語>> in a sentence"}' }),
+    field({ id: "ojad", name: "OJAD", options: '{"hashigo-role":"ojad"}', sourceFieldId: "rei" }),
+    field({ id: "audio", name: "Audio", type: "speech", sourceFieldId: "rei" }),
+  ];
+  it("empties 読み, 型 and — through 例文's prompt — OJAD when the word changes", () => {
+    expect(staleDerived(fields, "head").map((entry) => entry.name)).toEqual(["読み", "型", "OJAD"]);
+  });
+  it("never lists a generated field: its input is already its cache key", () => {
+    expect(staleDerived(fields, "head").some((entry) => entry.type === "ai" || entry.type === "speech")).toBe(false);
+  });
+  it("leaves everything alone when nothing derived follows the edited field", () => {
+    expect(staleDerived(fields, "imi")).toEqual([]);
+  });
+});
+
+describe("fieldOutputs over the real corpus", () => {
+  it("names each generated field's input, and the example sentence reads from the word", () => {
+    if (db === null) return;
+    const cardId = (handle().prepare("SELECT id FROM cards WHERE template_id = ? ORDER BY id LIMIT 1").get(TANGO) as
+      | { id: string }
+      | undefined)?.id;
+    if (cardId === undefined) return;
+    const outputs = fieldOutputs(handle(), cardId);
+    const names = new Map(templateFields(handle(), TANGO).map((entry) => [entry.id, entry.name]));
+    const byName = new Map(outputs.map((output) => [names.get(output.fieldId), output]));
+    expect(byName.get("例文")?.from).toContain("単語");
+    expect(byName.get("Audio")?.from).toEqual(["例文"]);
+    // Speech carries an address or nothing, never text; text kinds never an address.
+    for (const output of outputs) expect(output.text !== null && output.audio !== null).toBe(false);
   });
 });

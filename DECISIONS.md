@@ -2566,6 +2566,22 @@ right**: it holds his verbatim reasoning and this quotes it.
     would be a setting on the Reading kind, not wiring through a Text field — not
     built.
 
+    **Same day, the second half.** Zach: *"Filled for you, read-only, and Generated …
+    are basically the same thing, what's the reason that we are dividing them?"* To
+    him there is none, so the card editor shows a generated field the same way —
+    `filled from 例文 — <the sentence>`, a clip with a play button — read through
+    the shipping resolvers (`fieldOutputs`). The storage stays split (moving 読み/型
+    into the cache would be a schema change against live history, for nothing he
+    sees). The split hid one real difference, and that is now closed: a generated
+    value is keyed by its input, so it follows an edit; a derived one was written
+    once and the helper fills only EMPTY values, so fixing a typo in 単語 left the
+    old word's 読み / 型 / OJAD for ever. **An edit that changes a field now empties
+    every derived field downstream of it** (`staleDerived`, through generators too:
+    単語 → 例文 → OJAD) to `""` — never deleted, because a deleted row does not travel
+    and the other device's payload would put it back — and the helper fills them
+    again for the new word. Undo restores them with the word. On the phone they stay
+    empty until the laptop's helper runs: no label rather than a wrong one (decision 8).
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

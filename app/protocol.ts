@@ -37,7 +37,7 @@ import type { AnnotatedLine } from "../src/accent/marks.js";
 import type { PreparedCard } from "../src/review/index.js";
 import type { Glance } from "../src/dashboard/index.js";
 import type { SessionProgress } from "../src/session/index.js";
-import type { FieldPrice, VoicePrice } from "./field-ops.js";
+import type { FieldOutput, FieldPrice, VoicePrice } from "./field-ops.js";
 
 // ─── page → worker ───────────────────────────────────────────────────────────
 
@@ -540,6 +540,12 @@ export interface SetFieldMessage {
    * necessarily what is on disk.
    */
   readonly previous: string | null;
+  /**
+   * The DERIVED fields this edit emptied because they followed the edited one
+   * (decision 61's staleness rule: change 単語 and 読み / 型 / OJAD are emptied for
+   * the helper to fill again). Each with what it held, so undo puts them back.
+   */
+  readonly cleared: readonly { readonly fieldId: string; readonly name: string; readonly previous: string | null }[];
 }
 
 /**
@@ -1089,6 +1095,23 @@ export interface CardGapsRequest {
   readonly cardId: string;
 }
 
+/**
+ * What each GENERATED field holds on one card — `fieldOutputs` in
+ * `app/field-ops.ts`. Asked by the card editor, so a generated field reads
+ * "filled from 例文 — <the sentence>" like a derived one (decision 61). Read-only.
+ */
+export interface FieldOutputsRequest {
+  readonly kind: "fieldOutputs";
+  readonly id: number;
+  readonly cardId: string;
+}
+
+export interface FieldOutputsMessage {
+  readonly kind: "fieldOutputs";
+  readonly id: number;
+  readonly outputs: readonly FieldOutput[];
+}
+
 export interface CardGapsMessage {
   readonly kind: "cardGaps";
   readonly id: number;
@@ -1277,6 +1300,7 @@ export type AppRequest =
   | StoreClipRequest
   | RedoInfoRequest
   | CardGapsRequest
+  | FieldOutputsRequest
   | AccentPlanRequest
   | AccentFillRequest
   | DecksRequest
@@ -1539,6 +1563,7 @@ export type AppMessage =
   | StoreClipMessage
   | RedoInfoMessage
   | CardGapsMessage
+  | FieldOutputsMessage
   | AccentPlanMessage
   | AccentFillMessage
   | ResetMessage
@@ -1589,6 +1614,7 @@ export interface ReplyFor {
   readonly storeClip: StoreClipMessage;
   readonly redoInfo: RedoInfoMessage;
   readonly cardGaps: CardGapsMessage;
+  readonly fieldOutputs: FieldOutputsMessage;
   readonly accentPlan: AccentPlanMessage;
   readonly accentFill: AccentFillMessage;
   readonly setField: SetFieldMessage;
