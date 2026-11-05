@@ -153,8 +153,6 @@ import {
   type BoundarySide,
 } from "./review-boundary.js";
 import { toggleCloze } from "./cloze-toggle.js";
-import { ACCENT_TYPES, formatAccent, parseAccent } from "./accent-picker.js";
-import type { AccentType } from "../src/accent/store.js";
 import { roleOf } from "../src/fields/index.js";
 import { YOMI_FIELD } from "../src/fields/yomi.js";
 import { exampleSentencePrompt, isEnglishSentenceField } from "./example-sentence.js";
@@ -3576,6 +3574,23 @@ function openEditorFor(
       continue;
     }
 
+    // 型 TOO. The 2026-10-24 picker (`73ca06a`) kept it editable as the in-app
+    // override for a wrong accent; Zach, 2026-11-05: *"fully read only, if we
+    // really have problem, then we will add that, im following yagni principle"*.
+    // The pipeline and the helper write it (decision 56); a fix goes through
+    // `scripts/sync-set.ts` or the `ojad` adjudications. The picker is in git.
+    if (field.type === "accent") {
+      const note = document.createElement("p");
+      note.className = "edit-readonly";
+      note.textContent =
+        value.trim() === ""
+          ? "filled for you — empty. The laptop's accent helper leaves it empty when it is not sure of the word's accent, rather than guess"
+          : `filled for you — ${value.trim()}`;
+      row.appendChild(note);
+      body.appendChild(row);
+      continue;
+    }
+
     const save = (next: string): void => {
       // Recorded before the round trip so a second blur mid-flight does not send
       // it twice; rolled back below if the worker refuses, so a failed save is
@@ -3623,42 +3638,6 @@ function openEditorFor(
       box.checked = value.trim() !== "" && value.trim() !== "false";
       box.addEventListener("change", () => save(box.checked ? "true" : "false"));
       row.appendChild(box);
-    } else if (field.type === "accent") {
-      // A PICKER, not a text box — see `app/accent-picker.ts`.
-      const wrap = document.createElement("span");
-      wrap.className = "edit-accent";
-      const pick = document.createElement("select");
-      pick.className = "edit-input";
-      const parsed = parseAccent(value);
-      const options: [string, string][] = [["", "— none"], ...ACCENT_TYPES.map((t): [string, string] => [t, t])];
-      // An unrecognised value stays as its own choice: replacing it with the first
-      // option on open would be an edit he never made.
-      if (value.trim() !== "" && parsed === null) options.push([value, `${value} (as stored)`]);
-      for (const [v, label] of options) pick.add(new Option(label, v));
-      pick.value = parsed?.type ?? value.trim();
-      const mora = document.createElement("input");
-      mora.type = "number";
-      mora.min = "2";
-      mora.inputMode = "numeric";
-      mora.className = "edit-input edit-mora";
-      mora.placeholder = "mora";
-      mora.title = "the mora the pitch drops after — 2 or more for 中高";
-      mora.value = parsed?.mora === null || parsed === null ? "" : String(parsed.mora);
-      const sync = (): void => {
-        mora.hidden = pick.value !== "中高";
-      };
-      const commit = (): void => {
-        sync();
-        if (pick.value === "") return save("");
-        if (!(ACCENT_TYPES as readonly string[]).includes(pick.value)) return save(pick.value);
-        const n = Number.parseInt(mora.value, 10);
-        save(formatAccent(pick.value as AccentType, Number.isFinite(n) && n >= 2 ? n : null));
-      };
-      pick.addEventListener("change", commit);
-      mora.addEventListener("change", commit);
-      sync();
-      wrap.append(pick, mora);
-      row.appendChild(wrap);
     } else {
       const area = document.createElement("textarea");
       area.className = "edit-input";
