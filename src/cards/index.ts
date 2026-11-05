@@ -46,6 +46,7 @@ export { reconcileCardLinks, type ReconcileReport } from "./link-index.js";
 export {
   ensureSourceField,
   foundInOf,
+  recordFoundIn,
   sourceValue,
   SOURCE_FIELD_ID,
   SOURCE_FIELD_NAME,

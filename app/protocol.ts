@@ -1096,6 +1096,24 @@ export interface CardGapsRequest {
 }
 
 /**
+ * "link it" from the found-in flow: record on an EXISTING card where he found the
+ * word (`recordFoundIn` in `src/cards/found-in.ts`) — never over a 出典 it has.
+ */
+export interface RecordFoundInRequest {
+  readonly kind: "recordFoundIn";
+  readonly id: number;
+  readonly cardId: string;
+  readonly sourceCardId: string;
+  readonly sentence: string;
+}
+
+export interface RecordFoundInMessage {
+  readonly kind: "recordFoundIn";
+  readonly id: number;
+  readonly outcome: "recorded" | "kept" | "unknown";
+}
+
+/**
  * What each GENERATED field holds on one card — `fieldOutputs` in
  * `app/field-ops.ts`. Asked by the card editor, so a generated field reads
  * "filled from 例文 — <the sentence>" like a derived one (decision 61). Read-only.
@@ -1300,6 +1318,7 @@ export type AppRequest =
   | StoreClipRequest
   | RedoInfoRequest
   | CardGapsRequest
+  | RecordFoundInRequest
   | FieldOutputsRequest
   | AccentPlanRequest
   | AccentFillRequest
@@ -1563,6 +1582,7 @@ export type AppMessage =
   | StoreClipMessage
   | RedoInfoMessage
   | CardGapsMessage
+  | RecordFoundInMessage
   | FieldOutputsMessage
   | AccentPlanMessage
   | AccentFillMessage
@@ -1614,6 +1634,7 @@ export interface ReplyFor {
   readonly storeClip: StoreClipMessage;
   readonly redoInfo: RedoInfoMessage;
   readonly cardGaps: CardGapsMessage;
+  readonly recordFoundIn: RecordFoundInMessage;
   readonly fieldOutputs: FieldOutputsMessage;
   readonly accentPlan: AccentPlanMessage;
   readonly accentFill: AccentFillMessage;

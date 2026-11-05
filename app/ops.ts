@@ -843,16 +843,49 @@ export function openNewCardDialog(options: {
       .then((reply) => {
         go.disabled = false;
         if (reply.duplicate !== null || reply.cardId === null) {
-          // He came here to LINK a word, so the card that exists is the answer:
-          // link it, exactly as a new one would have been.
+          // From `[[` he came to LINK a word, so the card that exists is the answer:
+          // link it, exactly as a new one would have been. From the found-in flow
+          // there is nothing to link INTO — "link it" only closed this dialog
+          // (Zach, 2026-11-05: *"when i click link it, nothing happens"*) — so
+          // there it USES the card: records where he found it (never over a 出典
+          // it already has) and opens it.
+          const source = options.source;
           offerDuplicate(said, reply.duplicate, {
-            use: {
-              label: "link",
-              run: (cardId) => {
-                closeIfTop(root);
-                options.onCreated(cardId);
-              },
-            },
+            use:
+              source === undefined
+                ? {
+                    label: "link",
+                    run: (cardId) => {
+                      closeIfTop(root);
+                      options.onCreated(cardId);
+                    },
+                  }
+                : {
+                    label: "use",
+                    run: (cardId) => {
+                      void ask<"recordFoundIn">({
+                        kind: "recordFoundIn",
+                        cardId,
+                        sourceCardId: source.cardId,
+                        sentence: source.sentence,
+                      })
+                        .then((done) => {
+                          closeIfTop(root);
+                          say(
+                            done.outcome === "recorded"
+                              ? `${name} already had a card — it now says it was found in ${source.name}`
+                              : done.outcome === "kept"
+                                ? `${name} already had a card, found somewhere else first — that is kept`
+                                : `${name} already had a card — opened it`,
+                          );
+                          void shell().openPreview(cardId);
+                        })
+                        .catch((cause: Error) => {
+                          said.classList.add("bad");
+                          said.textContent = cause.message;
+                        });
+                    },
+                  },
             anyway: () => submit(true),
           });
           return;

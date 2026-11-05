@@ -84,6 +84,40 @@ export function sourceValue(sourceCardId: string, sourceName: string, sentence: 
   return said === "" ? link : `${link}\n${said}`;
 }
 
+/**
+ * Record on an EXISTING card where he found it — the "link it" answer to a word
+ * that already has a card, from the found-in flow. Zach, 2026-11-05: *"when i
+ * click link it, nothing happens"*: that flow had nowhere to put a link, so the
+ * button only closed the dialog.
+ *
+ * Writes `出典` exactly as `createCard` would have, but ONLY when the card has none
+ * yet: a card keeps the first place he found it, and a second sighting never
+ * overwrites the first. Returns what it did, for the page to say.
+ */
+export function recordFoundIn(
+  db: SqliteHandle,
+  cardId: string,
+  source: { readonly cardId: string; readonly sentence: string },
+): "recorded" | "kept" | "unknown" {
+  const card = db.prepare("SELECT template_id FROM cards WHERE id = ?").get(cardId) as
+    | { template_id: string | null }
+    | undefined;
+  const from = db.prepare("SELECT name FROM cards WHERE id = ?").get(source.cardId) as
+    | { name: string }
+    | undefined;
+  if (card === undefined || card.template_id === null || from === undefined) return "unknown";
+  const fieldId = ensureSourceField(db, card.template_id);
+  const held = db
+    .prepare("SELECT value FROM card_field_values WHERE card_id = ? AND field_id = ?")
+    .get(cardId, fieldId) as { value: string } | undefined;
+  if (held !== undefined && held.value.trim() !== "") return "kept";
+  db.prepare(
+    `INSERT INTO card_field_values (card_id, field_id, value) VALUES (?, ?, ?)
+     ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`,
+  ).run(cardId, fieldId, sourceValue(source.cardId, from.name, source.sentence));
+  return "recorded";
+}
+
 /** Where `cardId` was found, or null. Read from the field carrying the `source` role. */
 export function foundInOf(db: SqliteHandle, cardId: string): FoundIn | null {
   const rows = db

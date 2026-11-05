@@ -15,6 +15,7 @@ import {
   ensureSourceField,
   foundInOf,
   reconcileCardLinks,
+  recordFoundIn,
   SOURCE_FIELD_ID,
   sourceValue,
 } from "../src/cards/index.js";
@@ -99,5 +100,36 @@ describe("出典 — where a card was found", () => {
     expect(foundInOf(phone, "new")).toMatchObject({ cardId: "src", sentence: SENTENCE });
     laptop.close();
     phone.close();
+  });
+});
+
+/**
+ * "link it" from the found-in flow, when the word already has a card (2026-11-05:
+ * *"when i click link it, nothing happens"*). It records where he found it — but
+ * a card keeps the FIRST place it was found.
+ */
+describe("recordFoundIn — a word that already has a card", () => {
+  it("records the source on a card that has none", () => {
+    const db = device();
+    db.prepare(
+      "INSERT INTO cards (id, deck_id, template_id, name, updated_at) VALUES ('old', 'd', 'tango', '発覚', ?)",
+    ).run(EPOCH);
+    expect(recordFoundIn(db, "old", { cardId: "src", sentence: SENTENCE })).toBe("recorded");
+    expect(foundInOf(db, "old")).toMatchObject({ cardId: "src", name: "恒久", sentence: SENTENCE });
+  });
+
+  it("never overwrites where it was found first", () => {
+    const db = device();
+    createFound(db);
+    db.prepare(
+      "INSERT INTO cards (id, deck_id, template_id, name, updated_at) VALUES ('other', 'd', 'tango', '別', ?)",
+    ).run(EPOCH);
+    expect(recordFoundIn(db, "new", { cardId: "other", sentence: "別の文。" })).toBe("kept");
+    expect(foundInOf(db, "new")?.cardId).toBe("src");
+  });
+
+  it("says so when either card is unknown", () => {
+    const db = device();
+    expect(recordFoundIn(db, "nope", { cardId: "src", sentence: "" })).toBe("unknown");
   });
 });

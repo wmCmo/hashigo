@@ -66,7 +66,7 @@ import {
   newCardId,
   reconcileCardLinks,
 } from "../src/cards/index.js";
-import { decodeFieldOptions } from "../src/cards/index.js";
+import { decodeFieldOptions, recordFoundIn } from "../src/cards/index.js";
 import { cardAudioResolver } from "../src/cards/index.js";
 import { directionForTrackKind } from "../src/cards/index.js";
 import { ACCENT_FIELD_TYPE, READING_FIELD, cardGaps, prepareCard, readingSwitch } from "../src/review/index.js";
@@ -147,6 +147,7 @@ import type {
   PriceFieldRequest,
   RedoInfoRequest,
   CardGapsRequest,
+  RecordFoundInRequest,
   FieldOutputsRequest,
   VoiceRequest,
   BrowseRequest,
@@ -2159,6 +2160,17 @@ function cardGapsFor(request: CardGapsRequest): void {
 }
 
 /** See `FieldOutputsRequest`. Read-only. Text cleaned the way `generatedText` cleans it. */
+/** See `RecordFoundInRequest`. Stamps the card so the 出典 travels by sync. */
+function recordFoundInFor(request: RecordFoundInRequest): void {
+  const db = requireCards();
+  const outcome = recordFoundIn(db, request.cardId, { cardId: request.sourceCardId, sentence: request.sentence });
+  if (outcome === "recorded") {
+    touchCard(db, request.cardId);
+    refreshSearchText(db, [request.cardId]);
+  }
+  post({ kind: "recordFoundIn", id: request.id, outcome });
+}
+
 function fieldOutputsFor(request: FieldOutputsRequest): void {
   const outputs = fieldOutputs(requireCards(), request.cardId).map((output) =>
     output.text === null ? output : { ...output, text: stripThinking(output.text) },
@@ -3211,6 +3223,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "cardGaps":
           cardGapsFor(request);
+          break;
+        case "recordFoundIn":
+          recordFoundInFor(request);
           break;
         case "fieldOutputs":
           fieldOutputsFor(request);
