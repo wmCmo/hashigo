@@ -13,7 +13,7 @@
 import { decodeFieldOptions } from "../src/cards/index.js";
 import { moveWithin } from "../src/schema/index.js";
 import { referencedNames } from "../src/template/index.js";
-import { kindOf, settingsOf, type SettingSpec } from "../src/fields/index.js";
+import { FIELD_KINDS, fieldKind, kindOf, ROLE_KEY, settingsOf, type SettingSpec } from "../src/fields/index.js";
 import { isCatalogueVoice, voicesFor } from "../src/generate/voices.js";
 import { factsLine, inputLine, roleLine, settingLines, undeclaredKeys } from "./field-form.js";
 import { patchOptions, sourceChoices, type FieldState } from "./field-ops.js";
@@ -377,14 +377,10 @@ function templateFieldSettings(
     detail.fields.find((entry) => entry.id === id)?.name ?? null;
   const input = inputLine(field, nameOf);
   const role = roleLine(options);
-  const retype = typePicker(detail, field, run);
-  if (lines.length === 0 && extras.length === 0 && input === null && role === null && retype === null) {
-    return null;
-  }
-
   const panel = document.createElement("div");
   panel.className = "tpl-settings";
-  if (retype !== null) panel.appendChild(retype);
+  // Every field gets a panel now, because every field shows its type row.
+  panel.appendChild(typePicker(detail, field, run));
 
   if (role !== null) {
     const line = document.createElement("p");
@@ -396,7 +392,7 @@ function templateFieldSettings(
   if (input !== null) {
     const pipe = document.createElement("div");
     pipe.className = "tpl-setting-pipe";
-    if (kindOf(field.type)?.input === "source") {
+    if (fieldKind({ name: field.name, type: field.type, options }).readsSource) {
       pipe.append(...sourcePicker(detail, field, nameOf, run));
     } else {
       pipe.textContent = input;
@@ -524,7 +520,9 @@ function sourcePicker(
   select.setAttribute("aria-label", `what ${field.name} reads from`);
   const none = document.createElement("option");
   none.value = "";
-  none.textContent = "nothing — generates nothing";
+  // A generator with no input makes nothing; a derived field (読み, OJAD) with
+  // none is simply not wired, and "generates" would be the wrong verb for it.
+  none.textContent = kindOf(field.type)?.generatable === true ? "nothing — generates nothing" : "nothing — not set";
   select.appendChild(none);
   for (const choice of sourceChoices(detail.fields.map(fieldState), field.id)) {
     const option = document.createElement("option");
@@ -558,44 +556,68 @@ function sourcePicker(
 }
 
 /**
- * THE TYPE, where changing it is free — stage G, and nothing wider.
+ * THE TYPE ROW — on every field, and it names the KIND (`fieldKind`).
  *
- * The registry prices every conversion (`convertsTo`); only the FREE ones are
- * offered, which today is plain <-> long text: the same stored string, the same
- * render, a different editor box. Every other conversion reinterprets the values
- * already on his cards and stays refused in the worker. Null when this kind has
- * no free conversion, so most rows show nothing new.
+ * Zach, 2026-11-05: *"the type doesn't even say boolean"*. It used to appear only
+ * where a free conversion existed (plain <-> long text), so most fields showed no
+ * type at all and the two that did offered a choice that changed nothing. Now:
+ *
+ *   · a Text field and a Reading switch freely (`setFieldKind`): same stored
+ *     string, the role and the input change, no value moves;
+ *   · a legacy Long text field may go back to Text (`setFieldType`, free);
+ *   · everything else shows its kind and offers nothing — every other
+ *     conversion reinterprets the values on his cards and stays refused.
  */
 function typePicker(
   detail: TemplateDetail,
   field: TemplateFieldRow,
   run: TemplateRunner,
-): HTMLElement | null {
-  const kind = kindOf(field.type);
-  if (kind === null) return null;
-  const free = Object.entries(kind.convertsTo)
-    .filter(([, cost]) => cost === "free")
-    .map(([type]) => type);
-  if (free.length === 0) return null;
+): HTMLElement {
+  const options = decodeFieldOptions(field.options);
+  const kind = fieldKind({ name: field.name, type: field.type, options });
   const line = document.createElement("div");
   line.className = "tpl-setting-pipe";
   const label = document.createElement("span");
   label.textContent = "Type: ";
+
+  const choices: [string, string][] =
+    field.type === "plain" && (kind.id === "plain" || kind.id === "reading")
+      ? [
+          ["plain", FIELD_KINDS.plain.label],
+          ["reading", fieldKind({ type: "plain", options: { [ROLE_KEY]: "reading" } }).label],
+        ]
+      : field.type === "text"
+        ? [
+            ["text", FIELD_KINDS.text.label],
+            ["plain", FIELD_KINDS.plain.label],
+          ]
+        : [];
+  if (choices.length === 0) {
+    const value = document.createElement("span");
+    value.className = "tpl-setting-value";
+    value.textContent = kind.label;
+    line.append(label, value);
+    return line;
+  }
+
   const select = document.createElement("select");
   select.className = "edit-input tpl-source";
   select.setAttribute("aria-label", `${field.name}'s type`);
-  for (const type of [field.type, ...free]) {
-    const option = document.createElement("option");
-    option.value = type;
-    option.textContent = kindOf(type)?.label ?? type;
-    select.appendChild(option);
-  }
-  select.value = field.type;
+  for (const [value, text] of choices) select.add(new Option(text, value));
+  select.value = kind.id === "reading" ? "reading" : field.type;
   select.addEventListener("change", () => {
     const to = select.value;
-    if (to === field.type) return;
-    // No price: a free conversion moves no value and no clip, by definition.
-    void run({ op: "setFieldType", templateId: detail.id, fieldId: field.id, fieldType: to });
+    // No price: neither switch moves a value or a clip, by definition.
+    if (field.type === "text") {
+      void run({ op: "setFieldType", templateId: detail.id, fieldId: field.id, fieldType: to });
+    } else {
+      void run({
+        op: "setFieldKind",
+        templateId: detail.id,
+        fieldId: field.id,
+        fieldType: to === "reading" ? "reading" : "text",
+      });
+    }
   });
   line.append(label, select);
   return line;

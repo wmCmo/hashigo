@@ -700,7 +700,8 @@ export type TemplateOp =
   | "orderFields"
   | "setFieldOptions"
   | "setFieldSource"
-  | "setFieldType";
+  | "setFieldType"
+  | "setFieldKind";
 
 export interface TemplateOpRequest {
   readonly kind: "templateOp";
@@ -715,7 +716,7 @@ export interface TemplateOpRequest {
   readonly fieldId?: string;
   /**
    * `addField` (validated against the schema CHECK) and `setFieldType` (only a
-   * conversion the registry calls FREE).
+   * conversion the registry calls FREE). `setFieldKind`: `text` or `reading`.
    */
   readonly fieldType?: string;
   /** `orderFields` only: every field id, in the order they should sit. */
@@ -723,11 +724,11 @@ export interface TemplateOpRequest {
   /** `restoreField` only: the row a delete removed, put back verbatim. */
   readonly field?: TemplateFieldRow;
   /**
-   * `setFieldOptions` only: the WHOLE options JSON, not a patch. Whole so undo is
+   * `setFieldOptions`, and `setFieldKind`'s undo: the WHOLE options JSON, not a patch. Whole so undo is
    * one write of the previous text and the column is never half-changed.
    */
   readonly options?: string;
-  /** `setFieldSource` only. Null disconnects the field from any input. */
+  /** `setFieldSource`, and `setFieldKind`'s undo. Null disconnects the field from any input. */
   readonly sourceFieldId?: string | null;
 }
 

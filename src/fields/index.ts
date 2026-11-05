@@ -12,6 +12,8 @@
 
 export {
   AUTHORABLE_TYPES,
+  effectiveRole,
+  fieldKind,
   FIELD_KINDS,
   GENERATABLE_TYPES,
   keyedByGenerate,
@@ -20,6 +22,8 @@ export {
   type ConversionCost,
   type FieldInput,
   type FieldKind,
+  type FieldKindView,
+  type KindedField,
   type IdentityReach,
   type SettingControl,
   type SettingSpec,

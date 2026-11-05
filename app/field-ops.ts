@@ -41,7 +41,7 @@
 import { generationIdentity, lookupGeneration } from "../src/blobs/generation.js";
 import { decodeFieldOptions } from "../src/cards/index.js";
 import type { SqliteHandle } from "../src/db/browser.js";
-import { kindOf, settingsOf } from "../src/fields/index.js";
+import { effectiveRole, fieldKind, ROLE_KEY, settingsOf } from "../src/fields/index.js";
 import {
   fieldGenerationRequest,
   fillVoiceFor,
@@ -483,9 +483,11 @@ export function sourceRefusal(
 ): string | null {
   const target = fields.find((field) => field.id === fieldId);
   if (target === undefined) return `no field ${fieldId}`;
-  const kind = kindOf(target.type);
-  if (kind === null || kind.input !== "source") {
-    return `a ${target.type} field does not read from another field`;
+  // THE KIND, not the stored type: `読み` and OJAD are stored as plain text and
+  // read from a field because their role says so (`fieldKind`).
+  const kind = fieldKind({ ...target, options: decodeFieldOptions(target.options) });
+  if (!kind.readsSource) {
+    return `a ${kind.label} field does not read from another field`;
   }
   if (sourceId === null) return null;
   if (sourceId === fieldId) return "a field cannot read from itself";
@@ -535,6 +537,78 @@ export function writeFieldSource(
   db.prepare(
     `UPDATE template_fields SET source_field_id = ?, updated_at = ${NOW} WHERE template_id = ? AND id = ?`,
   ).run(sourceId, templateId, fieldId);
+}
+
+/** The two kinds a plain field may be switched between from the settings screen. */
+export type PlainKind = "text" | "reading";
+
+/** What a kind switch writes: the whole options string and the source. */
+export interface KindChange {
+  readonly options: string;
+  readonly sourceFieldId: string | null;
+}
+
+/**
+ * TEXT ⇄ READING, the one kind switch the settings screen offers (2026-11-05).
+ *
+ * Both are `type = plain`, so the switch moves no stored value: it writes or
+ * removes the `reading` role and the field's input. Becoming a Reading keeps an
+ * input already chosen, else takes the template's first plain field — the head
+ * word on every template he has. Becoming Text clears the input, because a Text
+ * field reading from another is a pipe nothing follows.
+ *
+ * A refusal is a string, the worker's convention. Pure, so `test/` runs it.
+ */
+export function kindChange(
+  fields: readonly FieldState[],
+  fieldId: string,
+  to: PlainKind,
+): KindChange | string {
+  const target = fields.find((field) => field.id === fieldId);
+  if (target === undefined) return `no field ${fieldId}`;
+  if (target.type !== "plain") return `only a Text field can become a Reading — ${target.name} is ${target.type}`;
+  const options = decodeFieldOptions(target.options);
+  const role = effectiveRole({ ...target, options });
+  if (role !== null && role !== "reading") return `${target.name} is ${fieldKind({ ...target, options }).label}, not Text`;
+  const stored = options[ROLE_KEY] === "reading";
+  if (to === "reading") {
+    // `fields` arrives in template order (`FIELDS` sorts by pos), so the first
+    // plain field with no role is the head word.
+    const source =
+      target.sourceFieldId ??
+      fields.find(
+        (field) =>
+          field.id !== fieldId &&
+          field.type === "plain" &&
+          effectiveRole({ ...field, options: decodeFieldOptions(field.options) }) === null,
+      )?.id ??
+      null;
+    if (source === null) return `${target.name} has no Text field on this template to read from`;
+    if (stored && source === target.sourceFieldId) return `${target.name} is already a Reading`;
+    return { options: JSON.stringify({ ...options, [ROLE_KEY]: "reading" }), sourceFieldId: source };
+  }
+  if (role === null) return `${target.name} is already Text`;
+  // A Reading by NAME alone stays one whatever its options say (`effectiveRole`),
+  // so removing a role it does not carry would report a change that never shows.
+  if (!stored) return `${target.name} is a Reading because of its name — rename it to make it Text`;
+  const { [ROLE_KEY]: _dropped, ...rest } = options;
+  return { options: JSON.stringify(rest), sourceFieldId: null };
+}
+
+/** True when two options strings differ, if at all, only in the role key. */
+export function sameExceptRole(current: string, proposed: string): boolean {
+  let next: unknown;
+  try {
+    next = JSON.parse(proposed);
+  } catch {
+    return false;
+  }
+  if (next === null || typeof next !== "object" || Array.isArray(next)) return false;
+  const strip = (options: Readonly<Record<string, unknown>>): string => {
+    const { [ROLE_KEY]: _role, ...rest } = options;
+    return JSON.stringify(Object.keys(rest).sort().map((key) => [key, rest[key]]));
+  };
+  return strip(decodeFieldOptions(current)) === strip(next as Record<string, unknown>);
 }
 
 /**

@@ -28,7 +28,8 @@
  * every one of them.
  */
 
-import { kindOf, roleOf, ROLE_KEY, settingsOf, type SettingSpec } from "../src/fields/index.js";
+import { decodeFieldOptions } from "../src/cards/index.js";
+import { fieldKind, kindOf, roleOf, ROLE_KEY, settingsOf, type SettingSpec } from "../src/fields/index.js";
 
 /** What this needs of a field row. Structural, so `TemplateFieldRow` fits. */
 export interface FieldFacts {
@@ -40,6 +41,8 @@ export interface FieldFacts {
   readonly references: number;
   readonly sides: readonly number[];
   readonly dependents: readonly string[];
+  /** The raw options column, for the kind a role gives. Absent reads as none. */
+  readonly options?: string;
 }
 
 /** One line of a settings panel: a label, what it says, and why it is there. */
@@ -80,7 +83,8 @@ export function factsLine(field: FieldFacts): string {
   const references =
     field.references === 0 ? sides : `${field.references} reference(s) ${sides}`;
   return [
-    kindOf(field.type)?.label ?? field.type,
+    // THE KIND, not the storage type — `読み` is a Reading, not "Plain text".
+    fieldKind({ name: field.name, type: field.type, options: decodeFieldOptions(field.options ?? "{}") }).label,
     field.local ? "local (decision 9 — protected from re-import)" : null,
     references,
     field.values === 0 ? null : `${field.values.toLocaleString()} value(s)`,
@@ -98,9 +102,10 @@ export function factsLine(field: FieldFacts): string {
  * `source_field_id` is legitimately NULL on four fields of this corpus.
  */
 export function inputLine(field: FieldFacts, nameOfField: (id: string) => string | null): string | null {
-  const kind = kindOf(field.type);
-  if (kind === null || kind.input === "none") return null;
-  if (kind.input === "prompt") return "Input: the prompt below, with its <<Field>> markers";
+  if (kindOf(field.type)?.input === "prompt") return "Input: the prompt below, with its <<Field>> markers";
+  // The KIND decides, so a Reading stored as plain text still shows its input.
+  const view = fieldKind({ name: field.name, type: field.type, options: decodeFieldOptions(field.options ?? "{}") });
+  if (!view.readsSource) return null;
   const source = field.sourceFieldId === null ? null : nameOfField(field.sourceFieldId);
   if (field.sourceFieldId === null) return "Input: not set — this field generates nothing";
   // A source that resolves to no name is a dangling pointer. The composite
@@ -161,6 +166,9 @@ const ROLE_MEANING: Readonly<Record<string, string>> = {
     "the per-mora pitch accent of the sentence it reads (decision 43) — filled by " +
     "`accent/cli.ts marks`, found by this role rather than by any field's name",
   "reading-switch": "decision 29's switch between the produce and identify drills",
+  reading:
+    "decision 10's explicit reading — the kana of its input word, shown as furigana. " +
+    "Filled by the laptop's helper (decision 56), never typed",
 };
 
 /**

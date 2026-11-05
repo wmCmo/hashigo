@@ -40,10 +40,16 @@ export const ROLE_KEY = `${LOCAL_OPTION_PREFIX}role`;
  *
  * `source` is `出典` — the card a word was found in, as a `[[link]]`, and the
  * sentence it was found in. See `src/cards/found-in.ts`.
+ *
+ * `reading` is decision 10's explicit reading, `読み` — the word's kana, read
+ * from its `source_field_id` (the head word). Added 2026-11-05 so the field says
+ * what it is: Zach, *"the `type` wouldn't be plain text, but rather something
+ * like `ふりがな` … and then it would ask which field we want as input"*. Until a
+ * device carries the role, `./yomi.ts` still finds the field by its name.
  */
-export type FieldRole = "ojad" | "reading-switch" | "source";
+export type FieldRole = "ojad" | "reading-switch" | "source" | "reading";
 
-const ROLES: ReadonlySet<string> = new Set<FieldRole>(["ojad", "reading-switch", "source"]);
+const ROLES: ReadonlySet<string> = new Set<FieldRole>(["ojad", "reading-switch", "source", "reading"]);
 
 /** The shape this needs of a field. Structural, so every caller's row fits. */
 export interface RoledField {

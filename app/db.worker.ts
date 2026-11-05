@@ -90,7 +90,7 @@ import {
   sideIndex,
 } from "../src/template/index.js";
 import { positionKeys, FIELD_TYPES, type FieldType } from "../src/schema/index.js";
-import { kindOf } from "../src/fields/index.js";
+import { effectiveRole, fieldKind, kindOf, roleOf, withRole } from "../src/fields/index.js";
 // The SQL fragments for "live" and "due", from the module that owns them. This
 // query is why that module exists: it used to spell the due comparison with
 // `date()`, which converts an offset timestamp to UTC and made this count 704
@@ -121,7 +121,10 @@ import {
 import {
   describePrice,
   describeVoicePrice,
+  kindChange,
   optionsRefusal,
+  sameExceptRole,
+  type KindChange,
   priceFieldChange,
   priceVoiceChange,
   resolvedVoices,
@@ -2834,7 +2837,12 @@ function templateOp(request: TemplateOpRequest): void {
       const refusal = sourceRefusal(fields, target.id, sourceId);
       if (refusal !== null) throw new Error(refusal);
       if (sourceId === target.sourceFieldId) throw new Error(`${target.name} already reads from that`);
+      // A `読み` that is a Reading by its NAME alone gets the role written with its
+      // first input, so picking the input is also what makes the kind explicit.
+      const targetOptions = decodeFieldOptions(target.options);
+      const pinRole = effectiveRole({ ...target, options: targetOptions }) === "reading" && roleOf({ options: targetOptions }) === null;
       db.transaction(() => {
+        if (pinRole) writeFieldOptions(db, before.id, target.id, JSON.stringify(withRole(targetOptions, "reading")));
         writeFieldSource(db, before.id, target.id, sourceId);
         if (searchReach(fields, target.id)) refreshTemplateSearch(db, before.id);
       })();
@@ -2873,6 +2881,48 @@ function templateOp(request: TemplateOpRequest): void {
       ).run(to, before.id, target.id);
       describe = `${target.name} is now ${kindOf(to)?.label ?? to} (was ${kindOf(target.type)?.label ?? target.type}) — no value changed`;
       undo = { op: "setFieldType", templateId: before.id, fieldId: target.id, fieldType: target.type };
+      break;
+    }
+
+    case "setFieldKind": {
+      // TEXT ⇄ READING (`kindChange`): the role and the input, never a value. Its
+      // undo arrives as the raw options and source it replaced, and is held to the
+      // same bound — a plain field whose options differ from now by the role alone.
+      const target = field(request.fieldId ?? "");
+      const fields = templateFields(db, before.id);
+      let change: KindChange | string;
+      if (request.options !== undefined) {
+        change =
+          target.type === "plain" && sameExceptRole(target.options, request.options)
+            ? { options: request.options, sourceFieldId: request.sourceFieldId ?? null }
+            : `${target.name}'s kind cannot be restored to that`;
+      } else {
+        change = kindChange(fields, target.id, request.fieldType === "reading" ? "reading" : "text");
+      }
+      if (typeof change === "string") throw new Error(change);
+      const next = change;
+      if (next.sourceFieldId !== null) {
+        const refusal = sourceRefusal(
+          fields.map((entry) => (entry.id === target.id ? { ...entry, options: next.options } : entry)),
+          target.id,
+          next.sourceFieldId,
+        );
+        if (refusal !== null) throw new Error(refusal);
+      }
+      db.transaction(() => {
+        writeFieldOptions(db, before.id, target.id, next.options);
+        writeFieldSource(db, before.id, target.id, next.sourceFieldId);
+      })();
+      const kindNow = fieldKind({ ...target, options: decodeFieldOptions(next.options) }).label;
+      const sourceName = before.fields.find((entry) => entry.id === next.sourceFieldId)?.name;
+      describe = `${target.name} is now ${kindNow}${sourceName === undefined ? "" : `, reading ${sourceName}`} — no value changed`;
+      undo = {
+        op: "setFieldKind",
+        templateId: before.id,
+        fieldId: target.id,
+        options: target.options,
+        sourceFieldId: target.sourceFieldId,
+      };
       break;
     }
 

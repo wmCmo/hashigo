@@ -43,6 +43,8 @@
 import type { BlobKind, FieldType } from "../schema/index.js";
 import { FIELD_TYPE_BLOB_KIND, FIELD_TYPES } from "../schema/index.js";
 import { NON_KEY_OPTIONS } from "./identity.js";
+import { roleOf, type FieldRole } from "./roles.js";
+import { YOMI_FIELD } from "./yomi.js";
 
 /** Where a kind's generation input comes from. */
 export type FieldInput =
@@ -245,19 +247,25 @@ const TRANSLATE_SETTINGS: readonly SettingSpec[] = [
 
 export const FIELD_KINDS: Readonly<Record<FieldType, FieldKind>> = {
   plain: kind("plain", {
-    label: "Plain text",
+    label: "Text",
     input: "none",
     settings: [],
     convertsTo: { ...PLAIN_LIKE, boolean: "priced", number: "priced", accent: "priced" },
     authorable: true,
     generatable: false,
   }),
+  // NOT OFFERED SINCE 2026-11-05. Zach: *"what's the difference between plain
+  // text and long text tho?"* — in Hashigo, none: the same stored string, the same
+  // render, the same growing box. It is Mochi's distinction, no field in his
+  // templates uses it, and a choice that changes nothing is a question nobody
+  // should have to ask. Kept as a type because the CHECK and Mochi's exports have
+  // it; a field that has it shows as "Long text" and converts back to Text free.
   text: kind("text", {
     label: "Long text",
     input: "none",
     settings: [],
     convertsTo: PLAIN_LIKE,
-    authorable: true,
+    authorable: false,
     generatable: false,
   }),
   boolean: kind("boolean", {
@@ -392,6 +400,111 @@ export const AUTHORABLE_TYPES: readonly FieldType[] = FIELD_TYPES.filter(
 export const GENERATABLE_TYPES: ReadonlySet<FieldType> = new Set(
   FIELD_TYPES.filter((type) => FIELD_KINDS[type].generatable),
 );
+
+// ─── WHAT A FIELD IS, AS HE NAMES IT ──────────────────────────────────────────
+
+/**
+ * A field's KIND: its stored type read together with its role.
+ *
+ * Zach, 2026-11-05, on the field settings screen: *"the `type` wouldn't be plain
+ * text, but rather something like `ふりがな` … same with かな主流, the type doesn't
+ * even say boolean, and same with 型"*. The screen printed the storage type, which
+ * decision 43 freezes (a new `type` is a schema bump against live history), so
+ * `読み` and OJAD read "Plain text". The role is where what a field is FOR lives
+ * (`./roles.ts`); this reads both and gives the one answer every screen shows.
+ *
+ * `derived` is the editor's rule, and it replaced three special cases: a derived
+ * field is filled by the pipeline or the laptop's helper and is SHOWN, never
+ * typed into. *"if we really have problem, then we will add that"* — so there is
+ * no override; a wrong value is a script's fix (`scripts/sync-set.ts`).
+ */
+export interface FieldKindView {
+  /** A stored type, or a role for the kinds a role defines. */
+  readonly id: FieldType | FieldRole;
+  readonly label: string;
+  /** Filled for him, never typed: the editor shows the value, read-only. */
+  readonly derived: boolean;
+  /** Follows `source_field_id`, so the settings screen offers the input picker. */
+  readonly readsSource: boolean;
+  /** Why a derived field can be empty, in his terms. Null on authored kinds. */
+  readonly whenEmpty: string | null;
+}
+
+/** What `fieldKind` needs of a field. Structural, so every caller's row fits. */
+export interface KindedField {
+  readonly name?: string;
+  readonly type: string;
+  readonly options?: Readonly<Record<string, unknown>> | undefined;
+}
+
+/**
+ * The role, or the one a field holds by its name.
+ *
+ * `読み` was found by name for two months before `reading` existed, and every
+ * device still holds it without the role until he picks its kind once. A plain
+ * field by that name IS the reading meanwhile — `./yomi.ts` applies the same rule
+ * in SQL.
+ */
+export function effectiveRole(field: KindedField): FieldRole | null {
+  const role = roleOf(field);
+  if (role !== null) return role;
+  if (field.type === "plain" && field.name?.trim() === YOMI_FIELD) return "reading";
+  return null;
+}
+
+const ROLE_KINDS: Readonly<Record<FieldRole, FieldKindView>> = {
+  reading: {
+    id: "reading",
+    label: "Reading (ふりがな)",
+    derived: true,
+    readsSource: true,
+    whenEmpty:
+      "the laptop's accent helper writes it only for a word with kanji, and only when " +
+      "its two readings of the word agree",
+  },
+  ojad: {
+    id: "ojad",
+    label: "Accent marks (OJAD)",
+    derived: true,
+    readsSource: true,
+    whenEmpty:
+      "`npx vite-node scripts/ojad-fill.ts -- --apply` on the laptop fills it from the " +
+      "example sentence",
+  },
+  "reading-switch": {
+    id: "reading-switch",
+    label: "Exercise switch",
+    derived: false,
+    readsSource: false,
+    whenEmpty: null,
+  },
+  source: { id: "source", label: "Found in (出典)", derived: false, readsSource: false, whenEmpty: null },
+};
+
+/** What this field is. Never throws: an unknown type reads as its own name. */
+export function fieldKind(field: KindedField): FieldKindView {
+  const role = effectiveRole(field);
+  if (role !== null) return ROLE_KINDS[role];
+  if (field.type === "accent") {
+    return {
+      id: "accent",
+      label: FIELD_KINDS.accent.label,
+      derived: true,
+      readsSource: true,
+      whenEmpty:
+        "the laptop's accent helper leaves it empty when it is not sure of the word's " +
+        "accent, rather than guess",
+    };
+  }
+  const kind = kindOf(field.type);
+  return {
+    id: kind?.type ?? (field.type as FieldType),
+    label: kind?.label ?? field.type,
+    derived: false,
+    readsSource: kind?.input === "source",
+    whenEmpty: null,
+  };
+}
 
 /** True when `keyOptions` would carry this key into a generation identity. */
 export function keyedByGenerate(key: string): boolean {

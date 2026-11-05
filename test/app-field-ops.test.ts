@@ -4,8 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   consumersOf,
   describePrice,
+  kindChange,
   optionsRefusal,
   patchOptions,
+  sameExceptRole,
   priceFieldChange,
   sourceChoices,
   sourceRefusal,
@@ -319,5 +321,54 @@ describe("a speech field reading a value that IS an inline generator speaks what
       if (request !== null && !request.text.includes("<")) built += 1;
     }
     expect(built).toBe(28);
+  });
+});
+
+/**
+ * TEXT ⇄ READING (2026-11-05): the one kind switch the settings screen offers.
+ * It writes the role and the input and never a value, so what it may produce is
+ * pinned here — the worker only runs it.
+ */
+describe("kindChange switches Text and Reading by role and input alone", () => {
+  const role = '{"hashigo-role":"reading"}';
+  const tpl = [
+    field({ id: "head", name: "単語" }),
+    field({ id: "flag", type: "boolean" }),
+    field({ id: "yomi", name: "読み" }),
+    field({ id: "note", name: "Note", options: '{"keep":1}' }),
+  ];
+
+  it("makes a Text field a Reading of the head word, keeping its other options", () => {
+    expect(kindChange(tpl, "note", "reading")).toEqual({
+      options: JSON.stringify({ keep: 1, "hashigo-role": "reading" }),
+      sourceFieldId: "head",
+    });
+  });
+  it("keeps an input already chosen", () => {
+    const fields = [...tpl.slice(0, 3), field({ id: "note", sourceFieldId: "yomi" })];
+    expect(kindChange(fields, "note", "reading")).toMatchObject({ sourceFieldId: "yomi" });
+  });
+  it("pins the role on a 読み that is a Reading by name only", () => {
+    expect(kindChange(tpl, "yomi", "reading")).toEqual({ options: role, sourceFieldId: "head" });
+  });
+  it("turns a Reading back into Text and clears its input", () => {
+    const fields = [tpl[0] as FieldState, field({ id: "r", options: role, sourceFieldId: "head" })];
+    expect(kindChange(fields, "r", "text")).toEqual({ options: "{}", sourceFieldId: null });
+  });
+  it("refuses what would change nothing, or reinterpret a value", () => {
+    expect(kindChange(tpl, "note", "text")).toMatch(/already Text/);
+    expect(kindChange(tpl, "yomi", "text")).toMatch(/because of its name/);
+    expect(kindChange(tpl, "flag", "reading")).toMatch(/only a Text field/);
+    expect(kindChange([field({ id: "o", options: '{"hashigo-role":"ojad"}' })], "o", "reading")).toMatch(/not Text/);
+    expect(kindChange([field({ id: "alone" })], "alone", "reading")).toMatch(/no Text field/);
+  });
+  it("lets a Reading read from another field, as its kind says", () => {
+    expect(sourceRefusal(tpl, "yomi", "head")).toBeNull();
+    expect(sourceRefusal(tpl, "note", "head")).toMatch(/does not read/);
+  });
+  it("accepts an undo that differs from now by the role alone", () => {
+    expect(sameExceptRole('{"a":1,"hashigo-role":"reading"}', '{"a":1}')).toBe(true);
+    expect(sameExceptRole('{"a":1}', '{"a":2,"hashigo-role":"reading"}')).toBe(false);
+    expect(sameExceptRole("{}", "not json")).toBe(false);
   });
 });

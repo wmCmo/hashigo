@@ -153,8 +153,7 @@ import {
   type BoundarySide,
 } from "./review-boundary.js";
 import { toggleCloze } from "./cloze-toggle.js";
-import { roleOf } from "../src/fields/index.js";
-import { YOMI_FIELD } from "../src/fields/yomi.js";
+import { fieldKind } from "../src/fields/index.js";
 import { exampleSentencePrompt, isEnglishSentenceField } from "./example-sentence.js";
 import { revealScroll } from "./review-scroll.js";
 import { revealSteps, type RevealStep } from "./review-steps.js";
@@ -3538,54 +3537,22 @@ function openEditorFor(
       continue;
     }
 
-    // OJAD IS DERIVED, NOT AUTHORED. Zach, 2026-10-22: *"why is it not
-    // `generated` just like translate and audio and speech? because you are not
-    // supposed to edit that field no?"* It is a `plain` field only because a new
-    // field type is a schema bump (decision 43); its value is OpenJTalk's reading
-    // of the example sentence, `か*れわ|…`, which nobody types. Shown, not edited.
-    if (roleOf(field) === "ojad") {
+    // A DERIVED KIND IS SHOWN, NEVER TYPED INTO — `fieldKind` decides, and the
+    // kinds are Reading (`読み`), Pitch accent (`型`) and Accent marks (OJAD).
+    // Each was its own special case first: OJAD (Zach, 2026-10-22: *"you are not
+    // supposed to edit that field no?"*), then `読み` and `型` (2026-11-05: *"i
+    // never write there by hand"*; *"fully read only, if we really have problem,
+    // then we will add that"*). The 型 picker is in git (`73ca06a`); a wrong value
+    // is a script's fix (`scripts/sync-set.ts`), not the editor's.
+    const kind = fieldKind(field);
+    if (kind.derived) {
+      const from = fields.find((entry) => entry.id === field.sourceFieldId)?.name;
       const note = document.createElement("p");
       note.className = "edit-readonly";
       note.textContent =
         value.trim() === ""
-          ? "derived — not filled yet. `npx vite-node scripts/ojad-fill.ts -- --apply` on the laptop fills it from the example sentence"
-          : `derived from the example sentence — ${value}`;
-      row.appendChild(note);
-      body.appendChild(row);
-      continue;
-    }
-
-    // 読み IS FILLED FOR HIM, NOT BY HIM. Zach, 2026-11-05: *"when i see the 読み
-    // field im so confused like what should i put there and then i remember that
-    // it's not supposed to be a field from me even, i never write there by hand"*.
-    // The laptop's helper fills it (decision 56) when OpenJTalk and UniDic agree,
-    // and leaves it empty when they don't; batch scripts write it too. An empty
-    // box invited a guess, so it is shown like OJAD. Changing one is a script's
-    // job (`scripts/cards-add.ts`, `scripts/sync-set.ts`), not the editor's.
-    if (field.name.trim() === YOMI_FIELD) {
-      const note = document.createElement("p");
-      note.className = "edit-readonly";
-      note.textContent =
-        value.trim() === ""
-          ? "filled for you — empty. The laptop's accent helper writes it only for a word with kanji, and only when its two readings of the word agree. Nothing to type here"
-          : `filled for you — ${value.trim()}`;
-      row.appendChild(note);
-      body.appendChild(row);
-      continue;
-    }
-
-    // 型 TOO. The 2026-10-24 picker (`73ca06a`) kept it editable as the in-app
-    // override for a wrong accent; Zach, 2026-11-05: *"fully read only, if we
-    // really have problem, then we will add that, im following yagni principle"*.
-    // The pipeline and the helper write it (decision 56); a fix goes through
-    // `scripts/sync-set.ts` or the `ojad` adjudications. The picker is in git.
-    if (field.type === "accent") {
-      const note = document.createElement("p");
-      note.className = "edit-readonly";
-      note.textContent =
-        value.trim() === ""
-          ? "filled for you — empty. The laptop's accent helper leaves it empty when it is not sure of the word's accent, rather than guess"
-          : `filled for you — ${value.trim()}`;
+          ? `filled for you — empty: ${kind.whenEmpty ?? "nothing has filled it yet"}. Nothing to type here`
+          : `${from === undefined ? "filled for you" : `filled from ${from}`} — ${value.trim()}`;
       row.appendChild(note);
       body.appendChild(row);
       continue;

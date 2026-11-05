@@ -66,7 +66,7 @@ npm run gates           # ALL SIX GATES, one command, honest verdict. Start here
                         # wasm URL. (spike:check was dropped 2026-10-27 — an injected
                         # contract break turned `typecheck` red with 667 errors; see
                         # `test/db-contract.types.ts`.)
-npm test                # 68 files, 1601 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
+npm test                # 68 files, 1616 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
                         # MEASURED, never added up — run the suite or leave the line alone
                         # (`test/docs-figures.test.ts` checks it). A wrapper
                         # (`scripts/test.mjs`) that reads vitest's SUMMARY: the run must
@@ -314,6 +314,10 @@ npx vite-node scripts/reverse-dormant-apply.ts -- --db build/hashigo.db --apply 
 60. **A mode-2 単語 card shows its emoji on the question side**, unmasked, at the top of
     side 2 inside `<< ^Reading >>`; mode 1 keeps it behind side 4's cloze. Homophones:
     *"when i heard words like かんしゅう i genuinely don't know which one it is"*.
+61. **A field shows its KIND (type + role, `fieldKind`), and a derived kind — Reading
+    (読み), Pitch accent (型), Accent marks (OJAD) — is read-only in the editor.** No
+    override (YAGNI, his call); Long text is not offered; Text ⇄ Reading is the one
+    kind switch. 読み carries role `reading`; by name until a device has it.
 
 ## READ THE TEMPLATE. It answers most questions about the screen.
 

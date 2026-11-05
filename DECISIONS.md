@@ -2540,6 +2540,32 @@ right**: it holds his verbatim reasoning and this quotes it.
     `sideScale` counted code points, so 🤝👩‍💼👨‍💼🤝 was 14 long; it counts graphemes
     now (4), identical for kana, kanji and Latin.
 
+61. **A FIELD SHOWS ITS KIND, AND A DERIVED KIND IS READ-ONLY IN THE EDITOR.**
+    2026-11-05. Zach, on the field settings screen: *"the `type` wouldn't be plain
+    text, but rather something like `ふりがな` … and then it would ask which field we
+    want as input … same with かな主流, the type doesn't even say boolean, and same
+    with 型"*. Earlier the same day: *"i never write there by hand"* (読み) and, for
+    型, *"fully read only, if we really have problem, then we will add that, im
+    following yagni principle"*.
+
+    The screen printed the STORAGE type, which decision 43 freezes, so 読み and OJAD
+    read "Plain text". `fieldKind()` (`src/fields/kinds.ts`) now reads the type
+    together with the role and is the one answer the type row, the facts line, the
+    input picker and the card editor all use. 読み gets a role, `reading`, with its
+    head word as input — the same shape 型 already had — and a plain field named 読み
+    with no role still counts as one, so nothing regresses before a device carries
+    the role (`effectiveRole`; `src/fields/yomi.ts` does the same in SQL, role first).
+
+    **`derived` is the editor's whole read-only rule**: Reading (読み), Pitch accent
+    (型), Accent marks (OJAD). It replaced three special cases. There is no override
+    — the 2026-10-24 型 picker (`73ca06a`) was removed — and a wrong value is a
+    script's fix (`scripts/sync-set.ts`). **Long text is no longer offered**: it
+    stores and renders exactly as Text (*"what's the difference between plain text
+    and long text tho?"* — none). Text ⇄ Reading is the one kind switch offered
+    (`setFieldKind`): it writes the role and the input and moves no value. Pinyin
+    would be a setting on the Reading kind, not wiring through a Text field — not
+    built.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

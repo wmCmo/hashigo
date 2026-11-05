@@ -52,7 +52,7 @@ function facts(over: Partial<FieldFacts> = {}): FieldFacts {
 describe("the facts line answers WHERE, not just how many", () => {
   it("names the one side a field is on", () => {
     expect(factsLine(facts({ type: "plain", references: 1, sides: [2] }))).toBe(
-      "Plain text · 1 reference(s) on side 2",
+      "Text · 1 reference(s) on side 2",
     );
   });
 
@@ -257,5 +257,17 @@ describe("a role is shown as what it is FOR, never as a stranger (stage F)", () 
   });
   it("does not list the role key as undeclared", () => {
     expect(undeclaredKeys("plain", { "hashigo-role": "ojad" })).toEqual([]);
+  });
+});
+
+describe("the facts and input lines name the KIND (2026-11-05)", () => {
+  const nameOf = (id: string): string | null => (id === "head" ? "単語" : null);
+  it("calls 読み a Reading and shows what it reads", () => {
+    const yomi = facts({ name: "読み", type: "plain", sourceFieldId: "head" });
+    expect(factsLine(yomi)).toMatch(/^Reading \(ふりがな\)/);
+    expect(inputLine(yomi, nameOf)).toBe("Input: 単語");
+  });
+  it("calls OJAD what it is, not Plain text", () => {
+    expect(factsLine(facts({ type: "plain", options: '{"hashigo-role":"ojad"}' }))).toMatch(/^Accent marks/);
   });
 });

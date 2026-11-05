@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   AUTHORABLE_TYPES,
+  effectiveRole,
+  fieldKind,
   FIELD_KINDS,
   GENERATABLE_TYPES,
   keyedByGenerate,
@@ -18,6 +20,7 @@ import {
 } from "../src/fields/index.js";
 import { FIELD_TYPES, FIELD_TYPE_BLOB_KIND, GENERATOR_FIELD_TYPES } from "../src/schema/index.js";
 import { decodeFieldOptions } from "../src/cards/index.js";
+import { yomiFieldId } from "../src/fields/yomi.js";
 
 /**
  * THE REGISTRY DESCRIBES; IT MUST NOT DRIFT FROM WHAT DECIDES.
@@ -71,7 +74,8 @@ describe("the registry agrees with the schema", () => {
   });
 
   it("offers only authorable types to the add-field form, and no generator", () => {
-    expect([...AUTHORABLE_TYPES]).toEqual(["plain", "text", "boolean", "number", "accent"]);
+    // No `text`: Long text stores and renders exactly as Text (2026-11-05).
+    expect([...AUTHORABLE_TYPES]).toEqual(["plain", "boolean", "number", "accent"]);
     for (const type of AUTHORABLE_TYPES) expect(FIELD_KINDS[type].blobKind).toBeNull();
   });
 
@@ -251,6 +255,88 @@ describe("the registry against the real corpus", () => {
         .prepare(`SELECT count(*) AS n FROM blobs WHERE options LIKE '%${LOCAL_OPTION_PREFIX}%'`)
         .get() as { n: number };
       expect(n.n).toBe(0);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+/**
+ * A FIELD'S KIND — its stored type read with its role (2026-11-05). Zach: *"the
+ * `type` wouldn't be plain text, but rather something like `ふりがな`"*. The
+ * `derived` flag is the card editor's whole read-only rule, so it is pinned per kind.
+ */
+describe("fieldKind names what a field IS", () => {
+  it("reads the role before the stored type", () => {
+    expect(fieldKind({ type: "plain", options: { [ROLE_KEY]: "ojad" } })).toMatchObject({
+      id: "ojad",
+      derived: true,
+      readsSource: true,
+    });
+    expect(fieldKind({ type: "plain", options: { [ROLE_KEY]: "reading" } })).toMatchObject({
+      id: "reading",
+      label: "Reading (ふりがな)",
+      derived: true,
+    });
+    expect(fieldKind({ type: "boolean", options: { [ROLE_KEY]: "reading-switch" } })).toMatchObject({
+      label: "Exercise switch",
+      derived: false,
+    });
+  });
+
+  it("treats a plain 読み with no role as the reading, until the role is written", () => {
+    expect(effectiveRole({ name: " 読み ", type: "plain" })).toBe("reading");
+    expect(fieldKind({ name: "読み", type: "plain" }).derived).toBe(true);
+    // The name alone does not make a non-plain field one.
+    expect(effectiveRole({ name: "読み", type: "boolean" })).toBeNull();
+  });
+
+  it("makes 型 derived and every authored kind editable", () => {
+    expect(fieldKind({ type: "accent" })).toMatchObject({ derived: true, readsSource: true });
+    for (const type of ["plain", "text", "boolean", "number"]) {
+      expect(fieldKind({ name: "単語", type }).derived).toBe(false);
+    }
+    expect(fieldKind({ type: "plain" }).label).toBe("Text");
+  });
+
+  it("explains every derived kind's empty value", () => {
+    for (const field of [
+      { type: "accent" },
+      { type: "plain", options: { [ROLE_KEY]: "reading" } },
+      { type: "plain", options: { [ROLE_KEY]: "ojad" } },
+    ]) {
+      expect(fieldKind(field).whenEmpty).not.toBeNull();
+    }
+  });
+});
+
+describe("yomiFieldId finds the reading by role first, then by name", () => {
+  const tiny = (): Database.Database => {
+    const db = new Database(":memory:");
+    db.exec(
+      "CREATE TABLE template_fields (template_id TEXT, id TEXT, name TEXT, type TEXT, options TEXT, pos TEXT)",
+    );
+    return db;
+  };
+  it("takes the role over a field that only shares the name", () => {
+    const db = tiny();
+    try {
+      db.prepare("INSERT INTO template_fields VALUES ('t', 'byname', '読み', 'plain', '{}', 'a')").run();
+      db.prepare(
+        `INSERT INTO template_fields VALUES ('t', 'byrole', 'かな', 'plain', '{"${ROLE_KEY}":"reading"}', 'b')`,
+      ).run();
+      expect(yomiFieldId(db, "t")).toBe("byrole");
+    } finally {
+      db.close();
+    }
+  });
+  it("still finds a role-less 読み, and survives options that are not JSON", () => {
+    const db = tiny();
+    try {
+      db.prepare("INSERT INTO template_fields VALUES ('t', 'junk', 'x', 'plain', 'not json', 'a')").run();
+      db.prepare("INSERT INTO template_fields VALUES ('t', 'byname', '読み', 'plain', NULL, 'b')").run();
+      expect(yomiFieldId(db, "t")).toBe("byname");
+      expect(yomiFieldId(db, "other")).toBeNull();
     } finally {
       db.close();
     }
