@@ -3520,9 +3520,12 @@ function openEditorFor(
     const label = document.createElement("span");
     label.className = "edit-label";
     label.textContent = field.name;
+    // The KIND, as the field settings screen names it — not the storage type
+    // (`plain` said nothing about 読み; decision 61).
+    const kind = fieldKind(field);
     const type = document.createElement("i");
     type.className = "edit-type";
-    type.textContent = field.type;
+    type.textContent = kind.label;
     label.appendChild(type);
     row.appendChild(label);
 
@@ -3544,7 +3547,6 @@ function openEditorFor(
     // never write there by hand"*; *"fully read only, if we really have problem,
     // then we will add that"*). The 型 picker is in git (`73ca06a`); a wrong value
     // is a script's fix (`scripts/sync-set.ts`), not the editor's.
-    const kind = fieldKind(field);
     if (kind.derived) {
       const from = fields.find((entry) => entry.id === field.sourceFieldId)?.name;
       const note = document.createElement("p");
