@@ -20,7 +20,9 @@ passes, update the page too.
    is not the measure** — 2026-10-27 alone was 25 commits of design work, which says
    nothing about stability. New features do not count against it.
 2. **A friend starts from an empty database without help.** Not yet possible: the app
-   assumes his imported corpus and sits behind his passphrase.
+   assumes his imported corpus and sits behind his passphrase. **Work on it starts only
+   after gate 1 passes** — Zach, 2026-11-05: *"that would be after 1 month of stable
+   version"*. The plan is [notes/empty-start.md](notes/empty-start.md).
 3. **Cost, accounts, licence and support are settled.** The repository is already
    public (it has no licence, so all rights are reserved); the app is not.
 
