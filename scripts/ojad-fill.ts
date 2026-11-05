@@ -168,7 +168,18 @@ try {
   const flags = new Map(freshest.cardFlags.map((f) => [f.cardId, f]));
   const values = new Map<string, { cardId: string; fieldId: string; value: string }>();
   const clocks = new Map<string, string>();
-  for (const v of previous?.archive.fieldValues ?? []) values.set(`${v.cardId}|${v.fieldId}`, v);
+  // CARRIED FORWARD, unless a device has since written its own (2026-11-05). This
+  // slot re-sends every value it ever made, and 殉職's had been replaced on the
+  // devices (a newer sentence, a newer OJAD): re-sending the old one failed the
+  // self-check — correctly, the merge keeps the device's — and blocked all 57 others.
+  const onDevices = new Map(
+    freshest.archive.fieldValues.map((v) => [`${v.cardId}|${v.fieldId}`, v.value] as const),
+  );
+  for (const v of previous?.archive.fieldValues ?? []) {
+    const held = onDevices.get(`${v.cardId}|${v.fieldId}`);
+    if (held !== undefined && held.trim() !== "" && held !== v.value) continue;
+    values.set(`${v.cardId}|${v.fieldId}`, v);
+  }
   for (const f of previous?.cardFlags ?? []) clocks.set(f.cardId, f.updatedAt);
   for (const row of rows) {
     const got = db
@@ -243,6 +254,14 @@ try {
     const ojadKeys = new Set(fieldValues.map((v) => `${v.cardId}|${v.fieldId}`));
     const touched = [...before].filter(([k, value]) => !ojadKeys.has(k) && after.get(k) !== value);
     console.log(`self-check: ${landed}/${fieldValues.length} landed · ${touched.length} other value(s) changed`);
+    // NAME what did not land (2026-11-05): "57/58" with no name sent the next
+    // reader into the merge code to find one card.
+    for (const v of fieldValues) {
+      const now = after.get(`${v.cardId}|${v.fieldId}`);
+      if (now === v.value) continue;
+      const name = loadCard(check, v.cardId)?.name ?? v.cardId;
+      console.log(`  did not land: ${name} (${v.cardId}) — device holds ${JSON.stringify(now ?? null)}`);
+    }
     if (landed !== fieldValues.length || touched.length > 0) {
       throw new Error("self-check failed — nothing sent");
     }
