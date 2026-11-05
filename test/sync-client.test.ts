@@ -27,6 +27,7 @@ import {
   type SyncPorts,
   type SyncProgress,
   versionOf,
+  whenFullDirty,
 } from "../app/sync-client.js";
 
 const NOW = new Date("2026-09-12T12:00:00.000Z");
@@ -694,6 +695,17 @@ describe("sending grades as a delta", () => {
     markFullDirty();
     expect(await pushGradesNow(port())).toBe("full");
     expect(box.store.has("hashigo.sync.fullDirty")).toBe(false);
+  });
+
+  it("an edit asks for a push itself — it does not wait for the next grade (2026-11-05)", () => {
+    // His ガーゼ card never left the laptop: only a grade scheduled a push.
+    mailboxRecording();
+    let asked = 0;
+    whenFullDirty(() => {
+      asked += 1;
+    });
+    markFullDirty();
+    expect(asked).toBe(1);
   });
 
   it("closing the page sends the delta with keepalive — even after an edit, the GRADES go", async () => {

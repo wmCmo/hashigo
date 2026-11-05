@@ -165,6 +165,23 @@ export function markFullDirty(): void {
   } catch {
     /* 印が付けられないなら、次の送信が差分になるだけ — 手動同期は常に全体 */
   }
+  onDirty?.();
+}
+
+/**
+ * AN EDIT LEAVES THIS DEVICE ON ITS OWN TOO — 2026-11-05.
+ *
+ * Only a GRADE scheduled a push. An edit or a new card marked the device dirty and
+ * then waited for the next grade or a manual sync, so a card made on the laptop
+ * with no review after it never left: his ガーゼ card was not in the mailbox after
+ * two syncs from another device, while his laptop said "grades sent just now".
+ * The page registers its debounced push here (`schedulePush`), so a write that
+ * needs the full payload asks for it the same way a grade does.
+ */
+let onDirty: (() => void) | null = null;
+
+export function whenFullDirty(listener: () => void): void {
+  onDirty = listener;
 }
 
 function readDirty(): string | null {

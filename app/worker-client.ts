@@ -90,6 +90,14 @@ const READ_ONLY_OR_DELTA: ReadonlySet<string> = new Set([
   // カードを出すたびに走る。書かない（`db.worker.ts` の `generatedText`：
   // "This reads `blobs` and writes nothing"）。ここに無いと、ほぼ毎回の送信が全体に戻る。
   "generatedText",
+  // The editor's read of generated fields (decision 61). Writes nothing.
+  "fieldOutputs",
+  // A generation is filed in this device's blob store and the Worker's KV, never in
+  // the sync payload (`src/backup/archive.ts` carries no blob or generation), so
+  // making one is no reason to send the whole payload. Since decision 62 these run
+  // on any card he views, and each would otherwise have forced a full push.
+  "storeGeneration",
+  "storeClip",
   "answer",
   "backup",
   "syncExport",

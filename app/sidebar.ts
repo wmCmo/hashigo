@@ -28,6 +28,7 @@ import {
   pushGradesNow,
   sinceLabel,
   syncNow,
+  whenFullDirty,
   type SyncPorts,
   type SyncProgress,
 } from "./sync-client.js";
@@ -786,6 +787,10 @@ export function schedulePush(): void {
   }
   pushTimer = window.setTimeout(() => void pushGrades(), PUSH_AFTER_MS);
 }
+
+// An edit or a new card schedules the same push a grade does (`whenFullDirty`):
+// before 2026-11-05 a card made with no review after it never left the device.
+whenFullDirty(schedulePush);
 
 async function pushGrades(options: { readonly keepalive?: boolean } = {}): Promise<void> {
   pushTimer = undefined;
