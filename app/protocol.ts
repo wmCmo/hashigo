@@ -722,7 +722,7 @@ export interface TemplateOpRequest {
   readonly fieldId?: string;
   /**
    * `addField` (validated against the schema CHECK) and `setFieldType` (only a
-   * conversion the registry calls FREE). `setFieldKind`: `text` or `reading`.
+   * conversion the registry calls FREE). `setFieldKind`: `plain` or `reading`.
    */
   readonly fieldType?: string;
   /** `orderFields` only: every field id, in the order they should sit. */

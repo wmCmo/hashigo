@@ -117,10 +117,13 @@ CREATE TABLE template_fields (
   -- 7,716 cards".  Unlike the other generated types its value is MATERIALISED
   -- (see the accents table): a label is small, stable, and needs to be
   -- searchable, where audio is large and changes with the provider.
+  -- 2026-11-05: 'text', 'furigana', 'dictionary' and 'image-search' deleted
+  -- (Mochi's, no field used them). NOT a SCHEMA_VERSION bump: a device's existing
+  -- table keeps the wider CHECK, which is harmless because nothing writes those
+  -- four any more (`FIELD_TYPES`); a database made from this file has the narrow one.
   type            TEXT NOT NULL CHECK (type IN (
-                    'plain', 'text', 'boolean', 'number',
-                    'speech', 'ai', 'translate', 'furigana',
-                    'dictionary', 'image-search', 'accent')),
+                    'plain', 'boolean', 'number',
+                    'speech', 'ai', 'translate', 'accent')),
   source_field_id TEXT,                       -- input field; NULL is legitimate
   options         TEXT NOT NULL DEFAULT '{}', -- JSON: voice, lang (BCP-47), prompt, from, to
   pos             TEXT NOT NULL DEFAULT '',

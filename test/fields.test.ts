@@ -65,12 +65,17 @@ describe("the registry agrees with the schema", () => {
     expect(new Set(generating)).toEqual(new Set(GENERATOR_FIELD_TYPES));
   });
 
-  it("only a generating kind may be generatable, and furigana deliberately is not", () => {
+  it("only a generating kind may be generatable", () => {
     for (const type of GENERATABLE_TYPES) expect(FIELD_KINDS[type].blobKind).not.toBeNull();
-    // Decision 8: a furigana reading is filled offline from `accents.reading`,
-    // never from a model, because a wrong reading drilled is worse than none.
-    expect(GENERATABLE_TYPES.has("furigana")).toBe(false);
-    expect(FIELD_KINDS.furigana.blobKind).toBe("furigana");
+  });
+
+  it("has none of Mochi's four unused types (deleted 2026-11-05)", () => {
+    // "it's not even a spark joy lol, just delete them". The `<furigana>` ELEMENT
+    // and blob kind are another thing and stay; the FIELD TYPE is gone.
+    for (const gone of ["text", "furigana", "dictionary", "image-search"]) {
+      expect((FIELD_TYPES as readonly string[]).includes(gone), gone).toBe(false);
+      expect(kindOf(gone), gone).toBeNull();
+    }
   });
 
   it("offers only authorable types to the add-field form, and no generator", () => {

@@ -1738,7 +1738,7 @@ function browse(request: BrowseRequest): void {
  *     number       90              90
  *     speech/translate/ai          0      <- these
  */
-const EDITABLE_TYPES = new Set(["plain", "text", "boolean", "number", "accent"]);
+const EDITABLE_TYPES = new Set(["plain", "boolean", "number", "accent"]);
 
 /**
  * Write one field value.
@@ -2975,7 +2975,7 @@ function templateOp(request: TemplateOpRequest): void {
             ? { options: request.options, sourceFieldId: request.sourceFieldId ?? null }
             : `${target.name}'s kind cannot be restored to that`;
       } else {
-        change = kindChange(fields, target.id, request.fieldType === "reading" ? "reading" : "text");
+        change = kindChange(fields, target.id, request.fieldType === "reading" ? "reading" : "plain");
       }
       if (typeof change === "string") throw new Error(change);
       const next = change;

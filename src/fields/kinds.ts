@@ -108,23 +108,13 @@ export interface FieldKind {
 
 /**
  * Fill in the derived halves so a declaration says only what is its own.
- *
- * Self-conversion is stripped here rather than avoided in each declaration:
- * `PLAIN_LIKE` is shared between `plain` and `text` precisely so the pair is
- * written once, and "plain converts to plain" is noise a caller would have to
- * filter anyway.
+ * Self-conversion is stripped here rather than avoided in each declaration.
  */
 function kind(type: FieldType, spec: Omit<FieldKind, "type" | "blobKind">): FieldKind {
   const convertsTo = { ...spec.convertsTo };
   delete convertsTo[type];
   return { ...spec, type, blobKind: FIELD_TYPE_BLOB_KIND[type] ?? null, convertsTo };
 }
-
-/** The two kinds that differ only as an editor affordance. */
-const PLAIN_LIKE: Readonly<Partial<Record<FieldType, ConversionCost>>> = {
-  plain: "free",
-  text: "free",
-};
 
 const SPEECH_SETTINGS: readonly SettingSpec[] = [
   {
@@ -250,22 +240,10 @@ export const FIELD_KINDS: Readonly<Record<FieldType, FieldKind>> = {
     label: "Text",
     input: "none",
     settings: [],
-    convertsTo: { ...PLAIN_LIKE, boolean: "priced", number: "priced", accent: "priced" },
+    // No `text` (Long text) since 2026-11-05: it stored and rendered exactly as
+    // Text, and was deleted with Mochi's other unused types (`FIELD_TYPES`).
+    convertsTo: { boolean: "priced", number: "priced", accent: "priced" },
     authorable: true,
-    generatable: false,
-  }),
-  // NOT OFFERED SINCE 2026-11-05. Zach: *"what's the difference between plain
-  // text and long text tho?"* — in Hashigo, none: the same stored string, the same
-  // render, the same growing box. It is Mochi's distinction, no field in his
-  // templates uses it, and a choice that changes nothing is a question nobody
-  // should have to ask. Kept as a type because the CHECK and Mochi's exports have
-  // it; a field that has it shows as "Long text" and converts back to Text free.
-  text: kind("text", {
-    label: "Long text",
-    input: "none",
-    settings: [],
-    convertsTo: PLAIN_LIKE,
-    authorable: false,
     generatable: false,
   }),
   boolean: kind("boolean", {
@@ -290,7 +268,7 @@ export const FIELD_KINDS: Readonly<Record<FieldType, FieldKind>> = {
           "anything is saved.",
       },
     ],
-    convertsTo: { plain: "priced", text: "priced" },
+    convertsTo: { plain: "priced" },
     authorable: true,
     generatable: false,
   }),
@@ -315,7 +293,7 @@ export const FIELD_KINDS: Readonly<Record<FieldType, FieldKind>> = {
           "entry and played nothing.",
       },
     ],
-    convertsTo: { plain: "priced", text: "priced" },
+    convertsTo: { plain: "priced" },
     authorable: true,
     generatable: false,
   }),
@@ -350,32 +328,6 @@ export const FIELD_KINDS: Readonly<Record<FieldType, FieldKind>> = {
     convertsTo: {},
     authorable: false,
     generatable: true,
-  }),
-  furigana: kind("furigana", {
-    label: "Furigana",
-    input: "source",
-    settings: [],
-    convertsTo: {},
-    authorable: false,
-    // Decision 8: filled offline from `accents.reading`, never from a model. A
-    // wrong reading drilled is worse than no reading.
-    generatable: false,
-  }),
-  dictionary: kind("dictionary", {
-    label: "Dictionary",
-    input: "source",
-    settings: TRANSLATE_SETTINGS,
-    convertsTo: {},
-    authorable: false,
-    generatable: false,
-  }),
-  "image-search": kind("image-search", {
-    label: "Image search",
-    input: "source",
-    settings: [],
-    convertsTo: {},
-    authorable: false,
-    generatable: false,
   }),
 };
 

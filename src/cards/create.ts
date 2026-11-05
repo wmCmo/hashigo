@@ -35,7 +35,6 @@ import { ensureSourceField, sourceValue } from "./found-in.js";
 /** Field types whose value is stored on the card. The rest live in the generation cache. */
 export const EDITABLE_FIELD_TYPES: ReadonlySet<string> = new Set([
   "plain",
-  "text",
   "boolean",
   "number",
   "accent",

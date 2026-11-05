@@ -145,18 +145,21 @@ export function resolveReverseInheritance(
  */
 export type TrackKind = "forward" | "reverse" | `cloze:${number}`;
 
-/** Field types the template engine and generation DAG must support. */
+/**
+ * Field types the template engine and generation DAG must support.
+ *
+ * FOUR WERE DELETED 2026-11-05 — `text`, `furigana`, `dictionary`, `image-search`,
+ * Mochi's, used by no field. Zach: *"it's not even a spark joy lol, just delete
+ * them"*. (The `<furigana>` ELEMENT and the `furigana` / `dictionary` BLOB kinds
+ * are a different thing and stay: every 単語 card's head word is a `<furigana>`.)
+ */
 export const FIELD_TYPES = [
   "plain",
-  "text",
   "boolean",
   "number",
   "speech",
   "ai",
   "translate",
-  "furigana",
-  "dictionary",
-  "image-search",
   // Zach's <<型>>: 平板 / 頭高 / 中高 / 尾高 beside the audio. His idea, and it
   // doubles as the error-detection mechanism for the whole accent pipeline,
   // because a wrong LABEL is visible where a wrong CONTOUR is silently absorbed.
@@ -183,19 +186,15 @@ export type BlobKind = (typeof BLOB_KINDS)[number];
  * One definition, here, because three layers need it and a second copy is how
  * two of them come to disagree: `src/template/resolve.ts` needs it to know that
  * an empty value means "pending" rather than "blank", `src/generate/fields.ts`
- * needs it to build the request, and the importer's cache-bucket mapping is the
- * same table read the other way. `image-search` -> `image` is the only rename,
- * and it is Mochi's: the cache bucket is `image-search`, the blob kind is not.
+ * needs it to build the request. (The importer maps Mochi's cache BUCKETS on its
+ * own, in `src/import/blobs.ts` — buckets are not field types.)
  *
- * All 19 generator-typed fields in the reference corpus are one of these six.
+ * All 19 generator-typed fields in the reference corpus are one of these three.
  */
 export const FIELD_TYPE_BLOB_KIND: Readonly<Record<string, BlobKind>> = {
   speech: "speech",
   ai: "ai",
   translate: "translate",
-  furigana: "furigana",
-  dictionary: "dictionary",
-  "image-search": "image",
 };
 
 /** The `template_fields.type` values that generate. Keys of the table above. */

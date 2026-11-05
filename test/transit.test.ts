@@ -281,7 +281,9 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     console.log("field types           ", Object.fromEntries([...byType].sort()));
     // 49 rows over 11 template rows, of which oiaISYb2's 8 are counted once.
     expect(mapped.templateFields.length).toBe(41);
-    expect(byType.get("plain")).toBe(19);
+    // 20 since 2026-11-05: Mochi's one `text` (Long text) field imports as plain.
+    expect(byType.get("plain")).toBe(20);
+    expect(byType.has("text")).toBe(false);
     expect(mapped.notes.unknownFieldTypes).toEqual([]);
     // 例文: an ai field whose dependency is only inside its prompt.
     const reibun = mapped.templateFields.find(

@@ -3801,7 +3801,7 @@ function openEditorFor(
       // Obsidian-style `[[` / `@` completion, and ctrl+click to follow a link into
       // its own editor. Only on the text kinds: a `number` field holds digits and a
       // `boolean` is a checkbox, so neither can contain a link.
-      if (field.type === "plain" || field.type === "text") {
+      if (field.type === "plain") {
         attachLinkEditing(
           area,
           () => {
@@ -4045,7 +4045,7 @@ function fitTextarea(area: HTMLTextAreaElement): void {
 }
 
 /** Mirrors the worker's `EDITABLE_TYPES`. Kept in sync by the worker REFUSING. */
-const EDITABLE_FIELD_TYPES = new Set(["plain", "text", "boolean", "number", "accent"]);
+const EDITABLE_FIELD_TYPES = new Set(["plain", "boolean", "number", "accent"]);
 
 // ─── the review card's own menu ──────────────────────────────────────────────────
 

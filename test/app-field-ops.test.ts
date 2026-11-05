@@ -355,11 +355,11 @@ describe("kindChange switches Text and Reading by role and input alone", () => {
   });
   it("turns a Reading back into Text and clears its input", () => {
     const fields = [tpl[0] as FieldState, field({ id: "r", options: role, sourceFieldId: "head" })];
-    expect(kindChange(fields, "r", "text")).toEqual({ options: "{}", sourceFieldId: null });
+    expect(kindChange(fields, "r", "plain")).toEqual({ options: "{}", sourceFieldId: null });
   });
   it("refuses what would change nothing, or reinterpret a value", () => {
-    expect(kindChange(tpl, "note", "text")).toMatch(/already Text/);
-    expect(kindChange(tpl, "yomi", "text")).toMatch(/because of its name/);
+    expect(kindChange(tpl, "note", "plain")).toMatch(/already Text/);
+    expect(kindChange(tpl, "yomi", "plain")).toMatch(/because of its name/);
     expect(kindChange(tpl, "flag", "reading")).toMatch(/only a Text field/);
     expect(kindChange([field({ id: "o", options: '{"hashigo-role":"ojad"}' })], "o", "reading")).toMatch(/not Text/);
     expect(kindChange([field({ id: "alone" })], "alone", "reading")).toMatch(/no Text field/);

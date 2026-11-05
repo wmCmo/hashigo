@@ -418,7 +418,11 @@ function mapTemplateFields(
   for (const [fieldId, raw] of Object.entries(asRecord(template["fields"]))) {
     if (!isRecord(raw)) continue;
     const id = asText(raw["id"]) || fieldId;
-    const declared = asText(raw["type"]);
+    // Mochi's `text` (Long text) IS plain here: the type was deleted 2026-11-05
+    // because it stored and rendered exactly as plain. One field in the exports
+    // carries it, and it is a known alias, not an unknown type.
+    const typed = asText(raw["type"]);
+    const declared = typed === "text" ? "plain" : typed;
     if (declared && !isFieldType(declared)) unknownFieldTypes.add(declared);
     const source = asText(raw["source"]);
     rows.push({

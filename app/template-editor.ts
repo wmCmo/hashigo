@@ -564,7 +564,7 @@ function sourcePicker(
  *
  *   · a Text field and a Reading switch freely (`setFieldKind`): same stored
  *     string, the role and the input change, no value moves;
- *   · a legacy Long text field may go back to Text (`setFieldType`, free);
+ *   · (Long text, the old free plain <-> text switch, was deleted with the type.)
  *   · everything else shows its kind and offers nothing — every other
  *     conversion reinterprets the values on his cards and stays refused.
  */
@@ -586,12 +586,7 @@ function typePicker(
           ["plain", FIELD_KINDS.plain.label],
           ["reading", fieldKind({ type: "plain", options: { [ROLE_KEY]: "reading" } }).label],
         ]
-      : field.type === "text"
-        ? [
-            ["text", FIELD_KINDS.text.label],
-            ["plain", FIELD_KINDS.plain.label],
-          ]
-        : [];
+      : [];
   if (choices.length === 0) {
     const value = document.createElement("span");
     value.className = "tpl-setting-value";
@@ -607,17 +602,13 @@ function typePicker(
   select.value = kind.id === "reading" ? "reading" : field.type;
   select.addEventListener("change", () => {
     const to = select.value;
-    // No price: neither switch moves a value or a clip, by definition.
-    if (field.type === "text") {
-      void run({ op: "setFieldType", templateId: detail.id, fieldId: field.id, fieldType: to });
-    } else {
-      void run({
-        op: "setFieldKind",
-        templateId: detail.id,
-        fieldId: field.id,
-        fieldType: to === "reading" ? "reading" : "text",
-      });
-    }
+    // No price: the switch moves no value and no clip, by definition.
+    void run({
+      op: "setFieldKind",
+      templateId: detail.id,
+      fieldId: field.id,
+      fieldType: to === "reading" ? "reading" : "plain",
+    });
   });
   line.append(label, select);
   return line;

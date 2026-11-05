@@ -556,7 +556,7 @@ export function writeFieldSource(
 }
 
 /** The two kinds a plain field may be switched between from the settings screen. */
-export type PlainKind = "text" | "reading";
+export type PlainKind = "plain" | "reading";
 
 /** What a kind switch writes: the whole options string and the source. */
 export interface KindChange {

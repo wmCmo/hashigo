@@ -2559,7 +2559,12 @@ right**: it holds his verbatim reasoning and this quotes it.
     **`derived` is the editor's whole read-only rule**: Reading (読み), Pitch accent
     (型), Accent marks (OJAD). It replaced three special cases. There is no override
     — the 2026-10-24 型 picker (`73ca06a`) was removed — and a wrong value is a
-    script's fix (`scripts/sync-set.ts`). **Long text is no longer offered**: it
+    script's fix (`scripts/sync-set.ts`). **Long text is no longer offered** (and,
+    later that day, deleted outright with Mochi's other unused field types —
+    Furigana, Dictionary, Image search: *"it's not even a spark joy lol, just
+    delete them"*. Gone from `FIELD_TYPES`, the registry and `schema.sql`'s CHECK,
+    with no `SCHEMA_VERSION` bump: an existing table keeps the wider CHECK, which
+    nothing writes to any more): it
     stores and renders exactly as Text (*"what's the difference between plain text
     and long text tho?"* — none). Text ⇄ Reading is the one kind switch offered
     (`setFieldKind`): it writes the role and the input and moves no value. Pinyin
