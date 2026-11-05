@@ -156,6 +156,7 @@ import { toggleCloze } from "./cloze-toggle.js";
 import { ACCENT_TYPES, formatAccent, parseAccent } from "./accent-picker.js";
 import type { AccentType } from "../src/accent/store.js";
 import { roleOf } from "../src/fields/index.js";
+import { YOMI_FIELD } from "../src/fields/yomi.js";
 import { exampleSentencePrompt, isEnglishSentenceField } from "./example-sentence.js";
 import { revealScroll } from "./review-scroll.js";
 import { revealSteps, type RevealStep } from "./review-steps.js";
@@ -3551,6 +3552,25 @@ function openEditorFor(
         value.trim() === ""
           ? "derived — not filled yet. `npx vite-node scripts/ojad-fill.ts -- --apply` on the laptop fills it from the example sentence"
           : `derived from the example sentence — ${value}`;
+      row.appendChild(note);
+      body.appendChild(row);
+      continue;
+    }
+
+    // 読み IS FILLED FOR HIM, NOT BY HIM. Zach, 2026-11-05: *"when i see the 読み
+    // field im so confused like what should i put there and then i remember that
+    // it's not supposed to be a field from me even, i never write there by hand"*.
+    // The laptop's helper fills it (decision 56) when OpenJTalk and UniDic agree,
+    // and leaves it empty when they don't; batch scripts write it too. An empty
+    // box invited a guess, so it is shown like OJAD. Changing one is a script's
+    // job (`scripts/cards-add.ts`, `scripts/sync-set.ts`), not the editor's.
+    if (field.name.trim() === YOMI_FIELD) {
+      const note = document.createElement("p");
+      note.className = "edit-readonly";
+      note.textContent =
+        value.trim() === ""
+          ? "filled for you — empty. The laptop's accent helper writes it only for a word with kanji, and only when its two readings of the word agree. Nothing to type here"
+          : `filled for you — ${value.trim()}`;
       row.appendChild(note);
       body.appendChild(row);
       continue;
