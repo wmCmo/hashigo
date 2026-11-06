@@ -100,7 +100,7 @@ SELECT hash, source_text, voice, lang, options, byte_size
  *
  * It is opt-in and takes a language on purpose: run over `ja` it would try to
  * replace all **7,409** of Mochi's Nanami clips, which is exactly the wholesale
- * regeneration Zach has deferred five times.
+ * regeneration Zach has scheduled for after the app is finished.
  */
 const BY_LANG = `
 SELECT hash, source_text, voice, lang, options, byte_size

@@ -343,9 +343,8 @@ async function ensureFile(
   // therefore reachable by a page served from the same process that has never
   // heard of it.
   //
-  // This has now cost Zach a round trip three times — the sync mailbox
-  // (2026-09-13), `/generate/` (2026-09-15) and `/hashigo-app-gen.db`
-  // (2026-09-16) — so the repair goes IN THE MESSAGE rather than in a comment he
+  // The same shape came up for the sync mailbox (2026-09-13), `/generate/`
+  // (2026-09-15) and `/hashigo-app-gen.db` (2026-09-16), so the repair goes IN THE MESSAGE rather than in a comment he
   // would have to be at a keyboard to read. `app/sync-client.ts` says the same
   // sentence for the same reason.
   const magic = new TextDecoder("ascii").decode(bytes.subarray(0, 15));
@@ -580,8 +579,7 @@ async function open(request: OpenRequest): Promise<void> {
   let reimport = request.reimport;
   // THE AUDIO FILE IS A SEPARATE QUESTION AND USED TO HAVE NO ANSWER AT ALL.
   //
-  // Zach, 2026-09-12, having reported it three times: *"the example sentence audio
-  // is not there"*. The clip was genuinely absent from the shipped subset — and a
+  // Zach, 2026-09-12: *"the example sentence audio is not there"*. The clip was genuinely absent from the shipped subset — and a
   // bigger `--speech-bytes` would not have reached him either, because the
   // freshness check below is entirely about the CARD database. `seedReviews` is
   // deliberately a property of that file (it is the one number local grading

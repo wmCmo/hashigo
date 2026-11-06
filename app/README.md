@@ -312,7 +312,7 @@ first is the question, in whichever order the direction asks for.
 
 **It carried one exception until 2026-09-14 — a following side whose only content
 was a WIDGET, which was 漢字's `<draw>` and nothing else — and Zach withdrew it**:
-*"so it doesn't follow the `---`??? because i added that explicitly, i have my
+*"so it doesn't follow the `---`? because i added that explicitly, i have my
 reasons."* The exception was introduced here in `16afee6` on an agent's reasoning
 about what the canvas needs, recorded in no decision; a `---` is a side break he
 authored, and code does not overrule the template. The canvas is step 1 of the walk
@@ -601,7 +601,7 @@ under that thumb would be opened by accident mid-card, interrupting a card he is
 holding an answer for.
 
 **Creating a card is here too**, and the id question that seemed to block it was
-never real. Zach, for the fourth time: *"i never import one card or one deck, once
+never real. Zach: *"i never import one card or one deck, once
 we finish developing hashigo, ill delete the whole card and reimport again"*. The
 import is WHOLESALE, and decision 16 leaves exactly one more of them — after which
 no Mochi id ever arrives again. So a card id has to be unique in this database and

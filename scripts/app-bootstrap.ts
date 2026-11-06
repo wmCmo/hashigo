@@ -684,8 +684,7 @@ try {
          * THE AUDIO FILE'S OWN IDENTITY, AND IT IS A SEPARATE QUESTION FROM
          * `seedReviews`.
          *
-         * Zach, 2026-09-12, for the third time: *"the example sentence audio is
-         * not there"*. It was not there because the clip is not in the shipped
+         * Zach, 2026-09-12: *"the example sentence audio is not there"*. It was not there because the clip is not in the shipped
          * subset — and **re-running this script with a bigger `--speech-bytes`
          * would not have fixed it either**, because nothing could tell that the
          * blob store had changed. `seedReviews` is deliberately a property of the

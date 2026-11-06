@@ -189,7 +189,12 @@ npx vite-node scripts/reverse-dormant-apply.ts -- --db build/hashigo.db --apply 
   reads as "nothing left" rather than "the cross-check is missing".
 - The local-field scripts are idempotent; a second run says "ALREADY APPLIED".
 
-## Decisions that are settled — do not relitigate these
+## Decisions — the current design, and why
+
+These explain why the app is the way it is now. They are not fixed: Zach improves the app
+by changing his mind (2026-11-05: *"sometimes i change my mind about designs lol,
+otherwise our app wouldn't improve"*). Read the reason before proposing a change, then
+give an honest opinion — and when he decides differently, record the new decision.
 
 > [!IMPORTANT]
 > **This index is the only place a decision counts as recorded.** His Obsidian planner holds
@@ -342,10 +347,10 @@ npx vite-node scripts/reverse-dormant-apply.ts -- --db build/hashigo.db --apply 
     stored copy, never rewritten) and before the Worker caches. One with no emoji is
     not there — made again. *"it just says the answer out right 😭"* (断片, 2026-11-06).
 
-## READ THE TEMPLATE. It answers most questions about the screen.
+## The template answers most questions about the screen
 
-> [!warning] **He has told agents to read his template FOUR times.** Run
-> `SELECT content FROM templates WHERE name = '単語'` before asking anything about layout.
+Read it before asking anything about layout:
+`SELECT content FROM templates WHERE name = '単語'`.
 
 `<<#Reading>>` renders when the boolean is TRUE, `<<^Reading>>` when it is FALSE. Both
 states of 単語, rendered from the real corpus:
@@ -362,12 +367,14 @@ Reading = TRUE (慈善)                     Reading = FALSE/absent (係数)
 `Reading = false` card only the accent label and the audio are visible; the meaning is on
 side 4. Do not ask him whether the meaning is a hint; the template says it is not.
 
-## Things he has already answered — DO NOT ASK AGAIN
+## Questions he has already answered
 
-1. **READ THE TEMPLATE** — asked four times.
-2. **Audio regeneration happens AFTER the app is finished** — told to five agents. Do not
+These have answers already, so there's no need to ask him again:
+
+1. **Layout questions** — the template above answers them.
+2. **Audio regeneration happens after the app is finished.** Not a topic for now: don't
    propose, price or plan regenerating clips.
-3. **Open-sourcing is discussed AFTER development** — told to three. `notes/open-sourcing.md`.
+3. **Open-sourcing is discussed after development.** `notes/open-sourcing.md`.
 4. **He uses BOTH laptop and phone** — laptop for home reviews and ALL card creation, phone
    mostly for reviews. The desktop is a first-class surface; sync is what makes it usable.
 5. **The import is WHOLESALE, and the final one has happened** — never a partial import, and

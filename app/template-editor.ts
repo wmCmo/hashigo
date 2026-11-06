@@ -820,7 +820,7 @@ async function confirmPriced(
 
 function openAddField(detail: TemplateDetail, run: TemplateRunner): void {
   // KINDS, named as everywhere else (decision 61). Zach, 2026-11-05, at this very
-  // dialog: *"why are we missing furigana here? bro..."* — it kept its own list of
+  // dialog: *"why are we missing furigana here?"* — it kept its own list of
   // storage types after the rest of the app moved to kinds, and still offered
   // Long text. A Reading and a Pitch accent are wired to the head word by the
   // worker (`addField`), so neither arrives as a field that can never fill.

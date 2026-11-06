@@ -133,7 +133,7 @@ function mimeFor(db: SqliteHandle, hash: string): string {
  *   * **Adopt Neural2-C on the field**, which is what `respeak` does on a clean
  *     whole run. That unreferences all 4,359 existing sentence clips and makes
  *     every 単語 card silent until the whole corpus is re-synthesised — the
- *     regeneration Zach has deferred five times.
+ *     regeneration Zach has scheduled for after the app is finished.
  *   * **Store it honestly and let the RESOLVER bridge the gap.** That is this.
  *
  * The blob records `ja-JP-Neural2-C`, because Neural2-C made it. A mount asking

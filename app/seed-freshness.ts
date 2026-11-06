@@ -14,9 +14,8 @@
  *
  * ─── THE AUDIO FILE, WHICH HAD NO CHECK AT ALL ──────────────────────────────
  *
- * Zach, 2026-09-12, having said it three times: *"i don't know what to tell you
- * but the example sentence audio is not there😭 … you don't have ears... so i
- * can't prove it to you... but it's literally not there"*.
+ * Zach, 2026-09-12: the example sentence audio was not there on his device, and
+ * there was no way for him to show it from his side.
  *
  * He was right, and the first two answers were only half the diagnosis. The clip
  * genuinely was not in the shipped subset — `app-bootstrap` spends its budget on

@@ -44,7 +44,7 @@
  * probably be safe". Zach found the cost of that caution, 2026-09-12: an unfilled
  * `<rt>` is an EMPTY `<rt>`, and the stylesheet draws an em dash over any empty
  * reading — so the head word on every reverse 単語 card wore a floating dash.
- * *"why is the text coming out like that bro😭"*
+ * *"why is the text coming out like that 😭"*
  *
  * **And "probably" was wrong.** Measured over the real corpus, both directions:
  * **6,754 furigana mounts, 42 outside a cloze, and all 42 on `produce` cards** —

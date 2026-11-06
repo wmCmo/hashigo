@@ -115,13 +115,13 @@ describe("the question boundary — which sides are the prompt", () => {
     //
     // The rule used to extend over "a following side that carries a widget AND
     // NOTHING ELSE", so that 漢字's `<draw>` came up beside the kanji. Zach saw it
-    // on 2026-09-14: *"so it doesn't follow the `---`??? because i added that
+    // on 2026-09-14: *"so it doesn't follow the `---`? because i added that
     // explicitly, i have my reasons."*
     //
     // The exception was an agent's, introduced in `16afee6` and recorded in no
     // decision. A `---` is a side break HE AUTHORED; code deciding a side is really
-    // part of the previous one is overruling the template, which is the mistake this
-    // repo names four times over. If the canvas belongs beside the kanji, the change
+    // part of the previous one is overruling the template, which the template itself
+    // answers. If the canvas belongs beside the kanji, the change
     // is one deleted `---` in `templates.content`.
     const sides = [
       side(0, 0, { text: "慈" }),
@@ -532,8 +532,7 @@ divination
 // ── is the seed on this device still the one being served? ───────────────────
 
 /**
- * ZACH, 2026-09-12, reporting the same defect for the THIRD time: *"i don't know
- * what to tell you but the example sentence audio is not there😭"*
+ * Zach, 2026-09-12: *"the example sentence audio is not there"*.
  *
  * Half the diagnosis was the audio budget. The other half was that a rebuild
  * could never have reached him: the freshness check was entirely about the CARD

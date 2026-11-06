@@ -22,10 +22,10 @@
  * on an agent's guess about what the canvas needs.
  *
  * **Zach, 2026-09-14, on seeing side 2 up before he had pressed anything:** *"so it
- * doesn't follow the `---`??? because i added that explicitly, i have my reasons."*
+ * doesn't follow the `---`? because i added that explicitly, i have my reasons."*
  *
- * He is right, and the principle is the one this repo already states four times over:
- * READ THE TEMPLATE. `---` is a side break he authored. A rule that decides a side is
+ * He is right, and the principle is one this repo already states: the template
+ * answers it. `---` is a side break he authored. A rule that decides a side is
  * really part of the previous one is overruling the template from code — the same
  * class of mistake as gating `型` in the resolver instead of in the body (decision 20),
  * and this file is not where that gets decided. If the canvas should share a side with

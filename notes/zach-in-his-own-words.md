@@ -222,9 +222,9 @@ His own words explaining WHY are not derivable from the code or from git.
   already enforces. **The lesson is not "check the workflow" in the abstract: it is that
   a measurement can be flawless and still answer a question nobody asked.**
 
-  **Also: he does not want jargon.** Same message: *"can you stop using words i don't
-  understand? like decision 23's three referals, d2 d4 d5, b2, b3, b4 ... bro i know you
-  are fluent in code language but don't use code language to me."* The `D2`/`B4`/decision-
+  **Also: he prefers plain words to jargon.** Same message: he asked for the decision
+  numbers and codes (`d2 d4 d5, b2, b3, b4`) to stay out of what agents say to him, and
+  for things to be named the way he names them. The `D2`/`B4`/decision-
   number scheme is an agent filing system. When talking TO him, name the thing — "the
   editor", "the cards where the audio plays" — and keep the numbers in the repo.
 

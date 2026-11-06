@@ -22,7 +22,7 @@ right**: it holds his verbatim reasoning and this quotes it.
 
 ---
 
-## Decisions that are settled — do not relitigate these
+## Decisions — the current design, and why (he changes his mind; record the new one)
 
 > [!IMPORTANT]
 > **THIS LIST IS THE ONLY PLACE A DECISION COUNTS AS RECORDED.** Zach also keeps a planner
@@ -1184,7 +1184,7 @@ right**: it holds his verbatim reasoning and this quotes it.
 
 37. **FURIGANA IS FILLED, THROUGH `src/render/ruby.ts`, AND ONLY BEHIND A MASK.**
    Zach, 2026-09-12, over a head word wearing a floating em dash: *"why is the text
-   coming out like that bro😭"*
+   coming out like that 😭"*
 
    **Three separate things were wrong and each hid the next.**
 
@@ -1688,7 +1688,7 @@ right**: it holds his verbatim reasoning and this quotes it.
 
 44. **`---` IS HIS, AND THE QUESTION BOUNDARY FOLLOWS IT — THE WIDGET EXCEPTION
     IS WITHDRAWN.** Zach, 2026-09-14, on a 漢字 card showing its `<draw>` canvas
-    before he had pressed anything: *"so it doesn't follow the `---`??? because i
+    before he had pressed anything: *"so it doesn't follow the `---`? because i
     added that explicitly, i have my reasons."*
 
     ─── WHAT THE RULE USED TO BE ─────────────────────────────────────────────
@@ -1711,8 +1711,7 @@ right**: it holds his verbatim reasoning and this quotes it.
     whenever he wants. A rule that decides an authored side is really part of the
     previous one is **overruling the template from code**, which is the same class
     of mistake as gating `型` in the resolver instead of in the body (decision 20)
-    — and CLAUDE.md's READ THE TEMPLATE section exists because agents have got
-    that wrong four times.
+    — and CLAUDE.md's template section exists to answer exactly this.
 
     It also makes the fix his and cheap: if the canvas belongs beside the kanji,
     that is **one deleted `---`**, and he does not need an agent to make it.

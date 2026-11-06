@@ -48,7 +48,7 @@ function numbers(markdown: string): number[] {
 /** CLAUDE.md has another numbered list (the four problems), so scope to the index. */
 function claudeDecisionSection(): string {
   const text = read("CLAUDE.md");
-  const start = text.indexOf("## Decisions that are settled");
+  const start = text.indexOf("## Decisions — the current design");
   expect(start, "CLAUDE.md lost its decisions heading").toBeGreaterThan(-1);
   const rest = text.slice(start + 1);
   const end = rest.indexOf("\n## ");

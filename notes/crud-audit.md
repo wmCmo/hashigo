@@ -107,7 +107,7 @@ back `forward + reverse`.
 **The generalisable bit, because two careful analyses in a row missed it:** a
 measurement can be flawless and still answer a question nobody asked. Neither
 version of this section was wrong about the code. Both were wrong about the
-workflow, and the workflow was written down — three times before this one.
+workflow, and the workflow was already written down.
 
 ## A HOLE CREATE OPENED, found 2026-08-23 the same day it shipped
 

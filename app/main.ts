@@ -2212,7 +2212,7 @@ async function redoClip(
  * ─── EVERY CARD HE SEES, SINCE 2026-11-05 (decision 62) ─────────────────────
  *
  * It was for `cards.local = 1` only: the 785 clips and 1,311 texts Mochi never
- * made were held back as his call (CLAUDE.md "do not ask again" #2 defers audio
+ * made were held back as his call (CLAUDE.md "questions he has already answered" #2 defers audio
  * REGENERATION — redoing clips that exist). He made the call: *"if we can see the
  * button it means something is not generated, and we might as well generate them
  * right now"*. So a missing piece is made the first time its card is on screen,
