@@ -271,11 +271,13 @@ describe("generation on the Worker answers like the laptop, and keeps what it ma
       return leaked;
     };
     const request = parse({ kind: "ai", text: "Describe a word 左遷 using emojis only", lang: null, voice: null, options: {} });
-    // The injected writer skips the provider's own strip, so this stores the
-    // record exactly as the old Worker did.
+    // Since 2026-11-06 a fresh line is cleaned BEFORE it is cached…
     await generate(request as never, e, { generateText: write });
     const [key] = [...e.MAILBOX.data.keys()] as [string];
-    expect(JSON.parse(e.MAILBOX.data.get(key)?.value as string).output).toBe(leaked);
+    expect(JSON.parse(e.MAILBOX.data.get(key)?.value as string).output).toBe("👔📉🏢");
+    // …so the OLD Worker's record is planted by hand, exactly as it stored it.
+    const record = JSON.parse(e.MAILBOX.data.get(key)?.value as string) as Record<string, unknown>;
+    e.MAILBOX.data.set(key, { ...e.MAILBOX.data.get(key), value: JSON.stringify({ ...record, output: leaked }) } as never);
     const [, served] = await generate(request as never, e, { generateText: write });
     expect(served).toMatchObject({ text: "👔📉🏢", cached: true });
     expect(JSON.parse(e.MAILBOX.data.get(key)?.value as string).output).toBe("👔📉🏢");
@@ -416,5 +418,20 @@ describe("deltas: small sends that survive closing the page", () => {
     const e = env();
     expect((await handle(request("POST", `/sync/${ID}/delta`, { body: delta(1), token: null }), e)).status).toBe(401);
     expect(e.MAILBOX.data.size).toBe(0);
+  });
+});
+
+describe("an emoji line on the Worker is emoji (2026-11-06)", () => {
+  it("cuts a cached line with chatter to its emoji, and makes one with no emoji again", async () => {
+    const e = { ...env(), ANTHROPIC_API_KEY: "a" };
+    let asked = 0;
+    const replies = ["I'm not sure what you mean.", "Sure! Here is the word 断片 described using emojis: 🔪🧩"];
+    const write = async (): Promise<string> => replies[asked++] as string;
+    const request = parse({ kind: "ai", text: "Describe a word 断片 using emojis only", lang: null, voice: null, options: {} });
+    const [status] = await generate(request as never, e, { generateText: write });
+    expect(status).toBe(502);
+    const [, made] = await generate(request as never, e, { generateText: write });
+    expect(made).toMatchObject({ text: "🔪🧩", cached: false });
+    expect(asked).toBe(2);
   });
 });

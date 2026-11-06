@@ -31,6 +31,7 @@
 
 import { generationIdentity, lookupGeneration } from "../blobs/generation.js";
 import { resolveAudioHash } from "../cards/audio.js";
+import { resolveDescriptorText } from "../generate/store.js";
 import type { SqliteHandle } from "../db/browser.js";
 import { memoryDocument, renderSides } from "../render/index.js";
 import type { BlobKind } from "../schema/index.js";
@@ -78,10 +79,13 @@ export function cardGaps(
     const key = JSON.stringify(identity);
     if (seen.has(key)) continue;
     seen.add(key);
+    // Text through the CLEANING resolver (2026-11-06): an emoji line stored with no
+    // emoji in it is not there — `resolveDescriptorText` answers null for it, so it
+    // is a gap and gets made again. `lookupGeneration` alone would call it present.
     const present =
       request.kind === "speech"
         ? resolveAudioHash(db, cardId, { origin: "generator", request }) !== null
-        : lookupGeneration(db, identity) !== null;
+        : lookupGeneration(db, identity) !== null && resolveDescriptorText(db, request) !== null;
     if (present) continue;
     gaps.push({
       kind: request.kind,

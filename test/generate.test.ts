@@ -29,6 +29,9 @@ import {
   OLLAMA_MIN_PREDICT,
   stripThinking,
   systemPrompt,
+  cleanGenerated,
+  emojiOnly,
+  isEmojiPrompt,
   resolveDescriptorText,
   storeDescriptorText,
   storeGeneratedSpeech,
@@ -1343,5 +1346,45 @@ describe("the fill voice is per language", () => {
     expect(voice).toMatch(/^en-/);
     expect(voice).not.toBe(FILL_VOICE);
     db.close();
+  });
+});
+
+/**
+ * AN EMOJI LINE IS EMOJI (2026-11-06). Zach, over 断片: *"it just says the answer
+ * out right 😭"* — "Sure! Here is the word 断片 described using emojis: 🔪🧩".
+ * The inputs below are real lines from his store.
+ */
+describe("emoji lines are cut to their emoji", () => {
+  it("drops the chatter and keeps the first run of emoji", () => {
+    expect(emojiOnly("Sure! Here is the word 断片 described using emojis: 🔪🧩")).toBe("🔪🧩");
+    expect(emojiOnly("🛏️➕🛞💉🏥\n\nExplanation:\n- 🛏️ (Bed): Represents the stretcher")).toBe("🛏️➕🛞💉🏥");
+    expect(emojiOnly("Sure! Here's a description of \"conceit\" using emojis:\n\n🧠💭 + 🎭✨ = 🤯📚\n\nExplanation")).toBe(
+      "🧠💭 + 🎭✨ = 🤯📚",
+    );
+    expect(emojiOnly("💇‍♀️✂️👁️➡️ Fringe (bangs) – hair cut")).toBe("💇‍♀️✂️👁️➡️");
+    expect(emojiOnly("📈🏛️✨🌅")).toBe("📈🏛️✨🌅");
+    expect(emojiOnly("No emoji here at all.")).toBe("");
+  });
+
+  it("applies only to an emoji prompt, and always strips thinking tags", () => {
+    expect(isEmojiPrompt("Describe a word 断片 using emojis only")).toBe(true);
+    expect(isEmojiPrompt("Describe gauze using emojis")).toBe(true);
+    expect(isEmojiPrompt("Write an example sentence using 断片")).toBe(false);
+    expect(cleanGenerated("Make a sentence with 断片", "Sure! 彼の言葉は断片的だった。")).toBe("Sure! 彼の言葉は断片的だった。");
+    expect(cleanGenerated("Describe 断片 using emojis only", "<thinking>x</thinking>Here: 🔪🧩")).toBe("🔪🧩");
+  });
+
+  it("the resolver serves the cleaned line, and skips one with no emoji for a remake", () => {
+    const db = openDatabase(MEMORY);
+    const descriptor = { kind: "ai" as const, text: "Describe a word 断片 using emojis only", lang: null, voice: null, options: {} };
+    storeDescriptorText(db, descriptor, "Sure! Here is the word 断片 described using emojis: 🔪🧩");
+    expect(resolveDescriptorText(db, descriptor)).toBe("🔪🧩");
+
+    const bare = { ...descriptor, text: "Describe a word 興隆 using emojis only" };
+    storeDescriptorText(db, bare, "I'm not sure what you mean.");
+    expect(resolveDescriptorText(db, bare)).toBeNull();
+    // A remake filed beside it is found, whichever blob `LIMIT 1` would pick.
+    storeDescriptorText(db, bare, "📈🏛️✨🌅");
+    expect(resolveDescriptorText(db, bare)).toBe("📈🏛️✨🌅");
   });
 });

@@ -113,6 +113,55 @@ export function stripThinking(text: string): string {
     .trim();
 }
 
+/**
+ * AN EMOJI LINE IS EMOJI — Zach, 2026-11-06, over 断片: *"i want you to replace all
+ * the emoji section that contains text lol, like this one it just says the answer
+ * out right 😭"* — the line read "Sure! Here is the word 断片 described using
+ * emojis: 🔪🧩", on the side where the word is the question.
+ *
+ * Measured on the laptop's copy that day: 1,173 of 10,162 emoji generations carry
+ * letters — Mochi-era chatter ("Sure! Here's…", "Explanation: - 🗣️ …"). The rule
+ * keeps the FIRST run of emoji, with the joiners a model puts between them (`+`,
+ * `=`, `→`, spaces), and drops everything else: stripping only the letters would
+ * keep the explanation's repeated emoji and double the line. 3 of the 10,162 hold
+ * no emoji at all and come out empty — which callers treat as "not made".
+ */
+const EMOJI_PROMPT = /using\s+emojis?\b/i;
+const EMOJI_GRAPHEME = /\p{Extended_Pictographic}|\p{Regional_Indicator}|⃣/u;
+const EMOJI_JOINER = /^[\s+=＋→⇒\-–—,、・|/]$/u;
+const graphemes = new Intl.Segmenter("en", { granularity: "grapheme" });
+
+/** True when a generator's prompt asks for emoji (both templates' wordings). */
+export function isEmojiPrompt(prompt: string): boolean {
+  return EMOJI_PROMPT.test(prompt);
+}
+
+/** The first run of emoji in `text`, joiners kept between them; "" when there is none. */
+export function emojiOnly(text: string): string {
+  const parts = [...graphemes.segment(text)].map((part) => part.segment);
+  const start = parts.findIndex((part) => EMOJI_GRAPHEME.test(part));
+  if (start < 0) return "";
+  const run: string[] = [];
+  for (const part of parts.slice(start)) {
+    if (EMOJI_GRAPHEME.test(part)) run.push(part);
+    // A blank line ends the run: what follows is the model's commentary.
+    else if (EMOJI_JOINER.test(part) && !(part.includes("\n") && run.at(-1)?.includes("\n"))) run.push(part);
+    else break;
+  }
+  return run.join("").replace(/[\s+=＋→⇒\-–—,、・|/]+$/u, "").trim();
+}
+
+/**
+ * Everything a stored or fresh generation goes through before anyone sees it:
+ * thinking tags out, and an emoji prompt's answer cut to its emoji. One function,
+ * used by the Worker (what is cached) and the app (what is shown), so the two
+ * cannot disagree about the same line.
+ */
+export function cleanGenerated(prompt: string, text: string): string {
+  const clean = stripThinking(text);
+  return isEmojiPrompt(prompt) ? emojiOnly(clean) : clean;
+}
+
 export type LlmProvider = "ollama" | "anthropic";
 
 export interface LlmOptions {

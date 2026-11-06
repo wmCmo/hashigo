@@ -337,6 +337,10 @@ npx vite-node scripts/reverse-dormant-apply.ts -- --db build/hashigo.db --apply 
     pulses (`pending` / `generating`); only a fill that was tried and failed shows
     `missing` with "try again". Existing clips are never redone (do-not-ask #2 is
     about REgeneration). A typed `#tag` becomes a tag (`src/cards/tags.ts`, add-only).
+63. **An emoji line is emoji: the first run of emoji, nothing else** (`cleanGenerated` in
+    `src/generate/llm.ts`). Applied on READ in `storeTextResolver` (every device's
+    stored copy, never rewritten) and before the Worker caches. One with no emoji is
+    not there — made again. *"it just says the answer out right 😭"* (断片, 2026-11-06).
 
 ## READ THE TEMPLATE. It answers most questions about the screen.
 

@@ -34,10 +34,12 @@ import {
   generationIdentity,
   generationKey,
   lookupGeneration,
+  lookupGenerations,
 } from "../blobs/generation.js";
 import { sha256Hex } from "../blobs/sha256.js";
 import type { BlobKind } from "../schema/index.js";
 import type { FieldGenerationRequest } from "./fields.js";
+import { cleanGenerated } from "./llm.js";
 
 export type GenerationMatch = "exact" | "other-voice" | "missing" | "mismatch";
 
@@ -170,13 +172,37 @@ export function storeTextResolver(
   options: ResolveOptions = {},
 ): (request: FieldGenerationRequest) => string | null {
   const read = db.prepare("SELECT bytes FROM blobs WHERE hash = ?");
+  const textOf = (hash: string): string | null => {
+    const row = read.get(hash) as { bytes: Uint8Array | null } | undefined;
+    return row?.bytes == null ? null : new TextDecoder().decode(row.bytes);
+  };
   return (request) => {
     if (!TEXT_KINDS.has(request.kind)) return null;
     const found = resolveFieldGeneration(db, request, options);
     if (found.hash === null) return null;
-    const row = read.get(found.hash) as { bytes: Uint8Array | null } | undefined;
-    if (row?.bytes == null) return null;
-    return new TextDecoder().decode(row.bytes);
+    const raw = textOf(found.hash);
+    if (raw === null) return null;
+    // CLEANED HERE, the one place every reader goes through — the review card,
+    // the editor, a chained generator's input (2026-11-06, `cleanGenerated`). A
+    // stored line is never rewritten: each device's copy is right on the way out.
+    const clean = cleanGenerated(request.text, raw);
+    if (clean !== "") return clean;
+    // Nothing left (an emoji line with no emoji): not an answer. A remake files a
+    // SECOND blob under the same identity, and `LIMIT 1` picks by hash, so look at
+    // every candidate rather than let the empty one win for ever.
+    const identity = generationIdentity({
+      kind: request.kind,
+      text: request.text,
+      voice: request.voice,
+      lang: request.lang,
+      options: request.options,
+    });
+    for (const hash of lookupGenerations(db, identity)) {
+      const other = textOf(hash);
+      const cleaned = other === null ? "" : cleanGenerated(request.text, other);
+      if (cleaned !== "") return cleaned;
+    }
+    return null;
   };
 }
 

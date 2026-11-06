@@ -2616,6 +2616,28 @@ right**: it holds his verbatim reasoning and this quotes it.
     not the text (`src/cards/tags.ts`). And `[[` completion lands the caret AFTER the
     link, not on its display text.
 
+63. **AN EMOJI LINE IS EMOJI.** 2026-11-06. Zach, over a reversed 断片 card whose emoji
+    line read "Sure! Here is the word 断片 described using emojis: 🔪🧩": *"i want you
+    to replace all the emoji section that contains text lol, like this one it just
+    says the answer out right 😭"*. On the reverse the word IS the question, so the
+    line handed him the answer.
+
+    Measured on the laptop's copy: 1,173 of 10,162 emoji generations carry letters —
+    mostly Mochi-era chatter ("Sure! Here's…", "Explanation: - 🗣️ …"). The rule keeps
+    the FIRST run of emoji with the joiners a model puts between them (`+`, `=`, `→`,
+    spaces) and drops the rest; stripping only letters would keep an explanation's
+    repeated emoji and double the line. 1,223 lines change under it; 3 hold no emoji
+    and clean to nothing.
+
+    **Cleaned on read, not rewritten.** `storeTextResolver` — the one path the review
+    card, the editor and a chained generator all read through — returns
+    `cleanGenerated(prompt, text)`, so every device's stored copy is right on the way
+    out with no write and no sync (the `stripThinking` lesson of 2026-10-23: a copy a
+    phone filed is never re-read from the cloud). The Worker cleans before it caches.
+    A line that cleans to NOTHING is not there: the resolver tries the identity's
+    other blobs (a remake files a second one, and `LIMIT 1` picks by hash), `cardGaps`
+    calls it a gap, and the Worker makes it again instead of serving the cached one.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach

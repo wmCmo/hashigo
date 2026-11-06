@@ -42,7 +42,7 @@
 import { generationIdentity, generationKey } from "../../../src/blobs/generation.js";
 import { sha256Hex } from "../../../src/blobs/sha256.js";
 import { synthesise } from "../../../src/accent/speech.js";
-import { generateText, stripThinking } from "../../../src/generate/llm.js";
+import { cleanGenerated, generateText, isEmojiPrompt } from "../../../src/generate/llm.js";
 import { fillVoiceFor } from "../../../src/generate/speech.js";
 import { catalogueVoice, sampleLine, synthesisVoice } from "../../../src/generate/voices.js";
 import { speakableText } from "../../../src/text/index.js";
@@ -281,8 +281,10 @@ export async function generate(
   const cached = await read(env, textKey);
   if (cached?.output !== undefined && cached.output !== "") {
     // A record stored before `stripThinking` knew a tag would be served with the
-    // tag for ever, since the cache is what a second press reads. Repair it here.
-    const clean = stripThinking(cached.output);
+    // tag for ever, since the cache is what a second press reads. Repair it here —
+    // and since 2026-11-06 an emoji line's chatter too (`cleanGenerated`). One
+    // that cleans to NOTHING (no emoji in it) falls through and is made again.
+    const clean = cleanGenerated(descriptor.text, cached.output);
     if (clean !== cached.output && clean !== "") {
       await env.MAILBOX.put(textKey, JSON.stringify({ ...cached, output: clean }));
     }
@@ -292,8 +294,12 @@ export async function generate(
   const apiKey = env.ANTHROPIC_API_KEY ?? "";
   if (apiKey === "") return [503, { error: "no ANTHROPIC_API_KEY on the Worker" }];
   const model = env.HASHIGO_MODEL ?? DEFAULT_MODEL;
-  const output = await write(descriptor, { provider: "anthropic", apiKey, model, maxTokens: MAX_TOKENS });
-  if (output === "") return [502, { error: `${model} returned nothing` }];
+  const made = await write(descriptor, { provider: "anthropic", apiKey, model, maxTokens: MAX_TOKENS });
+  // Cleaned BEFORE it is cached, so what every device reads is already right.
+  const output = cleanGenerated(descriptor.text, made);
+  if (output === "") {
+    return [502, { error: isEmojiPrompt(descriptor.text) ? `${model} returned no emoji` : `${model} returned nothing` }];
+  }
   const record: GeneratedRecord = {
     kind: descriptor.kind,
     text: descriptor.text,
