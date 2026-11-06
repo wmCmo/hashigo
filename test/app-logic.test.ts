@@ -813,6 +813,37 @@ describe("following the reveal down the page", () => {
   });
 });
 
+// ── the done screen has a way out ────────────────────────────────────────────
+
+/**
+ * Zach, 2026-11-06, the first time he cleared a plan on his phone: *"how can i go
+ * to main screen"*. The ☰ lived only in #review's header, which the done screen
+ * hides, and a reload lands on the done screen again — a dead end.
+ */
+describe("the done screen's way out", () => {
+  const html = readFileSync("app/index.html", "utf8");
+  const css = readFileSync("app/style.css", "utf8");
+  const done = /<section id="done"[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+
+  it("carries its own drawer toggle", () => {
+    expect(done).toMatch(/<button id="donesidebartoggle" class="sidebartoggle"[^>]*aria-controls="sidebar"/);
+    // Wired, not only drawn.
+    const sidebar = readFileSync("app/sidebar.ts", "utf8");
+    expect(sidebar).toContain('el<HTMLButtonElement>("donesidebartoggle")');
+  });
+
+  it("does not style that toggle as one of its pill buttons", () => {
+    // `.done button` would give the ☰ the export button's fill, padding and
+    // 52px height; the pill rules are for the section's own children only.
+    expect(css).not.toMatch(/\.done button/);
+    expect(css).toMatch(/\.done > button/);
+  });
+
+  it("gives way to the gallery the toggle can now open", () => {
+    expect(css).toContain('body[data-view="gallery"] .done { display: none; }');
+  });
+});
+
 // ── the climb, while the seed downloads ──────────────────────────────────────
 
 /**

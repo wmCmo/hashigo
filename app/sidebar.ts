@@ -65,7 +65,13 @@ import { openSettings } from "./settings.js";
  * exactly. Browsing to a card and following a link to a card are the same act, so
  * they get the same surface — decision 30's preview, every side at once.
  */
-const sidebarToggle = el<HTMLButtonElement>("sidebartoggle");
+// Two buttons open the drawer: the review header's, and the done screen's —
+// that screen hides #review and its header, and without its own ☰ it had no
+// way out on a phone. Both say whether the drawer is open.
+const sidebarToggles = [
+  el<HTMLButtonElement>("sidebartoggle"),
+  el<HTMLButtonElement>("donesidebartoggle"),
+];
 const deckList = el("decklist");
 
 /**
@@ -377,12 +383,12 @@ export function openSidebar(): void {
     return;
   }
   document.body.classList.add("sidebar-open");
-  sidebarToggle.setAttribute("aria-expanded", "true");
+  for (const t of sidebarToggles) t.setAttribute("aria-expanded", "true");
 }
 
 export function closeSidebar(): void {
   document.body.classList.remove("sidebar-open");
-  sidebarToggle.setAttribute("aria-expanded", "false");
+  for (const t of sidebarToggles) t.setAttribute("aria-expanded", "false");
 }
 
 // Crossing the breakpoint with a window drag: the rail has to fill itself on the
@@ -393,10 +399,12 @@ railStanding.addEventListener("change", (event) => {
   else closeSidebar();
 });
 
-sidebarToggle.addEventListener("click", () => {
-  if (document.body.classList.contains("sidebar-open")) closeSidebar();
-  else openSidebar();
-});
+for (const t of sidebarToggles) {
+  t.addEventListener("click", () => {
+    if (document.body.classList.contains("sidebar-open")) closeSidebar();
+    else openSidebar();
+  });
+}
 el("sidebarclose").addEventListener("click", closeSidebar);
 el("sidebarscrim").addEventListener("click", closeSidebar);
 el("dashboardlink").addEventListener("click", () => void openDashboard());

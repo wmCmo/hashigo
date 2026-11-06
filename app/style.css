@@ -1779,7 +1779,15 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
 .done {
   margin: 0 auto;
   max-width: 720px;
-  padding: var(--space-8) var(--space-4);
+  padding: var(--space-3) var(--space-4) var(--space-8);
+}
+
+/* The ☰ row. It sits where the review header's ☰ sits — 12px down, 16px in —
+   and with its 44px button and the gap below, the mark starts where it did
+   when the section's top padding was 64px. */
+.done-head {
+  display: flex;
+  margin-bottom: var(--space-3);
 }
 
 /* The mark, large, and the only moving thing in the app. It is at rest before
@@ -1798,6 +1806,9 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   font-size: var(--fs-gloss);
   font-weight: 800;
   letter-spacing: -0.03em;
+  /* "congrats, one rung up" is 306px and fits one line down to ~340px wide;
+     below that, balance splits it after the comma instead of orphaning "up". */
+  text-wrap: balance;
 }
 
 .done p {
@@ -1806,19 +1817,19 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   margin: var(--space-3) 0 var(--space-6);
 }
 
-.done button {
+.done > button {
   border-color: var(--indigo);
   color: var(--indigo);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .done button:hover {
+  .done > button:hover {
     background: var(--indigo);
     color: var(--card);
   }
 }
 
-.done button {
+.done > button {
   background: none;
   border: 1px solid var(--edge);
   color: var(--ink);
@@ -2603,6 +2614,9 @@ body.sidebar-open .sidebar-scrim {
 .gallery { display: none; }
 body[data-view="gallery"] .gallery { display: block; }
 body[data-view="gallery"] .review { display: none; }
+/* The done screen has a ☰ now, so the gallery can be opened from it — and
+   `.done` is shown by its `hidden` property, which the gallery does not touch. */
+body[data-view="gallery"] .done { display: none; }
 
 .gallery-head {
   align-items: center;
@@ -4573,7 +4587,7 @@ input[data-answer="incorrect"] {
 .bootskip,
 .focuschip,
 .readingtoggle,
-.done button,
+.done > button,
 .confirm-bar button,
 .gallery-back,
 .gcard-op,
@@ -4589,7 +4603,7 @@ input[data-answer="incorrect"] {
   font-weight: 600;
   letter-spacing: 0;
 }
-.done button,
+.done > button,
 .confirm-bar button,
 .bootskip {
   font-size: var(--fs-body);
