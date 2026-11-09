@@ -108,6 +108,7 @@ import {
 import { newCardFrom, setReviewCard } from "./found-in.js";
 import { fillAccents } from "./accent-helper.js";
 import { watchForUpdates } from "./update-check.js";
+import { localDate, shouldStartNewDay } from "./new-day.js";
 import {
   closeSidebar,
   fillSidebar,
@@ -4201,6 +4202,36 @@ const STAGE_WORDS: Readonly<Record<SyncProgress["stage"], string>> = {
 };
 const bootSkip = el("bootskip");
 
+/**
+ * A finished plan from an earlier date reloads the page when it comes back into
+ * view — `./new-day.ts` says why, and why only then. `plannedOn` is taken at boot,
+ * right after `open` built the plan. Once: the reload replaces this page.
+ */
+function watchForNewDay(plannedOn: string): void {
+  let reloading = false;
+  const check = (): void => {
+    if (reloading || document.visibilityState !== "visible") return;
+    const fields = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+      'input:not([type]), input[type="text"], input[type="search"], textarea',
+    );
+    const typing =
+      isTypingTarget(document.activeElement as KeyTarget | null) ||
+      [...fields].some((f) => f.value.trim() !== "");
+    const go = shouldStartNewDay({
+      plannedOn,
+      today: localDate(new Date()),
+      onDone: !doneView.hidden,
+      layered: document.body.classList.contains("layered"),
+      typing,
+    });
+    if (!go) return;
+    reloading = true;
+    window.location.reload();
+  };
+  document.addEventListener("visibilitychange", check);
+  window.addEventListener("focus", check);
+}
+
 /** 取り込んだ採点の数を返す。 */
 async function bootSync(): Promise<number> {
   const abort = new AbortController();
@@ -4349,6 +4380,8 @@ async function boot(): Promise<void> {
     pushAfterBoot();
     // A deploy that lands while this page stays open — `./update-check.ts`.
     watchForUpdates();
+    // A new day that arrives while this page stays open — `./new-day.ts`.
+    watchForNewDay(localDate(new Date()));
     // Cards made in the app that still lack 読み / 型 / OJAD — made on the phone,
     // or before the helper was running. Laptop only, in the background.
     void fillAccents(undefined, (text) => line(text, "good"), (text) => say(text, true));

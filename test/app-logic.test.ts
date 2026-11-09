@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { childrenOf, rootsOf, subtreeTotals, type TreeDeck } from "../app/deck-tree.js";
 import { gistOf } from "../app/gist.js";
 import { isTypingTarget, survivesTyping } from "../app/keys.js";
+import { localDate, shouldStartNewDay } from "../app/new-day.js";
 import {
   promptPositions,
   heroLength,
@@ -841,6 +842,45 @@ describe("the done screen's way out", () => {
 
   it("gives way to the gallery the toggle can now open", () => {
     expect(css).toContain('body[data-view="gallery"] .done { display: none; }');
+  });
+});
+
+// ── a new day reaches a page that stayed open ────────────────────────────────
+
+/**
+ * Zach, 2026-11-09: *"it's a new day, but i still see this"* — the laptop window
+ * still showing the done screen from the last day he cleared a plan on it.
+ */
+describe("a new day on a page that stayed open", () => {
+  const base = {
+    plannedOn: "2026-11-06",
+    today: "2026-11-09",
+    onDone: true,
+    layered: false,
+    typing: false,
+  };
+
+  it("reloads a FINISHED plan from an earlier date", () => {
+    expect(shouldStartNewDay(base)).toBe(true);
+  });
+
+  it("leaves a plan from today alone", () => {
+    expect(shouldStartNewDay({ ...base, today: "2026-11-06" })).toBe(false);
+  });
+
+  it("never reloads under a card — a session past midnight keeps its day", () => {
+    expect(shouldStartNewDay({ ...base, onDone: false })).toBe(false);
+  });
+
+  it("waits while something is half-typed", () => {
+    expect(shouldStartNewDay({ ...base, layered: true })).toBe(false);
+    expect(shouldStartNewDay({ ...base, typing: true })).toBe(false);
+  });
+
+  it("reads the LOCAL calendar date, zero-padded", () => {
+    // Local constructor: 00:30 on the 9th is the 9th here whatever UTC says.
+    expect(localDate(new Date(2026, 10, 9, 0, 30))).toBe("2026-11-09");
+    expect(localDate(new Date(2026, 0, 5, 23, 59))).toBe("2026-01-05");
   });
 });
 
