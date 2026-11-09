@@ -1194,6 +1194,82 @@ describe("the text provider and its prompt", () => {
 });
 
 /**
+ * ─── GEMINI FLASH (2026-11-10) ──────────────────────────────────────────────
+ *
+ * Chosen by a side-by-side on twelve of his words (see `viaGemini`). What must
+ * hold: the same raw prompt and system prompt as every provider, thinking HIGH
+ * with room for it, thoughts dropped, and an answer that did not END is never
+ * returned — the playground cut a sentence off mid-word twice in that test.
+ */
+describe("the Gemini provider", () => {
+  const ok = (parts: unknown[], finishReason = "STOP") => async (): Promise<unknown> => ({
+    ok: true,
+    json: async () => ({ candidates: [{ finishReason, content: { role: "model", parts } }] }),
+  });
+
+  it("sends the raw prompt, the shared system prompt, the key, and thinking HIGH", async () => {
+    let url = "";
+    let headers: Record<string, string> = {};
+    let seen: Record<string, unknown> = {};
+    const fake = async (u: string, init: { body: string; headers: Record<string, string> }): Promise<unknown> => {
+      url = u;
+      headers = init.headers;
+      seen = JSON.parse(init.body) as Record<string, unknown>;
+      return ok([{ text: "物語はいよいよ佳境に入った。" }])();
+    };
+    const descriptor = { kind: "ai", text: "Example sentence using 佳境 in Japanese (Don't translate)", options: {} };
+    const out = await generateText(descriptor, {
+      provider: "gemini", apiKey: "k", model: "gemini-3.8-flash", maxTokens: 256, fetch: fake as never,
+    });
+    expect(out).toBe("物語はいよいよ佳境に入った。");
+    expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent");
+    expect(headers["x-goog-api-key"]).toBe("k");
+    expect(seen["contents"]).toEqual([{ role: "user", parts: [{ text: descriptor.text }] }]);
+    expect(seen["systemInstruction"]).toEqual({ parts: [{ text: systemPrompt(descriptor) }] });
+    const config = seen["generationConfig"] as { maxOutputTokens: number; thinkingConfig: { thinkingLevel: string } };
+    expect(config.thinkingConfig.thinkingLevel).toBe("HIGH");
+    // 256 is the ANSWER budget; the thinking shares the cap, as with Ollama.
+    expect(config.maxOutputTokens).toBeGreaterThan(2048);
+  });
+
+  it("drops thought parts and keeps the answer", async () => {
+    const fake = ok([{ text: "Let me pick a context…", thought: true }, { text: "回路が異常な発振を起こしている。" }]);
+    const out = await generateText(
+      { kind: "ai", text: "Example sentence using 発振 in Japanese (Don't translate)", options: {} },
+      { provider: "gemini", apiKey: "k", model: "gemini-3.8-flash", maxTokens: 256, fetch: fake as never },
+    );
+    expect(out).toBe("回路が異常な発振を起こしている。");
+  });
+
+  it("refuses an answer that did not finish, rather than returning half a sentence", async () => {
+    const fake = ok([{ text: "お送りいた" }], "MAX_TOKENS");
+    await expect(
+      generateText(
+        { kind: "ai", text: "Example sentence using 拝見 in Japanese (Don't translate)", options: {} },
+        { provider: "gemini", apiKey: "k", model: "gemini-3.8-flash", maxTokens: 256, fetch: fake as never },
+      ),
+    ).rejects.toThrow(/finishReason=MAX_TOKENS/);
+  });
+
+  it("names a blocked prompt and a missing key", async () => {
+    const blocked = async (): Promise<unknown> => ({ ok: true, json: async () => ({ promptFeedback: { blockReason: "SAFETY" } }) });
+    await expect(
+      generateText({ kind: "ai", text: "x", options: {} }, { provider: "gemini", apiKey: "k", model: "m", maxTokens: 256, fetch: blocked as never }),
+    ).rejects.toThrow(/blockReason=SAFETY/);
+    await expect(
+      generateText({ kind: "ai", text: "x", options: {} }, { provider: "gemini", model: "m", maxTokens: 256 }),
+    ).rejects.toThrow(/no GEMINI_API_KEY/);
+  });
+
+  it("passes a quota refusal through as the status and Google's words", async () => {
+    const quota = async (): Promise<unknown> => ({ ok: false, status: 429, text: async () => "RESOURCE_EXHAUSTED" });
+    await expect(
+      generateText({ kind: "ai", text: "x", options: {} }, { provider: "gemini", apiKey: "k", model: "m", maxTokens: 256, fetch: quota as never }),
+    ).rejects.toThrow(/gemini answered 429 — RESOURCE_EXHAUSTED/);
+  });
+});
+
+/**
  * ─── THE TOKEN BUDGET IS SHARED WITH THE THINKING ───────────────────────────
  *
  * Two of the first three sentences in a real batch run came back empty, and

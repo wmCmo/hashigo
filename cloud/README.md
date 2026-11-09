@@ -22,7 +22,12 @@ from starting at all (reverted). Decision 49 had already retired "no cloud".
 | seed files | R2 `hashigo-seed` | 674 MB audio store is ONE object via R2 multipart |
 
 **Secrets** (Worker secret store only): `MAILBOX_TOKEN`, `GOOGLE_TTS_SECRET`,
-`ANTHROPIC_API_KEY`, and on `hashigo` also `UNLOCK_HASH` + `COOKIE_KEY`. `.env` holds
+`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, and on `hashigo` also `UNLOCK_HASH` + `COOKIE_KEY`.
+**`GEMINI_API_KEY` is the text-provider switch** (2026-11-10): present, 例文 / emoji /
+translate lines come from `gemini-3.8-flash` (free tier, thinking HIGH); absent, from
+Anthropic. Put it on BOTH Workers — `hashigo` serves the phone and the laptop app,
+`hashigo-mailbox` the tailnet build — with `npx wrangler@4 secret put GEMINI_API_KEY` in
+`cloud/app/` and `cloud/mailbox/`. `secret delete` switches back. `.env` holds
 `VITE_MAILBOX_URL`, `VITE_MAILBOX_TOKEN` and `HASHIGO_UNLOCK_PASSPHRASE` (for him to read).
 
 **Updating the cloud app:** `npm run app:build:cloud`, then `npx wrangler@4 deploy` in

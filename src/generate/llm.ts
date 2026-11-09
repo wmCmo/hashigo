@@ -162,11 +162,11 @@ export function cleanGenerated(prompt: string, text: string): string {
   return isEmojiPrompt(prompt) ? emojiOnly(clean) : clean;
 }
 
-export type LlmProvider = "ollama" | "anthropic";
+export type LlmProvider = "ollama" | "anthropic" | "gemini";
 
 export interface LlmOptions {
   readonly provider: LlmProvider;
-  /** Anthropic only. Never read for Ollama, which needs no secret at all. */
+  /** Anthropic and Gemini. Never read for Ollama, which needs no secret at all. */
   readonly apiKey?: string | undefined;
   readonly model: string;
   /** Ollama's base URL. Defaults to the daemon's own default. */
@@ -287,12 +287,79 @@ async function viaAnthropic(descriptor: LlmDescriptor, options: LlmOptions): Pro
   );
 }
 
+/**
+ * GEMINI FLASH, ON THE FREE TIER — Zach, 2026-11-10: *"my claude token is
+ * running … is gemini free?"*
+ *
+ * Measured before choosing it, on twelve of his words (拝見, 慕う, 差し引く,
+ * に対する, 放っておく, ひたい, 過ぎる, 発振, 通り, 猛烈, 佳境, 朗報) with the
+ * app's own 例文 prompt: Claude Haiku, Sonnet and Opus and `gemini-3.8-flash`
+ * were natural and correct on all twelve; local `qwen3:8b` misused 拝見 and 佳境,
+ * and `gpt-oss:20b` misused 慕う. At thinking level HIGH, Flash's sentences read
+ * like Opus's, several nearly word for word (発振: 「回路の定数を調整して安定した
+ * 発振を得る」); at MEDIUM they were plainer. So HIGH, and it costs nothing but
+ * seconds and free-tier quota.
+ *
+ * `finishReason` MUST be STOP. The playground cut its answer off mid-sentence
+ * twice in that test (「拝見 お送りいた」); a truncated sentence cached here would
+ * be drilled — as audio and as OJAD marks — for good. Anything else throws, and
+ * the field shows "try again" (decision 62) instead.
+ *
+ * Thought parts (`thought: true`) are dropped; the answer is the rest. Thinking
+ * counts against `maxOutputTokens`, so the floor is generous, as for Ollama.
+ */
+export const GEMINI_THINKING_LEVEL = "HIGH";
+const GEMINI_MIN_TOKENS = 8_192;
+const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/models";
+
+async function viaGemini(descriptor: LlmDescriptor, options: LlmOptions): Promise<string> {
+  const key = options.apiKey;
+  if (key === undefined || key === "") throw new Error("no GEMINI_API_KEY");
+  const call = options.fetch ?? globalThis.fetch;
+  const response = await call(`${GEMINI_API}/${encodeURIComponent(options.model)}:generateContent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt(descriptor) }] },
+      // RAW, as for every provider: the user message is the identity (decision 7).
+      contents: [{ role: "user", parts: [{ text: descriptor.text }] }],
+      generationConfig: {
+        maxOutputTokens: Math.max(options.maxTokens, GEMINI_MIN_TOKENS),
+        thinkingConfig: { thinkingLevel: GEMINI_THINKING_LEVEL },
+      },
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`gemini answered ${response.status} — ${detail.slice(0, 200)}`);
+  }
+  const body = (await response.json()) as {
+    candidates?: {
+      finishReason?: string;
+      content?: { parts?: { text?: string; thought?: boolean }[] };
+    }[];
+    promptFeedback?: { blockReason?: string };
+  };
+  const blocked = body.promptFeedback?.blockReason;
+  if (blocked !== undefined) throw new Error(`${options.model} refused the prompt (blockReason=${blocked})`);
+  const candidate = body.candidates?.[0];
+  const finish = candidate?.finishReason ?? "none";
+  if (finish !== "STOP") {
+    throw new Error(`${options.model} did not finish (finishReason=${finish}) — nothing is stored`);
+  }
+  const text = (candidate?.content?.parts ?? [])
+    .filter((part) => part.thought !== true)
+    .map((part) => part.text ?? "")
+    .join("");
+  return stripThinking(text).trim();
+}
+
 /** One field, one answer, from whichever provider the caller chose. */
 export async function generateText(
   descriptor: LlmDescriptor,
   options: LlmOptions,
 ): Promise<string> {
-  return options.provider === "ollama"
-    ? await viaOllama(descriptor, options)
-    : await viaAnthropic(descriptor, options);
+  if (options.provider === "ollama") return await viaOllama(descriptor, options);
+  if (options.provider === "gemini") return await viaGemini(descriptor, options);
+  return await viaAnthropic(descriptor, options);
 }

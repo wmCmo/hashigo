@@ -196,7 +196,7 @@ describe("CORS, because the app is served from the laptop and this from workers.
 
 // ─── /generate/ on the Worker ────────────────────────────────────────────────
 
-import { generate, parse } from "../cloud/mailbox/src/generate.js";
+import { generate, parse, textProvider } from "../cloud/mailbox/src/generate.js";
 
 describe("generation on the Worker answers like the laptop, and keeps what it makes", () => {
   const fakeSpeech = async (): Promise<Uint8Array> => new Uint8Array([0xff, 0xfb, 1, 2, 3]);
@@ -293,6 +293,44 @@ describe("generation on the Worker answers like the laptop, and keeps what it ma
   it("the route needs the key like everything else", async () => {
     const response = await handle(request("POST", "/generate/", { body: "{}", token: null }), env());
     expect(response.status).toBe(401);
+  });
+});
+
+/**
+ * 2026-11-10: the Gemini key on the Worker IS the switch — `textProvider`.
+ * Gemini wins when both keys are there; removing it puts Anthropic back.
+ */
+describe("which provider writes the text", () => {
+  const ask = parse({ kind: "ai", text: "Example sentence using 朗報 in Japanese (Don't translate)", lang: null, voice: null, options: {} });
+
+  it("is Gemini Flash when its key is on the Worker, even beside Anthropic's", async () => {
+    let chosen: Record<string, unknown> = {};
+    const write = async (_d: unknown, options: Record<string, unknown>): Promise<string> => {
+      chosen = options;
+      return "長年の努力が実を結び、ついに朗報が届いた。";
+    };
+    const e = { ...env(), ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" };
+    const [status, body] = await generate(ask as never, e, { generateText: write as never });
+    expect(status).toBe(200);
+    expect(chosen).toMatchObject({ provider: "gemini", apiKey: "g", model: "gemini-3.8-flash" });
+    expect(body).toMatchObject({ provider: "gemini", model: "gemini-3.8-flash", cached: false });
+    expect(textProvider({ ...env(), GEMINI_API_KEY: "g", HASHIGO_GEMINI_MODEL: "gemini-x" })?.model).toBe("gemini-x");
+  });
+
+  it("is Anthropic without it, and names both keys when neither is there", async () => {
+    expect(textProvider({ ...env(), ANTHROPIC_API_KEY: "a" })).toMatchObject({ provider: "anthropic", model: "claude-opus-5" });
+    const [status, body] = await generate(ask as never, env());
+    expect(status).toBe(503);
+    expect(body).toMatchObject({ error: expect.stringContaining("GEMINI_API_KEY") });
+  });
+
+  it("stores nothing when the provider throws — a cut-off sentence is never cached", async () => {
+    const e = { ...env(), GEMINI_API_KEY: "g" };
+    const write = async (): Promise<string> => {
+      throw new Error("gemini-3.8-flash did not finish (finishReason=MAX_TOKENS) — nothing is stored");
+    };
+    await expect(generate(ask as never, e, { generateText: write })).rejects.toThrow(/MAX_TOKENS/);
+    expect(e.MAILBOX.data.size).toBe(0);
   });
 });
 

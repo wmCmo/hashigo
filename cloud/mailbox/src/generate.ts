@@ -55,6 +55,34 @@ export interface GenerateEnv {
   readonly ANTHROPIC_API_KEY?: string;
   /** Same default as the laptop's `HASHIGO_MODEL`. */
   readonly HASHIGO_MODEL?: string;
+  /** When set, text is made by Gemini, not Anthropic — `textProvider`. */
+  readonly GEMINI_API_KEY?: string;
+  readonly HASHIGO_GEMINI_MODEL?: string;
+}
+
+const GEMINI_MODEL = "gemini-3.8-flash";
+
+/**
+ * WHO WRITES THE TEXT: Gemini when its key is on the Worker, else Anthropic.
+ *
+ * Zach, 2026-11-10, after a side-by-side on twelve of his words
+ * (`src/generate/llm.ts`, `viaGemini`): Flash on the free tier, thinking HIGH,
+ * read like Opus. The key decides, not a flag, so the switch is the secret
+ * itself: `wrangler secret put GEMINI_API_KEY` turns it on, `secret delete`
+ * turns it back to Anthropic. No fallback between them — a free-tier refusal
+ * shows as "try again" on the card, never as a silent bill.
+ *
+ * The cache is keyed on the prompt, not the model, so every line already made
+ * stays as it is; only new ones come from the new provider.
+ */
+export function textProvider(
+  env: GenerateEnv,
+): { provider: "gemini" | "anthropic"; apiKey: string; model: string } | null {
+  const gemini = env.GEMINI_API_KEY ?? "";
+  if (gemini !== "") return { provider: "gemini", apiKey: gemini, model: env.HASHIGO_GEMINI_MODEL ?? GEMINI_MODEL };
+  const anthropic = env.ANTHROPIC_API_KEY ?? "";
+  if (anthropic !== "") return { provider: "anthropic", apiKey: anthropic, model: env.HASHIGO_MODEL ?? DEFAULT_MODEL };
+  return null;
 }
 
 /** Only these can be asked for — the laptop's `ALLOWED`. */
@@ -291,10 +319,10 @@ export async function generate(
     if (clean !== "") return [200, { text: clean, cached: true }];
   }
 
-  const apiKey = env.ANTHROPIC_API_KEY ?? "";
-  if (apiKey === "") return [503, { error: "no ANTHROPIC_API_KEY on the Worker" }];
-  const model = env.HASHIGO_MODEL ?? DEFAULT_MODEL;
-  const made = await write(descriptor, { provider: "anthropic", apiKey, model, maxTokens: MAX_TOKENS });
+  const chosen = textProvider(env);
+  if (chosen === null) return [503, { error: "no GEMINI_API_KEY or ANTHROPIC_API_KEY on the Worker" }];
+  const { provider, apiKey, model } = chosen;
+  const made = await write(descriptor, { provider, apiKey, model, maxTokens: MAX_TOKENS });
   // Cleaned BEFORE it is cached, so what every device reads is already right.
   const output = cleanGenerated(descriptor.text, made);
   if (output === "") {
@@ -310,5 +338,5 @@ export async function generate(
     output,
   };
   await env.MAILBOX.put(textKey, JSON.stringify(record));
-  return [200, { text: output, cached: false, provider: "anthropic", model }];
+  return [200, { text: output, cached: false, provider, model }];
 }
