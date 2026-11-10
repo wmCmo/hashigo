@@ -22,6 +22,8 @@ when code does. A path can at least warn you.
 | `persistence.md` | OPFS durability | the one-tap export prescription (`:204`) that decision 17 rests on |
 | `next-history.md` | the bottom three quarters of `NEXT.md`, moved 2026-08-26 | why the app is shaped as it is — the landed-work notes and the reasoning behind them. 803 lines, byte-identical to what sat under `NEXT.md`'s own HISTORY heading |
 | `NEXT-retired-2026-10-30.md` | the rest of `NEXT.md`, retired whole on 2026-10-30 (moved with `git mv`, so `git log --follow` reaches its history) | the 2026-08-26 state snapshot, the fields-as-modules stage notes and the landed-work record. Its live parts moved out first: the publishing gates and version to `RELEASE.md`, the cloud runbook to `cloud/README.md` |
+| `DECISIONS-before-consolidation-2026-11-11.md` | `DECISIONS.md` word for word before the 2026-11-11 consolidation (2,814 lines, 185 KB), same numbering | every derivation, "found on the way" story, measurement log and long table the live file now leaves out — look a decision up here by its number |
+| `CLAUDE-before-consolidation-2026-11-11.md` | `CLAUDE.md` word for word on the same day, before its decision index was tightened | the index lines as they read before superseded chains (23 → 32 → 57, 59 → 65, 33 → 49) were collapsed |
 | `browser-feasibility.md` | OPFS measurements | §4's blob-store numbers; §5 is **superseded** — it called `crypto.subtle` "the one genuinely invasive change" and `src/blobs/sha256.ts` had already made that false |
 
 **Two specific things in here that are known-wrong and were acted on anyway,

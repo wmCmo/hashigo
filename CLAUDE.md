@@ -7,7 +7,9 @@ user's Japanese study. Built because Mochi's developer stopped fixing reported b
 > act correctly.** It was trimmed on 2026-10-29 from 103 KB; the full previous text —
 > every measurement, correction and quote it carried — is kept word for word in
 > [notes/archive/CLAUDE-before-trim-2026-10-29.md](notes/archive/CLAUDE-before-trim-2026-10-29.md).
-> The WHY of every decision is in [DECISIONS.md](DECISIONS.md); his words are in
+> The WHY of every decision is in [DECISIONS.md](DECISIONS.md), consolidated on 2026-11-11
+> (both files' earlier text is verbatim in `notes/archive/*-before-consolidation-2026-11-11.md`);
+> his words are in
 > `notes/zach-in-his-own-words.md` (if that file and a decision disagree, that file is right).
 
 ## Where things are
@@ -205,14 +207,19 @@ give an honest opinion — and when he decides differently, record the new decis
 > DECISIONS.md** — it renumbered the list once and passed every gate;
 > `test/docs-integrity.test.ts` now fails on it.
 
-1. **FSRS-6, max interval 365 days, target retention 0.90.** The 365 is derived, the centre
-   of a ±5% band (see 11). See `DECISIONS.md` 1.
+> An amended decision reads as it stands now; a superseded one keeps its number as a
+> pointer to what replaced it (consolidated 2026-11-11 — the earlier wording of both
+> files is in `notes/archive/`).
+
+1. **FSRS-6, max interval 365 days, target retention 0.90.** The 365 is derived — where
+   the PLANNED support ends — and is the centre of decision 11's ±5% band.
 2. **Binary grades only** — remembered / forgot. No `grade` column; `w[15]`/`w[16]` frozen.
 3. **The six empty leaf decks are dropped**: 45 decks become 39.
 4. **Blobs are content-addressed.** No absolute path is ever stored in the database.
 5. **Stale pre-template `content` is discarded on import, and reported** (3,159 cards).
-6. **Name the interval basis, or the number is not a fact** — `elapsed_days` (measured) vs
-   `scheduled_days` (planned). Generalises: every figure names its basis.
+6. **Name the basis, or the number is not a fact** — `elapsed_days` (measured) vs
+   `scheduled_days` (planned), and every figure; check the basis is the one the sentence
+   NEEDS.
 7. **A generator's input is the RENDERED text, never the stored value.**
 8. **The UniDic cross-check is stored but never RESOLVES** — a candidate for adjudication,
    never the answer. A wrong accent drilled is worse than no accent.
@@ -225,22 +232,22 @@ give an honest opinion — and when he decides differently, record the new decis
 13. **A forgotten card is SHOWN again at the end of the session, and NOT GRADED.**
 14. **No one-off respread of the existing due dates.**
 15. **New cards are 10 TRACKS a day, chosen at RANDOM; forward and reverse are not paired.**
+    Which ten: 53 and 54.
 16. **ONE final import from Mochi, then never again — and it HAS happened (2026-09-08).**
-    `exports/` is disaster recovery only; `build/hashigo.db` plus each device's OPFS are the
-    system of record. The guard (`0e04a10`) stops a re-import reverting local schedules.
+    `exports/` is disaster recovery only. The guard (`0e04a10`) stops a re-import reverting
+    local schedules. Consequence: 41.
 17. **A local export/backup is required before he trusts the app** — built, with the
     non-dismissible "not persistent" banner and eviction detection.
 18. **The TTS key NEVER goes in the client** — proxied through the Worker.
 19. **Links render PLAINLY, in place, on whatever side they are authored on.**
 20. **`型` renders on side 2 above `<<Speech>>`; `かな主流` on side 1 inside `<<#Reading>>`.**
-    `型` is the ANSWER on a produce card.
+    `型` is the ANSWER on a produce card. (言葉: 26. Mode 2: 29.)
 21. **Fields are MOVABLE between templates, from the UI.**
 22. **The 6 truly ambiguous words stay UNLABELLED** as words (`まく` is three accents);
     per-card adjudications settle them by the card's `意味`.
 23. **The review screen's HAND: controls pinned to the bottom, the round replay button
     bottom-RIGHT (he reviews one-handed, right thumb), keycap hints only where a real
-    pointer exists and never behind hover, one scroll.** The look was superseded (32, 57);
-    the hand was not.
+    pointer exists and never behind hover, one scroll.** Its LOOK → 57.
 24. **Agents COMMIT their own work without asking — clean, scoped, gates green first —
     AND PUSH to `origin main`** (`https://github.com/wmCmo/hashigo`, PUBLIC, the `wmCmo`
     account, never `zach-ct`). Force-pushing and rewriting pushed history are not authorised.
@@ -262,16 +269,17 @@ give an honest opinion — and when he decides differently, record the new decis
 31. **PROCEED WITHOUT ASKING.** Ask only when the answer cannot be derived from his
     template, a measurement or a decision here. Still his: taste about the screen he lives
     in, and anything that changes what he is DRILLED on.
-32. **The 2026-09-12 design brief replaced decision 23's look** (itself replaced by 57). The
-    Japanese typeface is his choice; the replay button stays round because the hand wins.
+32. **Superseded by 57 for the look.** What stands: the replay button stays round (the hand
+    wins), the Japanese typeface is his choice, and the app icon is ink on `--card`.
 33. **Sync is device-to-device through a MAILBOX; two merge rules are not last-write-wins.**
     Reviews UNION (append-only — no merge can lose a grade); `card_tracks` is LAST REVIEW
     wins (never recompute — fuzz is applied once); `archived`/`pinned` are LWW on
-    `cards.updated_at` with every card's flags in the payload. `src/sync/`.
+    `cards.updated_at` with every card's flags in the payload. The mailbox is in the Worker
+    (49 dropped "no cloud"). `src/sync/`.
 34. **A reveal is a WALK: one cloze at a time, then the next side**; a side sounds its clip
     when its last cloze goes. Reverse needs no code. `enter()` still plays nothing.
-35. **Type size follows the CONTENT's length, not the position** — `sideScale()` measures
-    code points: ≤28 display · ≤64 mid · above, body. Both directions, no special case.
+35. **Type size follows the CONTENT's length, not the position** — `sideScale()`: ≤28
+    display · ≤64 mid · above, body. Both directions, no special case.
 36. **One play control per clip, beside the clip**; the bottom-right disc means "again"
     for the clip last sounded. `replay()` never unmasks.
 37. **Furigana is filled through `src/render/ruby.ts`, and only behind a mask**
@@ -303,7 +311,7 @@ give an honest opinion — and when he decides differently, record the new decis
 50. **The app pulls on the boot screen, before the first card**; offline or unanswered, it
     opens with the local database. The push stays off the boot path.
 51. **Grades travel as a delta** (`src/sync/delta.ts`, small enough for `keepalive` on page
-    hide); the full payload only after an edit. No timer, no polling. (Edits: see 64.)
+    hide). No timer, no polling. Edits: 64.
 52. **The gallery is read, not operated** — one `⋯` per tile, a gist line, archived hidden
     by default, and an address (`#deck/<id>`).
 53. **`優先` cards are picked first from the new pool, still ten a day**; then 日本語 words
@@ -322,41 +330,31 @@ give an honest opinion — and when he decides differently, record the new decis
     inside `<< ^Reading >>`, 240px). Hear it, WRITE it, reveal. No 問題 track: a word
     stays one card, and its forward/reverse schedules are untouched.
 59. **Every deploy is a release: `npm run release -- patch|minor`, then deploy.** Major
-    stays 0 until 1.0 (RELEASE.md). Minor = a milestone, or any change to SCHEMA/SYNC/
-    ARCHIVE_VERSION (enforced). Patch = every other deploy, fixes and small features
-    alike (decision 65) — per DEPLOY, not per commit.
-    `app:build:cloud` refuses a commit that is not the tagged release; the tag's message
-    is the changelog. Never write a changelog by hand.
+    stays 0 until 1.0 (RELEASE.md); minor and patch are defined by 65. `app:build:cloud`
+    refuses a commit that is not the tagged release; the tag's message is the changelog.
+    Never write a changelog by hand.
 60. **A mode-2 単語 card shows its emoji on the question side**, unmasked, at the top of
     side 2 inside `<< ^Reading >>`; mode 1 keeps it behind side 4's cloze. Homophones:
     *"when i heard words like かんしゅう i genuinely don't know which one it is"*.
-61. **A field shows its KIND (type + role, `fieldKind`), and a derived kind — Reading
-    (読み), Pitch accent (型), Accent marks (OJAD) — is read-only in the editor.** No
-    override (YAGNI, his call); Text ⇄ Reading is the one kind switch. Mochi's
-    four unused types (Long text, Furigana, Dictionary, Image search) are DELETED
-    (2026-11-05), from code and `schema.sql`, without a version bump. 読み carries role `reading`; by name until a device has it. Generated
-    fields read the same in the editor (`filled from 例文 — …`). **Editing a field
-    empties the derived fields downstream of it** (to `""`, never deleted) for the
-    helper to refill — a derived value no longer outlives the word it was made for.
-62. **A missing generated part is MADE when its card is shown — any card, not only
-    one made here — and there is no "generate" button while it is being made.** It
-    pulses (`pending` / `generating`); only a fill that was tried and failed shows
-    `missing` with "try again". Existing clips are never redone (do-not-ask #2 is
-    about REgeneration). A typed `#tag` becomes a tag (`src/cards/tags.ts`, add-only).
+61. **A field shows its KIND (type + role, `fieldKind`); a derived kind — Reading (読み),
+    Pitch accent (型), Accent marks (OJAD) — is read-only in the editor.** No override
+    (YAGNI, his call); Text ⇄ Reading is the one kind switch. Mochi's four unused types
+    are DELETED. **Editing a field empties the derived fields downstream of it** (to `""`,
+    never deleted) for the helper to refill.
+62. **A missing generated part is MADE when its card is shown — any card, not only one
+    made here — and there is no "generate" button while it is being made.** `pending` /
+    `generating` pulse; only a failed fill shows `missing` with "try again". Existing clips
+    are never redone. A typed `#tag` becomes a tag (`src/cards/tags.ts`, add-only).
 63. **An emoji line is emoji: the first run of emoji, nothing else** (`cleanGenerated` in
-    `src/generate/llm.ts`). Applied on READ in `storeTextResolver` (every device's
-    stored copy, never rewritten) and before the Worker caches. One with no emoji is
-    not there — made again. *"it just says the answer out right 😭"* (断片, 2026-11-06).
-64. **Edits travel as a delta too** (`src/sync/sent.ts`): the rows whose group changed
-    since a FINGERPRINT of what this device last sent (one hash per card, template,
-    field, deck, setting), merged through the same `mergeSync`. A fingerprint, not a
-    clock — no writer has to remember to stamp. The full payload only when there is
-    no fingerprint, or the delta passes 64 KB; the sync button follows the same rule.
-    One new card: 5.31 MB base → 784 B. `SYNC_VERSION` 2; a v1 payload still merges.
-65. **A minor means "update every device" or a milestone; small features ship as
-    patches** — amends 59's "patch = fixes only". Four minors in twelve days (6.0 → 9.0)
-    were the wording's doing: *"it feels like we are releasing minor version every
-    other day lol"*. The contract rule stays enforced.
+    `src/generate/llm.ts`), applied on READ and before the Worker caches. One with no
+    emoji is not there — made again.
+64. **Edits travel as a delta too** (`src/sync/sent.ts`), diffed against a FINGERPRINT of
+    what this device last sent — not a clock, so no writer has to remember to stamp. Full
+    payload only with no fingerprint or past 64 KB. One new card: 5.31 MB base → 784 B.
+    `SYNC_VERSION` 2; a v1 payload still merges.
+65. **A minor means "update every device" (a SCHEMA/SYNC/ARCHIVE_VERSION change, enforced)
+    or a milestone; every other deploy, small features included, is a patch.** Amends 59:
+    *"it feels like we are releasing minor version every other day lol"*.
 
 ## The template answers most questions about the screen
 
