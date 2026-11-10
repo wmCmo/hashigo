@@ -892,6 +892,13 @@ export interface DashboardMessage {
 export interface SyncExportRequest {
   readonly kind: "syncExport";
   readonly id: number;
+  /**
+   * Only the fingerprint, no payload text (`json` comes back empty) — decision 64.
+   * After a merge brought in other devices' edits and nothing local is unsent,
+   * the page re-takes the fingerprint so its next edit delta does not carry them
+   * back (`src/sync/sent.ts`).
+   */
+  readonly indexOnly?: boolean;
 }
 
 /**
@@ -1521,6 +1528,11 @@ export interface SyncExportMessage {
   readonly bytes: number;
   /** この書き出しに入っている最大の reviews.id（`src/sync/delta.ts` の印）。 */
   readonly mark: number;
+  /**
+   * The fingerprint of this payload as JSON text (`src/sync/sent.ts`): what a
+   * peer holds once it has arrived. The page keeps it beside the mark.
+   */
+  readonly index: string;
 }
 
 /** 印より後の採点だけを書き出す。`src/sync/delta.ts`。 */
@@ -1528,6 +1540,12 @@ export interface SyncDeltaRequest {
   readonly kind: "syncDelta";
   readonly id: number;
   readonly after: number;
+  /**
+   * The fingerprint of what this device last sent, as JSON text. When present the
+   * delta also carries every edit since (decision 64, `exportEditDelta`) and the
+   * reply carries the new fingerprint. Absent: grades only, as before.
+   */
+  readonly sent?: string;
 }
 
 export interface SyncDeltaMessage {
@@ -1538,6 +1556,10 @@ export interface SyncDeltaMessage {
   /** この差分の最大の reviews.id。空なら `after` のまま。 */
   readonly mark: number;
   readonly count: number;
+  /** Edited rows in the delta; 0 for a grade-only one. */
+  readonly edits: number;
+  /** The fingerprint to keep once this delta is delivered — only when `sent` was given. */
+  readonly index?: string;
 }
 
 export interface SyncMergeMessage {

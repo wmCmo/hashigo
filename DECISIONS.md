@@ -2207,6 +2207,9 @@ right**: it holds his verbatim reasoning and this quotes it.
     slots, because field values merge with no clock and the corrections applied
     only at boot. `reapplyCorrections` now runs inside every merge's transaction.
 
+    **Amended by 64 (2026-11-10):** an edit no longer forces the full payload — it
+    rides the delta, diffed against a fingerprint of what was last sent.
+
 52. **THE GALLERY IS READ, NOT OPERATED — AND IT HAS AN ADDRESS.** Zach,
     2026-10-16, agreeing to a design review of the live app (sections: wording
     kept, everything else taken): *"i agree with you on every section accept for
@@ -2636,6 +2639,117 @@ right**: it holds his verbatim reasoning and this quotes it.
     A line that cleans to NOTHING is not there: the resolver tries the identity's
     other blobs (a remake files a second one, and `LIMIT 1` picks by hash), `cardGaps`
     calls it a gap, and the Worker makes it again instead of serving the cached one.
+
+64. **EDITS TRAVEL AS A DELTA TOO, DIFFED AGAINST A FINGERPRINT OF WHAT WAS SENT.**
+    2026-11-10. Zach noticed every open on the phone or tablet downloaded at least
+    5 MB and asked whether that was really a 差分. It was not: decision 51 made
+    GRADES a delta and left every other write on the full payload, and he makes
+    every card on the laptop — so most days the laptop pushed its whole base and
+    every other device downloaded and merged all of it.
+
+    **Measured in the mailbox that day.** Every live slot held a full base of
+    5.18–5.31 MB of JSON; almost none had a delta (one, 43 KB). The progress line
+    shows the uncompressed size; on the wire the 5,311,224-byte base was
+    1,007,961 bytes (Cloudflare serves it brotli). Then the receiving device merges
+    all of it — ~8 s on the phone (decision 33's figure).
+
+    **Why the base grew from decision 51's figure** (~2 MB, "~350 KB" was its gzip)
+    — the same slot types compared across dates:
+
+    ```plaintext
+                   2026-09-26  2026-10-20  2026-10-26  2026-11-09
+    total            1.83 MB     2.36 MB     4.72 MB     5.31 MB
+    fieldValues      0.74        0.74        2.70        2.79   (7,586 → 31,415 rows)
+    reviews          0.19        0.49        0.72        1.05   (610 → 3,347 grades)
+    trackState       0.15        0.38        0.54        0.66
+    cardFlags        0.72        0.72        0.72        0.74   (every card, by design)
+    ```
+
+    The jump is `b8160f5` (2026-10-24): the archive carries EVERY value of every
+    card, because edits to imported cards (`意味`, `Reading`) had been staying on the
+    device that made them. The steady growth is the review log — every local grade
+    since the final import, ~89 a day, ~28 KB a day. **Neither is avoidable by
+    trimming the base:** a device seeded from R2 needs every value edited since the
+    seed, and nothing in the payload can say which those are (values have no clock,
+    decision 33's known gap); a peer that never saw a grade needs it. The base is
+    the right size for its job. The fix is to stop sending it for one card.
+
+    **The design.** The delta (`src/sync/delta.ts`) gains `edits`: the full
+    payload's rows, minus every group whose hash matches a FINGERPRINT of what this
+    device last sent (`src/sync/sent.ts`) — one hash per card (its flags, collection
+    state, values and, for a card made here, its own row), per template, field row,
+    deck, setting and retired clip. The receiver wraps it as a payload and runs the
+    one `mergeSync`, as decision 51 does for grades.
+
+    **Why a fingerprint and not a clock.** `card_field_values` has no clock, and a
+    `cards.updated_at` watermark trusts every writer — editor, accent helper, deck
+    op, script — to stamp it; one that forgot would never leave the device. A hash
+    of what is sent against what was sent needs nobody's cooperation (pinned: an
+    unstamped write is still sent).
+
+    **Why the merge guarantees are unchanged.** No apply path deletes a row it was
+    not sent, so a payload holding a subset of rows merges exactly as the full one
+    would have merged those rows. Two rows lean on another and travel with it: a
+    value is kept or taken by its CARD's clock, read from `cardFlags`, so a card's
+    values never travel without its flag row; and `cardState` is the backup's
+    additive `max(archived, ?)`, which only the flag rule undoes, so it never
+    travels alone (the 2026-10-22 re-archive). The tests
+    (`test/sync-edits.test.ts`) say it as EQUIVALENCE: a phone that merges the base
+    then the edit delta is identical, table by table, to one that merged the new
+    full base — for a new card, a value edit, a phone's newer edit to the same
+    card, an unarchive, a deck archive, a template body and a setting. Injecting
+    "values without their flag row" turns five of them red.
+
+    **Where the fingerprint lives:** `localStorage`, beside the mark, ~208 KB for
+    ~7,800 groups. Same lifetime as the mark — forgotten when the database is
+    replaced, rewritten by every full push (or REMOVED, if the push could not say
+    one: a stale fingerprint would let a value edited back to an old value compare
+    equal and never leave), advanced only after the mailbox accepted the send. No
+    fingerprint means the FULL payload, never "everything as a delta".
+
+    **Four consequences, each built:**
+
+    * **After a merge that brought other devices' edits in, the fingerprint is
+      re-taken** — but only when nothing local is unsent, checked again after the
+      export. Otherwise the phone's first `Reading` flip would carry the laptop's
+      new cards back, and past 64 KB force a full push.
+    * **The mailbox dedupes a delta by its body, not its mark.** A card made with
+      no grade after it carries the mark of the last grade send; matched on the
+      mark, it was answered "duplicate" and dropped. (The Worker change ships with
+      the app — `cloud/app` serves the mailbox.)
+    * **A peer's delta entries are merged once each** (hash of each entry's text).
+      Edits used to empty a stack with a full push every day; now a stack lives
+      until 512 KB, and re-merging every entry on every open would be a table scan
+      per entry.
+    * **The sync button follows the same rule.** It always sent the full payload,
+      so pressing it on the laptop would have undone the saving for every device.
+
+    **Unchanged on purpose:** the send on page hide (`keepalive`) stays grades only
+    — the edit half needs a full export, and an edit made just before closing goes
+    out with the next open. A delta over 64 KB, or a stack past 512 KB, still falls
+    back to the full payload.
+
+    **`SYNC_VERSION` is 2.** A version-1 device would read an edit delta as grades,
+    record it merged and never look again — a lost edit, silently. At 2 it refuses
+    instead, until `update-check` reloads it (each sync until then re-downloads
+    what it refuses — the cost of the bump, for minutes). The other direction is
+    exact and accepted (`OLDEST_SYNC_VERSION` 1): a v1 payload is a v2 payload with
+    no edits, so the tool slots and stale device slots in the mailbox still merge.
+
+    **Measured, one new card** (values copied from the newest 単語 card in the live
+    mailbox, made with `createCard` on a copy of `build/hashigo.db`, whose base is
+    3.41 MB — the live one is 5.31 MB and the delta does not grow with it):
+
+    ```plaintext
+                          JSON        gzip      merge on the receiver (Node)
+    before: full base   3,410,909   873,581     311 ms
+    after:  edit delta        784       453      46 ms
+    the helper's fill         916       492      (読み/型/OJAD, its own delta)
+    ```
+
+    Live, that is ~1.0 MB on the wire per device per edit day → under 1 KB. The
+    sending side pays a full export plus the diff (~306 ms on the laptop), which
+    it paid before as the export, then also uploaded.
 
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 

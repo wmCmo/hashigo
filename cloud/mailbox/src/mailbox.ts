@@ -356,9 +356,14 @@ export async function handle(request: Request, env: Env, preAuthorised = false):
       }
       if (!isDeltaEntry(incoming)) return json(400, { error: "body is not a sync delta" }, cors);
       const held = await readDeltas(env, id);
-      // 同じ印をもう一度（keepalive と再送が両方届いた）は積まない。マージは冪等
+      // 同じ差分をもう一度（keepalive と再送が両方届いた）は積まない。マージは冪等
       // なので積んでも壊れないが、場所の無駄。
-      if (held.some((entry) => isDeltaEntry(entry) && entry.mark === incoming.mark)) {
+      //
+      // The SAME BODY, not the same mark — decision 64, 2026-11-10. An edit delta
+      // made with no new grade carries the mark of the last grade delta; matched
+      // on the mark it was answered "duplicate" and dropped, and the edit with it.
+      const body = JSON.stringify(incoming);
+      if (held.some((entry) => JSON.stringify(entry) === body)) {
         return json(200, { deviceId: id, entries: held.length, duplicate: true }, cors);
       }
       const next = [...held, incoming];

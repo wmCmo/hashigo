@@ -37,10 +37,13 @@ import { exportLocalArchive } from "../src/backup/index.js";
 import {
   deltaPayload,
   exportDelta,
+  exportEditDelta,
   exportSync,
+  indexPayload,
   isDelta,
   maxLocalReviewId,
   mergeSync,
+  parseSentIndex,
 } from "../src/sync/index.js";
 import {
   resolveDescriptorText,
@@ -1959,7 +1962,10 @@ function syncExport(request: SyncExportRequest): void {
   // 印は書き出しと同じ瞬間に読む — ワーカーは一つずつ処理するので、間に採点は入らない。
   const mark = maxLocalReviewId(db);
   const payload = exportSync(db, new Date().toISOString());
-  const json = JSON.stringify(payload);
+  // The fingerprint of exactly this payload (decision 64). Same export, so the
+  // page can never keep a fingerprint of something it did not send.
+  const index = JSON.stringify(indexPayload(payload));
+  const json = request.indexOnly === true ? "" : JSON.stringify(payload);
   post({
     kind: "syncExport",
     id: request.id,
@@ -1968,12 +1974,24 @@ function syncExport(request: SyncExportRequest): void {
     // mostly Japanese and `.length` counts UTF-16 code units.
     bytes: new TextEncoder().encode(json).length,
     mark,
+    index,
   });
 }
 
-/** 印より後の採点だけ。`src/sync/delta.ts`。 */
+/**
+ * 印より後の採点だけ。`src/sync/delta.ts`。With `sent`, the edits since that
+ * fingerprint as well (decision 64, `exportEditDelta`).
+ */
 function syncDelta(request: SyncDeltaRequest): void {
-  const delta = exportDelta(requireCards(), request.after);
+  const db = requireCards();
+  const sent = request.sent === undefined ? null : parseSentIndex(request.sent);
+  if (request.sent !== undefined && sent === null) {
+    // The page checks this before asking; a fingerprint that does not parse here
+    // would make every group look new, which is a full payload in a delta's clothes.
+    throw new Error("syncDelta: the sent fingerprint is not readable — send the full payload");
+  }
+  const edit = sent === null ? null : exportEditDelta(db, request.after, sent, new Date().toISOString());
+  const delta = edit === null ? exportDelta(db, request.after) : edit.delta;
   const json = JSON.stringify(delta);
   post({
     kind: "syncDelta",
@@ -1982,6 +2000,8 @@ function syncDelta(request: SyncDeltaRequest): void {
     bytes: new TextEncoder().encode(json).length,
     mark: delta.mark,
     count: delta.reviews.length,
+    edits: edit?.rows ?? 0,
+    ...(edit === null ? {} : { index: JSON.stringify(edit.index) }),
   });
 }
 

@@ -454,6 +454,27 @@ describe("deltas: small sends that survive closing the page", () => {
     expect(await again.json()).toMatchObject({ duplicate: true, entries: 1 });
   });
 
+  it("stacks an EDIT delta that shares the last grade delta's mark — decision 64", async () => {
+    // A card made with no grade after it carries the mark of the last grade send.
+    // Deduped on the mark, the mailbox answered "duplicate" and the card was lost.
+    const e = env();
+    await handle(request("POST", `/sync/${ID}/delta`, { body: delta(5) }), e);
+    const edit = JSON.stringify({
+      syncVersion: 2,
+      delta: 1,
+      mark: 5,
+      reviews: [],
+      trackState: [],
+      edits: { cardFlags: [{ cardId: "new1", archived: false, pinned: false, updatedAt: "2026-11-10T00:00:00.000Z" }] },
+    });
+    const sent = await handle(request("POST", `/sync/${ID}/delta`, { body: edit }), e);
+    const answer = (await sent.json()) as Record<string, unknown>;
+    expect(answer).toMatchObject({ entries: 2 });
+    expect(answer).not.toHaveProperty("duplicate");
+    const again = await handle(request("POST", `/sync/${ID}/delta`, { body: edit }), e);
+    expect(await again.json()).toMatchObject({ duplicate: true, entries: 2 });
+  });
+
   it("a full PUT that covers a mark drops the deltas at or below it, and keeps the newer ones", async () => {
     const e = env();
     await handle(request("POST", `/sync/${ID}/delta`, { body: delta(5) }), e);

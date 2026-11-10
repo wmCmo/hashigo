@@ -21,7 +21,7 @@
  */
 
 import type { AppMessage, AppRequest, ReplyFor } from "./protocol.js";
-import { markFullDirty } from "./sync-client.js";
+import { markEdited } from "./sync-client.js";
 
 type LogMessage = Extract<AppMessage, { kind: "log" }>;
 type FetchingMessage = Extract<AppMessage, { kind: "fetching" }>;
@@ -82,6 +82,9 @@ export function listenToWorker(handlers: {
  * 許可リストで、拒否リストではない：新しい要求の種類が増えた時、既定は「全体を
  * 送る」側に倒れる。間違えた時の費用が、余計な ~350 KB と、編集が他の端末に
  * 届かないこととでは釣り合わない。
+ *
+ * Since decision 64 a request outside this list costs one diff of the database
+ * against what was last sent (a full export, no upload of it), not a full push.
  */
 const READ_ONLY_OR_DELTA: ReadonlySet<string> = new Set([
   "open",
@@ -127,9 +130,10 @@ export function ask<K extends keyof ReplyFor>(
   request: Omit<Extract<AppRequest, { kind: K }>, "id">,
 ): Promise<ReplyFor[K]> {
   const id = nextId++;
-  // 採点以外の書き込みは差分では運べない（旗・フィールド・テンプレート・設定）。
-  // 次の送信を全体にするよう印を付ける — `sync-client.ts` の `markFullDirty`。
-  if (!READ_ONLY_OR_DELTA.has(request.kind)) markFullDirty();
+  // A write other than a grade (flags, fields, templates, settings, a new card):
+  // mark it, so the next send diffs this device against what it last sent and
+  // carries the edits (decision 64) — `sync-client.ts`'s `markEdited`.
+  if (!READ_ONLY_OR_DELTA.has(request.kind)) markEdited();
   return new Promise<ReplyFor[K]>((resolve, reject) => {
     pending.set(id, {
       resolve: resolve as (value: never) => void,

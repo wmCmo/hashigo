@@ -303,7 +303,7 @@ give an honest opinion — and when he decides differently, record the new decis
 50. **The app pulls on the boot screen, before the first card**; offline or unanswered, it
     opens with the local database. The push stays off the boot path.
 51. **Grades travel as a delta** (`src/sync/delta.ts`, small enough for `keepalive` on page
-    hide); the full payload only after an edit. No timer, no polling.
+    hide); the full payload only after an edit. No timer, no polling. (Edits: see 64.)
 52. **The gallery is read, not operated** — one `⋯` per tile, a gist line, archived hidden
     by default, and an address (`#deck/<id>`).
 53. **`優先` cards are picked first from the new pool, still ten a day**; then 日本語 words
@@ -346,6 +346,12 @@ give an honest opinion — and when he decides differently, record the new decis
     `src/generate/llm.ts`). Applied on READ in `storeTextResolver` (every device's
     stored copy, never rewritten) and before the Worker caches. One with no emoji is
     not there — made again. *"it just says the answer out right 😭"* (断片, 2026-11-06).
+64. **Edits travel as a delta too** (`src/sync/sent.ts`): the rows whose group changed
+    since a FINGERPRINT of what this device last sent (one hash per card, template,
+    field, deck, setting), merged through the same `mergeSync`. A fingerprint, not a
+    clock — no writer has to remember to stamp. The full payload only when there is
+    no fingerprint, or the delta passes 64 KB; the sync button follows the same rule.
+    One new card: 5.31 MB base → 784 B. `SYNC_VERSION` 2; a v1 payload still merges.
 
 ## The template answers most questions about the screen
 

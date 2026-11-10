@@ -28,7 +28,7 @@ import {
   pushGradesNow,
   sinceLabel,
   syncNow,
-  whenFullDirty,
+  whenEdited,
   type SyncPorts,
   type SyncProgress,
 } from "./sync-client.js";
@@ -507,11 +507,22 @@ function paintSync(): void {
 const syncPorts: SyncPorts = {
   async exportPayload() {
     const reply = await ask<"syncExport">({ kind: "syncExport" });
-    return { json: reply.json, bytes: reply.bytes, mark: reply.mark };
+    return { json: reply.json, bytes: reply.bytes, mark: reply.mark, index: reply.index };
   },
-  async exportDelta(after: number) {
-    const reply = await ask<"syncDelta">({ kind: "syncDelta", after });
-    return { json: reply.json, bytes: reply.bytes, mark: reply.mark, count: reply.count };
+  async exportDelta(after: number, sent?: string) {
+    const reply = await ask<"syncDelta">({ kind: "syncDelta", after, ...(sent === undefined ? {} : { sent }) });
+    return {
+      json: reply.json,
+      bytes: reply.bytes,
+      mark: reply.mark,
+      count: reply.count,
+      edits: reply.edits,
+      ...(reply.index === undefined ? {} : { index: reply.index }),
+    };
+  },
+  async exportIndex() {
+    const reply = await ask<"syncExport">({ kind: "syncExport", indexOnly: true });
+    return reply.index;
   },
   async mergePayload(payload: unknown) {
     const reply = await ask<"syncMerge">({ kind: "syncMerge", payload });
@@ -796,9 +807,9 @@ export function schedulePush(): void {
   pushTimer = window.setTimeout(() => void pushGrades(), PUSH_AFTER_MS);
 }
 
-// An edit or a new card schedules the same push a grade does (`whenFullDirty`):
+// An edit or a new card schedules the same push a grade does (`whenEdited`):
 // before 2026-11-05 a card made with no review after it never left the device.
-whenFullDirty(schedulePush);
+whenEdited(schedulePush);
 
 async function pushGrades(options: { readonly keepalive?: boolean } = {}): Promise<void> {
   pushTimer = undefined;

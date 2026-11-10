@@ -17,7 +17,7 @@ import {
   agoLabel,
   forgetMergedPeers,
   isStale,
-  markFullDirty,
+  markEdited,
   peersNewerThan,
   pushGradesNow,
   readMark,
@@ -27,7 +27,7 @@ import {
   type SyncPorts,
   type SyncProgress,
   versionOf,
-  whenFullDirty,
+  whenEdited,
 } from "../app/sync-client.js";
 
 const NOW = new Date("2026-09-12T12:00:00.000Z");
@@ -654,14 +654,31 @@ describe("sending grades as a delta", () => {
   }
 
   const exported: string[] = [];
-  const port = (deltaCount = 2, mark = 42): SyncPorts => ({
+  /**
+   * `editRows` is what the worker's diff finds when it is handed a fingerprint
+   * (decision 64); the fingerprints are plain labels, so a test can say which
+   * one the page kept.
+   */
+  const port = (deltaCount = 2, mark = 42, editRows = 3): SyncPorts => ({
     async exportPayload() {
       exported.push("full");
-      return { json: "{}", bytes: 2_000_000, mark: 40 };
+      return { json: "{}", bytes: 2_000_000, mark: 40, index: "index-of-full" };
     },
-    async exportDelta(after: number) {
-      exported.push(`delta>${after}`);
-      return { json: JSON.stringify({ delta: 1, mark, reviews: [] }), bytes: 900, mark, count: deltaCount };
+    async exportDelta(after: number, sent?: string) {
+      exported.push(sent === undefined ? `delta>${after}` : `delta>${after}+edits-since:${sent}`);
+      const edits = sent === undefined ? 0 : editRows;
+      return {
+        json: JSON.stringify({ delta: 1, mark, reviews: [] }),
+        bytes: 900,
+        mark,
+        count: deltaCount,
+        edits,
+        ...(sent === undefined ? {} : { index: `index-after:${sent}` }),
+      };
+    },
+    async exportIndex() {
+      exported.push("index");
+      return "index-now";
     },
     async mergePayload() {
       return { reviewsAdded: 1, flagsTaken: 0, trackStateTaken: 0, markBefore: 42, markAfter: 50 };
@@ -689,29 +706,133 @@ describe("sending grades as a delta", () => {
     expect(readMark()).toBe(42);
   });
 
-  it("an edit (anything but a grade) makes the next send full, and clears the flag", async () => {
+  it("an edit with no fingerprint to diff against sends the full payload, and keeps its fingerprint", async () => {
     const box = mailboxRecording();
     box.store.set("hashigo.sync.mark", "40");
-    markFullDirty();
+    markEdited();
     expect(await pushGradesNow(port())).toBe("full");
     expect(box.store.has("hashigo.sync.fullDirty")).toBe(false);
+    expect(box.store.get("hashigo.sync.sent")).toBe("index-of-full");
+  });
+
+  it("an edit goes as a DELTA once a fingerprint exists — decision 64, no full payload for one card", async () => {
+    // The 2026-11-10 measurement: one card made on the laptop sent its whole
+    // 5.3 MB base, and every other device downloaded and merged all of it.
+    const box = mailboxRecording();
+    box.store.set("hashigo.sync.mark", "40");
+    box.store.set("hashigo.sync.sent", "fp1");
+    markEdited();
+    expect(await pushGradesNow(port())).toBe("delta");
+    expect(exported).toEqual(["delta>40+edits-since:fp1"]);
+    expect(box.calls.map((c) => `${c.method} ${c.url}`)).toEqual(["POST /sync/dev-selftest01/delta"]);
+    expect(box.store.get("hashigo.sync.sent")).toBe("index-after:fp1");
+    expect(box.store.has("hashigo.sync.fullDirty")).toBe(false);
+    expect(readMark()).toBe(42);
+  });
+
+  it("an edit delta that does not land keeps the OLD fingerprint and the flag, so it is sent again", async () => {
+    const box = mailboxRecording({ deltaStatus: 500 });
+    box.store.set("hashigo.sync.mark", "40");
+    box.store.set("hashigo.sync.sent", "fp1");
+    markEdited();
+    await expect(pushGradesNow(port())).rejects.toThrow(/500/);
+    expect(box.store.get("hashigo.sync.sent")).toBe("fp1");
+    expect(box.store.has("hashigo.sync.fullDirty")).toBe(true);
+  });
+
+  it("an edit made WHILE the delta was being sent stays marked unsent", async () => {
+    const box = mailboxRecording();
+    box.store.set("hashigo.sync.mark", "40");
+    box.store.set("hashigo.sync.sent", "fp1");
+    markEdited();
+    const racing: SyncPorts = {
+      ...port(),
+      async exportDelta(after: number, sent?: string) {
+        const reply = await port().exportDelta!(after, sent);
+        box.store.set("hashigo.sync.fullDirty", "a-later-edit");
+        return reply;
+      },
+    };
+    expect(await pushGradesNow(racing)).toBe("delta");
+    expect(box.store.get("hashigo.sync.fullDirty")).toBe("a-later-edit");
+  });
+
+  it("an edit that changed nothing a peer receives sends nothing, and settles the flag", async () => {
+    const box = mailboxRecording();
+    box.store.set("hashigo.sync.mark", "42");
+    box.store.set("hashigo.sync.sent", "fp1");
+    markEdited();
+    expect(await pushGradesNow(port(0, 42, 0))).toBe("nothing");
+    expect(box.calls).toHaveLength(0);
+    expect(box.store.has("hashigo.sync.fullDirty")).toBe(false);
+    expect(box.store.get("hashigo.sync.sent")).toBe("index-after:fp1");
+  });
+
+  it("a port that cannot diff (no fingerprint back) gets the full payload, never a grades-only send", async () => {
+    const box = mailboxRecording();
+    box.store.set("hashigo.sync.mark", "40");
+    box.store.set("hashigo.sync.sent", "fp1");
+    markEdited();
+    const old: SyncPorts = {
+      ...port(),
+      async exportDelta() {
+        return { json: "{}", bytes: 900, mark: 42, count: 2 };
+      },
+    };
+    expect(await pushGradesNow(old)).toBe("full");
+    expect(box.store.has("hashigo.sync.fullDirty")).toBe(false);
+  });
+
+  it("a full push from a port with no fingerprint FORGETS the old one", async () => {
+    // Kept, it would describe a base the mailbox no longer holds: a value edited
+    // back to what it was then would compare equal and never leave the device.
+    const box = mailboxRecording();
+    box.store.set("hashigo.sync.sent", "stale");
+    const old: SyncPorts = { ...port(), exportPayload: async () => ({ json: "{}", bytes: 2, mark: 40 }) };
+    expect(await pushGradesNow(old)).toBe("full");
+    expect(box.store.has("hashigo.sync.sent")).toBe(false);
+  });
+
+  it("forgetting the database forgets the fingerprint with the mark", () => {
+    const box = mailboxRecording();
+    box.store.set("hashigo.sync.mark", "40");
+    box.store.set("hashigo.sync.sent", "fp1");
+    forgetMergedPeers();
+    expect(box.store.has("hashigo.sync.sent")).toBe(false);
+    expect(box.store.has("hashigo.sync.mark")).toBe(false);
+  });
+
+  it("an edit delta over the mailbox's 64 KB goes full without trying the doomed POST", async () => {
+    const box = mailboxRecording();
+    box.store.set("hashigo.sync.mark", "40");
+    box.store.set("hashigo.sync.sent", "fp1");
+    markEdited();
+    const big: SyncPorts = {
+      ...port(),
+      async exportDelta(after: number, sent?: string) {
+        return { ...(await port().exportDelta!(after, sent)), bytes: 70 * 1024 };
+      },
+    };
+    expect(await pushGradesNow(big)).toBe("full");
+    expect(box.calls.map((c) => c.method)).toEqual(["PUT"]);
+    expect(box.store.get("hashigo.sync.sent")).toBe("index-of-full");
   });
 
   it("an edit asks for a push itself — it does not wait for the next grade (2026-11-05)", () => {
     // His ガーゼ card never left the laptop: only a grade scheduled a push.
     mailboxRecording();
     let asked = 0;
-    whenFullDirty(() => {
+    whenEdited(() => {
       asked += 1;
     });
-    markFullDirty();
+    markEdited();
     expect(asked).toBe(1);
   });
 
   it("closing the page sends the delta with keepalive — even after an edit, the GRADES go", async () => {
     const box = mailboxRecording();
     box.store.set("hashigo.sync.mark", "40");
-    markFullDirty();
+    markEdited();
     expect(await pushGradesNow(port(), { keepalive: true })).toBe("delta");
     expect(box.calls[0]).toMatchObject({ method: "POST", keepalive: true });
     // 編集はまだ送っていない — 次の普通の送信が全体にする。
@@ -771,5 +892,90 @@ describe("sending grades as a delta", () => {
     box.store.set("hashigo.sync.mark", "30");
     await syncNow(port(), { push: false });
     expect(readMark()).toBe(30);
+  });
+
+  it("after merging another device's edits, re-takes the fingerprint so they are not sent back", async () => {
+    const box = mailboxRecording({
+      listing: [{ deviceId: "dev-laptop01", bytes: 10, updatedAt: NOW.toISOString(), sha: "base1", delta: { bytes: 5, updatedAt: NOW.toISOString(), sha: "delta-dev-laptop01-v1" } }],
+      deltas: { "dev-laptop01": [{ delta: 1, mark: 3, reviews: [], edits: { cardFlags: [{ cardId: "new1" }] } }] },
+    });
+    box.store.set("hashigo.sync.merged", JSON.stringify({ "dev-laptop01": "base1" }));
+    box.store.set("hashigo.sync.sent", "fp1");
+    await syncNow(port(), { push: false });
+    expect(exported).toEqual(["index"]);
+    expect(box.store.get("hashigo.sync.sent")).toBe("index-now");
+  });
+
+  it("does NOT re-take it while a local edit is unsent — that edit is not in the mailbox", async () => {
+    const box = mailboxRecording({
+      listing: [{ deviceId: "dev-laptop01", bytes: 10, updatedAt: NOW.toISOString(), sha: "base2" }],
+    });
+    box.store.set("hashigo.sync.sent", "fp1");
+    markEdited();
+    await syncNow(port(), { push: false });
+    expect(exported).toEqual([]);
+    expect(box.store.get("hashigo.sync.sent")).toBe("fp1");
+  });
+
+  it("does not re-take it when the edit lands DURING the export", async () => {
+    const box = mailboxRecording({
+      listing: [{ deviceId: "dev-laptop01", bytes: 10, updatedAt: NOW.toISOString(), sha: "base3" }],
+    });
+    box.store.set("hashigo.sync.sent", "fp1");
+    const racing: SyncPorts = {
+      ...port(),
+      async exportIndex() {
+        box.store.set("hashigo.sync.fullDirty", "an-edit-meanwhile");
+        return "index-now";
+      },
+    };
+    await syncNow(racing, { push: false });
+    expect(box.store.get("hashigo.sync.sent")).toBe("fp1");
+  });
+
+  it("the sync BUTTON sends a delta too — a full push there would undo the saving for every device", async () => {
+    const box = mailboxRecording({ listing: [] });
+    box.store.set("hashigo.sync.mark", "40");
+    box.store.set("hashigo.sync.sent", "fp1");
+    markEdited();
+    const outcome = await syncNow(port());
+    expect(box.calls.filter((c) => c.method !== "GET").map((c) => `${c.method} ${c.url}`)).toEqual([
+      "POST /sync/dev-selftest01/delta",
+    ]);
+    expect(outcome.pushedBytes).toBe(900);
+  });
+
+  it("merges only the delta entries it has not merged before — the stack is re-downloaded whole", async () => {
+    const entries = [{ delta: 1, mark: 3, reviews: [] }, { delta: 1, mark: 7, reviews: [] }];
+    const listed = (sha: string) => [{ deviceId: "dev-tablet01", bytes: 10, updatedAt: NOW.toISOString(), sha: "base9", delta: { bytes: 5, updatedAt: NOW.toISOString(), sha } }];
+    const box = mailboxRecording({ listing: listed("delta-dev-tablet01-v1"), deltas: { "dev-tablet01": entries } });
+    box.store.set("hashigo.sync.merged", JSON.stringify({ "dev-tablet01": "base9" }));
+    const merged: unknown[] = [];
+    const ports = { ...port(), mergePayload: async (p: unknown) => (merged.push(p), { reviewsAdded: 0, flagsTaken: 0, trackStateTaken: 0 }) };
+    await syncNow(ports, { push: false });
+    expect(merged).toHaveLength(2);
+    // The stack grew by one entry: its sha moved, it is downloaded again, and only
+    // the new entry is merged.
+    entries.push({ delta: 1, mark: 9, reviews: [] });
+    box.store.set("hashigo.sync.mergedDelta", JSON.stringify({ "dev-tablet01": "an-older-sha" }));
+    await syncNow(ports, { push: false });
+    expect(merged).toHaveLength(3);
+    expect((merged[2] as { mark: number }).mark).toBe(9);
+    // Forgetting the database forgets this too: everything is merged again.
+    forgetMergedPeers();
+    box.store.set("hashigo.sync.merged", JSON.stringify({ "dev-tablet01": "base9" }));
+    await syncNow(ports, { push: false });
+    expect(merged).toHaveLength(6);
+  });
+
+  it("a merge of grades only leaves the fingerprint alone — no export on the boot screen", async () => {
+    const box = mailboxRecording({
+      listing: [{ deviceId: "dev-phone01", bytes: 10, updatedAt: NOW.toISOString(), sha: "base4", delta: { bytes: 5, updatedAt: NOW.toISOString(), sha: "delta-dev-phone01-v1" } }],
+      deltas: { "dev-phone01": [{ delta: 1, mark: 3, reviews: [] }] },
+    });
+    box.store.set("hashigo.sync.merged", JSON.stringify({ "dev-phone01": "base4" }));
+    box.store.set("hashigo.sync.sent", "fp1");
+    await syncNow(port(), { push: false });
+    expect(exported).toEqual([]);
   });
 });

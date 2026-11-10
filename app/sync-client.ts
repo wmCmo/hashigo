@@ -24,6 +24,7 @@
  * a name kept inside the thing that can go missing tells you nothing afterwards.
  */
 
+import { hashText } from "../src/sync/sent.js";
 import { cloudHeaders, cloudUrl, IN_CLOUD } from "./cloud.js";
 
 // Where the mailbox is — the laptop or Cloudflare — lives in `./cloud.ts`, shared
@@ -127,6 +128,30 @@ function writeMergedDelta(merged: Record<string, string>): void {
 }
 
 /**
+ * Which ENTRIES of each peer's delta stack this device has merged, by the hash of
+ * each entry's text — decision 64. Lost or unreadable, every entry is merged
+ * again, which is only slower: the merge is idempotent.
+ */
+const MERGED_ENTRIES_KEY = "hashigo.sync.mergedEntries";
+
+function readMergedEntries(): Record<string, string[]> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(MERGED_ENTRIES_KEY) ?? "{}");
+    return parsed !== null && typeof parsed === "object" ? (parsed as Record<string, string[]>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeMergedEntries(merged: Record<string, string[]>): void {
+  try {
+    localStorage.setItem(MERGED_ENTRIES_KEY, JSON.stringify(merged));
+  } catch {
+    /* the next sync merges every entry again */
+  }
+}
+
+/**
  * 送った印 — この端末の採点のうち、mailbox に（全体か差分で）届いた最大の
  * reviews.id。`src/sync/delta.ts`。null は「まだ一度も全体を送っていない」で、
  * その時は差分ではなく全体を送る（差分は全体の上に積むものだから）。
@@ -152,20 +177,63 @@ function writeMark(mark: number): void {
 }
 
 /**
- * 採点以外の書き込みがあった — 次の送信は全体。`worker-client.ts` の `ask` が付ける。
+ * A write other than a grade happened — the next send carries EDITS. Set by
+ * `worker-client.ts`'s `ask` for every request kind outside its allowlist.
  *
- * 値は時刻：送信の前に読んだ値と、送れた後の値が同じ時だけ消す。送っている間に
- * 次の編集が入ったら、その編集はまだ送っていない。
+ * Until decision 64 (2026-11-10) this meant "the next send is the FULL payload",
+ * and the key keeps that name so a flag left by the older app is still honoured.
+ * Now the next send is an edit delta (`src/sync/sent.ts`) whenever this device
+ * holds a fingerprint of what it last sent; the full payload only when it does not.
+ *
+ * The value is a time: it is cleared only when it still holds the value read
+ * before the send, so an edit made WHILE sending stays marked as unsent.
  */
 const DIRTY_KEY = "hashigo.sync.fullDirty";
 
-export function markFullDirty(): void {
+export function markEdited(): void {
   try {
     localStorage.setItem(DIRTY_KEY, String(Date.now()));
   } catch {
-    /* 印が付けられないなら、次の送信が差分になるだけ — 手動同期は常に全体 */
+    /* storage off: no mark can be kept either, so every send is the full payload */
   }
   onDirty?.();
+}
+
+/**
+ * THE FINGERPRINT OF WHAT THIS DEVICE LAST SENT — decision 64, `src/sync/sent.ts`.
+ *
+ * One hash per card, template, field row, deck, setting and retired clip, as JSON
+ * text (~220 KB for his ~7,900 cards). An edit delta carries the groups whose hash
+ * moved since this. Kept beside the mark and with the same lifetime: forgotten
+ * when the database is replaced (`forgetMergedPeers`), rewritten by every full
+ * push, advanced only after the mailbox accepted a send.
+ *
+ * Missing means "send the full payload", never "send everything as a delta".
+ */
+const SENT_KEY = "hashigo.sync.sent";
+
+function readSent(): string | null {
+  try {
+    const held = localStorage.getItem(SENT_KEY);
+    return held === null || held === "" ? null : held;
+  } catch {
+    return null;
+  }
+}
+
+function writeSent(index: string | undefined): void {
+  try {
+    if (index === undefined) localStorage.removeItem(SENT_KEY);
+    else localStorage.setItem(SENT_KEY, index);
+  } catch {
+    // A fingerprint that could not be replaced must not survive as the OLD one: a
+    // value edited back to what it was then would compare equal and never leave.
+    try {
+      localStorage.removeItem(SENT_KEY);
+    } catch {
+      /* storage off: the next edit sends the full payload */
+    }
+  }
 }
 
 /**
@@ -180,7 +248,7 @@ export function markFullDirty(): void {
  */
 let onDirty: (() => void) | null = null;
 
-export function whenFullDirty(listener: () => void): void {
+export function whenEdited(listener: () => void): void {
   onDirty = listener;
 }
 
@@ -205,8 +273,11 @@ export function forgetMergedPeers(): void {
   try {
     localStorage.removeItem(MERGED_KEY);
     localStorage.removeItem(MERGED_DELTA_KEY);
+    localStorage.removeItem(MERGED_ENTRIES_KEY);
     // 印は端末内の行番号なので、データベースが替われば意味を失う。
     localStorage.removeItem(MARK_KEY);
+    // So does the fingerprint of what the old database sent.
+    localStorage.removeItem(SENT_KEY);
   } catch {
     /* nothing to forget */
   }
@@ -546,6 +617,16 @@ function baseChanged(peer: PeerRow): boolean {
   return peer.noPayload !== true && readMerged()[peer.deviceId] !== versionOf(peer);
 }
 
+/** A delta entry that carries edits (decision 64), read without trusting its shape. */
+function carriesEdits(entry: unknown): boolean {
+  const edits = (entry as { edits?: unknown } | null)?.edits;
+  return (
+    edits !== null &&
+    typeof edits === "object" &&
+    Object.values(edits as Record<string, unknown>).some((list) => Array.isArray(list) && list.length > 0)
+  );
+}
+
 function deltaChanged(peer: PeerRow): boolean {
   if (peer.delta === undefined) return false;
   // sha の無い差分は無い（mailbox が必ず付ける）が、無ければ毎回取る側に倒す。
@@ -553,10 +634,19 @@ function deltaChanged(peer: PeerRow): boolean {
 }
 
 export interface SyncPorts {
-  /** Ask the worker for this device's payload, and the mark it covers. */
-  exportPayload(): Promise<{ json: string; bytes: number; mark?: number }>;
-  /** 印より後の採点だけ。無ければ（古いポート）差分は送らず全体を送る。 */
-  exportDelta?(after: number): Promise<{ json: string; bytes: number; mark: number; count: number }>;
+  /** Ask the worker for this device's payload, the mark it covers and its fingerprint. */
+  exportPayload(): Promise<{ json: string; bytes: number; mark?: number; index?: string }>;
+  /**
+   * 印より後の採点だけ。無ければ（古いポート）差分は送らず全体を送る。
+   * With `sent`, also every edit since that fingerprint, and the new fingerprint
+   * in `index` (decision 64).
+   */
+  exportDelta?(
+    after: number,
+    sent?: string,
+  ): Promise<{ json: string; bytes: number; mark: number; count: number; edits?: number; index?: string }>;
+  /** The fingerprint of the database as it is now, without the payload text. */
+  exportIndex?(): Promise<string>;
   /** Hand the worker a peer's payload to merge. */
   mergePayload(payload: unknown): Promise<{
     reviewsAdded: number;
@@ -656,10 +746,16 @@ export async function syncNow(
   const failures: string[] = [];
   const merged = readMerged();
   const mergedDelta = readMergedDelta();
+  const mergedEntries = readMergedEntries();
   const save = (): void => {
     writeMerged(merged);
     writeMergedDelta(mergedDelta);
+    writeMergedEntries(mergedEntries);
   };
+  // Did anything merged here carry another device's EDITS (a base, or a delta
+  // with `edits`)? Then this device's fingerprint no longer describes its own
+  // database, and is re-taken below.
+  let mergedEdits = false;
   const take = (result: Awaited<ReturnType<SyncPorts["mergePayload"]>>): void => {
     carryMark(result);
     reviewsAdded += result.reviewsAdded;
@@ -704,6 +800,7 @@ export async function syncNow(
       if (item.base) {
         const { payload, sha } = await download(`/sync/${peer.deviceId}`, peer.bytes);
         await merge(payload, peer.bytes);
+        mergedEdits = true;
         // sha があれば「マージした中身」の sha（KV の遅れ対策、上の MERGED_KEY 参照）。
         // 無い古い枠は一覧の鍵で — そういう枠はもう書き換えられないので遅れは起きない。
         if (sha !== null) merged[peer.deviceId] = sha;
@@ -716,10 +813,26 @@ export async function syncNow(
         report("merging", index + 1);
         const mergeFrom = performance.now();
         // 一つずつ、積まれた順に。どれも冪等なので、全体と重なっていても壊れない。
-        for (const entry of entries) take(await ports.mergePayload(entry));
+        //
+        // But only the entries not merged here before (decision 64). The stack is
+        // re-downloaded whole whenever it grows, and before edits rode it, every
+        // edit's full push emptied it; now a stack lives until it fills (512 KB),
+        // ~100 entries, and re-merging all of them on every open is a full table
+        // scan per entry. An entry is named by the hash of its own text, so the
+        // record holds exactly the entries still in the stack.
+        const seen = new Set(mergedEntries[peer.deviceId] ?? []);
+        const names: string[] = [];
+        for (const entry of entries) {
+          const name = hashText(JSON.stringify(entry));
+          names.push(name);
+          if (seen.has(name)) continue;
+          take(await ports.mergePayload(entry));
+          if (carriesEdits(entry)) mergedEdits = true;
+        }
         mergeMs += performance.now() - mergeFrom;
         mergedBytes += size;
         if (sha !== null) mergedDelta[peer.deviceId] = sha;
+        mergedEntries[peer.deviceId] = names;
       }
       peersMerged += 1;
     } catch (error) {
@@ -739,6 +852,28 @@ export async function syncNow(
   // Only after the loop, and only the peers that merged: a failure is retried next time.
   save();
 
+  // ─── RE-TAKE THE FINGERPRINT, OR THE NEXT EDIT SENDS THE PEERS' EDITS BACK ──
+  //
+  // Decision 64. The merge just wrote other devices' cards into this database, so
+  // its next edit delta would see every one of them as changed here and carry
+  // them back — harmless (the merge is idempotent) but it is the laptop's new
+  // cards riding the phone's first Reading flip, and past 64 KB that forces a
+  // full push. So when NOTHING local is unsent, the database is exactly "what this
+  // device sent, plus what it was sent", and its fingerprint is the right one to
+  // keep. The edit flag is read again after the export: an edit that arrived in
+  // between is in the export but not in the mailbox, and must not be marked sent.
+  // Before the push below, which with nothing unsent is grades only (or nothing)
+  // and so would not re-take it either.
+  if (
+    mergedEdits &&
+    ports.exportIndex !== undefined &&
+    readDirty() === null &&
+    readSent() !== null
+  ) {
+    const index = await ports.exportIndex();
+    if (readDirty() === null) writeSent(index);
+  }
+
   // 起動時は送らない（`push: false`）。受け取る側は「最初のカードの前」に済ませる
   // 必要があるが、送る側は彼を待たせる理由が無い — 起動後に裏で `pushNow` が送る。
   let sendMs = timing.sendMs;
@@ -746,7 +881,7 @@ export async function syncNow(
   if (options.push !== false) {
     report("sending", 0);
     const sendFrom = performance.now();
-    pushedBytes = await putFull(ports, self);
+    pushedBytes = (await pushSmallest(ports, self, false)).bytes;
     sendMs = performance.now() - sendFrom;
   }
 
@@ -923,6 +1058,9 @@ async function putFull(ports: SyncPorts, self: string): Promise<number> {
   });
   if (!put.ok) throw new Error(`the mailbox refused this device's payload (${put.status})`);
   if (mine.mark !== undefined) writeMark(mine.mark);
+  // The fingerprint of exactly this payload, or none: an older one kept past a
+  // full push would describe a base the mailbox no longer holds.
+  writeSent(mine.index);
   clearDirty(dirty);
   writeLastPushed(new Date().toISOString());
   return mine.bytes;
@@ -931,14 +1069,21 @@ async function putFull(ports: SyncPorts, self: string): Promise<number> {
 /** `keepalive` の本文上限は 64 KB。少し手前で切る。 */
 const KEEPALIVE_MAX_BYTES = 60 * 1024;
 
+/** The mailbox refuses a delta POST over 64 KB (`cloud/mailbox/src/mailbox.ts`). */
+const DELTA_MAX_BYTES = 64 * 1024;
+
 export type PushKind = "delta" | "full" | "nothing";
 
 /**
  * 採点を送る — 差分で送れるなら差分、送れないなら全体。2026-10-10。
  *
- * 全体になるのは：まだ一度も全体を送っていない（印が無い）、採点以外の書き込み
- * があった（`markFullDirty`）、mailbox が差分を受けない（ローカルの開発用 mailbox
- * は 404/405、差分が積もりすぎたら 413）。
+ * 全体になるのは：まだ一度も全体を送っていない（印が無い）、mailbox が差分を受けない
+ * （ローカルの開発用 mailbox は 404/405、差分が積もりすぎたら 413）。
+ *
+ * Since decision 64 (2026-11-10) an EDIT (`markEdited`) no longer forces the full
+ * payload: the delta carries the edited rows too, diffed against the fingerprint
+ * of what this device last sent. Full only when there is no fingerprint yet, or
+ * the delta would not fit the mailbox's 64 KB.
  *
  * `keepalive`: ページが隠れる瞬間（タブレットを閉じた）に呼ぶ。その時は差分しか
  * 送らない — 全体は 64 KB を超えるので `keepalive` が使えず、走り切らない送信を
@@ -950,23 +1095,54 @@ export async function pushGradesNow(
   ports: SyncPorts,
   options: { readonly keepalive?: boolean } = {},
 ): Promise<PushKind> {
-  const self = deviceId();
+  return (await pushSmallest(ports, deviceId(), options.keepalive === true)).kind;
+}
+
+/**
+ * The push itself: a delta when one can carry everything unsent, the full payload
+ * when it cannot. Shared by the automatic push and the sync button — before
+ * decision 64 the button always sent the full payload, so pressing it on the
+ * laptop would have undone the saving for every other device.
+ */
+async function pushSmallest(
+  ports: SyncPorts,
+  self: string,
+  onHide: boolean,
+): Promise<{ readonly kind: PushKind; readonly bytes: number }> {
   const mark = readMark();
-  const dirty = readDirty() !== null;
-  if (ports.exportDelta === undefined || mark === null || (dirty && options.keepalive !== true)) {
-    if (options.keepalive === true) return "nothing";
-    await putFull(ports, self);
-    return "full";
+  const dirtySeen = readDirty();
+  const nothing = { kind: "nothing", bytes: 0 } as const;
+  // DECISION 64: an edit rides the delta too, diffed against the fingerprint of
+  // what this device last sent. Not on hide: the edit half needs a full export,
+  // and a keepalive send stays the few-KB grade tail it was built for — an edit
+  // made just before closing goes out with the next open (`pushAfterBoot`).
+  const sent = dirtySeen !== null && !onHide ? readSent() : null;
+  const full = async (): Promise<{ readonly kind: PushKind; readonly bytes: number }> => {
+    if (onHide) return nothing;
+    return { kind: "full", bytes: await putFull(ports, self) };
+  };
+  // Full when there is nothing to stack a delta on: no mark, an older port, or an
+  // edit with no fingerprint to diff it against.
+  if (ports.exportDelta === undefined || mark === null || (dirtySeen !== null && !onHide && sent === null)) {
+    return await full();
   }
-  const delta = await ports.exportDelta(mark);
-  if (delta.count === 0) {
-    if (!dirty) return "nothing";
-    if (options.keepalive === true) return "nothing";
-    await putFull(ports, self);
-    return "full";
+  const delta = await ports.exportDelta(mark, sent ?? undefined);
+  // A port that was given a fingerprint and returned none could not compute the
+  // edits; sending its grades alone would leave the edit marked unsent for ever.
+  if (sent !== null && delta.index === undefined) return await full();
+  const edits = delta.edits ?? 0;
+  if (delta.count === 0 && edits === 0) {
+    // Nothing new to send. An edit that changed no row a peer receives (or one
+    // already sent) is settled here: keep its fingerprint, clear the flag.
+    if (sent !== null) {
+      writeSent(delta.index);
+      clearDirty(dirtySeen);
+    }
+    return nothing;
   }
-  const keepalive = options.keepalive === true && delta.bytes <= KEEPALIVE_MAX_BYTES;
-  if (options.keepalive === true && !keepalive) return "nothing";
+  if (!onHide && delta.bytes > DELTA_MAX_BYTES) return await full();
+  const keepalive = onHide && delta.bytes <= KEEPALIVE_MAX_BYTES;
+  if (onHide && !keepalive) return nothing;
   const response = await reach(`/sync/${self}/delta`, {
     method: "POST",
     body: delta.json,
@@ -974,14 +1150,16 @@ export async function pushGradesNow(
     ...(keepalive ? { keepalive: true } : {}),
   });
   if (response.status === 404 || response.status === 405 || response.status === 413) {
-    if (options.keepalive === true) return "nothing";
-    await putFull(ports, self);
-    return "full";
+    return await full();
   }
   if (!response.ok) throw new Error(`the mailbox refused this device's grades (${response.status})`);
   writeMark(delta.mark);
+  if (sent !== null) {
+    writeSent(delta.index);
+    clearDirty(dirtySeen);
+  }
   writeLastPushed(new Date().toISOString());
-  return "delta";
+  return { kind: "delta", bytes: delta.bytes };
 }
 
 /**

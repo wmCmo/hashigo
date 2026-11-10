@@ -112,8 +112,21 @@ import {
 import type { SqliteHandle } from "../db/browser.js";
 import { retiredHashes, writeRetired } from "../blobs/retire.js";
 
-/** Bumped only for a change a peer could not otherwise survive. */
-export const SYNC_VERSION = 1;
+/**
+ * Bumped only for a change a peer could not otherwise survive.
+ *
+ * 2 (decision 64, 2026-11-10): a delta may carry EDITS. A version-1 device would
+ * read such a delta as grades only, record it as merged and never look again — a
+ * lost edit with nothing on screen to say so. At 2 it refuses the payload loudly
+ * instead, until it updates. The other direction is safe and is accepted: a
+ * version-1 payload is a version-2 payload with no edits in its deltas, so the
+ * slots in the mailbox written before the bump (old devices, tool slots) still
+ * merge. `OLDEST_SYNC_VERSION` is that floor.
+ */
+export const SYNC_VERSION = 2;
+
+/** The oldest payload this device can merge exactly. See `SYNC_VERSION`. */
+export const OLDEST_SYNC_VERSION = 1;
 
 /**
  * One card's collection flags, with the clock that resolves a conflict.
@@ -406,7 +419,11 @@ export function exportSync(db: SqliteHandle, createdAt: string): SyncPayload {
  * which is how a backup path grows a sync bug.
  */
 export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
-  if (remote.syncVersion !== SYNC_VERSION) {
+  if (
+    typeof remote.syncVersion !== "number" ||
+    remote.syncVersion > SYNC_VERSION ||
+    remote.syncVersion < OLDEST_SYNC_VERSION
+  ) {
     throw new Error(
       `sync payload is version ${remote.syncVersion}; this device speaks ${SYNC_VERSION}. ` +
         `Update both devices rather than merging across versions.`,

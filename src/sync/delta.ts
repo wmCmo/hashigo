@@ -36,7 +36,8 @@ import {
   type ArchivedTrackState,
 } from "../backup/archive.js";
 import type { SqliteHandle } from "../db/browser.js";
-import { SYNC_VERSION, type SyncPayload } from "./merge.js";
+import { exportSync, SYNC_VERSION, type SyncPayload } from "./merge.js";
+import { editsSince, noEdits, type SentIndex, type SyncEdits } from "./sent.js";
 
 export interface SyncDelta {
   readonly syncVersion: number;
@@ -47,6 +48,12 @@ export interface SyncDelta {
   readonly reviews: readonly ArchivedReview[];
   /** 上の採点が触った軌道の、今の状態。 */
   readonly trackState: readonly ArchivedTrackState[];
+  /**
+   * Everything else that changed since this device last sent — decision 64,
+   * `./sent.ts`. Absent on a grade-only delta, and on every delta before
+   * SYNC_VERSION 2.
+   */
+  readonly edits?: SyncEdits;
 }
 
 const SELECT_NEW_REVIEWS = `
@@ -90,6 +97,27 @@ export function exportDelta(db: SqliteHandle, after: number): SyncDelta {
   return { syncVersion: SYNC_VERSION, delta: 1, mark, reviews, trackState };
 }
 
+/**
+ * The grades after `after`, PLUS every row whose group changed since the
+ * fingerprint `sent` — decision 64. Returns the fingerprint to keep once the
+ * delta has been delivered; until then the caller keeps the old one, so a send
+ * that fails is simply recomputed next time.
+ *
+ * This is a full export followed by a diff, and that is deliberate: the export is
+ * what the full push did anyway, so an edit push costs less than it did before —
+ * the same CPU, and a few KB on the wire instead of the whole base.
+ */
+export function exportEditDelta(
+  db: SqliteHandle,
+  after: number,
+  sent: SentIndex,
+  createdAt: string,
+): { readonly delta: SyncDelta; readonly index: Record<string, string>; readonly rows: number } {
+  const grades = exportDelta(db, after);
+  const { edits, rows, index } = editsSince(exportSync(db, createdAt), sent);
+  return { delta: rows === 0 ? grades : { ...grades, edits }, index, rows };
+}
+
 export function isDelta(value: unknown): value is SyncDelta {
   return (
     value !== null &&
@@ -108,6 +136,7 @@ export function isDelta(value: unknown): value is SyncDelta {
  * 声なし」と読まれて誰かの設定を消すから。
  */
 export function deltaPayload(delta: SyncDelta, createdAt: string): SyncPayload {
+  if (!noEdits(delta.edits)) return editPayload(delta, delta.edits as SyncEdits, createdAt);
   return {
     syncVersion: delta.syncVersion,
     archive: {
@@ -135,5 +164,47 @@ export function deltaPayload(delta: SyncDelta, createdAt: string): SyncPayload {
     },
     cardFlags: [],
     deckFlags: [],
+  };
+}
+
+/**
+ * A delta that carries edits, as a payload — decision 64. The same shape as a full
+ * payload holding only the changed groups (`./sent.ts` says why a subset merges
+ * exactly as the whole would have merged those rows).
+ *
+ * `voicesCarried` IS set here, unlike the grade-only wrapper above: these flag
+ * rows come whole from `exportSync`, which always carries voices, so a row with no
+ * `voice` really means none. A flag row that is not in the list is not touched.
+ */
+function editPayload(delta: SyncDelta, edits: SyncEdits, createdAt: string): SyncPayload {
+  return {
+    syncVersion: delta.syncVersion,
+    archive: {
+      archiveVersion: ARCHIVE_VERSION,
+      schemaVersion: 0,
+      createdAt,
+      reviews: delta.reviews,
+      trackState: delta.trackState,
+      localFields: edits.localFields,
+      templates: edits.templates,
+      localCards: edits.localCards,
+      fieldValues: edits.fieldValues,
+      settings: edits.settings,
+      cardState: edits.cardState,
+      counts: {
+        reviews: delta.reviews.length,
+        trackState: delta.trackState.length,
+        localFields: edits.localFields.length,
+        localCards: edits.localCards.length,
+        templates: edits.templates.length,
+        fieldValues: edits.fieldValues.length,
+        settings: edits.settings.length,
+        cardState: edits.cardState.length,
+      },
+    },
+    cardFlags: edits.cardFlags,
+    deckFlags: edits.deckFlags,
+    voicesCarried: true,
+    retiredClips: edits.retiredClips,
   };
 }
