@@ -627,6 +627,30 @@ describe("answerAt — grading out of order", () => {
     db.close();
   });
 
+  it("KEEPS GOING FORWARD — after grading at N, peek(N) is the card that followed it", () => {
+    // Zach, 2026-11-10: arrow forward, grade that card, and the screen *"jumps back
+    // to the orignal card before you went forward, it shouldn't have"*. The screen
+    // now keeps its offset after a grade, which is only right if the session puts
+    // the NEXT card in order there — and the skipped ones, in order, at the cursor.
+    const { db } = fixture(6, 0);
+    const session = buildSession(db, { now: AT, newLimit: 0 });
+    const order = session.planned().map((i) => i.trackId);
+
+    // He is on order[0]; arrows forward twice to order[2] and grades it.
+    session.answerAt(2, true, { at: AT });
+    expect(session.peek(2)?.trackId).toBe(order[3]);
+    // The two he skipped wait at the cursor, in the order he passed them.
+    expect(session.peek(0)?.trackId).toBe(order[0]);
+    expect(session.peek(1)?.trackId).toBe(order[1]);
+
+    // Grade again from the same offset: still forward, never back.
+    session.answerAt(2, false, { at: AT });
+    expect(session.peek(2)?.trackId).toBe(order[4]);
+    expect(session.peek(0)?.trackId).toBe(order[0]);
+    expect(session.peek(1)?.trackId).toBe(order[1]);
+    db.close();
+  });
+
   it("answerAt(0) is answer() — one path, so the two cannot drift", () => {
     const { db } = fixture(3, 0);
     const session = buildSession(db, { now: AT, newLimit: 0 });

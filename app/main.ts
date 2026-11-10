@@ -1110,7 +1110,7 @@ function paintReplay(state: "none" | "ready" | "missing"): void {
 /**
  * The look-ahead banner, and which half of it is gradable.
  *
- * AHEAD grades normally. `answerAt` swaps the card he is reading into the cursor
+ * AHEAD grades normally. `answerAt` moves the card he is reading to the cursor
  * first, so the screen and `plan[cursor]` cannot disagree — that is what makes a
  * live grade safe here, and the hazard it closes is the one the inline note below
  * records. BEHIND does not grade: those cards are answered, and a second review
@@ -1150,10 +1150,10 @@ function paintPeek(): void {
 /**
  * Show the card the SESSION is on, clearing any look-ahead.
  *
- * Every caller outside the arrows means this: after a grade, after an undo, after
- * an operation moved the cursor, at boot. Keeping it a separate name from
- * `showCardAt` is what stops "advance the session" and "look at a neighbour" being
- * the same call — they were, and the offset survived a grade.
+ * Every caller outside the arrows and `grade` means this: after an undo, after an
+ * operation moved the cursor, at boot. A grade made while looking ahead KEEPS its
+ * offset on purpose (2026-11-10, see `grade`) — that is the one place the offset
+ * outlives a write, and it is `answerAt`'s rotation that makes it the right card.
  */
 async function showSessionCard(): Promise<void> {
   peekOffset = 0;
@@ -2595,9 +2595,12 @@ async function grade(remembered: boolean): Promise<void> {
   const durationMs = Math.round(performance.now() - shownAt);
   forgotButton.disabled = true;
   rememberedButton.disabled = true;
+  // Read once: an arrow press while the grade is in flight must not change which
+  // offset the screen lands on afterwards.
+  const offset = peekOffset;
   try {
     // The offset travels WITH the grade. He can be reading a card ahead of the
-    // cursor — that is the point of the arrows — and the worker swaps it into
+    // cursor — that is the point of the arrows — and the worker moves it into
     // place before grading, so the card he read is the card that is graded.
     const reply = await ask<"answer">({
       kind: "answer",
@@ -2610,9 +2613,12 @@ async function grade(remembered: boolean): Promise<void> {
       paintPeek();
       return;
     }
-    // Graded: the swap put that card at the cursor and the cursor advanced, so
-    // the screen is back in step with the session.
-    peekOffset = 0;
+    // Graded. The SAME offset is now the card that came after the one he graded
+    // (`answerAt` rotates, so the cards he skipped wait, in order, at the cursor).
+    // Zach, 2026-11-10: grading a card he had arrowed to *"jumps back to the
+    // orignal card before you went forward, it shouldn't have"* — this used to
+    // reset to 0. From the cursor (offset 0) it is the ordinary advance.
+    peekOffset = offset;
     if (reply.graded && reply.dueAt !== null) {
       line(
         `graded · due ${reply.dueAt.slice(0, 10)} · ${reply.writeMs.toFixed(1)} ms write · ` +
@@ -2639,7 +2645,9 @@ async function grade(remembered: boolean): Promise<void> {
         await showSessionCard();
       },
     });
-    await showSessionCard();
+    // NOT `showSessionCard` — that would clear the offset just kept. Running off
+    // the end of the plan is handled in `showCardAt`: back to the skipped card.
+    await showCardAt();
   } finally {
     forgotButton.disabled = false;
     rememberedButton.disabled = false;

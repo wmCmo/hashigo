@@ -349,8 +349,8 @@ function toItem(track: QueuedTrack, origin: "due" | "new"): SessionItem {
 export class ReviewSession {
   private readonly db: SqliteHandle;
   /**
-   * MUTABLE, and only `answerAt` may reorder it — see that method for why a swap
-   * is the whole mechanism. Length never changes, so every index-derived figure
+   * MUTABLE, and only `answerAt` may reorder it — see that method for why a
+   * rotation is the whole mechanism. Length never changes, so every index-derived figure
    * in `progress()` keeps meaning what it meant.
    */
   private readonly plan: SessionItem[];
@@ -469,16 +469,21 @@ export class ReviewSession {
    * write a review against the wrong track — but locking the buttons treated the
    * symptom. The cause is that the screen and the cursor were allowed to disagree.
    *
-   * ─── THE MECHANISM IS A SWAP, AND THAT IS WHY IT IS SAFE ────────────────────
+   * ─── THE MECHANISM IS A ROTATION, AND THAT IS WHY IT IS SAFE ────────────────
    *
-   * Grading at offset N swaps `plan[cursor]` and `plan[cursor + N]`, then grades
-   * normally at the cursor. So:
+   * Grading at offset N lifts `plan[cursor + N]` out and sets it at the cursor
+   * (everything between shifts one along), then grades normally at the cursor. So:
    *
    *   · the card he is reading is the card that gets graded — by construction,
    *     not by a second code path that could drift from `answer()`;
-   *   · NOTHING IS LOST. The card he arrowed past takes the vacated slot and he
-   *     reaches it later. A "skip forward" that advanced the cursor would drop it
-   *     out of the session silently, which is the failure `skipCurrent` documents;
+   *   · NOTHING IS LOST. The cards he arrowed past stay in the plan, in order, at
+   *     the advanced cursor, and he reaches them later. A "skip forward" that
+   *     advanced the cursor would drop them out of the session silently, which is
+   *     the failure `skipCurrent` documents;
+   *   · HE KEEPS GOING FORWARD. After the grade, `peek(N)` is the card that came
+   *     after the one he graded, so the screen stays at the same offset. Zach,
+   *     2026-11-10: grading a card he had arrowed to *"jumps back to the orignal
+   *     card … it shouldn't have"* — the screen used to return to the cursor;
    *   · the plan's LENGTH never changes, so `planned`, `answered`, `remaining`
    *     and every other index-derived figure keep meaning what they meant;
    *   · `unanswer` needs no special case. The grade happened at the cursor like
@@ -509,10 +514,15 @@ export class ReviewSession {
     }
     if (this.cursor >= this.plan.length) return { refused: "nothing-there" };
 
-    const here = this.plan[this.cursor] as SessionItem;
-    const there = this.plan[at] as SessionItem;
-    this.plan[this.cursor] = there;
-    this.plan[at] = here;
+    // A ROTATION, not a swap — 2026-11-10. The swap put the card at the cursor into
+    // the target's slot, so after grading the second card ahead the skipped two
+    // came back reversed. Lifting the target out and setting it at the cursor keeps
+    // every skipped card in its order AND keeps the card that followed the target at
+    // the same offset from the advanced cursor — which is what lets the screen carry
+    // on forward instead of jumping back (see `grade` in app/main.ts). For offset 1
+    // the two are the same move.
+    const [there] = this.plan.splice(at, 1) as [SessionItem];
+    this.plan.splice(this.cursor, 0, there);
 
     return this.answer(remembered, options);
   }
