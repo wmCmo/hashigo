@@ -24,7 +24,7 @@ from starting at all (reverted). Decision 49 had already retired "no cloud".
 **Secrets** (Worker secret store only): `MAILBOX_TOKEN`, `GOOGLE_TTS_SECRET`,
 `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, and on `hashigo` also `UNLOCK_HASH` + `COOKIE_KEY`.
 **`GEMINI_API_KEY` is the text-provider switch** (2026-11-10): present, 例文 / emoji /
-translate lines come from `gemini-3.8-flash` (free tier, thinking HIGH); absent, from
+translate lines come from `gemini-3.6-flash` (free tier, thinking HIGH; `HASHIGO_GEMINI_MODEL` overrides); absent, from
 Anthropic. Put it on BOTH Workers — `hashigo` serves the phone and the laptop app,
 `hashigo-mailbox` the tailnet build — with `npx wrangler@4 secret put GEMINI_API_KEY` in
 `cloud/app/` and `cloud/mailbox/`. `secret delete` switches back. `.env` holds

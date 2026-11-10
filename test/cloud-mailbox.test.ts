@@ -312,8 +312,8 @@ describe("which provider writes the text", () => {
     const e = { ...env(), ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" };
     const [status, body] = await generate(ask as never, e, { generateText: write as never });
     expect(status).toBe(200);
-    expect(chosen).toMatchObject({ provider: "gemini", apiKey: "g", model: "gemini-3.8-flash" });
-    expect(body).toMatchObject({ provider: "gemini", model: "gemini-3.8-flash", cached: false });
+    expect(chosen).toMatchObject({ provider: "gemini", apiKey: "g", model: "gemini-3.6-flash" });
+    expect(body).toMatchObject({ provider: "gemini", model: "gemini-3.6-flash", cached: false });
     expect(textProvider({ ...env(), GEMINI_API_KEY: "g", HASHIGO_GEMINI_MODEL: "gemini-x" })?.model).toBe("gemini-x");
   });
 
@@ -327,7 +327,7 @@ describe("which provider writes the text", () => {
   it("stores nothing when the provider throws — a cut-off sentence is never cached", async () => {
     const e = { ...env(), GEMINI_API_KEY: "g" };
     const write = async (): Promise<string> => {
-      throw new Error("gemini-3.8-flash did not finish (finishReason=MAX_TOKENS) — nothing is stored");
+      throw new Error("gemini-3.6-flash did not finish (finishReason=MAX_TOKENS) — nothing is stored");
     };
     await expect(generate(ask as never, e, { generateText: write })).rejects.toThrow(/MAX_TOKENS/);
     expect(e.MAILBOX.data.size).toBe(0);

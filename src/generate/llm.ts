@@ -300,6 +300,17 @@ async function viaAnthropic(descriptor: LlmDescriptor, options: LlmOptions): Pro
  * 発振を得る」); at MEDIUM they were plainer. So HIGH, and it costs nothing but
  * seconds and free-tier quota.
  *
+ * **THE MODEL IS `gemini-3.6-flash`, NOT 3.8 (same day, after deploying).**
+ * Through the live Worker 3.8 Flash never answered: two 503 "high demand", three
+ * 524 timeouts at ~125 s. 3.6 Flash, same key, same prompt, thinking HIGH, gave
+ * all twelve in 5–15 s, natural and correct (発振: 「この回路は特定の周波数で安定
+ * して発振する」; 佳境: 「物語はいよいよ佳境に入り、目が離せない展開になってきた」).
+ * The free tier's per-minute cap answered 429 after 7 requests in a few seconds;
+ * spaced 15 s apart the rest went through — one card asks for three texts, so a
+ * burst of new cards will see "try again" on a few fields, filled next showing.
+ * The model is the Worker's default (`cloud/mailbox/src/generate.ts`); the
+ * `HASHIGO_GEMINI_MODEL` secret overrides it without a deploy.
+ *
  * `finishReason` MUST be STOP. The playground cut its answer off mid-sentence
  * twice in that test (「拝見 お送りいた」); a truncated sentence cached here would
  * be drilled — as audio and as OJAD marks — for good. Anything else throws, and

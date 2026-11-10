@@ -1219,10 +1219,10 @@ describe("the Gemini provider", () => {
     };
     const descriptor = { kind: "ai", text: "Example sentence using 佳境 in Japanese (Don't translate)", options: {} };
     const out = await generateText(descriptor, {
-      provider: "gemini", apiKey: "k", model: "gemini-3.8-flash", maxTokens: 256, fetch: fake as never,
+      provider: "gemini", apiKey: "k", model: "gemini-3.6-flash", maxTokens: 256, fetch: fake as never,
     });
     expect(out).toBe("物語はいよいよ佳境に入った。");
-    expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent");
+    expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent");
     expect(headers["x-goog-api-key"]).toBe("k");
     expect(seen["contents"]).toEqual([{ role: "user", parts: [{ text: descriptor.text }] }]);
     expect(seen["systemInstruction"]).toEqual({ parts: [{ text: systemPrompt(descriptor) }] });
@@ -1236,7 +1236,7 @@ describe("the Gemini provider", () => {
     const fake = ok([{ text: "Let me pick a context…", thought: true }, { text: "回路が異常な発振を起こしている。" }]);
     const out = await generateText(
       { kind: "ai", text: "Example sentence using 発振 in Japanese (Don't translate)", options: {} },
-      { provider: "gemini", apiKey: "k", model: "gemini-3.8-flash", maxTokens: 256, fetch: fake as never },
+      { provider: "gemini", apiKey: "k", model: "gemini-3.6-flash", maxTokens: 256, fetch: fake as never },
     );
     expect(out).toBe("回路が異常な発振を起こしている。");
   });
@@ -1246,7 +1246,7 @@ describe("the Gemini provider", () => {
     await expect(
       generateText(
         { kind: "ai", text: "Example sentence using 拝見 in Japanese (Don't translate)", options: {} },
-        { provider: "gemini", apiKey: "k", model: "gemini-3.8-flash", maxTokens: 256, fetch: fake as never },
+        { provider: "gemini", apiKey: "k", model: "gemini-3.6-flash", maxTokens: 256, fetch: fake as never },
       ),
     ).rejects.toThrow(/finishReason=MAX_TOKENS/);
   });

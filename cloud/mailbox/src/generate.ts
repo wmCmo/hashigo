@@ -60,7 +60,7 @@ export interface GenerateEnv {
   readonly HASHIGO_GEMINI_MODEL?: string;
 }
 
-const GEMINI_MODEL = "gemini-3.8-flash";
+const GEMINI_MODEL = "gemini-3.6-flash";
 
 /**
  * WHO WRITES THE TEXT: Gemini when its key is on the Worker, else Anthropic.
