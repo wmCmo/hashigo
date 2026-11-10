@@ -1,7 +1,7 @@
 /**
- * MAKE A RELEASE — decision 59. Every deploy is one.
+ * MAKE A RELEASE — decisions 59 and 65. Every deploy is one.
  *
- *     npm run release -- patch                       # fixes only
+ *     npm run release -- patch                       # fixes and small features
  *     npm run release -- minor "what he can now do"  # a milestone
  *     npm run release -- patch --dry                 # say what it would do
  *

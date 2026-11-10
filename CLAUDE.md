@@ -323,7 +323,8 @@ give an honest opinion — and when he decides differently, record the new decis
     stays one card, and its forward/reverse schedules are untouched.
 59. **Every deploy is a release: `npm run release -- patch|minor`, then deploy.** Major
     stays 0 until 1.0 (RELEASE.md). Minor = a milestone, or any change to SCHEMA/SYNC/
-    ARCHIVE_VERSION (enforced). Patch = a fixes-only deploy — per DEPLOY, not per commit.
+    ARCHIVE_VERSION (enforced). Patch = every other deploy, fixes and small features
+    alike (decision 65) — per DEPLOY, not per commit.
     `app:build:cloud` refuses a commit that is not the tagged release; the tag's message
     is the changelog. Never write a changelog by hand.
 60. **A mode-2 単語 card shows its emoji on the question side**, unmasked, at the top of
@@ -352,6 +353,10 @@ give an honest opinion — and when he decides differently, record the new decis
     clock — no writer has to remember to stamp. The full payload only when there is
     no fingerprint, or the delta passes 64 KB; the sync button follows the same rule.
     One new card: 5.31 MB base → 784 B. `SYNC_VERSION` 2; a v1 payload still merges.
+65. **A minor means "update every device" or a milestone; small features ship as
+    patches** — amends 59's "patch = fixes only". Four minors in twelve days (6.0 → 9.0)
+    were the wording's doing: *"it feels like we are releasing minor version every
+    other day lol"*. The contract rule stays enforced.
 
 ## The template answers most questions about the screen
 

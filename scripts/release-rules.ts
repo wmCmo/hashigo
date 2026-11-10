@@ -7,10 +7,11 @@
  *
  *   major   0 until 1.0 — RELEASE.md: "he could hand a friend the link and
  *           explain nothing". A bump to 1 must be asked for by name.
- *   minor   a milestone: something new he can do, OR anything both devices must
+ *   minor   a milestone he would tell a friend about, OR anything both devices must
  *           update for — a change to SCHEMA_VERSION, SYNC_VERSION or
  *           ARCHIVE_VERSION. That second half is checked, not trusted.
- *   patch   a deploy that only fixes things. One per DEPLOY, not per commit: the
+ *   patch   every other deploy — fixes AND small features (decision 65, which
+ *           amends 59's "only fixes things"). One per DEPLOY, not per commit: the
  *           build commit in Settings already tells one build from the next; the
  *           version says which release a device is on.
  *

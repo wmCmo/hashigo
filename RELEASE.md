@@ -30,9 +30,9 @@ Results:
 
 - *(none yet — the first check runs 2026-11-27)*
 
-## How the version moves (decision 59, 2026-10-31)
+## How the version moves (decisions 59 and 65, 2026-10-31 and 2026-11-11)
 
-**Every deploy is a release.** `npm run release -- patch` (fixes only) or
+**Every deploy is a release.** `npm run release -- patch` (fixes and small features) or
 `npm run release -- minor "what he can now do"` (a milestone), push the commit and the
 tag, then deploy. `npm run app:build:cloud` refuses anything else.
 
@@ -40,7 +40,7 @@ tag, then deploy. `npm run app:build:cloud` refuses anything else.
 |---|---|
 | major | stays **0** until 1.0 (below). Asked for by name: `--one-point-oh` |
 | minor | a milestone, OR a change to `SCHEMA_VERSION` / `SYNC_VERSION` / `ARCHIVE_VERSION` — both devices must update, and `release` refuses a patch for it |
-| patch | a deploy that only fixes things — per deploy, not per commit |
+| patch | every other deploy — fixes AND small features (decision 65) — per deploy, not per commit |
 
 **The changelog is the tags.** Each release's tag message lists every commit since the
 last one: `git tag -n99 v0.6.0`. Nothing here repeats it.

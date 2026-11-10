@@ -2751,6 +2751,30 @@ right**: it holds his verbatim reasoning and this quotes it.
     sending side pays a full export plus the diff (~306 ms on the laptop), which
     it paid before as the export, then also uploaded.
 
+65. **A MINOR MEANS "UPDATE EVERY DEVICE" OR A MILESTONE — SMALL FEATURES SHIP AS
+    PATCHES.** 2026-11-11, amending decision 59. Zach: *"it feels like we are
+    releasing minor version every other day lol"* — and he was close: v0.6.0
+    (30 Oct), v0.7.0 (5 Nov), v0.8.0 (10 Nov), v0.9.0 (11 Nov), four minors in
+    twelve days, the last two a day apart.
+
+    **The cause was the wording, not the work.** Decision 59 defined a patch as
+    "a deploy that ONLY fixes things", so any deploy that added anything had to be
+    a minor — v0.8.0 (example sentences from Gemini Flash) was one by that letter,
+    though it is no milestone. The other half of 59 is the part worth keeping:
+    v0.9.0 HAD to be a minor, because `SYNC_VERSION` moved and every device must
+    reload before it can merge again. That is a signal he acts on.
+
+    **Now:**
+
+    * **minor** — a change to `SCHEMA_VERSION` / `SYNC_VERSION` / `ARCHIVE_VERSION`
+      (still enforced: `release` refuses a patch for it), or a milestone: something
+      he would tell a friend the app can now do, named in the tag message.
+    * **patch** — every other deploy: fixes AND small features, one per deploy.
+
+    Nothing in the code changes: `scripts/release-rules.ts` only ever enforced the
+    contract rule. The judgement of "milestone" stays with whoever releases, and
+    the default for anything smaller is now a patch.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 listed ten of these; five were settled by later decisions. Zach
