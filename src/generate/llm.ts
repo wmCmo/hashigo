@@ -306,8 +306,9 @@ async function viaAnthropic(descriptor: LlmDescriptor, options: LlmOptions): Pro
  * all twelve in 5–15 s, natural and correct (発振: 「この回路は特定の周波数で安定
  * して発振する」; 佳境: 「物語はいよいよ佳境に入り、目が離せない展開になってきた」).
  * The free tier's per-minute cap answered 429 after 7 requests in a few seconds;
- * spaced 15 s apart the rest went through — one card asks for three texts, so a
- * burst of new cards will see "try again" on a few fields, filled next showing.
+ * spaced 15 s apart the rest went through. The daily cap is 20 per model, and
+ * his batch days need up to 177, so the Worker falls back to Claude Haiku when
+ * Gemini refuses (`textProviders` in `cloud/mailbox/src/generate.ts`).
  * The model is the Worker's default (`cloud/mailbox/src/generate.ts`); the
  * `HASHIGO_GEMINI_MODEL` secret overrides it without a deploy.
  *
@@ -321,14 +322,20 @@ async function viaAnthropic(descriptor: LlmDescriptor, options: LlmOptions): Pro
  */
 export const GEMINI_THINKING_LEVEL = "HIGH";
 const GEMINI_MIN_TOKENS = 8_192;
+/** Three times the slowest answer measured on 3.6 Flash (15 s); then the fallback runs. */
+export const GEMINI_TIMEOUT_MS = 45_000;
 const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta/models";
 
 async function viaGemini(descriptor: LlmDescriptor, options: LlmOptions): Promise<string> {
   const key = options.apiKey;
   if (key === undefined || key === "") throw new Error("no GEMINI_API_KEY");
   const call = options.fetch ?? globalThis.fetch;
+  // BOUNDED, because 3.8 Flash hung for ~125 s before Cloudflare gave up — time
+  // a fallback provider should be spending instead. 3.6 Flash took 5–15 s.
+  const timeout = AbortSignal.timeout(GEMINI_TIMEOUT_MS);
   const response = await call(`${GEMINI_API}/${encodeURIComponent(options.model)}:generateContent`, {
     method: "POST",
+    signal: timeout,
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: systemPrompt(descriptor) }] },
@@ -339,6 +346,9 @@ async function viaGemini(descriptor: LlmDescriptor, options: LlmOptions): Promis
         thinkingConfig: { thinkingLevel: GEMINI_THINKING_LEVEL },
       },
     }),
+  }).catch((cause: unknown) => {
+    if (timeout.aborted) throw new Error(`${options.model} gave no answer in ${GEMINI_TIMEOUT_MS / 1000} s`);
+    throw cause;
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");

@@ -196,7 +196,7 @@ describe("CORS, because the app is served from the laptop and this from workers.
 
 // ─── /generate/ on the Worker ────────────────────────────────────────────────
 
-import { generate, parse, textProvider } from "../cloud/mailbox/src/generate.js";
+import { generate, parse, textProvider, textProviders } from "../cloud/mailbox/src/generate.js";
 
 describe("generation on the Worker answers like the laptop, and keeps what it makes", () => {
   const fakeSpeech = async (): Promise<Uint8Array> => new Uint8Array([0xff, 0xfb, 1, 2, 3]);
@@ -318,7 +318,7 @@ describe("which provider writes the text", () => {
   });
 
   it("is Anthropic without it, and names both keys when neither is there", async () => {
-    expect(textProvider({ ...env(), ANTHROPIC_API_KEY: "a" })).toMatchObject({ provider: "anthropic", model: "claude-opus-5" });
+    expect(textProvider({ ...env(), ANTHROPIC_API_KEY: "a" })).toMatchObject({ provider: "anthropic", model: "claude-haiku-5-5" });
     const [status, body] = await generate(ask as never, env());
     expect(status).toBe(503);
     expect(body).toMatchObject({ error: expect.stringContaining("GEMINI_API_KEY") });
@@ -330,6 +330,58 @@ describe("which provider writes the text", () => {
       throw new Error("gemini-3.6-flash did not finish (finishReason=MAX_TOKENS) — nothing is stored");
     };
     await expect(generate(ask as never, e, { generateText: write })).rejects.toThrow(/MAX_TOKENS/);
+    expect(e.MAILBOX.data.size).toBe(0);
+  });
+});
+
+/**
+ * 2026-11-11: the free tier is 20 requests a day per model, and batch days need
+ * up to 177 — so a Gemini refusal falls through to Claude Haiku (`textProviders`).
+ */
+describe("when Gemini refuses, Claude Haiku answers", () => {
+  const ask = parse({ kind: "ai", text: "Example sentence using 均衡 in Japanese (Don't translate)", lang: null, voice: null, options: {} });
+  const both = () => ({ ...env(), ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" });
+
+  it("orders the chain Gemini first, then Haiku", () => {
+    expect(textProviders(both()).map((p) => `${p.provider}:${p.model}`)).toEqual([
+      "gemini:gemini-3.6-flash",
+      "anthropic:claude-haiku-5-5",
+    ]);
+  });
+
+  it("a quota refusal goes to Haiku, and Haiku's answer is what is stored", async () => {
+    const asked: string[] = [];
+    const write = async (_d: unknown, options: { provider: string }): Promise<string> => {
+      asked.push(options.provider);
+      if (options.provider === "gemini") throw new Error("gemini answered 429 — RESOURCE_EXHAUSTED");
+      return "輸出と輸入の均衡を保つことが重要である。";
+    };
+    const e = both();
+    const [status, body] = await generate(ask as never, e, { generateText: write as never });
+    expect(asked).toEqual(["gemini", "anthropic"]);
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ provider: "anthropic", model: "claude-haiku-5-5", text: "輸出と輸入の均衡を保つことが重要である。" });
+    const [key] = [...e.MAILBOX.data.keys()] as [string];
+    expect(JSON.parse(e.MAILBOX.data.get(key)?.value as string).output).toBe("輸出と輸入の均衡を保つことが重要である。");
+  });
+
+  it("an emoji line with no emoji in it goes to Haiku too", async () => {
+    const emoji = parse({ kind: "ai", text: "Describe a word 均衡 using emojis only", lang: null, voice: null, options: {} });
+    const write = async (_d: unknown, options: { provider: string }): Promise<string> =>
+      options.provider === "gemini" ? "Sure! Here it is:" : "⚖️";
+    const [status, body] = await generate(emoji as never, both(), { generateText: write as never });
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ provider: "anthropic", text: "⚖️" });
+  });
+
+  it("names every provider's failure when the whole chain fails, and stores nothing", async () => {
+    const e = both();
+    const write = async (_d: unknown, options: { provider: string }): Promise<string> => {
+      throw new Error(options.provider === "gemini" ? "gemini-3.6-flash gave no answer in 45 s" : "anthropic 529 overloaded");
+    };
+    await expect(generate(ask as never, e, { generateText: write as never })).rejects.toThrow(
+      /gave no answer in 45 s · then anthropic 529 overloaded/,
+    );
     expect(e.MAILBOX.data.size).toBe(0);
   });
 });

@@ -62,34 +62,57 @@ export interface GenerateEnv {
 
 const GEMINI_MODEL = "gemini-3.6-flash";
 
+export interface TextProvider {
+  readonly provider: "gemini" | "anthropic";
+  readonly apiKey: string;
+  readonly model: string;
+}
+
 /**
- * WHO WRITES THE TEXT: Gemini when its key is on the Worker, else Anthropic.
+ * WHO WRITES THE TEXT, IN ORDER: Gemini Flash first (free), then Claude Haiku.
  *
  * Zach, 2026-11-10, after a side-by-side on twelve of his words
  * (`src/generate/llm.ts`, `viaGemini`): Flash on the free tier, thinking HIGH,
- * read like Opus. The key decides, not a flag, so the switch is the secret
- * itself: `wrangler secret put GEMINI_API_KEY` turns it on, `secret delete`
- * turns it back to Anthropic. No fallback between them — a free-tier refusal
- * shows as "try again" on the card, never as a silent bill.
+ * read like Opus. The key decides, not a flag: `wrangler secret put
+ * GEMINI_API_KEY` puts Gemini first, `secret delete` takes it out.
+ *
+ * **WITH A FALLBACK, since 2026-11-11.** The free tier is 5 requests a minute
+ * and 20 a day per model (AI Studio's rate-limit page for the Hashigo
+ * project), and his own store says 7 of the last 15 days needed more — 51,
+ * 64, 87, 177 on 漢検 batch days, a median of 12. So when Gemini refuses (429
+ * quota, 503 overload, a timeout, an unfinished answer, nothing usable), the
+ * same request goes to Claude Haiku 5.5, which also wrote all twelve
+ * correctly. Ordinary days stay free; a batch day pays Haiku for the rest.
+ * (The first version had no fallback "so nothing bills silently" — that was
+ * an agent's rule, not his, and 20 a day is too few to keep it.)
  *
  * The cache is keyed on the prompt, not the model, so every line already made
- * stays as it is; only new ones come from the new provider.
+ * stays as it is; only new ones come from the chain.
  */
-export function textProvider(
-  env: GenerateEnv,
-): { provider: "gemini" | "anthropic"; apiKey: string; model: string } | null {
+export function textProviders(env: GenerateEnv): readonly TextProvider[] {
+  const chain: TextProvider[] = [];
   const gemini = env.GEMINI_API_KEY ?? "";
-  if (gemini !== "") return { provider: "gemini", apiKey: gemini, model: env.HASHIGO_GEMINI_MODEL ?? GEMINI_MODEL };
+  if (gemini !== "") chain.push({ provider: "gemini", apiKey: gemini, model: env.HASHIGO_GEMINI_MODEL ?? GEMINI_MODEL });
   const anthropic = env.ANTHROPIC_API_KEY ?? "";
-  if (anthropic !== "") return { provider: "anthropic", apiKey: anthropic, model: env.HASHIGO_MODEL ?? DEFAULT_MODEL };
-  return null;
+  if (anthropic !== "") chain.push({ provider: "anthropic", apiKey: anthropic, model: env.HASHIGO_MODEL ?? DEFAULT_MODEL });
+  return chain;
+}
+
+/** The first in the chain — who answers when nothing goes wrong. */
+export function textProvider(env: GenerateEnv): TextProvider | null {
+  return textProviders(env)[0] ?? null;
 }
 
 /** Only these can be asked for — the laptop's `ALLOWED`. */
 const ALLOWED: ReadonlySet<string> = new Set(["ai", "translate", "speech"]);
 const MAX_PROMPT = 2_000;
 const MAX_TOKENS = 256;
-const DEFAULT_MODEL = "claude-opus-5";
+/**
+ * Claude Haiku 5.5, the fallback — was `claude-opus-5` until 2026-11-11. Haiku
+ * wrote all twelve test sentences correctly; it thinks by default and takes the
+ * same `effort: "low"` + 2,048-token floor as the call it replaces.
+ */
+const DEFAULT_MODEL = "claude-haiku-5-5";
 export const GEN_PREFIX = "gen:";
 
 interface Descriptor {
@@ -319,15 +342,42 @@ export async function generate(
     if (clean !== "") return [200, { text: clean, cached: true }];
   }
 
-  const chosen = textProvider(env);
-  if (chosen === null) return [503, { error: "no GEMINI_API_KEY or ANTHROPIC_API_KEY on the Worker" }];
-  const { provider, apiKey, model } = chosen;
-  const made = await write(descriptor, { provider, apiKey, model, maxTokens: MAX_TOKENS });
-  // Cleaned BEFORE it is cached, so what every device reads is already right.
-  const output = cleanGenerated(descriptor.text, made);
-  if (output === "") {
-    return [502, { error: isEmojiPrompt(descriptor.text) ? `${model} returned no emoji` : `${model} returned nothing` }];
+  const chain = textProviders(env);
+  if (chain.length === 0) return [503, { error: "no GEMINI_API_KEY or ANTHROPIC_API_KEY on the Worker" }];
+  // Each provider in turn; the first usable answer wins. Every failure is kept,
+  // so when the whole chain fails the card's "try again" says why for each.
+  const failures: string[] = [];
+  let output = "";
+  let used: TextProvider | null = null;
+  for (const candidate of chain) {
+    try {
+      const made = await write(descriptor, {
+        provider: candidate.provider,
+        apiKey: candidate.apiKey,
+        model: candidate.model,
+        maxTokens: MAX_TOKENS,
+      });
+      // Cleaned BEFORE it is cached, so what every device reads is already right.
+      const clean = cleanGenerated(descriptor.text, made);
+      if (clean !== "") {
+        output = clean;
+        used = candidate;
+        break;
+      }
+      failures.push(
+        isEmojiPrompt(descriptor.text) ? `${candidate.model} returned no emoji` : `${candidate.model} returned nothing`,
+      );
+    } catch (cause) {
+      failures.push((cause as Error).message);
+    }
   }
+  if (used === null) {
+    // One provider: its own words, as before. Several: each one's.
+    const message = failures.length === 1 ? (failures[0] as string) : failures.join(" · then ");
+    if (failures.length === 1 && /returned no emoji|returned nothing/.test(message)) return [502, { error: message }];
+    throw new Error(message);
+  }
+  const { provider, model } = used;
   const record: GeneratedRecord = {
     kind: descriptor.kind,
     text: descriptor.text,
