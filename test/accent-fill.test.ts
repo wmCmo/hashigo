@@ -10,7 +10,10 @@
 import { describe, expect, it } from "vitest";
 
 import { applyAccentFill, planAccentFill, type DeriveResult, type DerivedLine } from "../src/accent/fill.js";
+import { loadCard } from "../src/cards/index.js";
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
+import { ROLE_KEY } from "../src/fields/roles.js";
+import { fieldGenerationRequest, storeDescriptorText, storeTextResolver } from "../src/generate/index.js";
 
 function device(): Db {
   const db = openDatabase(MEMORY);
@@ -125,6 +128,66 @@ describe("filling a card made in the app", () => {
     // OpenJTalk says 尾高; `DICTIONARY_ADJUDICATIONS` says 平板 (jpdb.io, 2026-10-25).
     applyAccentFill(db, planAccentFill(db), new Map([["高め", result(line("高め", "尾高", 3, "タカメ"), "タカメ", "タカメ")]]), []);
     expect(valueOf(db, "made", "local-accent")).toBe("平板");
+    db.close();
+  });
+});
+
+/**
+ * Zach, 2026-11-11, over 安値 on the tablet: *"why am i not seeing ojad"*. The
+ * example sentence was made where the card was first SHOWN — the tablet — so the
+ * laptop's sweep found no sentence and skipped OJAD on every boot. The plan now
+ * names such a card, so the page fetches the sentence and plans again.
+ */
+describe("a card whose example sentence is not on this device", () => {
+  function withSentence(): Db {
+    const db = device();
+    const field = db.prepare(
+      "INSERT INTO template_fields (template_id, id, name, type, source_field_id, pos, local, options) VALUES ('tango', ?, ?, ?, ?, ?, ?, ?)",
+    );
+    field.run("rei", "例文", "ai", null, "d", 0, '{"ai-custom-prompt":"Use <<単語>> in a sentence"}');
+    field.run("ojad", "OJAD", "plain", "rei", "e", 1, `{"${ROLE_KEY}":"ojad"}`);
+    card(db, "made", "安値");
+    // 型 and 読み already there, so OJAD is the only thing this card could want.
+    db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES ('made', 'local-accent', '中高 (2)')").run();
+    db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES ('made', 'local-yomi', 'やすね')").run();
+    return db;
+  }
+
+  function fileSentence(db: Db, text: string): void {
+    const loaded = loadCard(db, "made");
+    const template = loaded?.template;
+    const rei = template?.fields.find((f) => f.id === "rei");
+    if (template == null || rei === undefined) throw new Error("fixture lost its template");
+    const request = fieldGenerationRequest(rei, {
+      fields: template.fields,
+      values: loaded!.values,
+      resolveGenerated: storeTextResolver(db),
+    });
+    if (request === null) throw new Error("no request for 例文");
+    storeDescriptorText(db, request, text);
+  }
+
+  it("is planned as sentence-pending, with nothing to annotate yet", () => {
+    const db = withSentence();
+    const plan = planAccentFill(db);
+    expect(plan).toHaveLength(1);
+    expect(plan[0]).toMatchObject({ cardId: "made", sentencePending: true, ojad: null });
+    db.close();
+  });
+
+  it("gets its OJAD planned once the sentence is here", () => {
+    const db = withSentence();
+    fileSentence(db, "今日の取引でその会社の株価は安値を更新した。");
+    const plan = planAccentFill(db);
+    expect(plan[0]?.sentencePending).toBe(false);
+    expect(plan[0]?.ojad?.sentence).toContain("安値を更新した");
+    db.close();
+  });
+
+  it("is not pending once OJAD holds a value, sentence or no sentence", () => {
+    const db = withSentence();
+    db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES ('made', 'ojad', 'やす*ねを')").run();
+    expect(planAccentFill(db)).toEqual([]);
     db.close();
   });
 });

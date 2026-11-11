@@ -15,6 +15,8 @@
  *     disagreement view and never decides (decision 8). A guarded word gets no
  *     label, never a guess.
  *   · `OJAD`: `sentenceFor` (the batch run's own per-card path) and `loadMarks`.
+ *     A card whose sentence is not on THIS device is planned with
+ *     `sentencePending`, so the page can fetch it first — see below.
  *   · `読み`: NEW here, so its rule is stated: only on a head word with kanji, and
  *     only when OpenJTalk's reading and UniDic's pronunciation of the word as ONE
  *     token agree. Then UniDic's written kana (`ホウタイ`, not the spoken `ホータイ`)
@@ -30,8 +32,21 @@
  * `読み` does not move a generation: in the app it feeds the furigana fallback and
  * the redo dialog's alias, never a generator's identity — checked before this was
  * written, because changing an identity after the clip exists orphans the clip.
+ *
+ * ─── A SENTENCE MADE ON ANOTHER DEVICE — 2026-11-11 ─────────────────────────
+ *
+ * Zach, over 安値 on the tablet: *"why am i not seeing ojad"*. A generation is
+ * filed where it was made and in the Worker's KV, never in the sync payload. A
+ * card added without the laptop's editor (`scripts/cards-add.ts`, the 漢検
+ * batches) gets its example sentence the first time it is SHOWN — on the
+ * tablet — so the laptop's boot sweep found no sentence here, skipped OJAD, and
+ * kept skipping: 13 cards had none. `sentencePending` names those cards (OJAD
+ * empty, its sentence not on this device) so the page can ask the Worker for
+ * the sentence, which answers from its cache, and then plan again.
  */
+import { loadCard } from "../cards/index.js";
 import type { Db } from "../db/index.js";
+import { fieldWithRole } from "../fields/roles.js";
 import { yomiFieldId } from "../fields/yomi.js";
 import { accentKey, readingLooksUnanalysed } from "./key.js";
 import { loadMarks, sentenceFor, type AnnotatedLine, type SentenceRow } from "./marks.js";
@@ -50,6 +65,11 @@ export interface FillItem {
   readonly yomiField: string | null;
   /** The sentence to annotate, or null (filled already, or not generated yet). */
   readonly ojad: SentenceRow | null;
+  /**
+   * OJAD is empty and its sentence is not on this device — generated elsewhere,
+   * or not yet. The page fetches it (`autoFill`) and plans the card again.
+   */
+  readonly sentencePending: boolean;
 }
 
 /** One line of `tools/accent_helper.py`'s `/derive` reply. */
@@ -83,6 +103,12 @@ const value = (db: Db, cardId: string, fieldId: string): string =>
   ((db.prepare("SELECT value FROM card_field_values WHERE card_id = ? AND field_id = ?").get(cardId, fieldId) as
     | { value: string }
     | undefined)?.value ?? "").trim();
+
+/** The card's OJAD field (found by role, as `sentenceFor` finds it) holds nothing. */
+function ojadIsEmpty(db: Db, cardId: string): boolean {
+  const marks = fieldWithRole(loadCard(db, cardId)?.template?.fields ?? [], "ojad");
+  return marks !== null && value(db, cardId, marks.id) === "";
+}
 
 /**
  * What needs filling. With `cardIds`, those cards; without, every live card made
@@ -119,8 +145,9 @@ export function planAccentFill(db: Db, cardIds?: readonly string[]): FillItem[] 
         yomi !== null && KANJI.test(key) && value(db, id, yomi) === "" ? yomi : null;
       const found = sentenceFor(db, id);
       const ojad = found.status === "ok" && value(db, id, found.row.fieldId) === "" ? found.row : null;
-      if (labelField === null && yomiField === null && ojad === null) continue;
-      items.push({ cardId: id, key, labelField, yomiField, ojad });
+      const sentencePending = found.status === "ungenerated" && ojadIsEmpty(db, id);
+      if (labelField === null && yomiField === null && ojad === null && !sentencePending) continue;
+      items.push({ cardId: id, key, labelField, yomiField, ojad, sentencePending });
     }
   }
   return items;

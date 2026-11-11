@@ -50,6 +50,13 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 let running: Promise<unknown> = Promise.resolve();
 
 /**
+ * At most this many cards get their sentence fetched per sweep. Each is one to
+ * three Worker calls (the sentence, then what reads it), sequential; the rest
+ * wait for the next boot rather than holding the sweep for minutes.
+ */
+const SENTENCES_PER_RUN = 25;
+
+/**
  * Fill what the helper can on `cardIds`, or on every card made in the app. Calls
  * are queued one after another, so a boot sweep and an editor close never write
  * the same card at once. Resolves to what was written, or null when nothing ran.
@@ -58,13 +65,23 @@ export function fillAccents(
   cardIds?: readonly string[],
   log: (text: string) => void = () => undefined,
   warn: (text: string) => void = () => undefined,
+  fetchSentences?: (cardIds: readonly string[]) => Promise<unknown>,
 ): Promise<{ labels: number; yomi: number; ojad: number } | null> {
   const next = running.then(async () => {
     if (!onLaptop()) return null;
-    const plan = await ask<"accentPlan">({ kind: "accentPlan", ...(cardIds === undefined ? {} : { cardIds }) });
-    if (plan.items.length === 0) return null;
-    const keys = [...new Set(plan.items.filter((i) => i.labelField !== null || i.yomiField !== null).map((i) => i.key))];
-    const texts = [...new Set(plan.items.flatMap((i) => (i.ojad === null ? [] : [i.ojad.sentence])))];
+    const request = { kind: "accentPlan", ...(cardIds === undefined ? {} : { cardIds }) } as const;
+    let plan = await ask<"accentPlan">(request);
+    // A sentence another device made is not here (`src/accent/fill.ts`, "A
+    // SENTENCE MADE ON ANOTHER DEVICE"): fetch it, then plan again so OJAD sees it.
+    const pending = plan.items.filter((item) => item.sentencePending).map((item) => item.cardId);
+    if (pending.length > 0 && fetchSentences !== undefined) {
+      await fetchSentences(pending.slice(0, SENTENCES_PER_RUN));
+      plan = await ask<"accentPlan">(request);
+    }
+    const items = plan.items.filter((i) => i.labelField !== null || i.yomiField !== null || i.ojad !== null);
+    if (items.length === 0) return null;
+    const keys = [...new Set(items.filter((i) => i.labelField !== null || i.yomiField !== null).map((i) => i.key))];
+    const texts = [...new Set(items.flatMap((i) => (i.ojad === null ? [] : [i.ojad.sentence])))];
     let derived: DeriveResult[] = [];
     let lines: AnnotatedLine[] = [];
     try {
@@ -72,7 +89,7 @@ export function fillAccents(
       if (texts.length > 0) lines = (await post<{ lines: AnnotatedLine[] }>("/sentences", { texts })).lines;
     } catch {
       log("accent helper not running — reading, 型 and OJAD left for later");
-      const cards = new Set(plan.items.map((item) => item.cardId)).size;
+      const cards = new Set(items.map((item) => item.cardId)).size;
       warn(
         `the accent helper isn't running on this laptop — 読み, 型 and OJAD stay empty on ` +
           `${cards} card${cards === 1 ? "" : "s"} until it is (it restarts itself within 30 minutes)`,
@@ -81,7 +98,7 @@ export function fillAccents(
     }
     const { report } = await ask<"accentFill">({
       kind: "accentFill",
-      items: plan.items,
+      items,
       derived: keys.map((key, index) => [key, derived[index] as DeriveResult] as const),
       lines,
     });

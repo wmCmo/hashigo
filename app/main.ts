@@ -4391,8 +4391,17 @@ async function boot(): Promise<void> {
     // A new day that arrives while this page stays open — `./new-day.ts`.
     watchForNewDay(localDate(new Date()));
     // Cards made in the app that still lack 読み / 型 / OJAD — made on the phone,
-    // or before the helper was running. Laptop only, in the background.
-    void fillAccents(undefined, (text) => line(text, "good"), (text) => say(text, true));
+    // or before the helper was running. Laptop only, in the background. A card
+    // whose example sentence was made on another device (or not yet) gets it
+    // here first, from the Worker's cache, so OJAD has something to annotate.
+    void fillAccents(
+      undefined,
+      (text) => line(text, "good"),
+      (text) => say(text, true),
+      async (cardIds) => {
+        for (const cardId of cardIds) await autoFill(cardId);
+      },
+    );
   } catch (cause) {
     line(String((cause as Error).message), "bad");
     line("nothing was written. Fix the above and reload.", "bad");
