@@ -798,6 +798,32 @@ words, the reason, and the measurement that settled it.
      a friend the app can now do, named in the tag message.
    * **patch** — every other deploy: fixes AND small features, one per deploy.
 
+66. **An imported card's TEMPLATE travels in sync — set by a newer clock, healed where
+   missing, never removed.** 2026-11-11. Zach, showing `dissident` on the tablet as plain
+   `dissident --- a person who opposes official policy…` and on the laptop with audio, an
+   example, an emoji hint and a YouGlish link: *"because this is how i see it on the
+   screen, it has everything"*.
+   * **The gap.** Only cards MADE in the app (`local = 1`) carried their template, in
+     `archive.localCards`. An imported card moved with `setTemplate` sent its new field
+     VALUES, which merge on the card clock, and not the switch. Measured in a merge of
+     every device's payload that day: 47 imported cards held values for a template they
+     were not on, 17 of them still template-less (dissident, dogmatic, obscene,
+     substrate, vis-à-vis; すずらん, たまねぎ, 切る, 巡る, 果て, 汚い …; こだわる, たれ).
+     The only card-row write the app makes that did not travel; archive, pin and voice did.
+   * **Now** `CardFlags.templateId` rides on every card's flag row (present only when set;
+     `templatesCarried` says absence means none — the shape `voice` already had), and
+     `mergeSync` has its own rule: a set template the peer decided LATER is taken; a card
+     with NO template here takes the peer's whatever the clocks say — the bug's own
+     signature, and the clocks cannot settle it because the flags rule had already copied
+     the laptop's clock to every device; and sync NEVER REMOVES a template, because a stale
+     device's clock can be newer for an unrelated reason (a pin, a field edit's
+     `touchCard`) and its "none" would undo his switch everywhere. The price, accepted:
+     moving a card TO no template stays on the device where it was done.
+   * `SYNC_VERSION` 3: a version-2 device would have merged the payload, ignored the
+     template and never read it again. Version-1/2 payloads still merge and move no template.
+   * **The repair is automatic** once the laptop — where the switches were made — sends a
+     version-3 payload: every card's flag row changed, so its first send is a full one.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 (in `notes/archive/`) listed ten; five were settled by later

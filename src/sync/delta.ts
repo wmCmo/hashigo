@@ -205,6 +205,9 @@ function editPayload(delta: SyncDelta, edits: SyncEdits, createdAt: string): Syn
     cardFlags: edits.cardFlags,
     deckFlags: edits.deckFlags,
     voicesCarried: true,
+    // Every flag row in an edit delta comes from `exportSync`, so it says its
+    // template the same way — decision 66.
+    templatesCarried: true,
     retiredClips: edits.retiredClips,
   };
 }

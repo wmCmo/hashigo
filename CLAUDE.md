@@ -75,7 +75,7 @@ npm run gates -- --quick   # the same, minus dashboard + roundtrip (the two corp
                         # ONE gates run per commit: never `npm test` first to read the
                         # count and then the gates again. The pass count below comes
                         # from a FULL run only; a quick run reports fewer, on purpose.
-npm test                # 69 files, 1685 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
+npm test                # 69 files, 1691 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
                         # MEASURED, never added up — run the suite or leave the line alone
                         # (`test/docs-figures.test.ts` checks it). A wrapper
                         # (`scripts/test.mjs`) that reads vitest's SUMMARY: the run must
@@ -355,6 +355,10 @@ give an honest opinion — and when he decides differently, record the new decis
 65. **A minor means "update every device" (a SCHEMA/SYNC/ARCHIVE_VERSION change, enforced)
     or a milestone; every other deploy, small features included, is a patch.** Amends 59:
     *"it feels like we are releasing minor version every other day lol"*.
+66. **An imported card's template travels in sync** (`CardFlags.templateId`): a newer
+    clock sets it, a card with none takes the peer's, and sync never removes one — so
+    moving a card TO no template stays on that device. `SYNC_VERSION` 3. Before this,
+    `dissident` moved onto New Vocab showed its old `---` text on the tablet.
 
 ## The template answers most questions about the screen
 

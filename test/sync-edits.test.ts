@@ -308,17 +308,104 @@ describe("merging an edit delta moves nothing it does not carry", () => {
   });
 });
 
-describe("SYNC_VERSION 2", () => {
-  it("still merges a version-1 payload — the slots written before the bump", () => {
-    const { laptop, phone } = synced();
-    laptop.prepare("UPDATE cards SET archived = 0, updated_at = ? WHERE id = 'imp0007'").run(NOW);
-    mergeSync(phone, { ...exportSync(laptop, NOW), syncVersion: 1 });
-    expect(phone.prepare("SELECT archived FROM cards WHERE id = 'imp0007'").get()).toEqual({ archived: 0 });
+describe("SYNC_VERSION 3", () => {
+  it("still merges a version-1 or -2 payload — the slots written before the bumps", () => {
+    for (const syncVersion of [1, 2]) {
+      const { laptop, phone } = synced();
+      laptop.prepare("UPDATE cards SET archived = 0, updated_at = ? WHERE id = 'imp0007'").run(NOW);
+      mergeSync(phone, { ...exportSync(laptop, NOW), syncVersion });
+      expect(phone.prepare("SELECT archived FROM cards WHERE id = 'imp0007'").get()).toEqual({ archived: 0 });
+    }
   });
 
   it("refuses a version it does not know, rather than guess", () => {
     const { laptop, phone } = synced();
-    expect(() => mergeSync(phone, { ...exportSync(laptop, NOW), syncVersion: 3 })).toThrow(/version 3/);
+    expect(() => mergeSync(phone, { ...exportSync(laptop, NOW), syncVersion: 4 })).toThrow(/version 4/);
     expect(() => mergeSync(phone, { ...exportSync(laptop, NOW), syncVersion: 0 })).toThrow(/version 0/);
+  });
+});
+
+/**
+ * DECISION 66, 2026-11-11. `dissident`, an IMPORTED card, was moved onto New
+ * Vocab on the laptop; its values reached the tablet and the switch did not, so
+ * the tablet showed its old `---` text. 17 template-less cards were in that state.
+ */
+describe("an imported card's template travels (decision 66)", () => {
+  /** Two devices that both hold a second template, `vocab`, and have synced. */
+  function pair(): { laptop: Db; phone: Db; sent: Record<string, string> } {
+    const vocab = (db: Db): Db => {
+      db.prepare(
+        "INSERT INTO templates (id, name, content, updated_at) VALUES ('vocab', 'New Vocab', '<<単語>>', ?)",
+      ).run(EPOCH);
+      return db;
+    };
+    const laptop = vocab(device());
+    const phone = vocab(device());
+    const base = exportSync(laptop, NOW);
+    mergeSync(phone, base);
+    return { laptop, phone, sent: indexPayload(base) };
+  }
+  const templateOf = (db: Db, id: string): unknown =>
+    (db.prepare("SELECT template_id FROM cards WHERE id = ?").get(id) as { template_id: string | null }).template_id;
+
+  it("a switch made on the laptop reaches the phone in an edit delta", () => {
+    const { laptop, phone, sent } = pair();
+    laptop.prepare("UPDATE cards SET template_id = 'vocab', updated_at = ? WHERE id = 'imp0042'").run(LATER);
+    const { delta } = exportEditDelta(laptop, 0, sent, LATER);
+    expect(delta.edits?.cardFlags).toEqual([expect.objectContaining({ cardId: "imp0042", templateId: "vocab" })]);
+    mergeSync(phone, deltaPayload(delta, LATER));
+    expect(templateOf(phone, "imp0042")).toBe("vocab");
+  });
+
+  it("HEALS a card with no template here, whatever the clocks say — the dissident case", () => {
+    const { laptop, phone } = pair();
+    // The 2026-11-11 state: values everywhere, the switch only on the laptop,
+    // and the phone's clock as new as the laptop's (or newer).
+    laptop.prepare("UPDATE cards SET template_id = 'vocab', updated_at = ? WHERE id = 'imp0050'").run(NOW);
+    phone.prepare("UPDATE cards SET template_id = NULL, updated_at = ? WHERE id = 'imp0050'").run(LATER);
+    const report = mergeSync(phone, exportSync(laptop, NOW));
+    expect(templateOf(phone, "imp0050")).toBe("vocab");
+    expect(report.cardTemplatesTaken).toBe(1);
+  });
+
+  it("a NEWER set template wins; an older one does not", () => {
+    const { laptop, phone } = pair();
+    laptop.prepare("UPDATE cards SET template_id = 'vocab', updated_at = ? WHERE id = 'imp0060'").run(LATER);
+    mergeSync(phone, exportSync(laptop, LATER));
+    expect(templateOf(phone, "imp0060")).toBe("vocab");
+
+    phone.prepare("UPDATE cards SET template_id = 'tango', updated_at = ? WHERE id = 'imp0061'").run(LATER);
+    laptop.prepare("UPDATE cards SET template_id = 'vocab', updated_at = ? WHERE id = 'imp0061'").run(NOW);
+    mergeSync(phone, exportSync(laptop, LATER));
+    expect(templateOf(phone, "imp0061")).toBe("tango");
+  });
+
+  it("NEVER REMOVES a template, even from a newer clock — a stale device cannot undo his switch", () => {
+    const { laptop, phone } = pair();
+    phone.prepare("UPDATE cards SET template_id = 'vocab', updated_at = ? WHERE id = 'imp0070'").run(NOW);
+    // The laptop never learned of it, and touched the card later (a pin).
+    laptop.prepare("UPDATE cards SET template_id = NULL, pinned = 1, updated_at = ? WHERE id = 'imp0070'").run(LATER);
+    mergeSync(phone, exportSync(laptop, LATER));
+    expect(templateOf(phone, "imp0070")).toBe("vocab");
+    // The flags still moved by their own rule.
+    expect(phone.prepare("SELECT pinned FROM cards WHERE id = 'imp0070'").get()).toEqual({ pinned: 1 });
+  });
+
+  it("a payload from before the bump moves no template", () => {
+    const { laptop, phone } = pair();
+    laptop.prepare("UPDATE cards SET template_id = 'vocab', updated_at = ? WHERE id = 'imp0080'").run(LATER);
+    phone.prepare("UPDATE cards SET template_id = NULL WHERE id = 'imp0080'").run();
+    const { templatesCarried: _dropped, ...old } = exportSync(laptop, LATER);
+    mergeSync(phone, { ...old, syncVersion: 2 });
+    expect(templateOf(phone, "imp0080")).toBe(null);
+  });
+
+  it("the export says no template by leaving it out, and marks the payload", () => {
+    const { laptop } = pair();
+    laptop.prepare("UPDATE cards SET template_id = NULL WHERE id = 'imp0090'").run();
+    const payload = exportSync(laptop, NOW);
+    expect(payload.templatesCarried).toBe(true);
+    expect(payload.cardFlags.find((f) => f.cardId === "imp0090")).not.toHaveProperty("templateId");
+    expect(payload.cardFlags.find((f) => f.cardId === "imp0091")).toMatchObject({ templateId: "tango" });
   });
 });

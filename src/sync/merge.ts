@@ -122,8 +122,14 @@ import { retiredHashes, writeRetired } from "../blobs/retire.js";
  * version-1 payload is a version-2 payload with no edits in its deltas, so the
  * slots in the mailbox written before the bump (old devices, tool slots) still
  * merge. `OLDEST_SYNC_VERSION` is that floor.
+ *
+ * 3 (decision 66, 2026-11-11): a card's flag row carries its TEMPLATE. A
+ * version-2 device would merge such a payload, ignore the template, record the
+ * payload as merged and never read it again — the switch lost for good once it
+ * updated. At 3 it refuses instead, and merges after it updates. A version-1 or
+ * -2 payload carries no `templatesCarried`, so it moves no template.
  */
-export const SYNC_VERSION = 2;
+export const SYNC_VERSION = 3;
 
 /** The oldest payload this device can merge exactly. See `SYNC_VERSION`. */
 export const OLDEST_SYNC_VERSION = 1;
@@ -147,6 +153,19 @@ export interface CardFlags {
    * of voices". Same clock as the flags: `setVoice` bumps `cards.updated_at`.
    */
   readonly voice?: string;
+  /**
+   * `cards.template_id`, PRESENT ONLY WHEN SET — the same shape as `voice`, with
+   * `SyncPayload.templatesCarried` saying that absence means "no template".
+   *
+   * Decision 66, 2026-11-11. Only cards MADE in the app (`local = 1`) carried
+   * their template, in `archive.localCards`; an imported card moved onto a
+   * template with `setTemplate` sent its new field VALUES and not the switch. So
+   * `dissident`, moved onto New Vocab on the laptop, showed its old `---` text on
+   * the tablet — 17 cards measured that way that day. Same clock as the flags:
+   * `setTemplate` bumps `cards.updated_at`. Merged by its own rule — see
+   * "a card's template" in `mergeSync`.
+   */
+  readonly templateId?: string;
 }
 
 /**
@@ -187,6 +206,11 @@ export interface SyncPayload {
    */
   readonly voicesCarried?: true;
   /**
+   * Every card's flag row says its template: `templateId` absent means none. A
+   * payload without this (version 1 or 2) moves no template. Decision 66.
+   */
+  readonly templatesCarried?: true;
+  /**
    * Clips this device RETIRED with "redo a clip" (2026-09-26) — `src/blobs/retire.ts`.
    * Merging retires them here too, so a discarded clip stops playing on every
    * device, not only the one that redid it. Monotonic: a merge never un-retires.
@@ -222,12 +246,17 @@ export interface MergeReport {
   readonly deckFlagsTaken: number;
   /** Clips the peer had retired that this device was still playing. */
   readonly clipsRetired: number;
+  /** Cards moved onto the peer's template (decision 66). */
+  readonly cardTemplatesTaken: number;
 }
 
 const SELECT_CARD_FLAGS = `
-SELECT id AS card_id, archived, pinned, updated_at, voice
+SELECT id AS card_id, archived, pinned, updated_at, voice, template_id
   FROM cards
  ORDER BY id`;
+
+const SET_CARD_TEMPLATE = `UPDATE cards SET template_id = ? WHERE id = ?`;
+const TEMPLATE_EXISTS = `SELECT 1 FROM templates WHERE id = ?`;
 
 /**
  * ─── TEMPLATE BODIES NEED A CLOCK, AND NOT HAVING ONE COST HIM A DAY ─────────
@@ -389,6 +418,9 @@ export function exportSync(db: SqliteHandle, createdAt: string): SyncPayload {
       pinned: Number(r["pinned"]) === 1,
       updatedAt: String(r["updated_at"]),
       ...(voiceOf(r["voice"]) === undefined ? {} : { voice: voiceOf(r["voice"]) as string }),
+      ...(r["template_id"] === null || r["template_id"] === undefined
+        ? {}
+        : { templateId: String(r["template_id"]) }),
     }),
   );
   const deckFlags = (db.prepare(SELECT_DECK_FLAGS).all() as Record<string, unknown>[]).map(
@@ -405,6 +437,7 @@ export function exportSync(db: SqliteHandle, createdAt: string): SyncPayload {
     cardFlags,
     deckFlags,
     voicesCarried: true,
+    templatesCarried: true,
     retiredClips: retiredHashes(db),
   };
 }
@@ -473,9 +506,11 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
   const localRetired = retiredHashes(db);
 
   const localFlags = new Map<string, string>();
+  const localTemplate = new Map<string, string | null>();
   const localCardState = new Map<string, { archived: number; pinned: number; updatedAt: string }>();
   for (const r of db.prepare(SELECT_CARD_FLAGS).all() as Record<string, unknown>[]) {
     localFlags.set(String(r["card_id"]), String(r["updated_at"]));
+    localTemplate.set(String(r["card_id"]), r["template_id"] === null ? null : String(r["template_id"]));
     localCardState.set(String(r["card_id"]), {
       archived: Number(r["archived"]),
       pinned: Number(r["pinned"]),
@@ -670,6 +705,38 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
     deckFlagsTaken += 1;
   }
 
+  // ── rule: a card's template — set by a newer clock, healed, never removed ──
+  // Decision 66. Runs AFTER the apply, so a template made on the peer exists.
+  //
+  //   * a SET template the peer decided later (newer card clock) is taken, as
+  //     the flags are;
+  //   * a card with NO template here takes the peer's whatever the clocks say.
+  //     That is the 2026-11-11 bug's own signature: an imported card moved onto a
+  //     template elsewhere, whose switch never travelled while its values did —
+  //     and the clocks cannot settle it, because the flags rule already copied
+  //     the laptop's clock onto every device that took its pins;
+  //   * sync NEVER REMOVES a template. A stale device's clock can be newer for an
+  //     unrelated reason (a pin, a field edit — `touchCard`), and its "none" would
+  //     undo his switch on every device. The price: moving a card TO no template
+  //     stays on the device where it was done, with its values kept.
+  let cardTemplatesTaken = 0;
+  if (remote.templatesCarried === true) {
+    const templateExists = db.prepare(TEMPLATE_EXISTS);
+    const setTemplate = db.prepare(SET_CARD_TEMPLATE);
+    for (const incoming of remote.cardFlags) {
+      const theirs = incoming.templateId;
+      if (theirs === undefined) continue; // "none": never removes one
+      if (!localTemplate.has(incoming.cardId)) continue; // a card not here
+      const ours = localTemplate.get(incoming.cardId) ?? null;
+      if (ours === theirs) continue;
+      if (templateExists.get(theirs) === undefined) continue; // not here yet
+      const localClock = localFlags.get(incoming.cardId) as string;
+      if (ours !== null && !isNewer(incoming.updatedAt, localClock)) continue;
+      setTemplate.run(theirs, incoming.cardId);
+      cardTemplatesTaken += 1;
+    }
+  }
+
   // ── clips a peer discarded with "redo a clip" ────────────────────────────
   // A UNION of both lists, written once. Monotonic: a merge never un-retires.
   const union = new Set([...localRetired, ...(remote.retiredClips ?? [])]);
@@ -690,5 +757,6 @@ export function mergeSync(db: SqliteHandle, remote: SyncPayload): MergeReport {
     templatesKept,
     fieldsTaken,
     fieldsKept,
+    cardTemplatesTaken,
   };
 }
