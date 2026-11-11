@@ -198,6 +198,11 @@ export interface AnswerResult {
    * recomputed, which is why this is a snapshot rather than a derivation.
    */
   readonly undo: { readonly reviewId: number; readonly snapshot: TrackSnapshot } | null;
+  /**
+   * Set when a decision-13 re-ask AHEAD of the cursor was answered: it was taken
+   * out of the re-ask tail at this index (see `answerAt`), and undo puts it back.
+   */
+  readonly dismissedAt?: number;
 }
 
 export interface SessionProgress {
@@ -489,28 +494,39 @@ export class ReviewSession {
    *   · `unanswer` needs no special case. The grade happened at the cursor like
    *     any other, so undo restores it like any other.
    *
-   * ─── THE TWO REFUSALS, BOTH DELIBERATE ──────────────────────────────────────
+   * ─── THE ONE REFUSAL, DELIBERATE ────────────────────────────────────────────
    *
    * BACKWARD (`offset < 0`) is refused because those cards are already answered
    * this session. Grading one again would write a SECOND review row for the same
    * track on the same day, which is not a correction — it is two data points where
    * one event happened, and it feeds FSRS. The way to change an answer is undo.
    *
-   * A RE-ASK (offset landing past the plan) is refused because decision 13 says a
-   * re-ask writes no review at all. Reaching forward into the re-ask tail to
-   * "grade" one would be a no-op dressed as an action.
+   * ─── A RE-ASK AHEAD IS DISMISSED, NOT REFUSED — 2026-11-11 ──────────────────
+   *
+   * This used to refuse too ("a no-op dressed as an action"), and on the tablet it
+   * was a dead end: Zach, grading ahead, reached 起伏's re-ask at +3 and both
+   * buttons answered only *"this one is a re-ask — it is shown again but never
+   * graded"* — *"i can't click remember"*. Decision 13 says a re-ask writes nothing
+   * WHICHEVER button he presses, and pressing one means "seen". So the re-ask is
+   * taken out of the tail (`dismissedAt` records where, for undo), no review is
+   * written, the cursor stays, and `peek(offset)` is now the card after it — the
+   * same "keeps going forward" the rotation gives a fresh card.
    */
   answerAt(
     offset: number,
     remembered: boolean,
     options: { readonly at?: string; readonly durationMs?: number | null } = {},
-  ): AnswerResult | { readonly refused: "already-answered" | "re-ask" | "nothing-there" } {
+  ): AnswerResult | { readonly refused: "already-answered" | "nothing-there" } {
     if (offset === 0) return this.answer(remembered, options);
     if (offset < 0) return { refused: "already-answered" };
 
     const at = this.cursor + offset;
     if (at >= this.plan.length) {
-      return { refused: this.peek(offset) === null ? "nothing-there" : "re-ask" };
+      const tail = at - this.plan.length;
+      const item = this.reasks[tail];
+      if (item === undefined) return { refused: "nothing-there" };
+      this.reasks.splice(tail, 1);
+      return { item, graded: false, review: null, queuedReask: false, undo: null, dismissedAt: tail };
     }
     if (this.cursor >= this.plan.length) return { refused: "nothing-there" };
 
@@ -546,6 +562,12 @@ export class ReviewSession {
    * latest review on the track, because the schedule was computed from it.
    */
   unanswer(result: AnswerResult): void {
+    // A re-ask dismissed from ahead moved no cursor and wrote nothing: put it back
+    // where it was. Undo is last-in-first-out, so that index is still right.
+    if (result.dismissedAt !== undefined) {
+      this.reasks.splice(result.dismissedAt, 0, result.item);
+      return;
+    }
     if (this.cursor === 0) throw new Error("nothing has been answered in this session");
 
     // The DB first: if it throws, the cursor has not moved and the caller can retry

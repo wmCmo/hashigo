@@ -1606,8 +1606,8 @@ const REFUSAL: Record<AnswerRefusal, string> = {
   // Grading it again would write a SECOND review row for one event, and that
   // feeds the scheduler. Undo is the way to change an answer.
   "already-answered": "you already answered this one — ctrl+z to take it back",
-  // Decision 13: a re-ask writes no review at all.
-  "re-ask": "this one is a re-ask — it is shown again but never graded",
+  // A re-ask AHEAD is not refused any more: either button dismisses it (decision
+  // 13 writes nothing for a re-ask), see `ReviewSession.answerAt`.
   "nothing-there": "there is no card there",
 };
 

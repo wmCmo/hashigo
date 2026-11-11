@@ -596,17 +596,49 @@ describe("answerAt — grading out of order", () => {
     db.close();
   });
 
-  it("refuses to reach forward into the decision-13 re-ask tail", () => {
+  it("answers nothing past the end of the re-ask tail", () => {
     const { db } = fixture(2, 0);
     const session = buildSession(db, { now: AT, newLimit: 0 });
     session.answerAt(0, false, { at: AT }); // forgotten -> queues a re-ask
     session.answerAt(0, true, { at: AT }); // the other fresh card
 
-    // The cursor is now in the re-ask tail. A re-ask writes no review at all.
+    // The cursor is on the one re-ask; nothing lies beyond it.
     const before = counts(db);
-    const result = session.answerAt(1, true, { at: AT });
-    expect("refused" in result).toBe(true);
+    expect(session.answerAt(1, true, { at: AT })).toEqual({ refused: "nothing-there" });
     expect(counts(db)).toEqual(before);
+    db.close();
+  });
+
+  /**
+   * Zach, 2026-11-11, grading ahead on the tablet: a re-ask at +3 answered both
+   * buttons with "this one is a re-ask — it is shown again but never graded", and
+   * the screen went nowhere — *"i can't click remember"*.
+   */
+  it("DISMISSES a re-ask ahead — no review, the next card comes up, undo puts it back", () => {
+    const { db } = fixture(4, 0);
+    const session = buildSession(db, { now: AT, newLimit: 0 });
+    session.answerAt(0, false, { at: AT }); // queues re-ask #1
+    session.answerAt(0, false, { at: AT }); // queues re-ask #2
+    // Two fresh cards left at the cursor, then the two re-asks: re-ask #1 is at +2.
+    const reask = session.peek(2);
+    const after = session.peek(3);
+    expect(reask?.reask).toBe(true);
+    const before = counts(db);
+
+    for (const remembered of [true, false]) {
+      const result = session.answerAt(2, remembered, { at: AT });
+      if ("refused" in result) throw new Error(`refused: ${result.refused}`);
+      expect(result.graded).toBe(false);
+      expect(result.item.trackId).toBe(reask?.trackId);
+      // Nothing written, nothing re-queued, and the same offset is the card after it.
+      expect(counts(db)).toEqual(before);
+      expect(session.peek(2)?.trackId).toBe(after?.trackId);
+      expect(session.progress().reasksQueued).toBe(1);
+
+      session.unanswer(result);
+      expect(session.peek(2)?.trackId).toBe(reask?.trackId);
+      expect(session.progress().reasksQueued).toBe(2);
+    }
     db.close();
   });
 

@@ -129,7 +129,10 @@ words, the reason, and the measurement that settled it.
    0.173× on a second failure**, a multiplier calibrated on zero post-lapse observations.
    So: show it, do not grade it — the schedule stays put and it CREATES the data that
    could later justify grading. A session-local list; no review rows.
-   `notes/max-interval-and-relearning.md` §2, `scripts/relearn-cost.ts`.
+   `notes/max-interval-and-relearning.md` §2, `scripts/relearn-cost.ts`. Either button
+   on a re-ask means "seen" — including one reached AHEAD with the arrows, which is
+   dismissed rather than refused (2026-11-11: *"i can't click remember"*;
+   `ReviewSession.answerAt`).
 14. **No one-off respread of the existing due dates.** 3,650 tracks share an INTERVAL,
    not a due date: the heaviest future day was **188**, and he had already done more than
    188 on six separate days (peak **229**). Fuzz brings future plans down anyway. Zach:

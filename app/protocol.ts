@@ -93,7 +93,7 @@ export interface AnswerRequest {
 }
 
 /** Why a grade was refused. The screen turns each into a sentence. */
-export type AnswerRefusal = "already-answered" | "re-ask" | "nothing-there";
+export type AnswerRefusal = "already-answered" | "nothing-there";
 
 /**
  * Flip `Reading` on one card, mid-session — decision 29's audit loop.
