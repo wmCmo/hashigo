@@ -82,7 +82,7 @@ import {
   type Rung,
   type Sample,
 } from "./sync-climb.js";
-import { mountPrepared, type MountedCard, type PreparedCard } from "../src/review/index.js";
+import { mountPrepared, type MountedCard, type PreparedCard, type Pronunciation } from "../src/review/index.js";
 import { ask, listenToWorker } from "./worker-client.js";
 import {
   bareLayer,
@@ -1960,6 +1960,14 @@ async function requestClip(
 ): Promise<void> {
   button.disabled = true;
   const was = button.textContent;
+  // Decision 67: the same question the auto-fill asks — a head word with kanji
+  // and no 読み waits for the laptop's helper rather than becoming a guess.
+  const word = await ask<"pronunciation">({ kind: "pronunciation", cardId: card.cardId, text: request.text });
+  if (word.waiting) {
+    say("this word's clip waits for its reading — the laptop's helper fills 読み and 型 first");
+    button.disabled = false;
+    return;
+  }
   button.textContent = "speaking…";
   try {
     // `voice` IS SENT NOW, AND IT USED TO BE DROPPED. The endpoint keys its
@@ -1974,6 +1982,7 @@ async function requestClip(
         lang: request.lang,
         voice: request.voice,
         options: request.options,
+        ...(word.pronounce === null ? {} : { pronounce: word.pronounce }),
       },
       CLIP_TIMEOUT_MS,
     );
@@ -2161,6 +2170,7 @@ async function redoClip(
       options: request.options,
       force: true,
       readings: info.readings,
+      ...(info.pronounce === null ? {} : { pronounce: info.pronounce }),
       ...(info.hash === null ? {} : { replaces: info.hash }),
     },
     CLIP_TIMEOUT_MS,
@@ -2311,10 +2321,19 @@ async function generateGap(gap: {
   readonly lang: string | null;
   readonly voice: string | null;
   readonly options: Readonly<Record<string, string>>;
+  readonly pronounce?: Pronunciation;
 }): Promise<{ text: string } | { audio: string; voice: string | null } | { failure: string }> {
   const speech = gap.kind === "speech";
   const attempt = await askLaptop(
-    { kind: gap.kind, text: gap.text, lang: gap.lang, voice: gap.voice, options: gap.options },
+    {
+      kind: gap.kind,
+      text: gap.text,
+      lang: gap.lang,
+      voice: gap.voice,
+      options: gap.options,
+      // Decision 67: the head word's 読み + 型, outside the clip's identity.
+      ...(gap.pronounce === undefined ? {} : { pronounce: gap.pronounce }),
+    },
     speech ? CLIP_TIMEOUT_MS : TEXT_TIMEOUT_MS,
   );
   if ("failure" in attempt) return attempt;

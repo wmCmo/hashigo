@@ -72,7 +72,7 @@ import {
 import { decodeFieldOptions, recordFoundIn } from "../src/cards/index.js";
 import { cardAudioResolver } from "../src/cards/index.js";
 import { directionForTrackKind } from "../src/cards/index.js";
-import { ACCENT_FIELD_TYPE, READING_FIELD, cardGaps, prepareCard, readingSwitch } from "../src/review/index.js";
+import { ACCENT_FIELD_TYPE, READING_FIELD, cardGaps, prepareCard, readingSwitch, wordPronunciation } from "../src/review/index.js";
 import {
   buildSession,
   readSessionSettings,
@@ -149,6 +149,7 @@ import type {
   AnswerRequest,
   PriceFieldRequest,
   RedoInfoRequest,
+  PronunciationRequest,
   CardGapsRequest,
   RecordFoundInRequest,
   FieldOutputsRequest,
@@ -2313,7 +2314,21 @@ function redoInfo(request: RedoInfoRequest): void {
     alias = row?.reading ?? "";
   }
   const readings = base !== "" && alias !== "" && base !== alias ? [{ base, alias }] : [];
-  post({ kind: "redoInfo", id: request.id, hash: present, voice, readings });
+  // Decision 67: a redone word clip is made from 読み + 型, like a new one.
+  const word = wordPronunciation(db, request.cardId, request.request.text);
+  const pronounce = word !== null && word.waiting === false ? (word.pronounce ?? null) : null;
+  post({ kind: "redoInfo", id: request.id, hash: present, voice, readings, pronounce });
+}
+
+function pronunciationFor(request: PronunciationRequest): void {
+  const db = requireCards();
+  const word = wordPronunciation(db, request.cardId, request.text);
+  post({
+    kind: "pronunciation",
+    id: request.id,
+    waiting: word?.waiting === true,
+    pronounce: word !== null && word.waiting === false ? (word.pronounce ?? null) : null,
+  });
 }
 
 function backup(request: BackupRequest): void {
@@ -3153,6 +3168,7 @@ const LINK_SAFE: ReadonlySet<string> = new Set([
   "preview",
   "backlinks",
   "redoInfo",
+  "pronunciation",
   "cardGaps",
   "fieldOutputs",
   "accentPlan",
@@ -3238,6 +3254,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "redoInfo":
           redoInfo(request);
+          break;
+        case "pronunciation":
+          pronunciationFor(request);
           break;
         case "cardGaps":
           cardGapsFor(request);

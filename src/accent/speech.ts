@@ -87,6 +87,32 @@ export function yomigana(reading: string, accent: number): string {
   return `^${morae.slice(0, accent).join("")}!${morae.slice(accent).join("")}`;
 }
 
+/**
+ * 型's LABEL back to the accent position `yomigana` takes, or null when the label
+ * does not name one — the inverse of `accentLabel` in `./store.ts`.
+ *
+ * Zach, 2026-11-13, on the plan to send a word's reading to the voice: *"but it
+ * wouldn't know the accent between 塔 and 問う"*. Right — とう is two words, and
+ * only 型 says which contour. So a card's word clip is made from 読み AND 型:
+ *
+ *     平板 → 0   頭高 → 1   中高 (n) → n   尾高 → the last mora (the reading's length)
+ *
+ * Anything else — empty, a multi-phrase label, a 中高 position outside 2..n-1 —
+ * is null, and the caller sends no accent rather than a guessed one (decision 8).
+ */
+export function accentOfLabel(label: string, reading: string): number | null {
+  const text = label.trim();
+  const morae = splitMoras(reading.trim()).length;
+  if (morae === 0) return null;
+  if (text === "平板") return 0;
+  if (text === "頭高") return 1;
+  if (text === "尾高") return morae;
+  const middle = /^中高\s*\((\d+)\)$/.exec(text);
+  if (middle === null) return null;
+  const at = Number(middle[1]);
+  return at >= 2 && at < morae ? at : null;
+}
+
 /** Katakana, hiragana, the long mark, and the marks a reading may carry. */
 const KANA = /^[ぁ-ゟ゠-ヿーー〜～\s]+$/u;
 

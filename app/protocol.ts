@@ -34,7 +34,7 @@ import type { BlobPayload } from "../src/blobs/url.js";
 import type { Backlink, FoundIn } from "../src/cards/index.js";
 import type { DeriveResult, FillItem, FillReport } from "../src/accent/fill.js";
 import type { AnnotatedLine } from "../src/accent/marks.js";
-import type { PreparedCard } from "../src/review/index.js";
+import type { PreparedCard, Pronunciation } from "../src/review/index.js";
 import type { Glance } from "../src/dashboard/index.js";
 import type { SessionProgress } from "../src/session/index.js";
 import type { FieldOutput, FieldPrice, VoicePrice } from "./field-ops.js";
@@ -1089,6 +1089,27 @@ export interface RedoInfoMessage {
   /** The voice that made it, for the confirm dialog. */
   readonly voice: string | null;
   readonly readings: readonly { readonly base: string; readonly alias: string }[];
+  /** The head word's 読み + 型 accent for the voice, or null — `wordPronunciation`. */
+  readonly pronounce: Pronunciation | null;
+}
+
+/**
+ * How a clip of `text` on this card may be made — `wordPronunciation` (decision 67).
+ * Asked by "try again", which makes a clip outside the auto-fill's gap list.
+ */
+export interface PronunciationRequest {
+  readonly kind: "pronunciation";
+  readonly id: number;
+  readonly cardId: string;
+  readonly text: string;
+}
+
+export interface PronunciationMessage {
+  readonly kind: "pronunciation";
+  readonly id: number;
+  /** The word has kanji and no 読み yet: the laptop's helper fills it first. */
+  readonly waiting: boolean;
+  readonly pronounce: Pronunciation | null;
 }
 
 /**
@@ -1324,6 +1345,7 @@ export type AppRequest =
   | StoreGenerationRequest
   | StoreClipRequest
   | RedoInfoRequest
+  | PronunciationRequest
   | CardGapsRequest
   | RecordFoundInRequest
   | FieldOutputsRequest
@@ -1603,6 +1625,7 @@ export type AppMessage =
   | StoreGenerationMessage
   | StoreClipMessage
   | RedoInfoMessage
+  | PronunciationMessage
   | CardGapsMessage
   | RecordFoundInMessage
   | FieldOutputsMessage
@@ -1655,6 +1678,7 @@ export interface ReplyFor {
   readonly storeGeneration: StoreGenerationMessage;
   readonly storeClip: StoreClipMessage;
   readonly redoInfo: RedoInfoMessage;
+  readonly pronunciation: PronunciationMessage;
   readonly cardGaps: CardGapsMessage;
   readonly recordFoundIn: RecordFoundInMessage;
   readonly fieldOutputs: FieldOutputsMessage;

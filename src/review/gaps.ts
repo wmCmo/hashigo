@@ -36,6 +36,9 @@ import type { SqliteHandle } from "../db/browser.js";
 import { memoryDocument, renderSides } from "../render/index.js";
 import type { BlobKind } from "../schema/index.js";
 import { prepareCard } from "./mount.js";
+import { ACCENT_FIELD_TYPE } from "./mode.js";
+import { yomiOf } from "../fields/yomi.js";
+import { accentOfLabel, isKana } from "../accent/speech.js";
 
 /** One generation to make, with everything its identity is keyed on. */
 export interface CardGap {
@@ -44,6 +47,67 @@ export interface CardGap {
   readonly lang: string | null;
   readonly voice: string | null;
   readonly options: Readonly<Record<string, string>>;
+  /**
+   * HOW TO SAY the head word: its 読み and 型's accent, for the voice's
+   * `yomigana` notation. NOT part of the clip's identity — the key stays
+   * `text/voice/lang/options`, so no stored clip looks missing because of it.
+   * See `wordPronunciation`.
+   */
+  readonly pronounce?: Pronunciation;
+}
+
+/** A word's reading and accent position, as `speechSsml` takes them. */
+export interface Pronunciation {
+  readonly reading: string;
+  readonly accent: number;
+}
+
+/**
+ * HOW THE HEAD WORD'S CLIP MAY BE MADE — decision 67, 2026-11-13.
+ *
+ * Zach, on 数隻: *"it was saying かずせき lol"*. The automatic fill (decision 62)
+ * sent the voice plain text, so Google guessed the reading — 165 word clips were
+ * made that way, the reading only ever sent on a REDO. And a reading alone is not
+ * enough: *"it wouldn't know the accent between 塔 and 問う"*. So, for the clip of
+ * the head word on a card whose template runs the accent drill (`型`):
+ *
+ *   - `waiting`: the word has kanji and no 読み yet. The laptop's helper fills
+ *     読み and 型 in one pass (decision 56); a clip made before it is a guess
+ *     kept forever, which is how 数隻 became かずせき. Not made — it stays a
+ *     gap, and the next showing after the helper makes it.
+ *   - `pronounce`: 読み (or a kana head word) and 型's accent — the SSML the
+ *     batch pipeline always used. With no usable 型 (decision 22's six, a
+ *     multi-phrase label) the request text is still the kana 読み (decision
+ *     10), so the READING is right and only the contour is the voice's.
+ *
+ * Null for every other clip: sentences carry no accent notation (the TTS rule).
+ */
+export function wordPronunciation(
+  db: SqliteHandle,
+  cardId: string,
+  text: string,
+): { readonly waiting: true } | { readonly waiting: false; readonly pronounce?: Pronunciation } | null {
+  const card = db
+    .prepare(
+      `SELECT c.name AS name,
+              (SELECT v.value FROM card_field_values v
+                 JOIN template_fields f ON f.template_id = c.template_id AND f.id = v.field_id
+                WHERE v.card_id = c.id AND f.type = ? LIMIT 1) AS label,
+              EXISTS (SELECT 1 FROM template_fields f WHERE f.template_id = c.template_id AND f.type = ?) AS drilled
+         FROM cards c WHERE c.id = ?`,
+    )
+    .get(ACCENT_FIELD_TYPE, ACCENT_FIELD_TYPE, cardId) as
+    | { name: string; label: string | null; drilled: number }
+    | undefined;
+  if (card === undefined || Number(card.drilled) !== 1) return null;
+  const name = card.name.trim();
+  const yomi = yomiOf(db, cardId);
+  const spoken = text.trim();
+  if (spoken !== name && spoken !== yomi) return null; // not the head word's clip
+  const reading = yomi ?? (isKana(name) ? name : null);
+  if (reading === null) return { waiting: true };
+  const accent = accentOfLabel(card.label ?? "", reading);
+  return accent === null ? { waiting: false } : { waiting: false, pronounce: { reading, accent } };
 }
 
 /** The kinds the Worker can make. Furigana is deliberately not one — see the header. */
@@ -87,12 +151,15 @@ export function cardGaps(
         ? resolveAudioHash(db, cardId, { origin: "generator", request }) !== null
         : lookupGeneration(db, identity) !== null && resolveDescriptorText(db, request) !== null;
     if (present) continue;
+    const word = request.kind === "speech" ? wordPronunciation(db, cardId, String(request.text)) : null;
+    if (word?.waiting === true) continue; // the helper's 読み first — see `wordPronunciation`
     gaps.push({
       kind: request.kind,
       text: request.text,
       lang: request.lang,
       voice: request.voice,
       options: request.options,
+      ...(word?.waiting === false && word.pronounce !== undefined ? { pronounce: word.pronounce } : {}),
     });
   }
   return gaps;

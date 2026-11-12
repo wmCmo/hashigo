@@ -41,7 +41,7 @@
 
 import { generationIdentity, generationKey } from "../../../src/blobs/generation.js";
 import { sha256Hex } from "../../../src/blobs/sha256.js";
-import { synthesise } from "../../../src/accent/speech.js";
+import { isKana, splitMoras, synthesise, type SpeechRequest } from "../../../src/accent/speech.js";
 import { cleanGenerated, generateText, isEmojiPrompt } from "../../../src/generate/llm.js";
 import { fillVoiceFor } from "../../../src/generate/speech.js";
 import { catalogueVoice, sampleLine, synthesisVoice } from "../../../src/generate/voices.js";
@@ -129,6 +129,12 @@ interface Descriptor {
   readonly force: boolean;
   /** How to say particular words (`<sub>`), from the card's own reading. */
   readonly readings: readonly { readonly base: string; readonly alias: string }[];
+  /**
+   * How to say a HEAD WORD: its 読み and 型's accent, spoken through Google's
+   * `yomigana` notation (decision 67). Like `readings`, NOT part of the key — a
+   * clip made with it is filed where the same request without it would be.
+   */
+  readonly pronounce: SpeechRequest | null;
   /** The hash of the clip this one supersedes, so the laptop can retire it too. */
   readonly replaces: string | null;
 }
@@ -171,6 +177,7 @@ export function parse(raw: unknown): Descriptor | string {
       preview: true,
       force: false,
       readings: [],
+      pronounce: null,
       replaces: null,
     };
   }
@@ -187,9 +194,26 @@ export function parse(raw: unknown): Descriptor | string {
     preview: false,
     force: body["force"] === true,
     readings: parseReadings(body["readings"]),
+    pronounce: kind === "speech" ? parsePronounce(body["pronounce"]) : null,
     replaces:
       typeof body["replaces"] === "string" && /^[0-9a-f]{64}$/.test(body["replaces"]) ? body["replaces"] : null,
   };
+}
+
+/**
+ * A word's reading and accent, or null. Kana only — Google discards the notation,
+ * silently and with a 200, when the element content is not kana — and an accent
+ * inside 0..morae, the range `yomigana` writes. Anything else is ignored rather
+ * than refused: the clip is then made as before, from the text.
+ */
+function parsePronounce(raw: unknown): SpeechRequest | null {
+  if (raw === null || typeof raw !== "object") return null;
+  const { reading, accent } = raw as { reading?: unknown; accent?: unknown };
+  if (typeof reading !== "string" || typeof accent !== "number" || !Number.isInteger(accent)) return null;
+  const kana = reading.trim();
+  if (kana === "" || kana.length > 40 || !isKana(kana)) return null;
+  if (accent < 0 || accent > splitMoras(kana).length) return null;
+  return { reading: kana, accent };
 }
 
 /** At most a few short readings — this is one card's word, not a pronunciation dictionary. */
@@ -296,7 +320,7 @@ export async function generate(
         },
       ];
     }
-    const bytes = await speak(spoken, null, { apiKey: key, voice: madeWith, readings: descriptor.readings });
+    const bytes = await speak(spoken, descriptor.pronounce, { apiKey: key, voice: madeWith, readings: descriptor.readings });
     const audio = toBase64(bytes);
     const record: GeneratedRecord = {
       kind: "speech",

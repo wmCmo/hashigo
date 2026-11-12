@@ -113,6 +113,8 @@ const READ_ONLY_OR_DELTA: ReadonlySet<string> = new Set([
   "preview",
   "backlinks",
   "redoInfo",
+  // How a word clip may be made (decision 67) — reads 読み and 型, writes nothing.
+  "pronunciation",
   // 欠けている生成を数えるだけ。埋めるのは storeGeneration / storeClip の方。
   "cardGaps",
   // Only lists what is missing; `accentFill` is the one that writes.

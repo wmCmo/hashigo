@@ -54,6 +54,8 @@ import {
   type FieldContext,
   type GeneratorField,
 } from "../src/generate/index.js";
+import { accentOfLabel } from "../src/accent/speech.js";
+import { wordPronunciation } from "../src/review/index.js";
 import { GENERATOR_FIELD_TYPES, FIELD_TYPE_BLOB_KIND } from "../src/schema/index.js";
 import { orderSides, resolveCard, type TemplateInput } from "../src/template/index.js";
 import { memoryDocument, renderResolvedCard, renderSides, serialise } from "../src/render/index.js";
@@ -1462,5 +1464,81 @@ describe("emoji lines are cut to their emoji", () => {
     // A remake filed beside it is found, whichever blob `LIMIT 1` would pick.
     storeDescriptorText(db, bare, "📈🏛️✨🌅");
     expect(resolveDescriptorText(db, bare)).toBe("📈🏛️✨🌅");
+  });
+});
+
+/**
+ * Decision 67. 型's label back to an accent position, and when a card's word clip
+ * may be made — 数隻 (かずせき) and *"the accent between 塔 and 問う"*.
+ */
+describe("a word clip's reading and accent", () => {
+  it("turns every 型 label into the position yomigana takes", () => {
+    expect(accentOfLabel("平板", "とう")).toBe(0);
+    expect(accentOfLabel("頭高", "とう")).toBe(1);
+    expect(accentOfLabel("尾高", "はな")).toBe(2);
+    // Morae, not characters: しゅっぱつ is しゅ・っ・ぱ・つ.
+    expect(accentOfLabel("尾高", "しゅっぱつ")).toBe(4);
+    expect(accentOfLabel("中高 (3)", "すうせきや")).toBe(3);
+    expect(accentOfLabel("中高(2)", "すうせき")).toBe(2);
+    // A 中高 position that is really 頭高 or 尾高, a multi-phrase label, nothing.
+    expect(accentOfLabel("中高 (1)", "すうせき")).toBe(null);
+    expect(accentOfLabel("中高 (4)", "すうせき")).toBe(null);
+    expect(accentOfLabel("平板・頭高", "とう")).toBe(null);
+    expect(accentOfLabel("", "とう")).toBe(null);
+  });
+
+  function wordDb(): ReturnType<typeof openDatabase> {
+    const db = openDatabase(MEMORY);
+    const at = "2026-01-01T00:00:00.000Z";
+    db.prepare("INSERT INTO decks (id, name, updated_at) VALUES ('d', '日本語', ?)").run(at);
+    db.prepare("INSERT INTO templates (id, name, content, updated_at) VALUES ('tango', '単語', '<<単語>>', ?)").run(at);
+    db.prepare("INSERT INTO templates (id, name, content, updated_at) VALUES ('plain', 'New Vocab', '<<単語>>', ?)").run(at);
+    const field = db.prepare(
+      `INSERT INTO template_fields (template_id, id, name, type, source_field_id, pos, local, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    field.run("tango", "name", "単語", "plain", null, "a", 0, at);
+    field.run("tango", "yomi", "読み", "plain", null, "b", 1, at);
+    field.run("tango", "kata", "型", "accent", "name", "c", 1, at);
+    field.run("plain", "name", "単語", "plain", null, "a", 0, at);
+    const card = db.prepare("INSERT INTO cards (id, deck_id, template_id, name, updated_at) VALUES (?, 'd', ?, ?, ?)");
+    const value = db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES (?, ?, ?)");
+    const make = (id: string, template: string, name: string, yomi: string, kata: string): void => {
+      card.run(id, template, name, at);
+      value.run(id, "name", name);
+      if (template === "tango") {
+        value.run(id, "yomi", yomi);
+        value.run(id, "kata", kata);
+      }
+    };
+    make("tou-tower", "tango", "塔", "とう", "頭高");
+    make("tou-ask", "tango", "問う", "とう", "平板");
+    make("suuseki", "tango", "数隻", "", "");
+    make("suzuran", "tango", "すずらん", "", "平板");
+    make("maku", "tango", "まく", "まく", "");
+    make("vocab", "plain", "ecology", "", "");
+    return db;
+  }
+
+  it("塔 and 問う share とう and get their own accents", () => {
+    const db = wordDb();
+    expect(wordPronunciation(db, "tou-tower", "とう")).toEqual({ waiting: false, pronounce: { reading: "とう", accent: 1 } });
+    expect(wordPronunciation(db, "tou-ask", "とう")).toEqual({ waiting: false, pronounce: { reading: "とう", accent: 0 } });
+  });
+
+  it("WAITS while a kanji head word has no 読み — the 数隻 → かずせき case", () => {
+    expect(wordPronunciation(wordDb(), "suuseki", "数隻")).toEqual({ waiting: true });
+  });
+
+  it("a kana head word needs no 読み; a word with no 型 is made from its reading alone", () => {
+    const db = wordDb();
+    expect(wordPronunciation(db, "suzuran", "すずらん")).toEqual({ waiting: false, pronounce: { reading: "すずらん", accent: 0 } });
+    expect(wordPronunciation(db, "maku", "まく")).toEqual({ waiting: false });
+  });
+
+  it("leaves every other clip alone: a sentence, a template with no 型", () => {
+    const db = wordDb();
+    expect(wordPronunciation(db, "tou-tower", "港には漁船が数隻停泊していた。")).toBe(null);
+    expect(wordPronunciation(db, "vocab", "ecology")).toBe(null);
   });
 });

@@ -546,3 +546,39 @@ describe("an emoji line on the Worker is emoji (2026-11-06)", () => {
     expect(asked).toBe(2);
   });
 });
+
+/**
+ * Decision 67, 2026-11-13: 数隻 said かずせき, and *"it wouldn't know the accent
+ * between 塔 and 問う"*. A head word's clip carries its 読み + 型 accent to the
+ * voice — and the stored key does not change, so no existing clip looks missing.
+ */
+describe("a word clip is spoken from its reading and accent", () => {
+  const word = { kind: "speech", text: "とう", lang: "ja-JP", voice: "ja-JP-Neural2-C", options: {} };
+
+  it("passes the reading and accent to the voice, and files the clip under the same key", async () => {
+    const seen: unknown[] = [];
+    const speak = async (_text: string, request: unknown): Promise<Uint8Array> => {
+      seen.push(request);
+      return new Uint8Array([0xff, 0xfb, seen.length]);
+    };
+    const withAccent = { ...env(), GOOGLE_TTS_SECRET: "g" };
+    await generate(parse({ ...word, pronounce: { reading: "とう", accent: 1 } }) as never, withAccent, { synthesise: speak as never });
+    const plain = { ...env(), GOOGLE_TTS_SECRET: "g" };
+    await generate(parse(word) as never, plain, { synthesise: speak as never });
+    expect(seen).toEqual([{ reading: "とう", accent: 1 }, null]);
+    expect([...withAccent.MAILBOX.data.keys()]).toEqual([...plain.MAILBOX.data.keys()]);
+  });
+
+  it("ignores a pronunciation it cannot trust — kanji, an accent out of range, a text kind", () => {
+    for (const pronounce of [
+      { reading: "塔", accent: 1 },
+      { reading: "とう", accent: 3 },
+      { reading: "とう", accent: -1 },
+      { reading: "とう", accent: 1.5 },
+      "とう",
+    ]) {
+      expect(parse({ ...word, pronounce })).toMatchObject({ pronounce: null });
+    }
+    expect(parse({ kind: "ai", text: "x", pronounce: { reading: "とう", accent: 1 } })).toMatchObject({ pronounce: null });
+  });
+});

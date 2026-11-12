@@ -827,6 +827,27 @@ words, the reason, and the measurement that settled it.
    * **The repair is automatic** once the laptop — where the switches were made — sends a
      version-3 payload: every card's flag row changed, so its first send is a full one.
 
+67. **A word clip is made from its 読み AND 型, and waits for the 読み.** 2026-11-13.
+   Zach on 数隻: *"it was saying かずせき lol"*, and on the first plan (send the reading):
+   *"but it wouldn't know the accent between 塔 and 問う"*.
+   * **The gap.** The automatic fill (decision 62) sent the voice plain text; the reading
+     travelled only on a REDO, and the accent never. 165 word clips with kanji were made that
+     way in the cloud since October (none redone); 数隻's was made on 2026-10-25, before the
+     helper had filled its 読み. The batch pipeline always sent `<phoneme alphabet="yomigana">`
+     built from reading + accent (`speechSsml`) — the app's path never did.
+   * **Now**, for the head word's clip on a card whose template has `型`
+     (`wordPronunciation`, `src/review/gaps.ts`): a kanji word with no 読み WAITS — not made,
+     the next showing after the helper's pass makes it; otherwise the clip carries
+     `pronounce: {reading, accent}` — 読み (or the kana head word) and 型 read back by
+     `accentOfLabel` (平板 0, 頭高 1, 中高 (n) n, 尾高 the last mora). No usable 型 (decision
+     22's six, multi-phrase labels): no accent, no guess. Auto-fill, "try again" and redo all
+     send it.
+   * **Not part of the clip's identity.** The key stays text/voice/lang/options, so no stored
+     clip — the ~3,900 imported ones included — looks missing because of it, and nothing is
+     remade by itself. Fixing the 165 is a redo, one by one or as a batch, and only on his word.
+   * Sentences are not covered: the TTS rule is no accent notation on a sentence. Their
+     misread kanji (港 → こう on 数隻's own sentence) are a reading problem, separate.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 (in `notes/archive/`) listed ten; five were settled by later
