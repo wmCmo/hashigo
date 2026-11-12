@@ -80,3 +80,16 @@ the job, not what the app is.
   test the provider through the Worker, not only in AI Studio.
 - The done screen and the sidebar live outside `#review`; anything that hides `#review`
   must still leave a way out.
+- A word clip needs 読み AND 型 (decision 67): a reading alone can't tell 塔 from 問う.
+  Reading and accent travel beside a speech request, never in its key — put them in
+  the key and every stored clip looks missing and gets remade.
+- To check what a clip says, transcribe it locally with Whisper
+  (`C:\DEV\Playground\thai-transcribe\.venv`, language forced to `ja`). It writes
+  kanji, so it can't tell すうせき from かずせき and it breaks on long sentences: it
+  narrows the list, and Zach's ear decides.
+- A wrong clip on his devices is fixed with `scripts/clip-redo.ts`: the Worker remakes
+  it under the same key, and one small slot retires the old hash everywhere. Never
+  just regenerate: a second clip under one identity has two answers.
+- Synthetic Ctrl+C in the browser pane raises no `copy` event, and the pane refuses
+  `navigator.clipboard.writeText`; a copy feature must raise its own copy
+  (`execCommand("copy")`).
