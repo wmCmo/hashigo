@@ -1792,11 +1792,16 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
 
 /* The mark, large, and the only moving thing in the app. It is at rest before
    and after the climb — what moved is the camera. */
+/* `margin-left` pulls the INK, not the box, onto the heading's edge. The left rail
+   starts at x 16 with a 10-unit round-capped stroke, so its ink begins 11 units
+   into the 100-unit viewBox — 11.4px at 104px, which sat it right of "congrats,
+   one rung up" (measured 2026-11-13). 12px brings the ink to the text's edge. */
 .climb-mark {
   color: var(--indigo);
   display: block;
   height: 104px;
   margin-bottom: var(--space-5);
+  margin-left: calc(-1 * var(--space-3));
   width: 104px;
 }
 
@@ -2281,10 +2286,13 @@ body.sidebar-open .sidebar-scrim {
 
 /* ── the new-card form ── */
 
+/* Inset 8px, the same as the sidebar's rows above it, so the form's pills line
+   up with the row highlights and the title's text with the row icons (24px).
+   At 16px they started 8px further in and stopped 8px short (2026-11-13). */
 .newcard-host {
   border-top: 1px solid var(--line);
   flex: none;
-  padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom));
+  padding: var(--space-3) var(--space-2) calc(var(--space-3) + env(safe-area-inset-bottom));
 }
 
 .newcard {
@@ -2783,6 +2791,12 @@ body[data-view="review"] .review main {
 .confirm-panel h2 { color: var(--ink-bright); font: 400 18px/1.4 var(--jp), sans-serif; margin-bottom: var(--space-3); }
 .confirm-panel p { color: var(--muted); font-size: var(--fs-small); line-height: 1.6; }
 .confirm-bar { display: flex; gap: var(--space-3); margin-top: var(--space-5); }
+/* A field in a dialog sits under the dialog's paragraph, so the first one keeps
+   its top padding, and fields are 16px apart. `.edit-row:first-of-type` zeroed
+   it for the layer body, where nothing comes before: in "Add a field" the label
+   touched the paragraph (0px) while the next field was 32px down (2026-11-13). */
+.confirm-panel .edit-row { padding: var(--space-2) 0; }
+.confirm-panel p + .edit-row { padding-top: var(--space-4); }
 .confirm-bar button { background: none; border: 1px solid var(--edge); color: var(--ink); cursor: pointer; flex: 1; font: inherit; padding: var(--space-3); }
 .confirm-bar button.danger { border-color: var(--no-edge); color: var(--no); }
 
@@ -3480,21 +3494,29 @@ input[data-answer="incorrect"] {
    makes the time charts readable would render all but the largest as a hairline.
    Each row carries its own proportion, and the figure is TEXT beside it — a row
    has room, so nothing here is behind a hover (decision 19). */
+/* The bar column is fixed so every deck's fill starts and ends at the same two
+   x positions — a proportion you cannot compare down the column is a decoration.
+   `minmax(0, 1fr)` and not `1fr`: a grid item's default `min-width: auto` is its
+   content, so a long deck name would push the bar out of alignment instead of
+   ellipsing.
+
+   The columns live on the LIST and each row is a subgrid of them. Each row used
+   to be its own grid with an `auto` count column, so a wide count ("8,007/11,448")
+   took more room than a short one ("3/3") and pushed its bar left: measured
+   2026-11-13, the 39 bars sat at 6 different x positions spread over 53px, and
+   the comment above was describing a layout that did not exist. A shared `auto`
+   column is as wide as the widest count, in every row. */
 .glance-decks {
-  display: flex;
-  flex-direction: column;
+  column-gap: var(--space-3);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px auto;
 }
 
 .glance-deck {
   align-items: center;
   display: grid;
-  /* The bar column is fixed so every deck's fill starts and ends at the same two
-     x positions — a proportion you cannot compare down the column is a decoration.
-     `minmax(0, 1fr)` and not `1fr`: a grid item's default `min-width: auto` is its
-     content, so a long deck name would push the bar out of alignment instead of
-     ellipsing. */
-  gap: var(--space-3);
-  grid-template-columns: minmax(0, 1fr) 84px auto;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   padding: 3px 0;
 }
 
@@ -3552,9 +3574,10 @@ input[data-answer="incorrect"] {
 .glance-deck-num {
   color: var(--muted);
   font-size: var(--fs-caption);
-  /* Tabular figures, so the slash lands in the same place down the column and the
-     counts can be read as a column rather than as 39 separate labels. */
+  /* Tabular figures, right-aligned, so the counts end on one edge and read as a
+     column rather than as 39 separate labels. */
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 /* ── the editor's template row, and link completion ─────────────────────────
@@ -4629,6 +4652,14 @@ input[data-answer="incorrect"] {
   margin: var(--space-3) var(--space-2) var(--space-1);
   width: calc(100% - 16px);
 }
+/* The inset above is the SIDEBAR's: its rows are inset 8px, so its "add" is too.
+   The template editor reuses the button under field tiles that run edge to edge,
+   and there the inset made the pill start 8px right of the tiles and stop 8px
+   short of them (Zach, 2026-11-13: *"do you think the spacing looks weird"*). */
+.layer-body > .tree-add {
+  margin-inline: 0;
+  width: 100%;
+}
 .confirm-bar button.danger,
 .gcard-op.danger,
 .op.danger,
@@ -4711,9 +4742,12 @@ input[data-answer="incorrect"] {
   margin: var(--space-2);
   width: calc(100% - 16px);
 }
+/* The input, the result rows and the foot share ONE inset (8px) and ONE text
+   start (24px from the panel). They had three: the input inset 12px with its text
+   at 28, the rows at 8 with text at 20, the foot's text at 16 (2026-11-13). */
 .palette-input {
-  margin: var(--space-3) var(--space-3) var(--space-1);
-  width: calc(100% - 24px);
+  margin: var(--space-3) var(--space-2) var(--space-1);
+  width: calc(100% - 16px);
 }
 .gallery-sort {
   font-family: var(--sans);
@@ -4799,7 +4833,7 @@ input[data-answer="incorrect"] {
   border-radius: var(--radius-md);
   border-top: 0;
   margin: 0 var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
   width: calc(100% - 16px);
 }
 .palette-row.on {
@@ -4807,6 +4841,7 @@ input[data-answer="incorrect"] {
 }
 .palette-foot {
   border-top: 0;
+  padding-inline: var(--space-5);
 }
 .edit-row,
 .redo-row,
@@ -4830,6 +4865,14 @@ input[data-answer="incorrect"] {
   border: 0;
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
+}
+/* The field's name is a pill input on a tile of the same `--sunk`, so its box is
+   invisible and only its 16px of padding showed: the name started 16px right of
+   its own facts line on a phone, and 16px right of the template name's text on a
+   desktop (2026-11-13). Pulling the box onto the tile's padding puts the TEXT on
+   the tile's content edge and keeps the pill's room for a focus ring. */
+.tpl-field .tpl-name {
+  margin-left: calc(-1 * var(--space-4));
 }
 .peek {
   background: var(--sunk);

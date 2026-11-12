@@ -75,7 +75,7 @@ npm run gates -- --quick   # the same, minus dashboard + roundtrip (the two corp
                         # ONE gates run per commit: never `npm test` first to read the
                         # count and then the gates again. The pass count below comes
                         # from a FULL run only; a quick run reports fewer, on purpose.
-npm test                # 69 files, 1707 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
+npm test                # 70 files, 1715 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
                         # MEASURED, never added up — run the suite or leave the line alone
                         # (`test/docs-figures.test.ts` checks it). A wrapper
                         # (`scripts/test.mjs`) that reads vitest's SUMMARY: the run must
