@@ -74,6 +74,14 @@ the job, not what the app is.
   between devices is a sync question before it is a render question.
 - The browser pane is a device: opening the live app there pushes a full payload that
   every other device then downloads. Don't open it just to read a version string.
+- The DEV app is a device too: `.env` points it at the live mailbox. To look at screens
+  without syncing, start it with `$env:VITE_MAILBOX_URL='http://127.0.0.1:9'` — and
+  first unregister the origin's service worker and clear its caches, or it serves an
+  old `cloud.ts` with the live URL and boots with a pull (2026-11-13: one read, no
+  write). Check `performance.getEntriesByType("resource")` origins before anything else.
+- Layout claims are measured, not read off a screenshot: `getBoundingClientRect` on
+  the elements that should share an edge. jsdom has no layout, so a CSS test does the
+  arithmetic instead (`test/alignment.test.ts`).
 - Free-tier Gemini is 5 requests a minute and 20 a day per model; batch days need up to
   177. That is why the Worker falls back to Claude Haiku.
 - `gemini-3.8-flash` hung or answered 503 through the API while the playground worked;
