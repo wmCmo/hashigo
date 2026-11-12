@@ -6,6 +6,7 @@ import { childrenOf, rootsOf, subtreeTotals, type TreeDeck } from "../app/deck-t
 import { gistOf } from "../app/gist.js";
 import { isTypingTarget, survivesTyping } from "../app/keys.js";
 import { localDate, shouldStartNewDay } from "../app/new-day.js";
+import { cardIdToCopy } from "../app/copy-id.js";
 import {
   promptPositions,
   heroLength,
@@ -842,6 +843,36 @@ describe("the done screen's way out", () => {
 
   it("gives way to the gallery the toggle can now open", () => {
     expect(css).toContain('body[data-view="gallery"] .done { display: none; }');
+  });
+});
+
+// ── Ctrl+C with nothing selected copies the open card's id ──────────────────
+
+/** Zach, 2026-11-13: *"when open a card, and nothing is selected, if we do ctrl c, then it copies card's id"*. */
+describe("copying the open card's id", () => {
+  const base = { selection: "", typing: false, layerCardId: null, reviewCardId: "rev1" };
+
+  it("copies the review card's id when nothing is selected", () => {
+    expect(cardIdToCopy(base)).toBe("rev1");
+  });
+
+  it("copies the TOP LAYER's card over the review card underneath", () => {
+    expect(cardIdToCopy({ ...base, layerCardId: "prev9" })).toBe("prev9");
+  });
+
+  it("steps aside for a real copy: selected text, or focus in a field", () => {
+    expect(cardIdToCopy({ ...base, selection: "数隻" })).toBe(null);
+    expect(cardIdToCopy({ ...base, typing: true })).toBe(null);
+  });
+
+  it("whitespace alone is not a selection", () => {
+    expect(cardIdToCopy({ ...base, selection: " \n" })).toBe("rev1");
+  });
+
+  it("copies nothing where no single card is open", () => {
+    expect(cardIdToCopy({ ...base, reviewCardId: null })).toBe(null);
+    // A layer that renders no card ("card not found") does not fall through to the review card.
+    expect(cardIdToCopy({ ...base, layerCardId: "" })).toBe(null);
   });
 });
 

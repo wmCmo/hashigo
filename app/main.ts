@@ -140,6 +140,7 @@ import type { RenderResult } from "../src/render/index.js";
 import type { ShadowingSide } from "../src/render/reveal.js";
 // Import-free rules `test/` can reach; see `test/app-logic.test.ts`.
 import { isTypingTarget, type KeyTarget } from "./keys.js";
+import { cardIdToCopy } from "./copy-id.js";
 import { clearVisits, noteVisit } from "./visits.js";
 import { mountClimb } from "./climb.js";
 import { overdueLabel, overdueTitle } from "./overdue.js";
@@ -2978,6 +2979,60 @@ paintShadowbar();
  * stay behind `@media (hover:hover) and (pointer:fine)` in the stylesheet
  * (decision 19: never behind a hover affordance, and a phone has no hover).
  */
+/**
+ * Ctrl+C with nothing selected copies the open card's id — `./copy-id.ts` says
+ * which card and when it steps aside. The `copy` EVENT, not a keydown: it is
+ * what Ctrl+C, Ctrl+Insert and the browser's own Copy all raise, and it hands
+ * over the clipboard without a permission prompt.
+ */
+function openCardIdToCopy(): string | null {
+  const top = layers.at(-1);
+  return cardIdToCopy({
+    selection: window.getSelection()?.toString() ?? "",
+    typing: isTypingTarget(document.activeElement as KeyTarget | null),
+    layerCardId: top === undefined ? null : top.cardId,
+    reviewCardId:
+      !reviewView.hidden && document.body.getAttribute("data-view") !== "gallery" ? currentCardId : null,
+  });
+}
+// THE KEY ITSELF, FIRST. A browser need not raise `copy` when nothing is selected
+// (measured 2026-11-13: none arrived in the dev app's Chromium on Ctrl+C), so the
+// keydown raises one: `execCommand("copy")` dispatches the `copy` event below
+// synchronously, inside the key press, where `clipboardData.setData` is always
+// allowed. The Clipboard API is the fallback only — the same Chromium REFUSED
+// `writeText` from the same key press (NotAllowedError). Registered before the
+// review keys, which ignore Ctrl+C.
+document.addEventListener("keydown", (event) => {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+  if (event.key.toLowerCase() !== "c" && event.key !== "Insert") return;
+  const id = openCardIdToCopy();
+  if (id === null) return;
+  event.preventDefault();
+  copyingId = false;
+  const raised = document.execCommand("copy");
+  if (raised && copyingId) return;
+  if (navigator.clipboard === undefined) {
+    say(`could not copy — the card id is ${id}`, true);
+    return;
+  }
+  navigator.clipboard.writeText(id).then(
+    () => say(`copied card id ${id}`),
+    () => say(`could not copy — the card id is ${id}`, true),
+  );
+});
+/** Set by the `copy` handler when it wrote an id — how the keydown knows it worked. */
+let copyingId = false;
+// …and the event too, for a copy the key did not start (the browser's own Edit →
+// Copy, Ctrl+Insert where it raises `copy` directly).
+document.addEventListener("copy", (event) => {
+  const id = openCardIdToCopy();
+  if (id === null || event.clipboardData === null) return;
+  event.clipboardData.setData("text/plain", id);
+  event.preventDefault();
+  copyingId = true;
+  say(`copied card id ${id}`);
+});
+
 document.addEventListener("keydown", (event) => {
   const action = reviewAction(event, {
     // `./keys.js` owns this, over `tagName` rather than `instanceof`, so it is
