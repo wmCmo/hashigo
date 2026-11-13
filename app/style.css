@@ -314,11 +314,17 @@
   color: var(--card);
 }
 
+/* `-webkit-tap-highlight-color` is inherited, so this one line turns off Android's
+   translucent box over everything he taps. Zach, 2026-11-13, on his phone: the
+   blue marks *"that like when you tap it shows"* — he asked whether going native
+   would remove them. It was this default; only the dashboard's chart bars had it
+   off. A press still answers through each control's own `:active` style. */
 body {
   background: var(--bg);
   color: var(--ink);
   font: 15px/1.6 var(--sans);
   min-height: 100vh;
+  -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
 }
 

@@ -815,6 +815,27 @@ describe("following the reveal down the page", () => {
   });
 });
 
+// ── no tap highlight ─────────────────────────────────────────────────────────
+
+/**
+ * Zach, 2026-11-13, on his phone: the blue boxes Android draws over whatever is
+ * tapped — *"Do you think that if we make it native ... they would disappear"*.
+ * They were the browser's default tap highlight, off on one element only.
+ */
+describe("the tap highlight", () => {
+  const css = readFileSync("app/style.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("is off for the whole page, from body, where everything inherits it", () => {
+    const body = /(?:^|\n)body\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(body).toMatch(/-webkit-tap-highlight-color:\s*transparent/);
+  });
+
+  it("is never turned back on", () => {
+    const values = [...css.matchAll(/-webkit-tap-highlight-color:\s*([^;}]+)/g)].map((m) => (m[1] as string).trim());
+    expect(values.filter((v) => v !== "transparent")).toEqual([]);
+  });
+});
+
 // ── the done screen has a way out ────────────────────────────────────────────
 
 /**
