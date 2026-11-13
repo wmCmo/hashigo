@@ -98,6 +98,13 @@ the job, not what the app is.
 - A wrong clip on his devices is fixed with `scripts/clip-redo.ts`: the Worker remakes
   it under the same key, and one small slot retires the old hash everywhere. Never
   just regenerate: a second clip under one identity has two answers.
+- A sync PUT REPLACES the slot. clip-redo once sent only its own run and erased the
+  161 retirements before it — no device re-shares them. It now unions; anything else
+  that writes a slot must too.
+- The right notation can still come out wrong: `ph="^いひん"` gave 遺品 with no ひ,
+  deterministically; `^イヒン` was right (`--say 遺品=イヒン`). To try forms without
+  touching a card's clip, send the real request with `options: {probe: "…"}` —
+  options are in the key and never reach Google. `tools/f0.py` checks the contour.
 - Synthetic Ctrl+C in the browser pane raises no `copy` event, and the pane refuses
   `navigator.clipboard.writeText`; a copy feature must raise its own copy
   (`execCommand("copy")`).

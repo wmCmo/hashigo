@@ -10,6 +10,18 @@
  *     npx vite-node scripts/clip-redo.ts                          # dry: lists, makes nothing
  *     npx vite-node scripts/clip-redo.ts -- --words --apply       # every cloud word clip, from 読み + 型
  *     npx vite-node scripts/clip-redo.ts -- --sentences scripts/clip-redo-sentences.json --apply
+ *     npx vite-node scripts/clip-redo.ts -- --say 遺品=イヒン --apply  # only these words, this kana
+ *
+ * ─── `--say`: WHEN GOOGLE MISREADS THE RIGHT NOTATION ───────────────────────
+ *
+ * Zach, 2026-11-13: *"i think 遺品 sound is wrong too"*. Its 読み いひん and 型 平板
+ * were right and so was the request, `ph="^いひん"` — and Google's audio had no ひ
+ * in it: 0.72 s of unbroken voicing where the sentence clip shows the fricative
+ * as a 70-88% high-band burst. Measured on probes under throwaway keys: the same
+ * request is byte-identical every time, the 尾高 form is byte-identical too, and
+ * the KATAKANA reading `^イヒン` brings the ひ back (80-89% at 0.18-0.26 s), still
+ * flat. So `--say word=kana` remakes only the named words with that kana as the
+ * reading; the accent still comes from 型, and the mora count must match.
  *
  * ─── HOW A REDO REACHES EVERY DEVICE ────────────────────────────────────────
  *
@@ -39,13 +51,29 @@ import { gunzipSync } from "node:zlib";
 
 import { openDatabase } from "../src/db/index.js";
 import { retiredHashes } from "../src/blobs/retire.js";
+import { isKana, splitMoras } from "../src/accent/speech.js";
 import { wordPronunciation, type Pronunciation } from "../src/review/index.js";
 import { deltaPayload, mergeSync, SYNC_VERSION, type SyncPayload } from "../src/sync/index.js";
 import { ARCHIVE_VERSION } from "../src/backup/index.js";
 
 const SLOT = "dev-clip-redo";
 const apply = process.argv.includes("--apply");
-const doWords = process.argv.includes("--words");
+/** `--say 遺品=イヒン`, repeatable: these words only, spoken from this kana. */
+const say = new Map<string, string>();
+process.argv.forEach((arg, i) => {
+  if (arg !== "--say") return;
+  const [word, kana] = (process.argv[i + 1] ?? "").split("=");
+  if (!word || !kana) {
+    console.error(`--say wants word=kana, got "${process.argv[i + 1] ?? ""}"`);
+    process.exit(2);
+  }
+  say.set(word.trim(), kana.trim());
+});
+const doWords = process.argv.includes("--words") || say.size > 0;
+/** `--retire <sha256>`, repeatable: a retired clip the store no longer records. */
+const extraRetire = process.argv.flatMap((arg, i) =>
+  arg === "--retire" && /^[0-9a-f]{64}$/.test(process.argv[i + 1] ?? "") ? [process.argv[i + 1] as string] : [],
+);
 const sentencesFile = (() => {
   const at = process.argv.indexOf("--sentences");
   return at === -1 ? null : (process.argv[at + 1] ?? null);
@@ -68,6 +96,8 @@ interface Stored {
   readonly voice: string | null;
   readonly options: Record<string, string>;
   readonly audio?: string;
+  /** The hash of the clip this one replaced, when it was made by a redo. */
+  readonly replaces?: string;
 }
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
@@ -110,10 +140,36 @@ try {
   // ── what the Worker made ───────────────────────────────────────────────────
   const keys = (await json<{ keys: string[] }>("/generated/")).keys;
   const clips: Stored[] = [];
+  /** Every hash a redo replaced, and every hash still served as a clip. */
+  const replacedInStore = new Set<string>();
+  const live = new Set<string>();
   for (const key of keys) {
     const r = await json<Stored>(`/generated/${encodeURIComponent(key)}`).catch(() => null);
-    if (r !== null && r.kind === "speech" && (r.lang ?? "").startsWith("ja") && typeof r.audio === "string") clips.push(r);
+    // `options.probe` marks a measurement made under a throwaway key (options are in
+    // the key and never reach Google): no card reads it, so it is never redone, and
+    // its audio does not count as served.
+    if (r === null || r.options?.["probe"]) continue;
+    if (typeof r.audio === "string") live.add(sha(r.audio));
+    if (typeof r.replaces === "string") replacedInStore.add(r.replaces);
+    if (r.kind === "speech" && (r.lang ?? "").startsWith("ja") && typeof r.audio === "string") clips.push(r);
   }
+
+  // ── what this slot must carry ──────────────────────────────────────────────
+  // 2026-11-13: the PUT below REPLACES the slot, and it used to carry only the run
+  // that made it — so the 遺品 run (one hash) erased the 161 the 11-12 run had
+  // retired, from the only slot that held them (no device re-shared them). Every
+  // send now carries the slot's old list, every hash the store says a redo
+  // replaced, and any `--retire`; minus anything still served, so a redo that gave
+  // the same bytes back can never mute a card.
+  const own = (await payloadOf(`/sync/${SLOT}`)) as SyncPayload | null;
+  const alreadySent = new Set(own?.retiredClips ?? []);
+  const owed = (made: readonly string[]): string[] => {
+    const all = new Set([...alreadySent, ...replacedInStore, ...extraRetire, ...made]);
+    for (const hash of live) all.delete(hash);
+    return [...all].sort();
+  };
+  const unsent = owed([]).filter((h) => !alreadySent.has(h));
+  console.log(`${SLOT} carries ${alreadySent.size} retired clip(s); ${unsent.length} more owed before this run`);
 
   interface Job {
     readonly label: string;
@@ -131,6 +187,7 @@ try {
     let waiting = 0;
     let unlabelled = 0;
     for (const clip of clips) {
+      if (say.size > 0 && !say.has(clip.text.trim())) continue;
       const ids = byName.get(clip.text.trim());
       if (ids === undefined) continue;
       // The same word on two cards with different 型 would be one clip with two
@@ -152,7 +209,17 @@ try {
         unlabelled += 1;
         continue; // no 型 to speak it with: the reading alone is not what this redo fixes
       }
-      jobs.push({ label: `${clip.text} → ${word.pronounce.reading} (${word.pronounce.accent})`, clip, pronounce: word.pronounce });
+      let pronounce = word.pronounce;
+      const kana = say.get(clip.text.trim());
+      if (kana !== undefined) {
+        // Same morae or the accent position would land somewhere else.
+        if (!isKana(kana) || splitMoras(kana).length !== splitMoras(pronounce.reading).length) {
+          console.log(`  --say ${clip.text}=${kana}: not kana, or not ${splitMoras(pronounce.reading).length} morae like ${pronounce.reading} — left`);
+          continue;
+        }
+        pronounce = { ...pronounce, reading: kana };
+      }
+      jobs.push({ label: `${clip.text} → ${pronounce.reading} (${pronounce.accent})`, clip, pronounce });
     }
     console.log(`words: ${jobs.length} to redo · ${waiting} waiting for 読み · ${unlabelled} with no usable 型 (left)`);
   }
@@ -212,7 +279,11 @@ try {
     retire.push(old);
   }
   console.log(`made ${retire.length} · same ${same} · failed ${failed}`);
-  if (retire.length === 0) process.exit(failed > 0 ? 1 : 0);
+  const retiredClips = owed(retire);
+  if (retiredClips.every((h) => alreadySent.has(h))) {
+    console.log(`${SLOT} already carries every retired clip — nothing to send`);
+    process.exit(failed > 0 ? 1 : 0);
+  }
 
   // ── 2. one payload that says only "these clips are retired" ────────────────
   const now = new Date().toISOString();
@@ -235,7 +306,7 @@ try {
     cardFlags: [],
     deckFlags: [],
     // No `voicesCarried`, no `templatesCarried`: this payload says nothing about either.
-    retiredClips: [...new Set(retire)].sort(),
+    retiredClips,
   };
 
   // ── self-check: merged into a fresh copy, it retires exactly these ─────────
