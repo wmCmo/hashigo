@@ -141,6 +141,7 @@ import type { ShadowingSide } from "../src/render/reveal.js";
 // Import-free rules `test/` can reach; see `test/app-logic.test.ts`.
 import { isTypingTarget, type KeyTarget } from "./keys.js";
 import { cardIdToCopy } from "./copy-id.js";
+import { handleLineKeys } from "./line-edit.js";
 import { clearVisits, noteVisit } from "./visits.js";
 import { mountClimb } from "./climb.js";
 import { overdueLabel, overdueTitle } from "./overdue.js";
@@ -3014,6 +3015,9 @@ function openCardIdToCopy(): string | null {
       !reviewView.hidden && document.body.getAttribute("data-view") !== "gallery" ? currentCardId : null,
   });
 }
+// VS Code's line keys in every text field (`./line-edit.ts`). Registered before the
+// copy-id keydown below, which steps aside while focus is in a field anyway.
+document.addEventListener("keydown", handleLineKeys);
 // THE KEY ITSELF, FIRST. A browser need not raise `copy` when nothing is selected
 // (measured 2026-11-13: none arrived in the dev app's Chromium on Ctrl+C), so the
 // keydown raises one: `execCommand("copy")` dispatches the `copy` event below
