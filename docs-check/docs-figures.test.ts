@@ -3,12 +3,16 @@ import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { SCHEMA_VERSION } from "../src/schema/index.js";
-
 /**
  * THE DOCS' *DURABLE* FIGURES ARE ACCURATE. THE *VOLATILE* ONES ROT, SILENTLY.
  *
- * `test/docs-integrity.test.ts` watches the decision NUMBERING, because a markdown
+ * NOT A GATE (Zach, 2026-11-14: *"i feel like no code should break when the doc
+ * changes"*). This folder runs as `npm run docs:check`, outside `npm test` and the
+ * gates: it reports a stale path or script, it never blocks a commit or a release.
+ * The figures that rot with every change — the test counts, SCHEMA_VERSION, the
+ * export-subpath count — were taken out of the docs the same day, with their checks.
+ *
+ * `docs-check/docs-integrity.test.ts` watches the decision NUMBERING, because a markdown
  * formatter renumbered it once. This file watches the FIGURES, because nothing did.
  *
  * THE DISTINCTION IS THE POINT, and it was measured rather than assumed: the figures
@@ -56,60 +60,6 @@ function liveHalf(name: string): string {
 }
 
 describe("the figures a routine change invalidates", () => {
-  it("every stated test-file count is the real number of test files", () => {
-    const real = countTestFiles();
-    const all = [...liveHalf("CLAUDE.md").matchAll(/(\d+) files, [\d,]+ passed/g)].map((m) =>
-      Number(m[1]),
-    );
-    expect(all.length, "no test-file-count claim found — did the phrasing change?").toBeGreaterThan(
-      0,
-    );
-    for (const claimed of all) {
-      expect(
-        claimed,
-        `a doc claims ${claimed} test files; there are ${real}. Update the docs or this test.`,
-      ).toBe(real);
-    }
-  });
-
-  it("every stated passing-test count agrees with every other one", () => {
-    // The absolute number cannot be checked without running the suite, and running
-    // the suite from inside the suite is not a thing. What CAN be checked is that
-    // the live documents agree with each other — the failure that actually happened
-    // was CLAUDE.md and NEXT.md drifting apart from the truth together, but they
-    // have also drifted apart from EACH OTHER before (734 vs 757).
-    const counts = new Set<number>();
-    for (const doc of ["CLAUDE.md", "RELEASE.md"]) {
-      for (const m of liveHalf(doc).matchAll(/([\d,]{3,}) passed/g)) {
-        counts.add(Number(m[1]!.replace(/,/g, "")));
-      }
-    }
-    expect(
-      [...counts],
-      `the live docs quote ${counts.size} different passing-test counts: ${[...counts].join(", ")}`,
-    ).toHaveLength(1);
-  });
-
-  it("the stated SCHEMA_VERSION is the real one", () => {
-    const claims = [...read("CLAUDE.md").matchAll(/`SCHEMA_VERSION` is \*\*(\d+)\*\*/g)].map((m) =>
-      Number(m[1]),
-    );
-    expect(claims.length, "CLAUDE.md no longer states SCHEMA_VERSION").toBeGreaterThan(0);
-    for (const claimed of claims) expect(claimed).toBe(SCHEMA_VERSION);
-  });
-
-  it("the stated export-subpath count is the real one", () => {
-    const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
-      exports: Record<string, unknown>;
-    };
-    const real = Object.keys(pkg.exports).filter((k) => k !== "./package.json").length;
-    const claims = [...read("CLAUDE.md").matchAll(/\((\d+) export subpaths\)/g)].map((m) =>
-      Number(m[1]),
-    );
-    expect(claims.length, "CLAUDE.md no longer states the export-subpath count").toBeGreaterThan(0);
-    for (const claimed of claims) expect(claimed).toBe(real);
-  });
-
   it("any stated decision count is the real one", () => {
     const real = [...read("DECISIONS.md").matchAll(/^(\d+)\. /gm)].length;
     // Deliberately scans the WHOLE of each, history included: "There are N
@@ -331,16 +281,8 @@ describe("claims inside code comments", () => {
         contains: "THE SEED MANIFEST",
         why: "same bug as db.worker.ts, from the writing side",
       },
-      {
-        file: "test/docs-figures.test.ts",
-        contains: "A SUPERSEDED CORPUS FIGURE IS A CLAIM ABOUT NOW",
-        why: "this gate's own header quotes what it caught",
-      },
-      {
-        file: "test/docs-figures.test.ts",
-        contains: "THE SAME CHECKS, OVER CODE COMMENTS",
-        why: "a dated 2026-08-26 survey of the prose surface",
-      },
+      // This file's own quotes needed no exemption once it left test/ for
+      // docs-check/, which the comment scan does not walk (2026-11-14).
     ];
 
     const exempt = (file: string, text: string): boolean =>
@@ -514,27 +456,3 @@ describe("everything the docs tell you to run or open", () => {
  * Counted from disk rather than imported from a manifest on purpose: a manifest is
  * one more thing to forget to update, which is the bug this file exists to catch.
  */
-function countTestFiles(): number {
-  return readdirSync(join(ROOT, "test")).filter((f) => f.endsWith(".test.ts")).length;
-}
-
-/**
- * `npm run gates -- --quick` skips the two corpus re-imports only when nothing
- * changed can reach them (2026-11-05, `scripts/corpus-deps.mjs`). The reach is
- * walked from the tests' imports, so it is pinned by what it must and must not
- * contain rather than by a list.
- */
-describe("the quick gate's reach", () => {
-  it("covers the importer, its parser and the oracle, and not the editor", async () => {
-    const { corpusTouched } = (await import("../scripts/corpus-deps.mjs")) as {
-      corpusTouched: (root: string, changed: string[]) => string[];
-    };
-    const root = process.cwd();
-    for (const file of ["src/import/entities.ts", "src/template/parse.ts", "test/roundtrip.test.ts", "package.json", "dashboard.html"]) {
-      expect(corpusTouched(root, [file]), file).toEqual([file]);
-    }
-    for (const file of ["app/main.ts", "app/template-editor.ts", "src/cards/tags.ts"]) {
-      expect(corpusTouched(root, [file]), file).toEqual([]);
-    }
-  });
-});

@@ -145,7 +145,11 @@ export default defineConfig({
     // not one. It appears the moment a second session is started and disappears
     // when that worktree is cleaned up, so it is intermittent in the way that
     // wastes the most time.
-    exclude: ["**/node_modules/**", "**/dist/**", "**/.claude/worktrees/**"],
+    //
+    // `docs-check/` is not part of it either, ON PURPOSE: it reads the docs, and
+    // Zach, 2026-11-14: *"i feel like no code should break when the doc changes"*.
+    // It runs as `npm run docs:check` (`vitest.docs.config.ts`), outside the gates.
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.claude/worktrees/**", "docs-check/**"],
     testTimeout: 120_000,
     // `test.maxWorkers` alone does NOT do it — measured: with only that key set,
     // the run still spent 297–363 s of test time inside ~70–87 s of wall clock,

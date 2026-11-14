@@ -18,8 +18,8 @@ words, the reason, and the measurement that settled it.
   four decisions once lived only in his Obsidian planner, and one of them (`型`
   placement, decision 20) was reopened by an audit weeks after he had settled it.
 * **Never renumber, only append.** Numbers are cited across `src/`, `test/` and the
-  notes; `test/docs-integrity.test.ts` checks the shape and `test/docs-figures.test.ts`
-  the citations.
+  notes; `npm run docs:check` checks the shape and the citations (not a gate since
+  2026-11-14).
 * **Never run a Markdown formatter over this file** — it renumbered the list once and
   every gate passed.
 * **Where this file and `notes/zach-in-his-own-words.md` disagree, that file is right.**

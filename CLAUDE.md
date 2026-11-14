@@ -71,12 +71,11 @@ npm run gates -- --quick   # the same, minus dashboard + roundtrip (the two corp
                         # re-imports) WHEN nothing changed can reach them — decided by
                         # walking their imports (`scripts/corpus-deps.mjs`), refused
                         # and run in full otherwise. ~85 s instead of ~2 min (2026-11-05).
-                        # ONE gates run per commit: never `npm test` first to read the
-                        # count and then the gates again. The pass count below comes
-                        # from a FULL run only; a quick run reports fewer, on purpose.
-npm test                # 71 files, 1738 passed, 1 skipped (the FSRS refit, gated). ~55-100 s.
-                        # MEASURED, never added up — run the suite or leave the line alone
-                        # (`test/docs-figures.test.ts` checks it). A wrapper
+                        # ONE gates run per commit: never `npm test` first and then the
+                        # gates again.
+npm run docs:check      # the checks that READ THE DOCS (paths, scripts, the decision
+                        # numbering) — NOT a gate, never blocks a commit (2026-11-14).
+npm test                # the whole suite, ~55-100 s; the gates print its counts. A wrapper
                         # (`scripts/test.mjs`) that reads vitest's SUMMARY: the run must
                         # finish and have zero failures. Raw vitest (`npm run test:raw`)
                         # exits 1 on a passing run because birpc's hard-coded 60 s timeout
@@ -87,7 +86,7 @@ npm test                # 71 files, 1738 passed, 1 skipped (the FSRS refit, gate
                         # whole corpus; splitting one would not move it.
 npm run typecheck       # exit 0
 npm run app:check       # exit 0 — app/ has its OWN tsconfig and this is a REQUIRED gate
-npm run build           # refuses to exit 0 unless dist/ actually imports (29 export subpaths)
+npm run build           # refuses to exit 0 unless dist/ actually imports every export subpath
 npm run rebuild -- --force   # the schema-bump chore as ONE command, with invariants
 npm run import -- --db build/hashigo.db exports/日本語 exports/English exports/基本情報
 npm run dashboard -- --db build/hashigo.db --out dashboard.html   # --locale ja for the other
@@ -156,7 +155,8 @@ answers both and also binds the LAN. `server.fs.allow` is narrowed on purpose: w
 
 ## A schema bump means RE-IMPORT — and that is no longer lossless
 
-`SCHEMA_VERSION` is **9** and `applySchema` refuses any other version.
+`SCHEMA_VERSION` (in `src/schema/`) is the one version `applySchema` accepts; it refuses any
+other.
 
 > [!warning] **A rebuild from `exports/` discards everything graded in Hashigo since the
 > final import (decisions 16, 41).** The devices' OPFS and the sync payloads are the system
@@ -204,7 +204,7 @@ give an honest opinion — and when he decides differently, record the new decis
 > that touches one.** Numbering is cited across `src/`, `test/` and the notes: **never
 > renumber, only append.** **Never run a Markdown formatter over this file or
 > DECISIONS.md** — it renumbered the list once and passed every gate;
-> `test/docs-integrity.test.ts` now fails on it.
+> `npm run docs:check` (`docs-check/docs-integrity.test.ts`) reports it.
 
 > An amended decision reads as it stands now; a superseded one keeps its number as a
 > pointer to what replaced it (consolidated 2026-11-11 — the earlier wording of both
