@@ -23,6 +23,18 @@
  * flat. So `--say word=kana` remakes only the named words with that kana as the
  * reading; the accent still comes from 型, and the mora count must match.
  *
+ * ─── `--word`: A CLIP MOCHI MADE ─────────────────────────────────────────────
+ *
+ * Zach, 2026-11-14: *"図々しい audio is wrong"*. Its word clip was Mochi's Azure
+ * Nanami clip, made from the plain text 図々しい, and the second ずう lasted 80 ms
+ * (0.70-0.78 s) against 480 ms for the first: it said ずーずしい. The pitch was
+ * right (中高 5) and the card had no 読み. `--word 図々しい` remakes that word's
+ * head-word clip WHEREVER IT CAME FROM, including the imported corpus that the
+ * rest of this script never touches, from 読み + 型. The old hash comes from the
+ * merged database rather than the Worker's store. Give the card its 読み FIRST
+ * (`sync-set.ts`): a word still waiting for one is left alone, because a retired
+ * clip with no 読み leaves the card mute (`cardGaps` will not fill it).
+ *
  * ─── HOW A REDO REACHES EVERY DEVICE ────────────────────────────────────────
  *
  * The in-app redo's own path, done in bulk:
@@ -38,7 +50,8 @@
  *
  * ─── WHAT IT TOUCHES ────────────────────────────────────────────────────────
  *
- * Only clips the Worker made (the cloud store), never the imported corpus, and
+ * Only clips the Worker made (the cloud store), never the imported corpus unless
+ * `--word` names the word, and
  * for words only the head word's clip on a card with 型 that `wordPronunciation`
  * can say — a word still waiting for its 読み is listed and left alone. The
  * payload is self-checked against a fresh merge before anything is sent.
@@ -69,7 +82,13 @@ process.argv.forEach((arg, i) => {
   }
   say.set(word.trim(), kana.trim());
 });
-const doWords = process.argv.includes("--words") || say.size > 0;
+/** `--word 図々しい`, repeatable: this word's clip even when Mochi made it. See the header. */
+const named = new Set(
+  process.argv.flatMap((arg, i) => (arg === "--word" && process.argv[i + 1] ? [process.argv[i + 1]!.trim()] : [])),
+);
+/** With `--say` or `--word`, ONLY those words; `--words` alone means every cloud word clip. */
+const only = new Set([...say.keys(), ...named]);
+const doWords = process.argv.includes("--words") || only.size > 0;
 /** `--retire <sha256>`, repeatable: a retired clip the store no longer records. */
 const extraRetire = process.argv.flatMap((arg, i) =>
   arg === "--retire" && /^[0-9a-f]{64}$/.test(process.argv[i + 1] ?? "") ? [process.argv[i + 1] as string] : [],
@@ -176,6 +195,8 @@ try {
     readonly clip: Stored;
     readonly pronounce?: Pronunciation;
     readonly readings?: { base: string; alias: string }[];
+    /** The hash being replaced — the Worker's audio, or an imported blob (`--word`). */
+    readonly old: string;
   }
   const jobs: Job[] = [];
 
@@ -184,10 +205,40 @@ try {
     for (const r of db.prepare("SELECT id, name FROM cards WHERE archived = 0").all() as { id: string; name: string }[]) {
       byName.set(r.name.trim(), [...(byName.get(r.name.trim()) ?? []), r.id]);
     }
+    // The Worker's word clips, then — for `--word` only — the head-word clip Mochi
+    // made, read from the merged database. A word that ALSO has a cloud clip is not
+    // handled here: a device prefers the card's own voice, so redoing one of the two
+    // would leave the other playing.
+    const candidates: { clip: Stored; old: string }[] = clips.map((clip) => ({ clip, old: sha(clip.audio as string) }));
+    const retiredNow = new Set(retiredHashes(db as never));
+    for (const word of named) {
+      if (clips.some((c) => c.text.trim() === word)) {
+        console.log(`  --word ${word}: has a cloud clip too — left`);
+        continue;
+      }
+      const rows = (byName.get(word) ?? []).flatMap(
+        (id) =>
+          db
+            .prepare(
+              `SELECT b.hash, b.source_text AS text, b.lang, b.voice, b.options FROM blob_refs r
+                 JOIN blobs b ON b.hash = r.blob_hash
+                WHERE r.card_id = ? AND b.kind = 'speech' AND trim(b.source_text) = ?`,
+            )
+            .all(id, word) as { hash: string; text: string; lang: string | null; voice: string | null; options: string }[],
+      );
+      const distinct = [...new Map(rows.filter((r) => !retiredNow.has(r.hash)).map((r) => [r.hash, r])).values()];
+      if (distinct.length !== 1) {
+        console.log(`  --word ${word}: ${distinct.length} imported head-word clips, want exactly 1 — left`);
+        continue;
+      }
+      const row = distinct[0]!;
+      const options = JSON.parse(row.options) as Record<string, string>;
+      candidates.push({ clip: { kind: "speech", text: row.text, lang: row.lang, voice: row.voice, options }, old: row.hash });
+    }
     let waiting = 0;
     let unlabelled = 0;
-    for (const clip of clips) {
-      if (say.size > 0 && !say.has(clip.text.trim())) continue;
+    for (const { clip, old } of candidates) {
+      if (only.size > 0 && !only.has(clip.text.trim())) continue;
       const ids = byName.get(clip.text.trim());
       if (ids === undefined) continue;
       // The same word on two cards with different 型 would be one clip with two
@@ -219,7 +270,7 @@ try {
         }
         pronounce = { ...pronounce, reading: kana };
       }
-      jobs.push({ label: `${clip.text} → ${pronounce.reading} (${pronounce.accent})`, clip, pronounce });
+      jobs.push({ label: `${clip.text} → ${pronounce.reading} (${pronounce.accent})`, clip, pronounce, old });
     }
     console.log(`words: ${jobs.length} to redo · ${waiting} waiting for 読み · ${unlabelled} with no usable 型 (left)`);
   }
@@ -232,7 +283,12 @@ try {
         console.log(`  no cloud clip for: ${w.text}`);
         continue;
       }
-      jobs.push({ label: `${w.text.slice(0, 24)}… — ${w.readings.map((r) => `${r.base}=${r.alias}`).join(", ")}`, clip, readings: w.readings });
+      jobs.push({
+        label: `${w.text.slice(0, 24)}… — ${w.readings.map((r) => `${r.base}=${r.alias}`).join(", ")}`,
+        clip,
+        readings: w.readings,
+        old: sha(clip.audio as string),
+      });
     }
   }
 
@@ -247,7 +303,7 @@ try {
   let same = 0;
   let failed = 0;
   for (const job of jobs) {
-    const old = sha(job.clip.audio as string);
+    const old = job.old;
     const body = {
       kind: "speech",
       text: job.clip.text,
