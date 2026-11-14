@@ -880,11 +880,18 @@ words, the reason, and the measurement that settled it.
      quibbles (「専ら読書ばかり」 says it twice; a whale in an aquarium). The high-effort
      and Sonnet runs were subagents given Hashigo's exact prompt, seven words at a time,
      not the Worker itself: evidence of the model, not of the exact call.
-   * The cost, estimated: Sonnet 5.5 is $2 / $10 per MTok, 20× Haiku. At ~8,000 calls a
-     year and ~100 in / ≤400 out per call, about $35 a year — still under Mochi's $60.
-     A probe (`options.probe` + `options.effort`, `probeEffort` in
-     `cloud/mailbox/src/generate.ts`) returns each call's real token counts, so the
-     figure can be measured instead of guessed.
+   * The cost, MEASURED after deploying (v0.10.8): the 35 words × emoji, sentence and
+     translation through the live Worker as probes (`options.probe`, which report real
+     token counts — `probeEffort` in `cloud/mailbox/src/generate.ts`) averaged 98 input
+     and 23 output tokens a call. At $2 / $10 per MTok and ~8,000 calls a year that is
+     **about $3.40 a year**, not the ~$35 estimated before (which assumed up to 400
+     output tokens of thinking). Effort barely moves it: medium $3.39, high $3.50 —
+     Sonnet hardly thinks on a one-line field.
+   * Through the live Worker Sonnet was NOT flawless, one run per effort: low wrote
+     沁み沁み as しみじみ and 繕う as 取り繕う; high wrote 「毎週末new新しいレシピ」 (a stray
+     English word) and 鯨 as クジラ; medium had nothing wrong, only quibbles (「暫時の間」).
+     Every model tested slips about once or twice in 35, and the commonest slip is the
+     same one: the card's word missing from its own sentence, spelled another way.
    * Why it is worth it, in his terms: a card is reviewed about ten times, so a sentence
      with a wrong particle is not a one-off cost — it is drilled. Haiku's mistakes were
      ones he could miss.

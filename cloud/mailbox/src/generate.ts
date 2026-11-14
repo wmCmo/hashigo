@@ -77,8 +77,8 @@ export interface TextProvider {
  * wrote 35 natural sentences; Haiku 5.5 wrote 33 at low effort (繕う echoed
  * three times, 沁み沁み in kana) and 34 at high (「体を…湯に浸かって」). At
  * ~8,000 calls a year (581 in 26 days, 177 on the busiest), $2 / $10 per MTok
- * and ~100 in / ≤400 out per call, about $35 a year, estimated — under the
- * $60 a year he paid Mochi. Gemini stays behind it, free, for when Anthropic
+ * and a MEASURED ~98 in / ~23 out per call, about $3.40 a year (DECISIONS.md
+ * 69) — against the $60 a year he paid Mochi. Gemini stays behind it, free, for when Anthropic
  * is down or overloaded.
  *
  * Before that, the same day, decision 68: Haiku first — *"I'm tired of
