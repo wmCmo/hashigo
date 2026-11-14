@@ -12,23 +12,30 @@ then i think it would be a good sign to publish it right?"* Three gates, in orde
 landing page (`site/index.html`) shows them as the rungs still to climb, so if one
 passes, update the page too.
 
-1. **A month of daily use with almost nothing to fix.** Checked **2026-11-27** by a
-   scheduled routine (`trig_01QTk6bozJ3LZu3kf1UFphUx`, a fresh session at 10:17 JST).
-   It PASSES if, from 2026-11-13 to 2026-11-27: at most two commits fix something he hit
-   while using the app; none of them involved a lost or corrupted review or a sync that
-   lost data; and nothing suggests a workaround to finish a session. **Raw commit count
-   is not the measure** — 2026-10-27 alone was 25 commits of design work, which says
-   nothing about stability. New features do not count against it.
+1. **A week of daily use with no fix at all.** Zach, 2026-11-14, changing his mind:
+   *"just a week without any fix (excluding new features) should be enough"*. It
+   replaced "a month with at most two fixes" (2026-10-27), checked over 11-13 to 11-27.
+   - **It PASSES** after seven consecutive days with no commit that fixes the app —
+     anything in `app/`, `src/` or `cloud/` that repairs something, whether he hit it,
+     an audit found it, or it is the look (a spacing or colour fix counts).
+   - **Not counted:** new features, docs, the landing page, and tooling in `scripts/`.
+   - **A fix restarts the week.** The last one before the change was `3f7d326`
+     (2026-11-14, the design audit), so the first possible pass is the week of 11-15
+     to 11-21.
+   - Checked **2026-11-22** by a scheduled routine (`trig_01QTk6bozJ3LZu3kf1UFphUx`,
+     a fresh session at 10:17 JST). If a fix landed in the week, it reports "not
+     yet" and the date the next clean week would end.
 2. **A friend starts from an empty database without help.** Not yet possible: the app
    assumes his imported corpus and sits behind his passphrase. **Work on it starts only
    after gate 1 passes** — Zach, 2026-11-05: *"that would be after 1 month of stable
-   version"*. The plan is [notes/empty-start.md](notes/empty-start.md).
+   version"*; since 2026-11-14, after the week above. The plan is
+   [notes/empty-start.md](notes/empty-start.md).
 3. **Cost, accounts, licence and support are settled.** The repository is already
    public (it has no licence, so all rights are reserved); the app is not.
 
 Results:
 
-- *(none yet — the first check runs 2026-11-27)*
+- *(none yet — the first check runs 2026-11-22)*
 
 ## How the version moves (decisions 59 and 65, 2026-10-31 and 2026-11-11)
 

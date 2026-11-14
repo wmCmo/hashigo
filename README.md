@@ -112,6 +112,6 @@ only blue on the review screen apart from the play button.
 
 Hashigo will open to other people only after:
 
-1. a month of daily use with almost no changes needed,
+1. a week of daily use with nothing to fix,
 2. a friend starting from an empty database without help, and
 3. a plan for cost, accounts, licensing and support.
