@@ -24,8 +24,7 @@ seed). `app/README.md` is the entry point for the app; `src/*/README.md` for eac
 - **There is no status file.** `NEXT.md` was retired on 2026-10-30: it was edited three
   times in October against ~100 commits, and was wrong the one time it was needed. What
   landed is `git log`; what is settled is below and in DECISIONS.md. **[RELEASE.md](RELEASE.md)**
-  holds the version, the beta criteria and the publishing gates (a routine writes gate 1's
-  result there on 2026-11-22; since 2026-11-14 gate 1 is "a week with no fix"). The cloud runbook is [cloud/README.md](cloud/README.md). The
+  holds the version, the beta criteria and the publishing gates. The cloud runbook is [cloud/README.md](cloud/README.md). The
   old file is `notes/archive/NEXT-retired-2026-10-30.md`, verbatim.
 - **[SPEC.html](SPEC.html) is the design document** (draft 8, figures measured from
   `exports/`). Published copy:

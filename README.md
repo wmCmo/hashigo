@@ -107,11 +107,3 @@ npm run gates                # tests, both typechecks, both builds, the blob-pat
 はしご is a ladder. The mark is one: two rails leaning in, three rungs, and a loose top
 rung in 瑠璃 (ruri, lapis blue). That top rung is the step not taken yet, and it is the
 only blue on the review screen apart from the play button.
-
-## Publishing
-
-Hashigo will open to other people only after:
-
-1. a week of daily use with nothing to fix,
-2. a friend starting from an empty database without help, and
-3. a plan for cost, accounts, licensing and support.
