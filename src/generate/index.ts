@@ -73,6 +73,7 @@ export {
   ollamaReachable,
   stripThinking,
   cleanGenerated,
+  sentenceProblem,
   emojiOnly,
   isEmojiPrompt,
   systemPrompt,

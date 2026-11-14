@@ -30,6 +30,7 @@ import {
   stripThinking,
   systemPrompt,
   cleanGenerated,
+  sentenceProblem,
   emojiOnly,
   isEmojiPrompt,
   resolveDescriptorText,
@@ -1540,5 +1541,53 @@ describe("a word clip's reading and accent", () => {
     const db = wordDb();
     expect(wordPronunciation(db, "tou-tower", "港には漁船が数隻停泊していた。")).toBe(null);
     expect(wordPronunciation(db, "vocab", "ecology")).toBe(null);
+  });
+});
+
+/**
+ * 2026-11-15, decision 70: a Japanese example sentence must carry the card's own
+ * word. Every case below is a real answer from that day's tests, through the
+ * live Worker or the benchmark agents.
+ */
+describe("sentenceProblem", () => {
+  const ask = (word: string) => `Example sentence using ${word} in Japanese (Don't translate)`;
+
+  it("catches the word spelled another way", () => {
+    expect(sentenceProblem(ask("沁み沁み"), "古い友人からの手紙を読んで、友情のありがたさをしみじみと感じた。")).toMatch(/left 沁み沁み out/);
+    expect(sentenceProblem(ask("鯨"), "海でクジラが大きな潮を吹いているのを見て、とても感動しました。")).toMatch(/left 鯨 out/);
+  });
+
+  it("catches a stray English word", () => {
+    expect(sentenceProblem(ask("凝る"), "彼は料理に凝っていて、毎週末new新しいレシピに挑戦している。")).toMatch(/English/);
+  });
+
+  it("passes the word however it is conjugated", () => {
+    expect(sentenceProblem(ask("繕う"), "破れた服を母が丁寧に繕ってくれた。")).toBeNull();
+    expect(sentenceProblem(ask("一騎討ち"), "決勝戦は、両チームのエースによる一騎討ちとなった。")).toBeNull();
+    expect(sentenceProblem(ask("に対する"), "彼は上司に対して丁寧な言葉を使う。")).toBeNull();
+    expect(sentenceProblem(ask("ガーゼ"), "傷口に清潔なガーゼを当てて、包帯で固定しました。")).toBeNull();
+    expect(sentenceProblem(ask("沁み沁み"), "母の優しさが沁み沁みと身に染みた。")).toBeNull();
+  });
+
+  it("leaves capitals alone (SNS, AI)", () => {
+    expect(sentenceProblem(ask("拡散"), "その動画はSNSで瞬く間に拡散された。")).toBeNull();
+  });
+
+  it("does not check what has no one spelling: a reading, a pattern, an English word, Mochi markup", () => {
+    expect(sentenceProblem(ask("ひたい"), "額に汗がにじんだ。")).toBeNull();
+    expect(sentenceProblem(ask("～てこそ"), "努力してこそ、成功をつかむことができる。")).toBeNull();
+    expect(sentenceProblem("Example sentence using mouth in Japanese (Don't translate)", "口を開けてください。")).toBeNull();
+    expect(sentenceProblem(ask("空気|glQvjSyNを読む"), "空気を読むのが得意な猫がいる。")).toBeNull();
+  });
+
+  it("matches a compatibility character to the one a model writes (団⼦ is the Kangxi radical)", () => {
+    expect(sentenceProblem(ask("団⼦"), "団子を作るのは楽しいです。")).toBeNull();
+  });
+
+  it("checks only Japanese sentence prompts", () => {
+    expect(sentenceProblem("Describe a word 鯨 using emojis only", "🐋🌊")).toBeNull();
+    expect(sentenceProblem("海でクジラを見た。", "I saw a whale in the sea.")).toBeNull();
+    expect(sentenceProblem("Example sentence of snare", "He set a snare.")).toBeNull();
+    expect(sentenceProblem(ask("鯨"), "海で大きな鯨を見ました。")).toBeNull();
   });
 });

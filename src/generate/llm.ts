@@ -162,6 +162,49 @@ export function cleanGenerated(prompt: string, text: string): string {
   return isEmojiPrompt(prompt) ? emojiOnly(clean) : clean;
 }
 
+/**
+ * A JAPANESE EXAMPLE SENTENCE MUST CARRY THE CARD'S OWN WORD — Zach, 2026-11-15:
+ * *"I cannot risk memorizing weird sentence using weird particles … each card I
+ * will review like probably 10 times."* The commonest slip of every model tried
+ * (Haiku, Sonnet, at every effort) was the word spelled another way, so the
+ * sentence never shows the spelling the card drills: 沁み沁み → しみじみ, 鯨 →
+ * クジラ. Once, a stray English word: 「毎週末new新しいレシピ」.
+ *
+ * Returns what is wrong, or null. Only prompts shaped "… sentence using X in
+ * Japanese …" (all four wordings in his templates, `src/accent/marks.ts`) are
+ * checked; anything else — emoji, translations, English decks — is null.
+ *
+ * - The word is matched by its STEM: trailing hiragana (okurigana) are dropped,
+ *   so 繕う matches 繕って, 一騎討ち matches 一騎討ちとなった, に対する matches に対して.
+ * - An all-hiragana word is not checked: it may be the READING of a kanji word
+ *   (decision 10), and a sentence writing the kanji is right.
+ * - A word with spaces or punctuation in it is not checked: there is no one
+ *   spelling to look for.
+ * - Two or more lowercase Latin letters in a row, when the word has none, are a
+ *   stray English word. Capitals (SNS, AI) are left alone.
+ *
+ * Applied to NEW lines only, never on a cache read: a line already on a card he
+ * has seen is not remade behind his back.
+ */
+const JAPANESE_SENTENCE_PROMPT = /sentence using (.+?) in Japanese/i;
+
+export function sentenceProblem(prompt: string, text: string): string | null {
+  const asked = JAPANESE_SENTENCE_PROMPT.exec(prompt);
+  if (asked === null) return null;
+  // NFKC, because Mochi-era words carry compatibility characters (団⼦ is the
+  // Kangxi radical ⼦, not 子) that a model never writes back.
+  const word = (asked[1] ?? "").normalize("NFKC").trim();
+  const sentence = text.normalize("NFKC");
+  // A grammar pattern (～てこそ, ＡがＡだけに, ...は...に限る), an English word
+  // ("using mouth"), or a Mochi-era prompt with markup left in it
+  // (空気|glQvjSyNを読む, [豪) has no one spelling to look for.
+  if (word === "" || /[\s/・,、()「」[\]|'"。～〜~….A-Z]/u.test(word) || /^[\x00-\x7F]+$/.test(word)) return null;
+  if (/[a-z]{2,}/.test(sentence)) return "wrote an English word into the sentence";
+  const stem = word.replace(/[ぁ-ゟ]+$/u, "");
+  if (stem === "") return null;
+  return sentence.includes(stem) ? null : `left ${word} out of its own sentence`;
+}
+
 export type LlmProvider = "ollama" | "anthropic" | "gemini";
 
 export interface LlmOptions {

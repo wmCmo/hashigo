@@ -42,7 +42,7 @@
 import { generationIdentity, generationKey } from "../../../src/blobs/generation.js";
 import { sha256Hex } from "../../../src/blobs/sha256.js";
 import { isKana, splitMoras, synthesise, type SpeechRequest } from "../../../src/accent/speech.js";
-import { cleanGenerated, generateText, isEmojiPrompt, type AnthropicEffort } from "../../../src/generate/llm.js";
+import { cleanGenerated, generateText, isEmojiPrompt, sentenceProblem, type AnthropicEffort } from "../../../src/generate/llm.js";
 import { fillVoiceFor } from "../../../src/generate/speech.js";
 import { catalogueVoice, sampleLine, synthesisVoice } from "../../../src/generate/voices.js";
 import { speakableText } from "../../../src/text/index.js";
@@ -390,35 +390,46 @@ export async function generate(
   const failures: string[] = [];
   let output = "";
   let used: TextProvider | null = null;
-  for (const candidate of chain) {
-    try {
-      const made = await write(descriptor, {
-        provider: candidate.provider,
-        apiKey: candidate.apiKey,
-        model: candidate.model,
-        maxTokens: MAX_TOKENS,
-        ...(effort === undefined ? {} : { effort }),
-        ...(probing
-          ? {
-              onUsage: (counted: { input: number; output: number }) => {
-                usage.input += counted.input;
-                usage.output += counted.output;
-              },
-            }
-          : {}),
-      });
-      // Cleaned BEFORE it is cached, so what every device reads is already right.
-      const clean = cleanGenerated(descriptor.text, made);
-      if (clean !== "") {
-        output = clean;
-        used = candidate;
+  // A Japanese example sentence that fails `sentenceProblem` (the card's word
+  // missing, a stray English word) gets ONE more try from the same model, then
+  // the next provider; each failure is kept for the card's "try again".
+  chain: for (const candidate of chain) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const made = await write(descriptor, {
+          provider: candidate.provider,
+          apiKey: candidate.apiKey,
+          model: candidate.model,
+          maxTokens: MAX_TOKENS,
+          ...(effort === undefined ? {} : { effort }),
+          ...(probing
+            ? {
+                onUsage: (counted: { input: number; output: number }) => {
+                  usage.input += counted.input;
+                  usage.output += counted.output;
+                },
+              }
+            : {}),
+        });
+        // Cleaned BEFORE it is cached, so what every device reads is already right.
+        const clean = cleanGenerated(descriptor.text, made);
+        if (clean === "") {
+          failures.push(
+            isEmojiPrompt(descriptor.text) ? `${candidate.model} returned no emoji` : `${candidate.model} returned nothing`,
+          );
+          break;
+        }
+        const problem = sentenceProblem(descriptor.text, clean);
+        if (problem === null) {
+          output = clean;
+          used = candidate;
+          break chain;
+        }
+        failures.push(`${candidate.model} ${problem}`);
+      } catch (cause) {
+        failures.push((cause as Error).message);
         break;
       }
-      failures.push(
-        isEmojiPrompt(descriptor.text) ? `${candidate.model} returned no emoji` : `${candidate.model} returned nothing`,
-      );
-    } catch (cause) {
-      failures.push((cause as Error).message);
     }
   }
   if (used === null) {

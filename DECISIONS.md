@@ -896,6 +896,28 @@ words, the reason, and the measurement that settled it.
      with a wrong particle is not a one-off cost — it is drilled. Haiku's mistakes were
      ones he could miss.
 
+70. **A Japanese example sentence must carry the card's own word, or it is written again.**
+    2026-11-15. `sentenceProblem` in `src/generate/llm.ts`, used by the Worker's chain.
+   * His words: *"Add the check now."* — after the tests showed every model slipping the
+     same way, and knowing it restarts publishing gate 1's week (RELEASE.md).
+   * What it catches, from that day: 沁み沁み written しみじみ (Haiku low, Sonnet low), 鯨
+     written クジラ (Sonnet high), 「毎週末new新しいレシピ」 (Sonnet high). Run over the 7,636
+     Japanese example sentences in the dev database, it flags 19 as missing their word,
+     nearly all real (需要 → 必要, 意思 → 意味, 保つ → 守る, 過ぎる → すぎる); the two
+     borderline are 目が点になる → 目は点になった and the variant kanji 搔く / 掻く. Its
+     English rule flags 1,986 Mochi-era lines, which appended translations; a NEW line is
+     asked "Don't translate" and Sonnet broke that once in 105.
+   * How it matches: the stem (trailing hiragana dropped), so 繕う passes 繕って; NFKC on
+     both sides (団⼦ is a Kangxi radical); an all-hiragana word is skipped (it may be a
+     reading, decision 10), as are grammar patterns (～てこそ), English words and words with
+     Mochi markup left in them. Two or more lowercase Latin letters in a row are an English
+     word; capitals (SNS, AI) pass.
+   * What happens on a miss: one more try from the same model, then the next provider, each
+     miss named in the card's "try again" when all fail (decision 62). Worst case four calls
+     — a fraction of a cent.
+   * Only new lines. A line already cached is served as it is: a sentence he has already
+     reviewed is not swapped behind his back.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 (in `notes/archive/`) listed ten; five were settled by later

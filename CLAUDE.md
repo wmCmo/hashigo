@@ -369,6 +369,10 @@ give an honest opinion — and when he decides differently, record the new decis
     fallback. About $3.50 a year, MEASURED (~98 in / ~23 out tokens a call): *"I cannot risk memorizing weird sentence using
     weird particles … those sentences would stuck in my head forever."* 35/35 on the test
     words, against Haiku's 33 (low effort) and 34 (high).
+70. **A Japanese example sentence must carry the card's own word** (`sentenceProblem` in
+    `src/generate/llm.ts`): matched by stem, so conjugations pass; no stray English word.
+    A miss is written once more by the same model, then by the next; NEW lines only, never
+    a cached one. Every model's commonest slip was the word spelled another way (しみじみ).
 
 ## The template answers most questions about the screen
 

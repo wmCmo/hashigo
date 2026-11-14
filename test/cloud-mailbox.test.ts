@@ -378,6 +378,53 @@ describe("a benchmark probe", () => {
 });
 
 /**
+ * 2026-11-15, decision 70: a sentence without the card's word gets one more try
+ * from the same model, then the next provider.
+ */
+describe("a sentence that leaves out the card's word", () => {
+  const ask = parse({ kind: "ai", text: "Example sentence using 鯨 in Japanese (Don't translate)", lang: null, voice: null, options: {} });
+  const both = () => ({ ...env(), ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" });
+
+  it("is written again, and only the good one is stored", async () => {
+    const asked: string[] = [];
+    const answers = ["海でクジラを見ました。", "海で大きな鯨を見ました。"];
+    const write = async (_d: unknown, options: { provider: string }): Promise<string> => {
+      asked.push(options.provider);
+      return answers.shift() as string;
+    };
+    const e = both();
+    const [status, body] = await generate(ask as never, e, { generateText: write as never });
+    expect(asked).toEqual(["anthropic", "anthropic"]);
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ provider: "anthropic", text: "海で大きな鯨を見ました。" });
+    const [key] = [...e.MAILBOX.data.keys()] as [string];
+    expect(JSON.parse(e.MAILBOX.data.get(key)?.value as string).output).toBe("海で大きな鯨を見ました。");
+  });
+
+  it("goes to Gemini after two misses, and stores nothing when every answer misses", async () => {
+    const asked: string[] = [];
+    const write = async (_d: unknown, options: { provider: string }): Promise<string> => {
+      asked.push(options.provider);
+      return "海でクジラを見ました。";
+    };
+    const e = both();
+    await expect(generate(ask as never, e, { generateText: write as never })).rejects.toThrow(
+      /claude-sonnet-5-5 left 鯨 out of its own sentence · then .* · then gemini-3\.6-flash left 鯨 out/,
+    );
+    expect(asked).toEqual(["anthropic", "anthropic", "gemini", "gemini"]);
+    expect(e.MAILBOX.data.size).toBe(0);
+  });
+
+  it("an emoji line is not checked for the word", async () => {
+    const emoji = parse({ kind: "ai", text: "Describe a word 鯨 using emojis only", lang: null, voice: null, options: {} });
+    const write = async (): Promise<string> => "🐋🌊";
+    const [status, body] = await generate(emoji as never, both(), { generateText: write as never });
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ text: "🐋🌊" });
+  });
+});
+
+/**
  * 2026-11-15, decision 69: Sonnet first. Gemini stays behind it, free, so an
  * Anthropic outage or overload still gets a line (`textProviders`).
  */
