@@ -82,8 +82,9 @@ the job, not what the app is.
 - Layout claims are measured, not read off a screenshot: `getBoundingClientRect` on
   the elements that should share an edge. jsdom has no layout, so a CSS test does the
   arithmetic instead (`test/alignment.test.ts`).
-- Free-tier Gemini is 5 requests a minute and 20 a day per model; batch days need up to
-  177. That is why the Worker falls back to Claude Haiku.
+- Text is Claude Haiku first, Gemini only as its fallback (decision 68): about $2 a year,
+  and Zach is done with free tiers. Don't propose a cheaper provider again without a
+  reason he hasn't already weighed.
 - `gemini-3.8-flash` hung or answered 503 through the API while the playground worked;
   test the provider through the Worker, not only in AI Studio.
 - The done screen and the sidebar live outside `#review`; anything that hides `#review`

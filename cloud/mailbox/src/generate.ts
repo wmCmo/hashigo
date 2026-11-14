@@ -69,9 +69,15 @@ export interface TextProvider {
 }
 
 /**
- * WHO WRITES THE TEXT, IN ORDER: Gemini Flash first (free), then Claude Haiku.
+ * WHO WRITES THE TEXT, IN ORDER: Claude Haiku first, then Gemini Flash (decision 68).
  *
- * Zach, 2026-11-10, after a side-by-side on twelve of his words
+ * Zach, 2026-11-15: *"Let's use Haiku instead … I'm tired of fighting with the
+ * cheap solution."* Measured that day: 581 text generations in 26 days (~22 a
+ * day, 177 on the busiest), at Haiku 5.5's $0.10 / $0.50 per MTok and ~100 in /
+ * ≤400 out per call, is about $2 a year — against the $60 a year he paid Mochi.
+ * Gemini stays behind it, free, for when Anthropic is down or overloaded.
+ *
+ * WHAT IT REPLACED, kept for the reasoning. Zach, 2026-11-10, after a side-by-side on twelve of his words
  * (`src/generate/llm.ts`, `viaGemini`): Flash on the free tier, thinking HIGH,
  * read like Opus. The key decides, not a flag: `wrangler secret put
  * GEMINI_API_KEY` puts Gemini first, `secret delete` takes it out.
@@ -91,10 +97,10 @@ export interface TextProvider {
  */
 export function textProviders(env: GenerateEnv): readonly TextProvider[] {
   const chain: TextProvider[] = [];
-  const gemini = env.GEMINI_API_KEY ?? "";
-  if (gemini !== "") chain.push({ provider: "gemini", apiKey: gemini, model: env.HASHIGO_GEMINI_MODEL ?? GEMINI_MODEL });
   const anthropic = env.ANTHROPIC_API_KEY ?? "";
   if (anthropic !== "") chain.push({ provider: "anthropic", apiKey: anthropic, model: env.HASHIGO_MODEL ?? DEFAULT_MODEL });
+  const gemini = env.GEMINI_API_KEY ?? "";
+  if (gemini !== "") chain.push({ provider: "gemini", apiKey: gemini, model: env.HASHIGO_GEMINI_MODEL ?? GEMINI_MODEL });
   return chain;
 }
 

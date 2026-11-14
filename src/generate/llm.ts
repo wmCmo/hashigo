@@ -307,8 +307,9 @@ async function viaAnthropic(descriptor: LlmDescriptor, options: LlmOptions): Pro
  * して発振する」; 佳境: 「物語はいよいよ佳境に入り、目が離せない展開になってきた」).
  * The free tier's per-minute cap answered 429 after 7 requests in a few seconds;
  * spaced 15 s apart the rest went through. The daily cap is 20 per model, and
- * his batch days need up to 177, so the Worker falls back to Claude Haiku when
- * Gemini refuses (`textProviders` in `cloud/mailbox/src/generate.ts`).
+ * his batch days need up to 177. Since 2026-11-15 (decision 68) Claude Haiku writes
+ * first and Gemini is only its fallback (`textProviders` in
+ * `cloud/mailbox/src/generate.ts`).
  * The model is the Worker's default (`cloud/mailbox/src/generate.ts`); the
  * `HASHIGO_GEMINI_MODEL` secret overrides it without a deploy.
  *

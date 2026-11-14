@@ -847,6 +847,24 @@ words, the reason, and the measurement that settled it.
      remade by itself. Fixing the 165 is a redo, one by one or as a batch, and only on his word.
    * Sentences are not covered: the TTS rule is no accent notation on a sentence. Their
      misread kanji (港 → こう on 数隻's own sentence) are a reading problem, separate.
+68. **Text is written by Claude Haiku 5.5 first; Gemini Flash is only its fallback.**
+    2026-11-15. Amends the 2026-11-10/11 order (Gemini first, Haiku when it refused).
+   * His words: *"Let's use Haiku instead. Because I paid … $60 per year just to use Mochi
+     flashcard … I'm tired of fighting with the cheap solution … It's time that we can
+     leverage our own app and customization."*
+   * The cost, measured that day: 581 text generations in the cloud store over 26 days
+     (2026-10-20 to 11-14) — ~22 a day, a median of 18 on card days, 177 on the busiest.
+     At Haiku 5.5's $0.10 / $0.50 per MTok and ~100 input / ≤400 output tokens per call
+     (Hashigo calls it at `effort: "low"`), that is about $1.70 a year; ten times the pace
+     is ~$17. Estimated, not billed — the Anthropic console has the real figure.
+   * What lost on the way: Gemini's free tier is 20 a day per model, so batch days spilled
+     onto Haiku anyway; local models on his RTX 5060 Ti (qwen3:8b, gpt-oss:20b, Qwen3-Swallow
+     8B, LLM-jp-4.1 8B) wrote wrong or awkward example sentences — LLM-jp, the best, got 5 of
+     35 wrong (著す for a note, 科す for a tax) on 2026-11-15; GPT-OSS-Swallow 20B would not
+     run under Ollama. Haiku wrote 12 of 12 correctly on 2026-11-11.
+   * Gemini stays behind it because it is free and independent: an Anthropic outage or
+     overload still gets a line. The cache is keyed on the prompt, not the model, so no
+     stored line is remade.
 
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 

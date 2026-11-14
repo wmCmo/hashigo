@@ -303,7 +303,9 @@ describe("generation on the Worker answers like the laptop, and keeps what it ma
 describe("which provider writes the text", () => {
   const ask = parse({ kind: "ai", text: "Example sentence using 朗報 in Japanese (Don't translate)", lang: null, voice: null, options: {} });
 
-  it("is Gemini Flash when its key is on the Worker, even beside Anthropic's", async () => {
+  // Decision 68, 2026-11-15: Haiku first. Zach: "Let's use Haiku instead … I'm
+  // tired of fighting with the cheap solution."
+  it("is Claude Haiku when both keys are on the Worker", async () => {
     let chosen: Record<string, unknown> = {};
     const write = async (_d: unknown, options: Record<string, unknown>): Promise<string> => {
       chosen = options;
@@ -312,12 +314,12 @@ describe("which provider writes the text", () => {
     const e = { ...env(), ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" };
     const [status, body] = await generate(ask as never, e, { generateText: write as never });
     expect(status).toBe(200);
-    expect(chosen).toMatchObject({ provider: "gemini", apiKey: "g", model: "gemini-3.6-flash" });
-    expect(body).toMatchObject({ provider: "gemini", model: "gemini-3.6-flash", cached: false });
-    expect(textProvider({ ...env(), GEMINI_API_KEY: "g", HASHIGO_GEMINI_MODEL: "gemini-x" })?.model).toBe("gemini-x");
+    expect(chosen).toMatchObject({ provider: "anthropic", apiKey: "a", model: "claude-haiku-5-5" });
+    expect(body).toMatchObject({ provider: "anthropic", model: "claude-haiku-5-5", cached: false });
   });
 
-  it("is Anthropic without it, and names both keys when neither is there", async () => {
+  it("is Gemini with only its key, and names both keys when neither is there", async () => {
+    expect(textProvider({ ...env(), GEMINI_API_KEY: "g", HASHIGO_GEMINI_MODEL: "gemini-x" })?.model).toBe("gemini-x");
     expect(textProvider({ ...env(), ANTHROPIC_API_KEY: "a" })).toMatchObject({ provider: "anthropic", model: "claude-haiku-5-5" });
     const [status, body] = await generate(ask as never, env());
     expect(status).toBe(503);
@@ -335,43 +337,43 @@ describe("which provider writes the text", () => {
 });
 
 /**
- * 2026-11-11: the free tier is 20 requests a day per model, and batch days need
- * up to 177 — so a Gemini refusal falls through to Claude Haiku (`textProviders`).
+ * 2026-11-15, decision 68: Haiku first. Gemini stays behind it, free, so an
+ * Anthropic outage or overload still gets a line (`textProviders`).
  */
-describe("when Gemini refuses, Claude Haiku answers", () => {
+describe("when Haiku fails, Gemini answers", () => {
   const ask = parse({ kind: "ai", text: "Example sentence using 均衡 in Japanese (Don't translate)", lang: null, voice: null, options: {} });
   const both = () => ({ ...env(), ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" });
 
-  it("orders the chain Gemini first, then Haiku", () => {
+  it("orders the chain Haiku first, then Gemini", () => {
     expect(textProviders(both()).map((p) => `${p.provider}:${p.model}`)).toEqual([
-      "gemini:gemini-3.6-flash",
       "anthropic:claude-haiku-5-5",
+      "gemini:gemini-3.6-flash",
     ]);
   });
 
-  it("a quota refusal goes to Haiku, and Haiku's answer is what is stored", async () => {
+  it("an overload goes to Gemini, and Gemini's answer is what is stored", async () => {
     const asked: string[] = [];
     const write = async (_d: unknown, options: { provider: string }): Promise<string> => {
       asked.push(options.provider);
-      if (options.provider === "gemini") throw new Error("gemini answered 429 — RESOURCE_EXHAUSTED");
+      if (options.provider === "anthropic") throw new Error("anthropic 529 overloaded");
       return "輸出と輸入の均衡を保つことが重要である。";
     };
     const e = both();
     const [status, body] = await generate(ask as never, e, { generateText: write as never });
-    expect(asked).toEqual(["gemini", "anthropic"]);
+    expect(asked).toEqual(["anthropic", "gemini"]);
     expect(status).toBe(200);
-    expect(body).toMatchObject({ provider: "anthropic", model: "claude-haiku-5-5", text: "輸出と輸入の均衡を保つことが重要である。" });
+    expect(body).toMatchObject({ provider: "gemini", model: "gemini-3.6-flash", text: "輸出と輸入の均衡を保つことが重要である。" });
     const [key] = [...e.MAILBOX.data.keys()] as [string];
     expect(JSON.parse(e.MAILBOX.data.get(key)?.value as string).output).toBe("輸出と輸入の均衡を保つことが重要である。");
   });
 
-  it("an emoji line with no emoji in it goes to Haiku too", async () => {
+  it("an emoji line with no emoji in it goes to Gemini too", async () => {
     const emoji = parse({ kind: "ai", text: "Describe a word 均衡 using emojis only", lang: null, voice: null, options: {} });
     const write = async (_d: unknown, options: { provider: string }): Promise<string> =>
-      options.provider === "gemini" ? "Sure! Here it is:" : "⚖️";
+      options.provider === "anthropic" ? "Sure! Here it is:" : "⚖️";
     const [status, body] = await generate(emoji as never, both(), { generateText: write as never });
     expect(status).toBe(200);
-    expect(body).toMatchObject({ provider: "anthropic", text: "⚖️" });
+    expect(body).toMatchObject({ provider: "gemini", text: "⚖️" });
   });
 
   it("names every provider's failure when the whole chain fails, and stores nothing", async () => {
@@ -380,7 +382,7 @@ describe("when Gemini refuses, Claude Haiku answers", () => {
       throw new Error(options.provider === "gemini" ? "gemini-3.6-flash gave no answer in 45 s" : "anthropic 529 overloaded");
     };
     await expect(generate(ask as never, e, { generateText: write as never })).rejects.toThrow(
-      /gave no answer in 45 s · then anthropic 529 overloaded/,
+      /anthropic 529 overloaded · then gemini-3\.6-flash gave no answer in 45 s/,
     );
     expect(e.MAILBOX.data.size).toBe(0);
   });

@@ -361,6 +361,9 @@ give an honest opinion — and when he decides differently, record the new decis
 67. **A word clip is made from its 読み and 型, and waits for the 読み** (`wordPronunciation`):
     reading + accent go to the voice as yomigana SSML, OUTSIDE the clip's identity, so no
     stored clip looks missing. 型 alone tells 塔 from 問う. 数隻's auto-made clip said かずせき.
+68. **Text is written by Claude Haiku 5.5 first; Gemini Flash is only its fallback**
+    (`textProviders`). About $2 a year at his volume against Mochi's $60: *"I'm tired of
+    fighting with the cheap solution."* Free tiers and local models were tried and lost.
 
 ## The template answers most questions about the screen
 
