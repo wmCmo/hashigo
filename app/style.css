@@ -2412,7 +2412,9 @@ body.sidebar-open .sidebar-scrim {
   .sidebar .tree-add,
   .sidebar .tree-row:active,
   .sidebar .sidebar-action:active {
-    background: var(--card);
+    /* The COLOUR only: the shorthand also reset `background-image`, which is
+       where a pill select's chevron is drawn. */
+    background-color: var(--card);
   }
 }
 
@@ -4854,6 +4856,28 @@ input[data-answer="incorrect"] {
 }
 .gallery-sort {
   font-family: var(--sans);
+}
+/* A pill select draws its OWN chevron. The browser's sat ~8px from the right
+   edge whatever the padding said, against 16px of text inset on the left —
+   Zach, 2026-11-14: *"i think the padding is wrong here"* (the new-card form).
+   Now the chevron's outer edge is the same `--space-4` in from the right as the
+   text is from the left, and the text stops `--space-2` short of it. */
+.newcard-select,
+.gallery-sort {
+  -webkit-appearance: none;
+  appearance: none;
+  /* Two strokes, `\` then `/`, so it reads as the line carets the icons use and
+     still takes `--ink` in either theme — an icon SVG cannot live in a select. */
+  background-image:
+    linear-gradient(45deg, transparent 42%, var(--ink) 42%, var(--ink) 58%, transparent 58%),
+    linear-gradient(-45deg, transparent 42%, var(--ink) 42%, var(--ink) 58%, transparent 58%);
+  background-position:
+    right calc(var(--space-4) + 6px) center,
+    right var(--space-4) center;
+  background-repeat: no-repeat;
+  background-size: 6px 6px;
+  padding-right: calc(var(--space-4) + var(--space-3) + var(--space-2));
+  text-overflow: ellipsis;
 }
 .edit-input {
   border: 0;
