@@ -10,7 +10,6 @@ import { recallOf } from "../src/dashboard/recall.js";
 import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
 import type { ReplyFor } from "./protocol.js";
 import { closeSidebar } from "./sidebar.js";
-import { setTextWithCode } from "./dom.js";
 import { setIcon } from "./icons.js";
 import { say } from "./ui.js";
 import { ask } from "./worker-client.js";
@@ -91,7 +90,9 @@ export async function openDashboard(): Promise<void> {
   // Closed while it loaded: nothing to fill.
   if (!root.isConnected) return;
   const g = reply.glance;
-  title.textContent = `dashboard · ${reply.elapsedMs.toFixed(0)} ms`;
+  // The heading stays "dashboard". The build time is a developer's figure; it
+  // hovers on the heading for whoever wants it.
+  title.title = `${reply.elapsedMs.toFixed(0)} ms`;
   body.replaceChildren();
   body.removeAttribute("aria-busy");
 
@@ -218,21 +219,21 @@ export async function openDashboard(): Promise<void> {
   );
 
   // ── the full report ──
+  // The warning is the point (3e2a7bf): building it freezes grading, so the note
+  // says so with a measured figure — the desktop's said as the desktop's until
+  // this device has run it (see `dashboardLastMs`).
   const note = document.createElement("p");
   note.className = "settings-note";
-  setTextWithCode(
-    note,
-    `The full analysis — retention by interval, by deck, by track, the heatmap, the ` +
-      `long-interval outlook — is the same document \`npm run dashboard\` writes. It ` +
-      `reads the whole history and SQLite runs synchronously in the one worker, so ` +
-      `nothing can grade while it builds. ` +
-      (dashboardLastMs === null
-        ? `On a desktop it measured 81 seconds.`
-        : `Last run here: ${(dashboardLastMs / 1000).toFixed(0)} seconds.`),
-  );
+  note.textContent =
+    `The full report (retention by interval, deck and track, the heatmap, the ` +
+    `long-interval outlook) reads the whole history, and nothing can be graded ` +
+    `while it builds. ` +
+    (dashboardLastMs === null
+      ? `On a desktop it took 81 seconds.`
+      : `Last time here: ${(dashboardLastMs / 1000).toFixed(0)} seconds.`);
   const full = document.createElement("button");
   full.type = "button";
-  full.className = "sidebar-action";
+  full.className = "gcard-op";
   full.textContent = "build the full report";
   full.addEventListener("click", () => void buildDashboard());
   body.append(glanceHead("the four-year report"), note, full);
@@ -509,9 +510,8 @@ async function buildDashboard(): Promise<void> {
   const head = document.createElement("div");
   head.className = "layer-head";
   const title = document.createElement("span");
-  title.textContent =
-    `dashboard · ${(reply.bytes / 1024).toFixed(0)} KB · ` +
-    `${reply.elapsedMs.toFixed(0)} ms`;
+  title.textContent = "dashboard · full report";
+  title.title = `${(reply.bytes / 1024).toFixed(0)} KB · ${reply.elapsedMs.toFixed(0)} ms`;
 
   const ops = document.createElement("div");
   ops.className = "layer-ops";
@@ -549,9 +549,10 @@ async function buildDashboard(): Promise<void> {
   panel.appendChild(frame);
   root.appendChild(panel);
 
+  // No toast: the report opening is the signal, and `dashboardLastMs` carries
+  // the cost into the next note.
   pushLayer(bareLayer(root));
   close.focus();
-  say(`dashboard: ${reply.elapsedMs.toFixed(0)} ms over the whole history`);
 }
 
 /** Remembered for the session only; the render is per open either way. */

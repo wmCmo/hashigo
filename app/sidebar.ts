@@ -34,6 +34,8 @@ import {
 } from "./sync-client.js";
 import { openTemplateEditor, openTemplateEditorById } from "./template-editor.js";
 import { mib, openPrompt, say } from "./ui.js";
+// `countOf`, because `navRow` has a parameter called `count`.
+import { count as countOf } from "./plural.js";
 import { ask } from "./worker-client.js";
 import { refreshAfterOp } from "./ops.js";
 import { openDeckMenu, runDeckOp } from "./deck-menu.js";
@@ -473,7 +475,10 @@ function paintSync(): void {
           ? // NAMES THE CONSEQUENCE, not the state. "behind" is jargon; "you will
             // be asked cards you have already answered" is the thing he noticed
             // on his own, one card at a time, before the dot said anything.
-            `${syncStatus.peers} device(s) have newer grades — sync, or you will be re-asked cards`
+            // The verb agrees too, which a plural helper alone would not do.
+            syncStatus.peers === 1
+              ? "another device has newer grades — sync, or you will be re-asked cards"
+              : `${syncStatus.peers} devices have newer grades — sync, or you will be re-asked cards`
           : sinceLabel(syncStatus.lastSyncedAt);
   // "stale" is not a state the client returns — it is `ok` that has aged past a
   // day, and the dot shows it hollow because at that point his two devices hold
@@ -582,12 +587,16 @@ async function runSync(): Promise<void> {
     // A peer that could not be merged is reported rather than swallowed — the
     // sync still completed for everyone else, and that distinction matters.
     if (outcome.failures.length > 0) {
-      say(`synced, but ${outcome.failures.length} peer(s) failed — ${outcome.failures[0]}`, true);
+      say(
+        `synced, but ${countOf(outcome.failures.length, "device")} failed — ${outcome.failures[0]}`,
+        true,
+      );
     } else {
       say(
         outcome.peersMerged === 0
           ? "nothing to merge — this is the only device that has checked in"
-          : `synced · ${outcome.reviewsAdded} grades in · ${outcome.flagsTaken} cards changed`,
+          : `synced · ${countOf(outcome.reviewsAdded, "grade")} in · ` +
+              `${countOf(outcome.flagsTaken, "card")} changed`,
       );
     }
     // A merge can change what is due and what is archived, so the queue the

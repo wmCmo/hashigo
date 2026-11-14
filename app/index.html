@@ -117,9 +117,10 @@
         <button id="bootskip" class="bootskip" type="button" hidden>open without syncing</button>
       </div>
       <div id="bootlog" class="bootlog" aria-live="polite"></div>
-      <p class="bootnote">
-        First run fetches the database into OPFS. After that it is local and offline.
-      </p>
+      <!-- A note under the log said "First run fetches the database into OPFS.
+           After that it is local and offline." on EVERY open — jargon, and no
+           longer true since the boot screen syncs (decision 50). Removed
+           2026-11-14. -->
     </section>
 
     <section id="review" class="review" data-state="prompt" hidden>
@@ -346,8 +347,13 @@
            rung, so the heading says what happened. -->
       <h2>congrats, one rung up</h2>
       <p id="donetext"></p>
-      <button id="focusclear" type="button" data-icon="cards" hidden>review everything</button>
-      <button id="backup" type="button" data-icon="download-simple">export backup</button>
+      <!-- A row with a gap, so the pills wrap apart rather than touching. Zach,
+           2026-11-14, on his phone: "i think the margin is wrong here" — as bare
+           inline buttons they stacked with 0px between them. -->
+      <div class="done-actions">
+        <button id="focusclear" type="button" data-icon="cards" hidden>review everything</button>
+        <button id="backup" type="button" data-icon="download-simple">export backup</button>
+      </div>
     </section>
 
     <!-- His request 5, the browsing half. `create` is deliberately absent and

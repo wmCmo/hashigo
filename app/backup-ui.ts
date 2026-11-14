@@ -8,6 +8,7 @@
  */
 
 import { el } from "./dom.js";
+import { count } from "./plural.js";
 import { line } from "./ui.js";
 import { ask } from "./worker-client.js";
 
@@ -82,7 +83,7 @@ export function checkEviction(opened: {
     line(
       lost > 0
         ? `THE DATABASE WAS GONE. A receipt from ${receipt.at.slice(0, 16)} says it held ` +
-            `${lost.toLocaleString()} local review(s). They are not recoverable from exports/ — ` +
+            `${count(lost, "local review")}. They are not recoverable from exports/ — ` +
             `restore a backup with the export you took.`
         : `The database was gone (receipt from ${receipt.at.slice(0, 16)}), but it held 0 local ` +
             `reviews, so nothing was lost — exports/ rebuilds the rest.`,
@@ -91,8 +92,8 @@ export function checkEviction(opened: {
     if (lost > 0) {
       banner.replaceChildren(
         document.createTextNode(
-          `Storage was cleared since ${receipt.at.slice(0, 10)} — ${lost.toLocaleString()} ` +
-            `local review(s) were lost. Restore from a backup, and keep exporting.`,
+          `Storage was cleared since ${receipt.at.slice(0, 10)} — ${count(lost, "local review")} ` +
+            `${lost === 1 ? "was" : "were"} lost. Restore from a backup, and keep exporting.`,
         ),
       );
       banner.hidden = false;

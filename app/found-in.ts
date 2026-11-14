@@ -19,6 +19,7 @@
  * 包帯ほうたい. Both the word and the sentence are read from a CLONE with `rt` and
  * `rp` removed.
  */
+import { prependIcon } from "./icons.js";
 import { layers } from "./layers.js";
 import { openNewCardDialog } from "./ops.js";
 import type { PreparedCard } from "../src/review/index.js";
@@ -50,7 +51,7 @@ function cardOf(node: Node): { host: Element; prepared: PreparedCard } | null {
 /**
  * THE BUTTON AT THE SELECTION. Zach, 2026-10-26: *"it's just that when i select,
  * i don't see `...`"* — he selected 濃紺 and expected the action THERE, not in a
- * menu he had to know about. So a selection inside a card puts `+ new card` just
+ * menu he had to know about. So a selection inside a card puts "new card" just
  * BELOW it: below, because his phone's own Copy/Share bar sits above.
  *
  * It acts on `pointerdown` with `preventDefault`, because on a touch screen the
@@ -61,7 +62,10 @@ function cardOf(node: Node): { host: Element; prepared: PreparedCard } | null {
 const floater = document.createElement("button");
 floater.type = "button";
 floater.className = "selection-newcard";
-floater.textContent = "+ new card";
+// The plus every other "new" button carries, not a typed "+". The word first:
+// `prependIcon` spaces the icon only when there is text beside it.
+floater.textContent = "new card";
+prependIcon(floater, "plus");
 floater.hidden = true;
 document.body.appendChild(floater);
 let floaterFor: { host: Element; prepared: PreparedCard } | null = null;

@@ -380,10 +380,14 @@ body {
   margin-bottom: var(--space-5);
 }
 
+/* `margin-left` pulls the INK onto the version line's edge — the left rail's round
+   cap starts 11 units into the 100-unit viewBox, 5.7px at 52px (the `.climb-mark`
+   rule). A negative raw px is allowed by the spacing test: it is an offset. */
 .boot-mark {
   display: block;
   flex: none;
   height: 52px;
+  margin-left: -6px;
   width: 52px;
 }
 
@@ -610,11 +614,6 @@ body {
   .logline.fetchrow.indeterminate .fetchfill { animation: none; width: 100% !important; }
 }
 
-.bootnote {
-  color: var(--muted);
-  font-size: var(--fs-caption);
-  margin-top: var(--space-4);
-}
 
 /* ── the review screen ── */
 
@@ -1258,7 +1257,7 @@ body {
 }
 
 .hashigo-cloze[data-state="revealed"] .hashigo-cloze-answer {
-  animation: reveal-in 0.18s ease-out;
+  animation: reveal-in 0.2s ease-out;
 }
 
 @keyframes reveal-in {
@@ -1794,6 +1793,18 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
 .done-head {
   display: flex;
   margin-bottom: var(--space-3);
+  /* The toggle is hidden from 1024px, where the rail stands; without a height the
+     row collapsed and the mark started 24px from the top instead of 68px. */
+  min-height: 44px;
+}
+
+/* The done screen's pills: a wrapping row with a gap, the system's button-to-button
+   `space-3`. As bare inline buttons they sat one collapsed space (~4px) apart, and
+   on a phone the second wrapped flush under the first (Zach, 2026-11-14). */
+.done-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
 }
 
 /* The mark, large, and the only moving thing in the app. It is at rest before
@@ -1828,19 +1839,19 @@ ruby:not([data-state="pending"]):not([data-ruby-align="segmented"]) rt:empty::af
   margin: var(--space-3) 0 var(--space-6);
 }
 
-.done > button {
+.done-actions > button {
   border-color: var(--indigo);
   color: var(--indigo);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .done > button:hover {
+  .done-actions > button:hover {
     background: var(--indigo);
     color: var(--card);
   }
 }
 
-.done > button {
+.done-actions > button {
   background: none;
   border: 1px solid var(--edge);
   color: var(--ink);
@@ -2025,10 +2036,11 @@ textarea.edit-input:not(.tpl-body) {
   resize: none;
 }
 
-.edit-input:focus {
-  border-color: var(--accent);
-  outline: none;
-}
+/* No `.edit-input:focus` rule: the global `:focus-visible` ring is the field's
+   focus. This used to switch the ring off and colour a border the restyle then
+   removed, so a focused field — a select above all — showed nothing (audit,
+   2026-11-14). The same goes for the search box, the new-card form and the
+   palette below. */
 
 /* "generate" under an empty English example sentence (`app/example-sentence.ts`). */
 .edit-generate {
@@ -2038,11 +2050,8 @@ textarea.edit-input:not(.tpl-body) {
   display: none;
 }
 
-.edit-check {
-  height: 22px;
-  width: 22px;
-  accent-color: var(--accent);
-}
+/* `.edit-check` is drawn as a switch — see BOOLEANS ARE SWITCHES at the end of
+   this file. */
 
 /* Said, not merely greyed out. A control that is disabled without a reason
    teaches him the app is broken. */
@@ -2173,10 +2182,6 @@ body.sidebar-open .sidebar-scrim {
   width: 100%;
 }
 
-.searchbox:focus {
-  outline: none;
-  border-bottom-color: var(--accent);
-}
 
 .deck-list {
   border-bottom: 1px solid var(--line);
@@ -2324,11 +2329,6 @@ body.sidebar-open .sidebar-scrim {
   width: 100%;
 }
 
-.newcard-title:focus,
-.newcard-select:focus {
-  border-color: var(--accent);
-  outline: none;
-}
 
 /* THE ONE ZACH FOUND. It used to be `--ok`, from when that token meant "green",
    and it is not a success state — it is the primary action of this form. The
@@ -2400,6 +2400,20 @@ body.sidebar-open .sidebar-scrim {
    both themes. */
 .sidebar .newcard-choice {
   background: var(--card);
+}
+/* The same plane rule for the rest of the rail's controls (audit, 2026-11-14): on
+   the laptop the new-card name and its two selects, and "+ new top-level deck" /
+   "+ new template", were sunk pills on the sunk rail — no shape at all — and a
+   pressed rail row filled with the rail's own colour. Rail only: the phone drawer's
+   ground is `--bg`, where the system's sunk pill already shows. */
+@media (min-width: 1024px) {
+  .sidebar .newcard-title,
+  .sidebar .newcard-select,
+  .sidebar .tree-add,
+  .sidebar .tree-row:active,
+  .sidebar .sidebar-action:active {
+    background: var(--card);
+  }
 }
 
 .newcard-choice:focus-visible {
@@ -2599,7 +2613,6 @@ body.sidebar-open .sidebar-scrim {
   width: 100%;
 }
 
-.palette-input:focus { outline: none; }
 .palette-list { flex: 1; overflow-y: auto; }
 
 .palette-row {
@@ -2661,7 +2674,9 @@ body[data-view="gallery"] .done { display: none; }
   display: inline-flex;
   font: inherit;
   font-size: var(--fs-small);
-  gap: var(--space-2);
+  /* No gap: the icon's own `.ic-lead` margin separates it from the word, as on the
+     "review" back pill right above. Both together made 14px against 6px there. */
+  gap: 0;
   min-height: 44px;
   padding: var(--space-2) var(--space-4);
 }
@@ -2753,10 +2768,21 @@ body[data-view="review"] .review main {
   font-size: var(--fs-caption);
   left: 50%;
   max-width: calc(100% - 32px);
+  /* `max-content`: with `left: 50%` and an auto width, a positioned box shrinks to
+     the space right of its left edge — half the screen — so the max-width never
+     bit and a long message wrapped into a 195px column on the phone. */
+  overflow-wrap: anywhere;
   padding: var(--space-3) var(--space-4);
   position: fixed;
   transform: translateX(-50%);
+  width: max-content;
   z-index: 25;
+}
+/* Now that a long toast can be wide, it would cover the replay disc, which sits at
+   the same height bottom-right. While the review is showing it rises above the
+   disc: 12px + the 60px disc + 12px. */
+body[data-view="review"]:has(#review:not([hidden])) .say {
+  bottom: calc(var(--footer-h, 150px) + 84px);
 }
 
 .say.bad { border-color: var(--no-edge); color: var(--no); }
@@ -2796,14 +2822,24 @@ body[data-view="review"] .review main {
 
 .confirm-panel h2 { color: var(--ink-bright); font: 400 18px/1.4 var(--jp), sans-serif; margin-bottom: var(--space-3); }
 .confirm-panel p { color: var(--muted); font-size: var(--fs-small); line-height: 1.6; }
-.confirm-bar { display: flex; gap: var(--space-3); margin-top: var(--space-5); }
+/* `flex-wrap` + a button basis of its label's own width (`flex: 1 1 auto`): a
+   two-word verb ("change it anyway") moves to its own row instead of breaking —
+   at 390px it broke onto two lines inside the 52px pill — and a label wider than
+   the whole row (a long template name in "move to …") can still wrap inside its
+   pill rather than being clipped, which `nowrap` would have done. */
+.confirm-bar { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-5); }
 /* A field in a dialog sits under the dialog's paragraph, so the first one keeps
    its top padding, and fields are 16px apart. `.edit-row:first-of-type` zeroed
    it for the layer body, where nothing comes before: in "Add a field" the label
    touched the paragraph (0px) while the next field was 32px down (2026-11-13). */
 .confirm-panel .edit-row { padding: var(--space-2) 0; }
 .confirm-panel p + .edit-row { padding-top: var(--space-4); }
-.confirm-bar button { background: none; border: 1px solid var(--edge); color: var(--ink); cursor: pointer; flex: 1; font: inherit; padding: var(--space-3); }
+.confirm-bar button { background: none; border: 1px solid var(--edge); color: var(--ink); cursor: pointer; flex: 1 1 auto; font: inherit; padding: var(--space-3); }
+/* The voice dialog's select is a bare child of the panel, not an `.edit-row`: the
+   same 16px under the paragraph as the other dialogs' fields, and its price line
+   12px under it. Both were flush (0px). */
+.confirm-panel > p + .edit-input { display: block; margin-top: var(--space-4); }
+.confirm-panel .voice-price { margin-top: var(--space-3); }
 .confirm-bar button.danger { border-color: var(--no-edge); color: var(--no); }
 
 /* ── his #6/#7: pin ─────────────────────────────────────────────────────────
@@ -2854,8 +2890,9 @@ body[data-view="review"] .review main {
   opacity: 1;
 }
 
-/* The preview's operation bar. It sits between the title and the close button,
-   so it has to survive a narrow phone without pushing ✕ off the edge. */
+/* The layer heads' operation bar. In a preview it now takes a row of its own under
+   the title and ✕ (`.layer-head-preview`, 2026-11-14); it still has to survive a
+   narrow phone without pushing anything off the edge. */
 .layer-ops {
   display: flex;
   flex-wrap: wrap;
@@ -2933,11 +2970,15 @@ body[data-view="review"] .review main {
   margin: 0 0 var(--space-2);
 }
 
+/* 17ch clears the longest key ("audio on this device", 115.7px against 123.8px), so
+   every value starts on one edge; the margin guarantees a gap even if a longer key
+   is added. At 14ch that key ran straight into its value. */
 .settings-line b {
   color: var(--muted);
   display: inline-block;
   font-weight: 400;
-  min-width: 14ch;
+  margin-right: var(--space-2);
+  min-width: 17ch;
 }
 
 .layer-settings select.edit-input {
@@ -3241,7 +3282,15 @@ body[data-view="review"] .review main {
 
 /* The body is authored text in a mono face with the Japanese fallback behind it —
    `--mono` already chains to `--jp`, so 単語 and `<<` line up in one box. */
+/* A block with a step above it: inline, it sat on the note's baseline strut, flush
+   under its caption, and the unknown-marker warning sat flush under it. */
+.tpl-body + .settings-bad {
+  margin-top: var(--space-2);
+}
+
 .tpl-body {
+  display: block;
+  margin-top: var(--space-3);
   font-family: var(--mono);
   font-size: var(--fs-small);
   line-height: 1.6;
@@ -3625,8 +3674,14 @@ input[data-answer="incorrect"] {
   position: relative;
 }
 
+/* The ring goes on the SHELL, around the mirror and the textarea together, and the
+   transparent textarea inside does not draw a second one. */
 .edit-field:focus-within {
-  border-color: var(--accent);
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.edit-field .edit-input:focus-visible {
+  outline: none;
 }
 
 .edit-field .edit-input,
@@ -4045,11 +4100,16 @@ input[data-answer="incorrect"] {
      `main` is a 720px box with 16px of padding, so the card's text column is
      688px — matching that is what makes the reveal button's edges agree with the
      text above it. The grounds and the hairlines still span the whole footer: a
-     rule that stops in mid-air reads as a mistake rather than as alignment. */
-  .ops,
-  .shadowbar,
-  .bar {
-    padding-inline: max(var(--space-3), calc((100% - 688px) / 2));
+     rule that stops in mid-air reads as a mistake rather than as alignment.
+
+     `.footer >` is not decoration: the restyle's `.ops, .shadowbar` and `.bar`
+     padding rules have the same weight and come later, and they silently won —
+     measured 2026-11-14 at 1280px, `reveal` was a 918px pill under a 688px card.
+     The floor is the phone's 16px (`space-4`), the restyle's own row padding. */
+  .footer > .ops,
+  .footer > .shadowbar,
+  .footer > .bar {
+    padding-inline: max(var(--space-4), calc((100% - 688px) / 2));
   }
 
   .say {
@@ -4139,7 +4199,9 @@ input[data-answer="incorrect"] {
    of "you can touch this" — links, buttons, the cloze underline, the wordmark —
    so a blue kana inside a sentence reads as a link. Gray is also iconic:
    devoicing is a REDUCTION, and `--muted` means de-emphasised everywhere else
-   here. 6.01:1 light and 6.03:1 dark on --card, both AA for body text.
+   here. 5.43:1 light and 5.71:1 dark on --card (decision 57's palette), both AA
+   for body text — at full strength. An `opacity: 0.85` stacked on it composited
+   to 3.95:1 in light and was removed on 2026-11-14.
 
    THE RING IS THE SECOND CHANNEL, and it is not decoration. `--accent-head`
    against `--muted` is 1.04:1 in light and 1.27:1 in dark — ISOLUMINANT, the
@@ -4152,7 +4214,6 @@ input[data-answer="incorrect"] {
   border: 1px solid currentColor;
   border-radius: 50%;
   color: var(--muted);
-  opacity: 0.85;
   padding: 0 0.1em;
 }
 
@@ -4307,6 +4368,12 @@ input[data-answer="incorrect"] {
 .hashigo-side {
   border-top: 0;
   padding: var(--space-3) 0;
+}
+/* The first side ON SCREEN starts flush, not the first in the DOM: a mode-2 単語
+   card's side 1 is empty and hidden, so `:first-of-type` missed the side actually
+   shown and its first line sat 12px lower than on the card before it. */
+.hashigo-side:nth-child(1 of .hashigo-side:not([hidden])) {
+  padding-top: 0;
 }
 .hashigo-side p,
 .hashigo-side ol,
@@ -4499,7 +4566,8 @@ input[data-answer="incorrect"] {
 }
 .replay:active {
   background: var(--vermilion);
-  transform: scale(0.94);
+  /* The system's press: "The disc presses to 92% on touch." */
+  transform: scale(0.92);
 }
 .replay[disabled] {
   background: var(--ink-3);
@@ -4571,6 +4639,11 @@ input[data-answer="incorrect"] {
   min-height: 52px;
   padding: 0 var(--space-5);
 }
+/* The flex gap is the system Button's icon-to-word space; the icon's inline
+   `.ic-lead` margin on top of it made 15px against 6-8px everywhere else. */
+.bar button > .ic-lead {
+  margin-right: 0;
+}
 /* THE DASH STAYS, AS AN EDGE. Mid-walk `forgot` and `next` are both secondary
    pills, and the dashed outline is what still tells "go on" from "I failed" —
    decision 32 called it the only thing distinguishing the reveal control. */
@@ -4616,7 +4689,7 @@ input[data-answer="incorrect"] {
 .bootskip,
 .focuschip,
 .readingtoggle,
-.done > button,
+.done-actions > button,
 .confirm-bar button,
 .gallery-back,
 .gcard-op,
@@ -4632,7 +4705,7 @@ input[data-answer="incorrect"] {
   font-weight: 600;
   letter-spacing: 0;
 }
-.done > button,
+.done-actions > button,
 .confirm-bar button,
 .bootskip {
   font-size: var(--fs-body);
@@ -4649,6 +4722,22 @@ input[data-answer="incorrect"] {
   font-size: var(--fs-small);
   min-height: 36px;
   padding: 0 var(--space-4);
+}
+/* The offer to make a missing clip sits after its disc: a chip gap, and centred on
+   the disc rather than on the text baseline. Without it the two sunk shapes touched
+   and read as one blob (audit, 2026-11-14). Scoped to `.clip +`: the emoji line's
+   `.regen` stands alone in its line. */
+.clip + .regen {
+  margin-left: var(--space-2);
+  vertical-align: middle;
+}
+/* The layer bodies' own actions — settings' "export a backup", the dashboard's
+   "build the full report" — are the in-layer secondary pill, set off from the
+   lines above them. They were sidebar rows dropped into a layer: unfilled text
+   indented 24px from everything else. */
+.settings-state > .gcard-op,
+.layer-glance .layer-body > .gcard-op {
+  margin-top: var(--space-3);
 }
 .focuschip {
   min-height: 32px;
@@ -4718,12 +4807,20 @@ input[data-answer="incorrect"] {
   }
 }
 
-/* Disabled is `ink-3` on `sunk`, everywhere — not a fainter copy of the button. */
+/* Disabled is `ink-3` on `sunk`, everywhere — not a fainter copy of the button.
+   The second half of the list was added 2026-11-14: those disabled pills were
+   pixel-identical to enabled ones, and the new-card submit was a 45% ghost. */
 .bar button[disabled],
 .op[disabled],
 .clip[disabled],
 .gallery-review-go:disabled,
-.regen[disabled] {
+.regen[disabled],
+.gcard-op:disabled,
+.layer-op:disabled,
+.confirm-bar button:disabled,
+.newcard-submit:disabled,
+.readingtoggle:disabled,
+.draw-button:disabled {
   background: var(--sunk) !important;
   border-color: transparent !important;
   color: var(--ink-3) !important;
@@ -4767,11 +4864,14 @@ input[data-answer="incorrect"] {
   border: 0;
   border-radius: var(--radius-md);
 }
+/* A [[link]] run is marked by the card tone on the sunk field: sunk on sunk left
+   only the dotted underline, so edit mode looked like preview. The armed (Ctrl
+   held) state keeps the fill; its underline turns solid (the base rule). */
 .edit-mirror .edit-link {
-  background: var(--sunk);
+  background: var(--card);
 }
 .edit-field.has-links.mod .edit-mirror .edit-link {
-  background: var(--hair);
+  background: var(--card);
 }
 
 /* Field labels and template names are UI chrome, so `--sans`, not mono. Mono
@@ -4808,6 +4908,27 @@ input[data-answer="incorrect"] {
   letter-spacing: 0;
   padding: var(--space-3) var(--space-4);
 }
+/* A preview's head: the title and the ✕ on the first row, its five op pills on a
+   row of their own with a chip gap. Squeezed into one row they stacked 2-3 deep
+   with 4px gaps and pressed the title into a ~52px column ("English/Phrase ·" over
+   "preview"). Scoped to previews (`main.ts`): the dashboard shares `.layer-head`. */
+.layer-head-preview {
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+.layer-head-preview > span:first-child {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.layer-head-preview > .layer-ops {
+  flex: 1 0 100%;
+  gap: var(--space-2);
+  margin: 0;
+}
+/* "card not found" paints no ops; an empty row would still add the row gap. */
+.layer-head-preview > .layer-ops:empty {
+  display: none;
+}
 .layer-body {
   padding: var(--space-4) var(--space-4) var(--space-5);
 }
@@ -4832,8 +4953,13 @@ input[data-answer="incorrect"] {
 .link-item {
   border-radius: var(--radius-md);
 }
-.link-item.on {
+/* Hovered and selected rows are the sunk fill and nothing else: the old 2px ink
+   stripe bent round the 14px corner, and the text jumped 2-4px as the selection
+   moved down the [[ picker. */
+.link-item.on,
+.link-item:hover {
   border-left: 0;
+  padding-left: var(--space-3);
 }
 .palette-row {
   border-radius: var(--radius-md);
@@ -4879,6 +5005,15 @@ input[data-answer="incorrect"] {
    the tile's content edge and keeps the pill's room for a focus ring. */
 .tpl-field .tpl-name {
   margin-left: calc(-1 * var(--space-4));
+}
+/* Every other control on a field tile — ↑ ↓ ⌄, delete, and the settings' selects,
+   inputs and save — was a sunk pill on the sunk tile: bare glyphs and text with no
+   shape (1.00:1). On the tile a control is the card tone, the rail's rule. The name
+   above keeps its invisible box on purpose. */
+.tpl-ops .gcard-op,
+.tpl-settings .gcard-op,
+.tpl-settings .edit-input {
+  background: var(--card);
 }
 .peek {
   background: var(--sunk);
@@ -4969,12 +5104,33 @@ input[data-answer="incorrect"] {
   .gallery-grid.is-loading .gcard-open,
   .gallery-grid.is-loading .gcard-gist,
   .gallery-grid.is-loading .gcard-meta,
-  .hashigo-generator[data-state="pending"],
-  .hashigo-generator[data-state="generating"] { animation: none; }
+  /* The pulse's OWN selectors, word for word: the shorter `[data-state]` pair that
+     stood here was less specific than the pulse rule and never won. */
+  .hashigo-generator.hashigo-ai[data-state="pending"]:empty,
+  .hashigo-generator.hashigo-translate[data-state="pending"]:empty,
+  .hashigo-generator.hashigo-ai[data-state="generating"],
+  .hashigo-generator.hashigo-translate[data-state="generating"],
+  .hashigo-cloze[data-state="revealed"] .hashigo-cloze-answer { animation: none; }
+  /* "All of the above stops under prefers-reduced-motion": the drawer slide, the
+     disc press and the day's bar were still moving (audit, 2026-11-14). */
+  .sidebar,
+  .replay,
+  .progressbar i { transition: none; }
+  .replay:active { transform: none; }
 }
 .backlinks {
   border-top: 0;
   margin-top: var(--space-6);
+  /* The 16px only made sense under the hairline this layer removed. */
+  padding-top: 0;
+}
+/* Captions on the rows' text edge, and a group break before the second caption:
+   it sat closer to the "found in" row above than to its own list. */
+.backlinks-head {
+  padding-inline: var(--space-3);
+}
+.backlinks-head:not(:first-child) {
+  margin-top: var(--space-5);
 }
 .backlinks-list .link-item + .link-item {
   border-top: 0;
@@ -5044,6 +5200,12 @@ input[data-answer="incorrect"] {
   padding: var(--space-3) var(--space-4);
   width: calc(100% - 16px);
 }
+/* A group break between the actions and the deck tree (44px against 24px between
+   actions): with none, the two read as one list with an uneven row. A margin, so
+   it stays outside the tree's scroll box. */
+.deck-list {
+  margin-top: var(--space-4);
+}
 .tree-row,
 .result-row {
   border-radius: var(--radius-full);
@@ -5066,6 +5228,18 @@ input[data-answer="incorrect"] {
 /* ── BOOT, BANNER, DONE ── */
 .banner {
   border-bottom: 0;
+}
+/* The banner's own ground IS `--sunk`, so the secondary group's sunk pill was a
+   bold word in the sentence ("… ready (abc123). reload"). On that plane the
+   control takes the card tone, as on the rail. After the group, which has the same
+   weight. */
+.banner button {
+  background: var(--card);
+}
+/* The boot download rows sit in `.bootlog`, itself `--sunk`, so the sunk track was
+   1.00:1 there — only the fill showed. On that well the track is the card tone. */
+.bootlog .fetchtrack {
+  background: var(--card);
 }
 .bootstall,
 .bootlog {
@@ -5190,4 +5364,81 @@ select.edit-input {
 .hashigo-draw {
   border-radius: var(--radius-md);
   outline-color: transparent;
+}
+
+/* ── PRESS, FOCUS AND SWITCHES — the audit of 2026-11-14 ──────────────────────
+   A PRESS FILLS, the pair `.bar button:active` and `.clip:active` already use.
+   These controls showed nothing when pressed: some had no `:active` at all, the
+   rest pressed to the colour they already had. On the phone their only feedback
+   was Android's tap highlight, which was turned off the day before — so this
+   finishes that change rather than adding a new look. At the END of the file on
+   purpose: the plane rules above (`.tpl-ops .gcard-op`, `.sidebar .tree-add`,
+   `.banner button`) carry the same weight, and source order has to favour the
+   press. The disabled rules keep winning through their `!important`. */
+.done-actions > button:active,
+.bootskip:active,
+.banner button:active,
+.confirm-bar button:active,
+.focuschip:active,
+.readingtoggle:active,
+.gallery-back:active,
+.gcard-op:active,
+.layer-op:active,
+.draw-button:active,
+.regen:active,
+.tree-add:active,
+.newcard-choice:active,
+.gallery-review-go + .gallery-review-go:active {
+  background: var(--indigo);
+  color: var(--card);
+}
+.confirm-bar button.danger:active,
+.gcard-op.danger:active,
+.layer-op.danger:active {
+  background: var(--danger);
+  color: var(--card);
+}
+.layer-close:active,
+.sidebartoggle:active,
+.gcard-more:active,
+.palette-row:active {
+  background: var(--sunk);
+}
+
+/* A keyboard-focused clip: the focus ring goes OUTSIDE the playback progress ring
+   (which sits 2-4px out), not on the same pixels — both are ruri. */
+.clip:focus-visible {
+  outline-offset: 5px;
+}
+
+/* BOOLEANS ARE SWITCHES. "There are no square controls": the card editor's yes/no
+   fields and the gallery's "archived" filter were the browser's square checkbox —
+   and the gallery's ticked in the browser's own blue, a second blue beside ruri.
+   A sunk pill with a knob, ink when on: the review screen's Reading toggle already
+   draws a boolean this way. The label around each stays the tap target. */
+.edit-check,
+.gallery-toggle input {
+  -webkit-appearance: none;
+  appearance: none;
+  background: radial-gradient(circle at 12px 50%, var(--muted) 7px, transparent 7.5px), var(--sunk);
+  border: 0;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  flex: none;
+  height: 24px;
+  margin: 0;
+  width: 40px;
+}
+.edit-check:checked,
+.gallery-toggle input:checked {
+  background: radial-gradient(circle at calc(100% - 12px) 50%, var(--card) 7px, transparent 7.5px), var(--indigo);
+}
+/* In Windows high-contrast (forced colours) the switch's gradient fill is dropped
+   and it would vanish: there, the native checkbox comes back. */
+@media (forced-colors: active) {
+  .edit-check,
+  .gallery-toggle input {
+    -webkit-appearance: auto;
+    appearance: auto;
+  }
 }

@@ -14,6 +14,7 @@ import { openConfirm, openPrompt, say } from "./ui.js";
 import { ask } from "./worker-client.js";
 import { openVoiceDialog } from "./voice-dialog.js";
 import { icon, type IconName } from "./icons.js";
+import { count } from "./plural.js";
 
 /**
  * Every deck operation goes through here, so undo and the error path exist once.
@@ -90,7 +91,7 @@ export function openDeckMenu(deck: DeckBrief): void {
   const totals = subtreeCards(deck);
   const text = document.createElement("p");
   text.textContent =
-    `${totals.cards.toLocaleString()} card(s) in this deck and everything under it` +
+    `${count(totals.cards, "card")} in this deck and everything under it` +
     (deck.cards === totals.cards ? "" : ` · ${deck.cards.toLocaleString()} directly in it`) +
     (deck.archived ? " · archived" : "");
   panel.append(heading, text);
@@ -153,17 +154,20 @@ export function openDeckMenu(deck: DeckBrief): void {
     deck.archived ? "unarchive" : "archive",
     deck.archived
       ? "put it and its cards back in the queue"
-      : "this deck AND every card under it stop being scheduled",
+      : "this deck and every card under it stop being scheduled",
     () => {
+      // It flips the deck AND every card under it, because the review queue
+      // filters on the card. Unarchiving flips every card back, including ones
+      // archived one at a time (`archiveSubtree`); only the undo restores exactly
+      // the rows it changed. Each arm says its own consequence.
+      const cards = count(totals.cards, "card");
       openConfirm(
         deck.path,
-        `${deck.archived ? "Unarchiving" : "Archiving"} marks the deck AND every ` +
-          `card in its subtree (${totals.cards.toLocaleString()}), because the review ` +
-          `queue filters on the CARD — two predicates that disagree is worse than one ` +
-          `that is blunt. Undo restores exactly the rows this flips, so cards you ` +
-          `archived by hand keep their state. This is also the answer to your 数字 ` +
-          `question: Mochi has no deck-level archive at all, so a deck you archived ` +
-          `there arrived here unarchived.`,
+        deck.archived
+          ? `Unarchives ${deck.name} and the ${cards} under it, including any you ` +
+            `archived one at a time. Undo puts back exactly what this changes.`
+          : `Archives ${deck.name} and the ${cards} under it. They stop being ` +
+            `scheduled and keep their history. Undo puts back exactly what this changes.`,
         deck.archived ? "unarchive deck" : "archive deck",
         () => void runDeckOp({ op: deck.archived ? "unarchive" : "archive", deckId: deck.id }),
         // Undo restores exactly the rows it flipped, and no history is destroyed
@@ -173,31 +177,89 @@ export function openDeckMenu(deck: DeckBrief): void {
     },
   );
 
+  // ONLY AN EMPTY DECK CAN GO, and a deck that is not empty is never offered a
+  // red "delete" that can only fail. The worker refuses a deck that holds cards
+  // (`cards.deck_id` is ON DELETE RESTRICT, on purpose), and the database refuses
+  // one with sub-decks (`decks.parent_id` is too) — the second with a raw
+  // constraint error. `totals.cards` counts the whole subtree, so a parent whose
+  // cards all sit in sub-decks is caught here as well.
+  const subDecks = childrenOf(deck.id).length;
+  const blocked = totals.cards > 0 || subDecks > 0;
+  const holds = totals.cards > 0 ? count(totals.cards, "card") : count(subDecks, "sub-deck");
   item(
     "trash",
     "delete",
-    "only an empty deck — the schema refuses to take cards with it",
+    blocked ? `only an empty deck · this one holds ${holds}` : "only an empty deck",
     () => {
-      openConfirm(
-        `Delete ${deck.name}?`,
-        totals.cards > 0
-          ? `It holds ${totals.cards.toLocaleString()} card(s) in its subtree. ` +
-            `\`cards.deck_id\` is ON DELETE RESTRICT, deliberately — deleting a deck ` +
-            `must never silently take four years of cards with it. Move them, or ` +
-            `archive the deck instead.`
-          : `It is empty, so nothing goes with it. There is no undo for a deleted ` +
+      if (!blocked) {
+        openConfirm(
+          `Delete ${deck.name}?`,
+          `It is empty, so nothing goes with it. There is no undo for a deleted ` +
             `deck; making it again is one action.`,
-        "delete",
-        () => void runDeckOp({ op: "delete", deckId: deck.id }),
-      );
+          "delete",
+          () => void runDeckOp({ op: "delete", deckId: deck.id }),
+        );
+      } else if (totals.cards > 0 && !deck.archived) {
+        // The exit the sentence names, as the button: archiving is what takes a
+        // deck out of the way without losing anything, and it has an undo.
+        openConfirm(
+          `${deck.name} isn't empty`,
+          `It holds ${holds}, and only an empty deck can be deleted. Archive it ` +
+            `instead to take it and its cards out of the queue; undo brings them back.`,
+          "archive deck",
+          () => void runDeckOp({ op: "archive", deckId: deck.id }),
+          "normal",
+        );
+      } else {
+        openNotice(
+          `${deck.name} isn't empty`,
+          totals.cards > 0
+            ? `It holds ${holds}, and only an empty deck can be deleted. It is ` +
+              `archived already; to delete it, delete its cards first.`
+            : `It holds ${holds}, and only an empty deck can be deleted. Delete or ` +
+              `move ${subDecks === 1 ? "it" : "them"} first.`,
+        );
+      }
     },
-    true,
+    !blocked,
   );
 
   panel.appendChild(list);
   root.append(backdrop, panel);
   pushLayer(bareLayer(root));
   (list.firstElementChild as HTMLElement | null)?.focus();
+}
+
+/**
+ * A dialog that only explains: a heading, a sentence and "ok". For a request that
+ * cannot be done and has no one-press way out — `openConfirm` always offers a
+ * second button, and here it would have nothing true to do.
+ */
+function openNotice(title: string, body: string): void {
+  const root = document.createElement("div");
+  root.className = "layer layer-confirm";
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-modal", "true");
+  const backdrop = document.createElement("div");
+  backdrop.className = "layer-backdrop";
+  backdrop.addEventListener("click", () => closeIfTop(root));
+  const panel = document.createElement("div");
+  panel.className = "confirm-panel";
+  const heading = document.createElement("h2");
+  heading.textContent = title;
+  const text = document.createElement("p");
+  text.textContent = body;
+  const bar = document.createElement("div");
+  bar.className = "confirm-bar";
+  const ok = document.createElement("button");
+  ok.type = "button";
+  ok.textContent = "ok";
+  ok.addEventListener("click", () => closeIfTop(root));
+  bar.appendChild(ok);
+  panel.append(heading, text, bar);
+  root.append(backdrop, panel);
+  pushLayer(bareLayer(root));
+  ok.focus();
 }
 
 /**

@@ -859,7 +859,19 @@ describe("the done screen's way out", () => {
     // `.done button` would give the ☰ the export button's fill, padding and
     // 52px height; the pill rules are for the section's own children only.
     expect(css).not.toMatch(/\.done button/);
-    expect(css).toMatch(/\.done > button/);
+    expect(css).toMatch(/\.done-actions > button/);
+  });
+
+  it("keeps its pills apart: a wrapping row with a gap, not bare inline buttons", () => {
+    // Zach, 2026-11-14, on his phone: "i think the margin is wrong here" — the two
+    // pills stacked with 0px between them.
+    const actions = /<div class="done-actions">([\s\S]*?)<\/div>/.exec(done)?.[1] ?? "";
+    expect(actions).toContain('id="focusclear"');
+    expect(actions).toContain('id="backup"');
+    const rule = /\.done-actions\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/display:\s*flex/);
+    expect(rule).toMatch(/flex-wrap:\s*wrap/);
+    expect(rule).toMatch(/gap:\s*var\(--space-3\)/);
   });
 
   it("gives way to the gallery the toggle can now open", () => {

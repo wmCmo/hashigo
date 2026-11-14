@@ -30,6 +30,7 @@ import { openConfirm, say } from "./ui.js";
 import { ask } from "./worker-client.js";
 import { pushUndo, refreshAfterOp } from "./ops.js";
 import { prependIcon, setIcon } from "./icons.js";
+import { count } from "./plural.js";
 
 /**
  * *"where can i edit my template? there should be a modal for editing template and
@@ -132,7 +133,9 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
   };
 
   function paint(): void {
-    title.textContent = `${detail.name} · ${detail.cards.toLocaleString()} card(s)`;
+    // The noun stays: the fields below carry counts of their own, so a bare
+    // number here could be anything.
+    title.textContent = `${detail.name} · ${count(detail.cards, "card")}`;
     body.replaceChildren();
 
     // ── the name ──
@@ -298,17 +301,18 @@ function templateFieldRow(
     () => {
       openConfirm(
         `Remove ${field.name} from ${detail.name}?`,
+        // The values are never deleted with the field (the values table is not
+        // foreign-keyed to it, on purpose), so the dialog says what that means
+        // for him: they stay, and undo brings the field back over them.
         (field.values === 0
-          ? "No card carries a value for it. "
-          : `${field.values.toLocaleString()} card(s) carry a value for it. Those ` +
-            `values are NOT deleted — 'card_field_values' is deliberately not ` +
-            `foreign-keyed to the field, because losing four years of authored text ` +
-            `is worse than an orphan row. Undo puts the field back and the text is ` +
-            `still under it. `) +
+          ? "No card has a value for it. "
+          : `${count(field.values, "card")} ${field.values === 1 ? "has" : "have"} a ` +
+            `value for it. The values stay saved, and undo puts the field back with ` +
+            `them. `) +
           (field.references === 0
-            ? "Nothing in the body references it."
-            : `The body references it ${field.references} time(s); those markers will ` +
-              `render as nothing until you edit the body.`),
+            ? "Nothing in the body uses it."
+            : `The body uses it ${count(field.references, "time")}; those markers show ` +
+              `as nothing until you edit the body.`),
         "remove the field",
         () => void run({ op: "deleteField", templateId: detail.id, fieldId: field.id }),
       );
@@ -850,10 +854,9 @@ function openAddField(detail: TemplateDetail, run: TemplateRunner): void {
   const heading = document.createElement("h2");
   heading.textContent = `Add a field to ${detail.name}`;
   const text = document.createElement("p");
-  text.textContent =
-    "It is created LOCAL (decision 9), which is what stops a re-import pruning its " +
-    "values — that is the flag whose absence once threw away 3,454 型 labels. It " +
-    "renders nowhere until you put <<Name>> in the body.";
+  // It is still created local (decision 9) — that is the worker's job, and the
+  // reason is in DECISIONS.md, not in the dialog.
+  text.textContent = "It shows nowhere until you put <<Name>> in the body.";
 
   const nameRow = document.createElement("label");
   nameRow.className = "edit-row";

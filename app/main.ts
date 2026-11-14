@@ -128,6 +128,7 @@ import { openVoiceDialog } from "./voice-dialog.js";
 import { hydrateIcons, icon, opIcon, prependIcon, setIcon, type IconName } from "./icons.js";
 import { cloudHeaders, cloudUrl, IN_CLOUD, SERVER_NAME } from "./cloud.js";
 import { versionLabel } from "./version.js";
+import { count } from "./plural.js";
 import { forgetMergedPeers } from "./sync-client.js";
 import { attachDraw, type DrawHandle, type DrawSurface } from "../src/render/draw.js";
 import {
@@ -374,9 +375,12 @@ function paintFetch(phase: Phase, message: Extract<AppMessage, { kind: "fetching
   bootEta.textContent = etaLabel(view.etaSeconds);
   bootStall.hidden = !view.stalled;
   if (view.stalled) {
-    bootStall.textContent =
-      "No data for a while. The transfer is still open — your computer may have gone " +
-      "to sleep, or dropped off the tailnet.";
+    // The laptop-and-tailnet reason is only true off the cloud. On the Worker the
+    // seed comes from R2, so it says what the boot sync's stall says.
+    bootStall.textContent = IN_CLOUD
+      ? "Nothing has arrived for a while. The connection may have dropped."
+      : "No data for a while. The transfer is still open — your computer may have gone " +
+        "to sleep, or dropped off the tailnet.";
   }
 }
 
@@ -904,8 +908,37 @@ async function showCardAt(): Promise<void> {
       // own log rather than inferred from the mode. `asked` below computes the same
       // thing for the hint text; this is the same fact, one frame earlier.
       const asked = card.loop.log.some((event) => event.kind === "prompt");
-      if (asked || card.mode.mode === "identify") {
-        hintLine.textContent = `no clip for this card (${outcome.kind}) — reveal to read it`;
+      const showHint = asked || card.mode.mode === "identify";
+      // A second clip held back on purpose. It is one tap away, not absent, so it
+      // says nothing and leaves the disc alone.
+      if (outcome.kind === "deferred") return;
+      // THE CLIP EXISTS; the browser wanted a tap first. The disc IS that tap, so
+      // it stays live and the hint points at it — `paintReplay("missing")` here
+      // disabled the one control that would have played it.
+      // Only an autoplay refusal, though: a NotSupportedError (the source would not
+      // load or decode) rejects the same way on every press, so it falls through to
+      // "the clip didn't play" and a disabled disc.
+      if (outcome.kind === "blocked" && !(outcome.detail ?? "").includes("NotSupportedError")) {
+        if (showHint) hintLine.textContent = "tap play to hear it, then reveal";
+        replayState = "ready";
+        paintReplay(drill === null ? "none" : "ready");
+        return;
+      }
+      // WORDS, NEVER `outcome.kind`. The hint printed "(missing)" beside a clip
+      // decision 62 was busy making. Not `autoFillRuns`: for a card with text
+      // slots the fill starts only after the generatedText reply, which can land
+      // after this — so "not tried yet" counts as being made, the same test
+      // `fillGeneratedText` uses.
+      if (showHint) {
+        const making = !autoFillTried.has(card.cardId) || autoFilling.has(card.cardId);
+        hintLine.textContent =
+          outcome.kind === "missing"
+            ? making
+              ? MAKING_CLIP_HINT
+              : NO_CLIP_HINT
+            : outcome.kind === "unaddressable"
+              ? "no clip for this card — reveal to read it"
+              : "the clip didn't play — reveal to read it";
       }
       // The button cannot know this at mount time — the resolve is async — so the
       // failure is what tells it. See `paintReplay`.
@@ -2255,6 +2288,21 @@ async function redoClip(
  */
 const autoFilling = new Set<string>();
 const autoFillTried = new Set<string>();
+
+/**
+ * The review hint while a clip is being made, and what it becomes when the fill
+ * ends without one. One constant each, so `settleMakingHint` compares against the
+ * very text `onOutcome` wrote. A fill that MADE something remounts the card and
+ * `onOutcome` writes the line again; a fill that made nothing (or failed) does not,
+ * and without this the line kept saying "making" for good (review, 2026-11-14).
+ */
+const MAKING_CLIP_HINT = "making the clip — reveal to read it";
+const NO_CLIP_HINT = "no clip on this device — reveal to read it";
+function settleMakingHint(cardId: string): void {
+  if (mounted?.cardId === cardId && hintLine.textContent === MAKING_CLIP_HINT) {
+    hintLine.textContent = NO_CLIP_HINT;
+  }
+}
 /** The fill in flight per card, so a second caller waits on the same answer. */
 const autoFillRuns = new Map<string, Promise<boolean>>();
 
@@ -2311,6 +2359,7 @@ async function fillGaps(cardId: string): Promise<boolean> {
   } finally {
     autoFilling.delete(cardId);
     if (made > 0) await redrawFilled(cardId, made);
+    else settleMakingHint(cardId);
   }
   return true;
 }
@@ -3272,7 +3321,7 @@ async function maybeReset(): Promise<boolean> {
   // record of what he opened is the surprising reading of that sentence.
   clearVisits();
   line(
-    `reset: removed ${reply.removed.join(", ")} · ${reply.localReviews} local grade(s) gone. ` +
+    `reset: removed ${reply.removed.join(", ")} · ${count(reply.localReviews, "local grade")} gone. ` +
       `Reload without ?reset=1 to re-import.`,
     "bad",
   );
@@ -3307,7 +3356,9 @@ async function openPreview(cardId: string): Promise<void> {
   root.appendChild(panel);
 
   const head = document.createElement("div");
-  head.className = "layer-head";
+  // Its own class so the five op pills can wrap onto a row of their own here
+  // without touching the dashboard's head, which shares `.layer-ops`.
+  head.className = "layer-head layer-head-preview";
   const title = document.createElement("span");
   title.textContent = reply.card === null ? "card not found" : `${reply.deckPath} · preview`;
   const close = document.createElement("button");
@@ -3322,7 +3373,10 @@ async function openPreview(cardId: string): Promise<void> {
   // the row (`collectionState` in the worker says why that matters).
   const ops = document.createElement("div");
   ops.className = "layer-ops";
-  head.append(title, ops, close);
+  // ✕ before the ops in the DOM: the ops wrap onto a row of their own BELOW the
+  // title and ✕ (`.layer-head-preview`), and tab order follows the DOM, so focus
+  // now moves the way the eye does — ✕, then the row under it.
+  head.append(title, close, ops);
   panel.appendChild(head);
 
   const body = document.createElement("div");
@@ -4406,7 +4460,7 @@ async function bootSync(): Promise<number> {
         break;
       case "merged":
         line(
-          `sync: ${result.reviewsAdded.toLocaleString()} grade(s) in from ${result.peers} device(s)`,
+          `sync: ${count(result.reviewsAdded, "grade")} in from ${count(result.peers, "device")}`,
           result.failures.length > 0 ? "bad" : "good",
         );
         for (const failure of result.failures) line(failure, "bad");

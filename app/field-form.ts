@@ -30,6 +30,7 @@
 
 import { decodeFieldOptions } from "../src/cards/index.js";
 import { fieldKind, kindOf, roleOf, ROLE_KEY, settingsOf, type SettingSpec } from "../src/fields/index.js";
+import { count } from "./plural.js";
 
 /** What this needs of a field row. Structural, so `TemplateFieldRow` fits. */
 export interface FieldFacts {
@@ -81,13 +82,15 @@ export function factsLine(field: FieldFacts): string {
         ? `on side ${field.sides[0]}`
         : `on sides ${field.sides.join(", ")}`;
   const references =
-    field.references === 0 ? sides : `${field.references} reference(s) ${sides}`;
+    field.references === 0 ? sides : `${count(field.references, "reference")} ${sides}`;
   return [
     // THE KIND, not the storage type — `読み` is a Reading, not "Plain text".
     fieldKind({ name: field.name, type: field.type, options: decodeFieldOptions(field.options ?? "{}") }).label,
-    field.local ? "local (decision 9 — protected from re-import)" : null,
+    // Decision 9's flag. What it does for him is the second half, so that is
+    // what it says; the decision number stays in the repo.
+    field.local ? "local · kept on re-import" : null,
     references,
-    field.values === 0 ? null : `${field.values.toLocaleString()} value(s)`,
+    field.values === 0 ? null : count(field.values, "value"),
     field.dependents.length === 0 ? null : `feeds ${field.dependents.join(", ")}`,
   ]
     .filter((part): part is string => part !== null)
@@ -161,14 +164,15 @@ export function undeclaredKeys(
 }
 
 /** What a role means, in his terms. One line per role this build knows. */
+// Decisions 43, 29, 10 and 56, in that order — cited here, not on screen.
 const ROLE_MEANING: Readonly<Record<string, string>> = {
   ojad:
-    "the per-mora pitch accent of the sentence it reads (decision 43) — filled by " +
-    "`accent/cli.ts marks`, found by this role rather than by any field's name",
-  "reading-switch": "decision 29's switch between the produce and identify drills",
+    "the pitch accent of each mora in the sentence it reads, found by this role " +
+    "rather than by the field's name",
+  "reading-switch": "switches between the produce and identify drills",
   reading:
-    "decision 10's explicit reading — the kana of its input word, shown as furigana. " +
-    "Filled by the laptop's helper (decision 56), never typed",
+    "the kana of its input word, shown as furigana. Filled by the laptop's helper, " +
+    "never typed",
 };
 
 /**

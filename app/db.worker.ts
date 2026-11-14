@@ -33,6 +33,7 @@
  */
 
 import { SqliteBlobStore } from "../src/blobs/sqlite.js";
+import { count } from "./plural.js";
 import { exportLocalArchive } from "../src/backup/index.js";
 import {
   deltaPayload,
@@ -1199,7 +1200,7 @@ function cardOp(request: CardOpRequest): void {
               db.prepare("SELECT name FROM templates WHERE id = ?").get(to) as { name: string }
             ).name;
       describe =
-        `moved ${name} to ${toName} — ${kept} value(s) carried over` +
+        `moved ${name} to ${toName} — ${count(kept, "value")} carried over` +
         (hidden === 0 ? "" : `, ${hidden} now hidden (kept, not deleted)`);
       undo = { op: "setTemplate", cardId: card.id, templateId: card.template_id };
       break;
@@ -1221,7 +1222,7 @@ function cardOp(request: CardOpRequest): void {
         // NO UNDO. The reviews went with it, and offering a reversal that
         // silently loses them is worse than saying so.
         undo = null;
-        describe = `deleted ${name} and ${reviews} review(s) — not undoable`;
+        describe = `deleted ${name} and ${count(reviews, "review")} — not undoable`;
       }
       break;
     case "duplicate":
@@ -1345,8 +1346,8 @@ function deckOp(request: DeckOpRequest): void {
           result = archiveSubtree(db, deckId, to);
         })();
         const { deckIds, changed } = result;
-        const subdecks = deckIds.length === 1 ? "" : ` and ${deckIds.length - 1} subdeck(s)`;
-        describe = `${request.op}d ${deck.name}${subdecks} — ${changed.length} card(s)`;
+        const subdecks = deckIds.length === 1 ? "" : ` and ${count(deckIds.length - 1, "subdeck")}`;
+        describe = `${request.op}d ${deck.name}${subdecks} — ${count(changed.length, "card")}`;
         undo = { op: "restoreArchive", deckId, cardIds: changed };
         break;
       }
@@ -1359,7 +1360,7 @@ function deckOp(request: DeckOpRequest): void {
         db.transaction(() => {
           restoreArchive(db, deckId, cardIds);
         })();
-        describe = `restored ${deck.name} — ${cardIds.length} card(s)`;
+        describe = `restored ${deck.name} — ${count(cardIds.length, "card")}`;
         undo = null;
         break;
       }
@@ -2876,7 +2877,7 @@ function templateOp(request: TemplateOpRequest): void {
         `renamed ${target.name} to ${name}` +
         (rewritten.rewrites === 0
           ? " — nothing referenced it"
-          : ` and rewrote ${rewritten.rewrites} reference(s)`);
+          : ` and rewrote ${count(rewritten.rewrites, "reference")}`);
       undo = { op: "renameField", templateId: before.id, fieldId: target.id, name: target.name };
       break;
     }
@@ -2906,7 +2907,7 @@ function templateOp(request: TemplateOpRequest): void {
         `removed ${target.name} from ${before.name}` +
         (target.values === 0
           ? ""
-          : ` — its ${target.values.toLocaleString()} value(s) are KEPT and come back if you undo`);
+          : ` — its ${count(target.values, "value")} stay saved and come back if you undo`);
       undo = { op: "restoreField", templateId: before.id, field: target };
       break;
     }

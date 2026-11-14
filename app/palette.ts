@@ -95,9 +95,10 @@ export function openPalette(tagPath: string | null = null): void {
       ? `recent · ${reply.hits.length}`
       : reply.total === 0
         ? `${scopeLabel}nothing`
-        : scopeLabel +
-          `${reply.hits.length} of ${reply.total.toLocaleString()}` +
-          (reply.mode === null ? "" : ` · ${reply.mode} · ${reply.elapsedMs.toFixed(0)}ms`);
+        : scopeLabel + `${reply.hits.length} of ${reply.total.toLocaleString()}`;
+    // The engine and the timing are for whoever is debugging, so they hover
+    // rather than print. Set on every run, so an empty box drops a stale one.
+    foot.title = reply.mode === null ? "" : `${reply.mode} · ${reply.elapsedMs.toFixed(0)} ms`;
     paintPalette(list);
   };
 
@@ -219,11 +220,13 @@ export function buildNewCardForm(): HTMLElement {
   const create = (allowDuplicate: boolean): void => {
     if (deck.value === "") return;
     submit.disabled = true;
+    // Read NOW, not in `.then`: he may type the next word during the round trip.
+    const name = title.value.trim();
     void ask<"createCard">({
       kind: "createCard",
       deckId: deck.value,
       templateId: template.value === "" ? null : template.value,
-      name: title.value.trim(),
+      name,
       allowDuplicate,
     })
       .then((reply) => {
@@ -242,18 +245,23 @@ export function buildNewCardForm(): HTMLElement {
           return;
         }
         const cardId = reply.cardId;
+        // The word he typed, not the random id — the id is not something he can
+        // recognise. The form allows an empty title, and then the id is all there is.
+        const label = name === "" ? cardId : name;
+        const made = `made ${label} · ${reply.tracks.join(" + ")} · in the new queue next session`;
         said.classList.remove("bad");
-        said.textContent =
-          `made ${cardId} · ${reply.tracks.join(" + ")} · ` +
-          `it joins the NEW queue next session`;
+        said.textContent = made;
         title.value = "";
         // HIS #13's "create card". Undone by deleting it — which is safe here in a
         // way `delete` generally is not: a card made seconds ago has no review
         // history to lose, which is the whole reason delete is otherwise final.
         pushUndo({
-          describe: `new card ${cardId}`,
+          describe: `new card ${label}`,
           run: async () => {
             await ask<"cardOp">({ kind: "cardOp", op: "delete", cardId });
+            // The line under the form no longer tells the truth once the card is
+            // gone — unless it has moved on to a later card already.
+            if (said.textContent === made) said.replaceChildren();
             await refreshAfterOp();
           },
         });

@@ -25,6 +25,7 @@ import { shell } from "./shell.js";
 import { deckIndex, loadDecks, templateChoices } from "./sidebar.js";
 import { openTemplateEditorById } from "./template-editor.js";
 import { openConfirm, say } from "./ui.js";
+import { count } from "./plural.js";
 import { noteVisit, readVisits } from "./visits.js";
 import { ask } from "./worker-client.js";
 
@@ -351,12 +352,14 @@ function openTemplatePicker(card: PreparedCard, choices: readonly TemplateChoice
       // worth a dialog, and a dialog on every option teaches him to click through.
       if (choice.hides === 0) move();
       else {
+        // Plain words, like the paragraph above: the values table is not
+        // foreign-keyed to the template, so nothing is lost and moving back
+        // brings the hidden values straight back.
         openConfirm(
           `Move to ${choice.name}?`,
-          `${choice.hides} of this card's values are not declared by ${choice.name} ` +
-            `and will stop rendering. They are NOT deleted — the values table is ` +
-            `deliberately not foreign-keyed to the template, so moving back brings ` +
-            `them straight back. Ctrl+Z undoes this.`,
+          `${choice.name} has no field for ${count(choice.hides, "value")} on this ` +
+            `card. Hidden values stay saved and come back if you move it back. ` +
+            `Ctrl+Z undoes this.`,
           `move to ${choice.name}`,
           move,
         );
@@ -892,7 +895,8 @@ export function openNewCardDialog(options: {
         }
         const cardId = reply.cardId;
         pushUndo({
-          describe: `new card ${cardId}`,
+          // The word, not the random id; `name` cannot be empty here (see above).
+          describe: `new card ${name}`,
           run: async () => {
             await ask<"cardOp">({ kind: "cardOp", op: "delete", cardId });
             await refreshAfterOp();

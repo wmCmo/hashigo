@@ -52,29 +52,32 @@ function facts(over: Partial<FieldFacts> = {}): FieldFacts {
 describe("the facts line answers WHERE, not just how many", () => {
   it("names the one side a field is on", () => {
     expect(factsLine(facts({ type: "plain", references: 1, sides: [2] }))).toBe(
-      "Text · 1 reference(s) on side 2",
+      "Text · 1 reference on side 2",
     );
+    // One value, not "1 value(s)" — the count agrees with its noun.
+    expect(factsLine(facts({ values: 1, sides: [1] }))).toBe("Text · on side 1 · 1 value");
   });
 
   it("names several sides in order", () => {
     expect(factsLine(facts({ references: 3, sides: [1, 2, 4] }))).toContain(
-      "3 reference(s) on sides 1, 2, 4",
+      "3 references on sides 1, 2, 4",
     );
   });
 
   it("says a field renders nowhere rather than printing a bare zero", () => {
     // `言葉`'s かな主流 holds all six values and its body never names them. "0
-    // reference(s)" states the same fact and buries it.
+    // references" states the same fact and buries it.
     const line = factsLine(facts({ name: "かな主流", type: "boolean", values: 6 }));
     expect(line).toContain("renders nowhere in the body");
-    expect(line).not.toContain("0 reference(s)");
-    expect(line).toContain("6 value(s)");
+    expect(line).not.toContain("0 reference");
+    expect(line).toContain("6 values");
   });
 
   it("keeps decision 9's local marker, which decides whether an edit survives", () => {
-    expect(factsLine(facts({ local: true, sides: [1] }))).toContain(
-      "local (decision 9 — protected from re-import)",
-    );
+    // Said as what it does for him; the decision number stays in the repo.
+    const line = factsLine(facts({ local: true, sides: [1] }));
+    expect(line).toContain("local · kept on re-import");
+    expect(line).not.toMatch(/decision/i);
   });
 
   it("uses the registry's label for the kind", () => {

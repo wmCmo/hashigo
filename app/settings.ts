@@ -13,6 +13,7 @@ import { pushUndo } from "./ops.js";
 import { THEMES, readTheme, themeLabel } from "./theme.js";
 import { openConfirm, say } from "./ui.js";
 import { setTextWithCode } from "./dom.js";
+import { setIcon } from "./icons.js";
 import { versionLabel } from "./version.js";
 import { ask } from "./worker-client.js";
 
@@ -70,8 +71,8 @@ const SETTING_ROWS: readonly SettingRow[] = [
     key: "new.limit",
     label: "new cards per day",
     note:
-      "Decision 12, and decision 15: it is 10 TRACKS a day chosen at random, not 10 " +
-      "cards — forward and reverse are not paired. 0 means due cards only.",
+      "Counts tracks, not cards: forward and reverse are picked separately, at " +
+      "random. 0 means due cards only.",
     when: "next session",
     control: { kind: "number", min: 0, max: 500, step: 1 },
   },
@@ -95,9 +96,9 @@ const SETTING_ROWS: readonly SettingRow[] = [
     key: "queue.exam-target",
     label: "漢検 target",
     note:
-      "Decision 53. New cards whose word has a kanji at this level or the one " +
-      "below it come first, after 優先 cards — still the same number a day, at " +
-      "random within each tier. Only the 日本語 deck. Move it up when he passes.",
+      "New cards whose word has a kanji at this level or the one below come first, " +
+      "after 優先 cards. Still the same number a day, at random within each tier. " +
+      "Only 日本語. Move it up when you pass.",
     when: "next session",
     control: {
       kind: "choice",
@@ -113,27 +114,25 @@ const SETTING_ROWS: readonly SettingRow[] = [
     key: "target_retention.default",
     label: "target retention",
     note:
-      "Decision 1, settled by measurement: 0.90 reproduces his realised 69.2 " +
-      "reviews/day, and 0.95 would be 1.9-3.0x that. Per-deck overrides still win. " +
-      "The 365-day cap (decision 1) is what keeps a low value safe.",
+      "0.90 matches your ~69 reviews a day; 0.95 would be 2–3× that. Per-deck " +
+      "overrides still win, and the 365-day cap keeps a low value safe.",
     when: "next grade",
     control: { kind: "number", min: 0.7, max: 0.97, step: 0.01 },
     confirm: {
       title: "Change target retention?",
       body:
-        "This changes the interval every future grade produces, on every deck that " +
-        "does not override it. It does not touch a single existing due date — " +
-        "decision 14: no one-off respread. So the corpus converges to the new " +
-        "value as cards come up, over weeks, rather than moving today.",
+        "Every future grade uses it, on every deck without its own value. No " +
+        "existing due date moves, so cards drift to the new value over weeks as " +
+        "they come up.",
     },
   },
   {
     key: "reverse.default",
     label: "reverse reviews, by default",
     note:
-      "Only reaches decks that resolve `inherit`. Four decks store `on` explicitly " +
-      "(単語 3,702 · 漢字 1,655 · 言葉 146 · 文法 83) and are unaffected either way; " +
-      "日本語 itself is `inherit` with no parent, so this IS the corpus default.",
+      "Only reaches decks that inherit all the way to the top — every top-level " +
+      "deck, and the decks under them that inherit. 単語, 漢字, 言葉 and 文法 have " +
+      "reverse on of their own, so they and the decks under them don't change.",
     when: "next card built",
     control: {
       kind: "choice",
@@ -145,9 +144,9 @@ const SETTING_ROWS: readonly SettingRow[] = [
     confirm: {
       title: "Turn reverse on by default?",
       body:
-        "Every deck resolving `inherit` gains a reverse track per card, and each " +
-        "one is a new card he has never seen. No history is destroyed either way " +
-        "— a track turned off goes dormant and keeps its reviews.",
+        "Every deck that inherits all the way up gains a reverse track per card, and each one is " +
+        "a card you have never seen. No history is lost either way: a track turned " +
+        "off goes dormant and keeps its reviews.",
     },
   },
   {
@@ -163,19 +162,16 @@ const SETTING_ROWS: readonly SettingRow[] = [
     key: "voice.default",
     label: "default voice",
     note:
-      "EMPTY is correct and is the shipped value. Every existing clip is addressed " +
-      "by the voice Mochi recorded, so a non-empty default misses all 10,791 " +
-      "speech lookups at once and re-bills the corpus. Set it when regenerating " +
-      "deliberately (his own deferral: after the app is finished), not before.",
+      "Leave empty. Every clip is filed under the voice that made it, so a value " +
+      "here stops most clips in its language from matching, and they are made " +
+      "again at a cost. Set it only when you mean to regenerate the audio.",
     when: "next clip generated",
     control: { kind: "text", placeholder: "(empty — use the template's voice)" },
     confirm: {
       title: "Set a default voice?",
       body:
-        "This is the one setting here that costs money. A non-empty value changes " +
-        "the address every speech lookup resolves to, so nothing already on the " +
-        "device answers and every clip is regenerated. He has said audio " +
-        "regeneration happens AFTER the app is finished.",
+        "This is the one setting here that costs money. With a value, most clips " +
+        "in its language stop matching, so they are made again.",
     },
   },
 ];
@@ -202,7 +198,7 @@ export async function openSettings(): Promise<void> {
   close.type = "button";
   close.className = "layer-close";
   close.setAttribute("aria-label", "close settings");
-  close.textContent = "\u2715";
+  setIcon(close, "x");
   close.addEventListener("click", () => closeIfTop(root));
   head.append(title, close);
   panel.appendChild(head);
@@ -253,9 +249,10 @@ export async function openSettings(): Promise<void> {
   for (const bad of reply.resolved.rejected) {
     const warn = document.createElement("p");
     warn.className = "settings-bad";
+    const name = SETTING_ROWS.find((row) => row.key === bad.key)?.label ?? bad.key;
     warn.textContent =
-      `${bad.key} is ${JSON.stringify(bad.value)}, which is not usable — ` +
-      `the session is running on the default instead. Fix or clear it below.`;
+      `${name} is ${JSON.stringify(bad.value)}, which can't be used, so the ` +
+      `default is in use instead. Fix or clear it below.`;
     body.appendChild(warn);
   }
 
@@ -330,10 +327,8 @@ function themeRow(): HTMLElement {
   const note = document.createElement("p");
   note.className = "settings-note";
   note.textContent =
-    "Both grounds are measured for contrast in every colour this app puts text " +
-    "in — decision 32 ships them as equals rather than one being the real one. " +
-    "This does NOT sync: it is the one preference where his two devices should " +
-    "be allowed to disagree.";
+    "Both themes are checked for contrast. This one doesn't sync: each device " +
+    "keeps its own.";
   wrap.appendChild(note);
   return wrap;
 }
@@ -391,7 +386,7 @@ function settingRow(
     const value = control.value.trim();
     if (value === current) return;
     const write = (): void => {
-      void saveSetting(row.key, value, current, status);
+      void saveSetting(row, value, current, status);
     };
     if (row.confirm === undefined) write();
     else openConfirm(row.confirm.title, row.confirm.body, "change it", write, "normal");
@@ -409,20 +404,40 @@ function settingRow(
   return wrap;
 }
 
+/**
+ * A value as the row shows it: a choice by its option's words up to the dash
+ * ("準2級", not "準2"), anything else as typed, and nothing as "empty".
+ */
+function shown(row: SettingRow, value: string): string {
+  if (value === "") return "empty";
+  if (row.control.kind !== "choice") return value;
+  const text = row.control.options.find(([option]) => option === value)?.[1];
+  return text === undefined ? value : (text.split(" — ")[0] ?? text);
+}
+
 async function saveSetting(
-  key: string,
+  row: SettingRow,
   value: string,
   before: string,
   status: HTMLElement,
 ): Promise<void> {
+  const key = row.key;
   try {
     const reply = await ask<"setSetting">({ kind: "setSetting", key, value });
-    status.textContent = reply.describe;
-    say(reply.describe);
+    // The row's own label, not the worker's key: "new cards per day: 10 → 20"
+    // rather than "new.limit: 10 → 20". The toast, the status line and the undo
+    // all read this one string.
+    // "From" is the value the worker actually replaced — the one the undo below
+    // restores — not the one the panel showed when it opened, which a second change
+    // in the same visit makes stale. `before` (the effective default) only for a
+    // key that had no stored row.
+    const describe = `${row.label}: ${shown(row, reply.previous ?? before)} → ${shown(row, value)}`;
+    status.textContent = describe;
+    say(describe);
     // His #13's "etc.". A settings change with no way back is the one kind he would
     // have to repair by remembering what it used to be.
     pushUndo({
-      describe: reply.describe,
+      describe,
       run: async () => {
         await ask<"setSetting">({ kind: "setSetting", key, value: reply.previous ?? before });
       },
@@ -450,7 +465,7 @@ function settingsState(reply: ReplyFor["settings"]): HTMLElement {
   const lines: readonly (readonly [string, string])[] = [
     [
       "storage",
-      `${reply.storage.persisted ? "persistent" : "NOT persistent — evictable"} · ` +
+      `${reply.storage.persisted ? "persistent" : "not persistent — the browser may clear it"} · ` +
         `${mib(reply.storage.usageBytes)} used of ${mib(reply.storage.quotaBytes)}`,
     ],
     ["audio on this device", `${coverage} · ${reply.audio.payloads.toLocaleString()} payloads`],
@@ -475,7 +490,7 @@ function settingsState(reply: ReplyFor["settings"]): HTMLElement {
   // something he should be able to take on a day nothing is wrong.
   const backup = document.createElement("button");
   backup.type = "button";
-  backup.className = "sidebar-action";
+  backup.className = "gcard-op";
   backup.textContent = "export a backup";
   backup.addEventListener("click", () => void exportBackup());
   box.appendChild(backup);
