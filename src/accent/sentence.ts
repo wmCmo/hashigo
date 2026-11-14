@@ -365,6 +365,19 @@ export const READING_OVERRIDES: ReadonlyMap<string, string> = new Map([
   // (`たす_け*る`) and 助けて (`たす*けて`) read right, so the key is the
   // volitional itself — there is no word in which 助けよう is すけよう.
   ["助けよう", "たすけよう"],
+  // 2026-11-14, from Zach on 鎮圧's line (`わ*ずか|す*ーにちで`): OpenJTalk reads
+  // 数日 as すうにち in EVERY context tried (ten, both of his sentences among
+  // them). It is すうじつ, 平板. No one spelling is right everywhere, measured:
+  //   すうじつ   one flat すーじつ before かかる, 経って, 休んだ, 間, 前, a comma —
+  //              but `すう|じつ*で` before で and `すー|じつご*に` before 後
+  //   スージツ   one flat すーじつ before で and 後 — but it swallows a following
+  //              verb: `す*ーじつかかりまし_た`
+  // So hiragana is the default and the two contexts it splits get the katakana,
+  // longest key first. 数日のうちに comes out `すーじつ*のうちに` either way; it
+  // is in none of his sentences and is left.
+  ["数日", "すうじつ"],
+  ["数日で", "スージツで"],
+  ["数日後", "スージツ後"],
 ]);
 
 /**

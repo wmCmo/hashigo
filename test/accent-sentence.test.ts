@@ -155,6 +155,15 @@ describe("reading overrides, applied before the analyser", () => {
     expect(applyReadingOverrides("住民を助けようとして殉職した。")).toBe("住民をたすけようとして殉職した。");
   });
 
+  it("rewrites 数日, which OpenJTalk reads すうにち, as すうじつ", () => {
+    // 鎮圧's line read `す*ーにちで`, 2026-11-14, and 復旧's `す*ーにち_`. Before で
+    // and 後 hiragana splits the word, so those take the katakana-with-ー
+    // spelling; everywhere else the katakana swallows the next verb.
+    expect(applyReadingOverrides("暴動をわずか数日で鎮圧した。")).toBe("暴動をわずかスージツで鎮圧した。");
+    expect(applyReadingOverrides("数日後に連絡します。")).toBe("スージツ後に連絡します。");
+    expect(applyReadingOverrides("電力の復旧には数日かかりました。")).toBe("電力の復旧にはすうじつかかりました。");
+  });
+
   it("leaves the forms the analyser already reads right", () => {
     // 助ける → たす_け*る and 助けて → たす*けて, measured. A key of 助け would
     // have rewritten them for nothing.
