@@ -196,7 +196,7 @@ describe("CORS, because the app is served from the laptop and this from workers.
 
 // ─── /generate/ on the Worker ────────────────────────────────────────────────
 
-import { generate, parse, textProvider, textProviders } from "../cloud/mailbox/src/generate.js";
+import { generate, parse, probeEffort, textProvider, textProviders } from "../cloud/mailbox/src/generate.js";
 
 describe("generation on the Worker answers like the laptop, and keeps what it makes", () => {
   const fakeSpeech = async (): Promise<Uint8Array> => new Uint8Array([0xff, 0xfb, 1, 2, 3]);
@@ -303,9 +303,9 @@ describe("generation on the Worker answers like the laptop, and keeps what it ma
 describe("which provider writes the text", () => {
   const ask = parse({ kind: "ai", text: "Example sentence using 朗報 in Japanese (Don't translate)", lang: null, voice: null, options: {} });
 
-  // Decision 68, 2026-11-15: Haiku first. Zach: "Let's use Haiku instead … I'm
-  // tired of fighting with the cheap solution."
-  it("is Claude Haiku when both keys are on the Worker", async () => {
+  // Decision 69, 2026-11-15: Sonnet first. Zach: "I cannot risk memorizing weird
+  // sentence using weird particles."
+  it("is Claude Sonnet when both keys are on the Worker", async () => {
     let chosen: Record<string, unknown> = {};
     const write = async (_d: unknown, options: Record<string, unknown>): Promise<string> => {
       chosen = options;
@@ -314,13 +314,13 @@ describe("which provider writes the text", () => {
     const e = { ...env(), ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" };
     const [status, body] = await generate(ask as never, e, { generateText: write as never });
     expect(status).toBe(200);
-    expect(chosen).toMatchObject({ provider: "anthropic", apiKey: "a", model: "claude-haiku-5-5" });
-    expect(body).toMatchObject({ provider: "anthropic", model: "claude-haiku-5-5", cached: false });
+    expect(chosen).toMatchObject({ provider: "anthropic", apiKey: "a", model: "claude-sonnet-5-5" });
+    expect(body).toMatchObject({ provider: "anthropic", model: "claude-sonnet-5-5", cached: false });
   });
 
   it("is Gemini with only its key, and names both keys when neither is there", async () => {
     expect(textProvider({ ...env(), GEMINI_API_KEY: "g", HASHIGO_GEMINI_MODEL: "gemini-x" })?.model).toBe("gemini-x");
-    expect(textProvider({ ...env(), ANTHROPIC_API_KEY: "a" })).toMatchObject({ provider: "anthropic", model: "claude-haiku-5-5" });
+    expect(textProvider({ ...env(), ANTHROPIC_API_KEY: "a" })).toMatchObject({ provider: "anthropic", model: "claude-sonnet-5-5" });
     const [status, body] = await generate(ask as never, env());
     expect(status).toBe(503);
     expect(body).toMatchObject({ error: expect.stringContaining("GEMINI_API_KEY") });
@@ -337,16 +337,57 @@ describe("which provider writes the text", () => {
 });
 
 /**
- * 2026-11-15, decision 68: Haiku first. Gemini stays behind it, free, so an
+ * 2026-11-15: a benchmark probe may ask Claude for a higher effort and is told
+ * its token counts; a card's request never is, whatever its options say.
+ */
+describe("a benchmark probe", () => {
+  const both = () => ({ ...env(), ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" });
+  const ask = (options: Record<string, string>) =>
+    parse({ kind: "ai", text: "Example sentence using 繕う in Japanese (Don't translate)", lang: null, voice: null, options });
+
+  it("passes its effort and reports the tokens it used", async () => {
+    let chosen: Record<string, unknown> = {};
+    const write = async (_d: unknown, options: Record<string, unknown>): Promise<string> => {
+      chosen = options;
+      (options["onUsage"] as (u: { input: number; output: number }) => void)({ input: 120, output: 900 });
+      return "破れた袖を丁寧に繕った。";
+    };
+    const [status, body] = await generate(ask({ probe: "bench", effort: "high" }) as never, both(), { generateText: write as never });
+    expect(status).toBe(200);
+    expect(chosen).toMatchObject({ provider: "anthropic", effort: "high" });
+    expect(body).toMatchObject({ provider: "anthropic", usage: { input: 120, output: 900 } });
+  });
+
+  it("a card's request keeps the default effort and gets no usage, even if it names one", async () => {
+    let chosen: Record<string, unknown> = {};
+    const write = async (_d: unknown, options: Record<string, unknown>): Promise<string> => {
+      chosen = options;
+      return "破れた袖を丁寧に繕った。";
+    };
+    const [, body] = await generate(ask({ effort: "high" }) as never, both(), { generateText: write as never });
+    expect(chosen).not.toHaveProperty("effort");
+    expect(chosen).not.toHaveProperty("onUsage");
+    expect(body).not.toHaveProperty("usage");
+  });
+
+  it("ignores an effort it does not know", () => {
+    expect(probeEffort({ probe: "bench", effort: "max" })).toBeUndefined();
+    expect(probeEffort({ probe: "", effort: "high" })).toBeUndefined();
+    expect(probeEffort({ probe: "bench", effort: "medium" })).toBe("medium");
+  });
+});
+
+/**
+ * 2026-11-15, decision 69: Sonnet first. Gemini stays behind it, free, so an
  * Anthropic outage or overload still gets a line (`textProviders`).
  */
-describe("when Haiku fails, Gemini answers", () => {
+describe("when Sonnet fails, Gemini answers", () => {
   const ask = parse({ kind: "ai", text: "Example sentence using 均衡 in Japanese (Don't translate)", lang: null, voice: null, options: {} });
   const both = () => ({ ...env(), ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" });
 
-  it("orders the chain Haiku first, then Gemini", () => {
+  it("orders the chain Sonnet first, then Gemini", () => {
     expect(textProviders(both()).map((p) => `${p.provider}:${p.model}`)).toEqual([
-      "anthropic:claude-haiku-5-5",
+      "anthropic:claude-sonnet-5-5",
       "gemini:gemini-3.6-flash",
     ]);
   });

@@ -23,8 +23,8 @@ from starting at all (reverted). Decision 49 had already retired "no cloud".
 
 **Secrets** (Worker secret store only): `MAILBOX_TOKEN`, `GOOGLE_TTS_SECRET`,
 `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, and on `hashigo` also `UNLOCK_HASH` + `COOKIE_KEY`.
-**Text comes from Claude Haiku 5.5 first** (decision 68, 2026-11-15): 例文 / emoji / translate
-lines are written by `claude-haiku-5-5` (`HASHIGO_MODEL` overrides), and when Anthropic fails
+**Text comes from Claude Sonnet 5.5 first** (decision 69, 2026-11-15): 例文 / emoji / translate
+lines are written by `claude-sonnet-5-5` (`HASHIGO_MODEL` overrides), and when Anthropic fails
 (529 overload, an outage) by `gemini-3.6-flash` (free tier, thinking HIGH; `HASHIGO_GEMINI_MODEL`
 overrides). Without `GEMINI_API_KEY` there is no fallback; without `ANTHROPIC_API_KEY`, Gemini alone. Put it on BOTH Workers — `hashigo` serves the phone and the laptop app,
 `hashigo-mailbox` the tailnet build — with `npx wrangler@4 secret put GEMINI_API_KEY` in

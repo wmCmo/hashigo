@@ -173,7 +173,17 @@ export interface LlmOptions {
   readonly host?: string | undefined;
   readonly maxTokens: number;
   readonly fetch?: typeof globalThis.fetch;
+  /**
+   * Anthropic only: how hard the model thinks. Unset is `"low"`, what every card
+   * gets. The Worker passes another value only for a benchmark probe
+   * (`probeEffort` in `cloud/mailbox/src/generate.ts`).
+   */
+  readonly effort?: AnthropicEffort | undefined;
+  /** Anthropic only: told the call's real token counts, for a benchmark's cost. */
+  readonly onUsage?: ((usage: { input: number; output: number }) => void) | undefined;
 }
+
+export type AnthropicEffort = "low" | "medium" | "high";
 
 /** Default when nothing names one. His machine has it; it costs nothing to run. */
 export const OLLAMA_HOST = "http://127.0.0.1:11434";
@@ -262,6 +272,8 @@ async function viaOllama(descriptor: LlmDescriptor, options: LlmOptions): Promis
 
 /** Room for thinking plus "an emoji line, a sentence". It bounds a runaway; it is not a target. */
 const ANTHROPIC_MIN_TOKENS = 2048;
+/** The same floor for a higher effort, which thinks longer inside the same `max_tokens`. */
+const ANTHROPIC_MIN_TOKENS_THINKING = 8192;
 
 async function viaAnthropic(descriptor: LlmDescriptor, options: LlmOptions): Promise<string> {
   const key = options.apiKey;
@@ -275,13 +287,15 @@ async function viaAnthropic(descriptor: LlmDescriptor, options: LlmOptions): Pro
   // button, intermittently, because how long it thinks varies. Turning thinking
   // OFF is the wrong fix on this model (it can then leak `<thinking>` tags into
   // the text); `effort: "low"` keeps it short, and the floor gives the answer room.
+  const effort = options.effort ?? "low";
   const message = await client.messages.create({
     model: options.model,
-    max_tokens: Math.max(options.maxTokens, ANTHROPIC_MIN_TOKENS),
-    output_config: { effort: "low" },
+    max_tokens: Math.max(options.maxTokens, effort === "low" ? ANTHROPIC_MIN_TOKENS : ANTHROPIC_MIN_TOKENS_THINKING),
+    output_config: { effort },
     system: systemPrompt(descriptor),
     messages: [{ role: "user", content: descriptor.text }],
   });
+  options.onUsage?.({ input: message.usage.input_tokens, output: message.usage.output_tokens });
   return stripThinking(
     message.content.map((block) => (block.type === "text" ? block.text : "")).join(""),
   );
@@ -307,8 +321,8 @@ async function viaAnthropic(descriptor: LlmDescriptor, options: LlmOptions): Pro
  * して発振する」; 佳境: 「物語はいよいよ佳境に入り、目が離せない展開になってきた」).
  * The free tier's per-minute cap answered 429 after 7 requests in a few seconds;
  * spaced 15 s apart the rest went through. The daily cap is 20 per model, and
- * his batch days need up to 177. Since 2026-11-15 (decision 68) Claude Haiku writes
- * first and Gemini is only its fallback (`textProviders` in
+ * his batch days need up to 177. Since 2026-11-15 (decisions 68, then 69) Claude
+ * Sonnet writes first and Gemini is only its fallback (`textProviders` in
  * `cloud/mailbox/src/generate.ts`).
  * The model is the Worker's default (`cloud/mailbox/src/generate.ts`); the
  * `HASHIGO_GEMINI_MODEL` secret overrides it without a deploy.

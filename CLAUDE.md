@@ -364,6 +364,11 @@ give an honest opinion — and when he decides differently, record the new decis
 68. **Text is written by Claude Haiku 5.5 first; Gemini Flash is only its fallback**
     (`textProviders`). About $2 a year at his volume against Mochi's $60: *"I'm tired of
     fighting with the cheap solution."* Free tiers and local models were tried and lost.
+    Its model is now Sonnet (69).
+69. **Text is written by Claude Sonnet 5.5 first** (`DEFAULT_MODEL`), Gemini still the
+    fallback. About $35 a year, estimated: *"I cannot risk memorizing weird sentence using
+    weird particles … those sentences would stuck in my head forever."* 35/35 on the test
+    words, against Haiku's 33 (low effort) and 34 (high).
 
 ## The template answers most questions about the screen
 

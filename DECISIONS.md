@@ -865,6 +865,29 @@ words, the reason, and the measurement that settled it.
    * Gemini stays behind it because it is free and independent: an Anthropic outage or
      overload still gets a line. The cache is keyed on the prompt, not the model, so no
      stored line is remade.
+   * Its model was changed to Sonnet the same day: decision 69.
+69. **Text is written by Claude Sonnet 5.5 first; Gemini Flash stays its fallback.**
+    2026-11-15. Amends 68's model, nothing else.
+   * His words: *"Let's just use Sonnet, because I cannot risk memorizing weird sentence
+     using weird particles. You know, each card I will review like probably 10 times or
+     something, and those sentences would stuck in my head forever. So I think it's worth
+     the investment, right?"*
+   * The test (same day, the 35 words of the LLM-jp test, example sentences only):
+     Haiku 5.5 through the live Worker at `effort: "low"` — 33 natural; 繕う came back as
+     「繕う、体裁を取り繕って、その場を何とか繕った。」 and 沁み沁み as しみじみ, so the
+     card's spelling was missing. Haiku at high effort — 34; both fixed, but 浸かる became
+     「疲れた体を温かい湯に浸かって癒やした」 (浸かる takes no を). Sonnet 5.5 — 35, with two
+     quibbles (「専ら読書ばかり」 says it twice; a whale in an aquarium). The high-effort
+     and Sonnet runs were subagents given Hashigo's exact prompt, seven words at a time,
+     not the Worker itself: evidence of the model, not of the exact call.
+   * The cost, estimated: Sonnet 5.5 is $2 / $10 per MTok, 20× Haiku. At ~8,000 calls a
+     year and ~100 in / ≤400 out per call, about $35 a year — still under Mochi's $60.
+     A probe (`options.probe` + `options.effort`, `probeEffort` in
+     `cloud/mailbox/src/generate.ts`) returns each call's real token counts, so the
+     figure can be measured instead of guessed.
+   * Why it is worth it, in his terms: a card is reviewed about ten times, so a sentence
+     with a wrong particle is not a one-off cost — it is drilled. Haiku's mistakes were
+     ones he could miss.
 
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 

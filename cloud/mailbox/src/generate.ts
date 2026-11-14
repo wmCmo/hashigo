@@ -42,7 +42,7 @@
 import { generationIdentity, generationKey } from "../../../src/blobs/generation.js";
 import { sha256Hex } from "../../../src/blobs/sha256.js";
 import { isKana, splitMoras, synthesise, type SpeechRequest } from "../../../src/accent/speech.js";
-import { cleanGenerated, generateText, isEmojiPrompt } from "../../../src/generate/llm.js";
+import { cleanGenerated, generateText, isEmojiPrompt, type AnthropicEffort } from "../../../src/generate/llm.js";
 import { fillVoiceFor } from "../../../src/generate/speech.js";
 import { catalogueVoice, sampleLine, synthesisVoice } from "../../../src/generate/voices.js";
 import { speakableText } from "../../../src/text/index.js";
@@ -69,13 +69,20 @@ export interface TextProvider {
 }
 
 /**
- * WHO WRITES THE TEXT, IN ORDER: Claude Haiku first, then Gemini Flash (decision 68).
+ * WHO WRITES THE TEXT, IN ORDER: Claude Sonnet first, then Gemini Flash (decision 69).
  *
- * Zach, 2026-11-15: *"Let's use Haiku instead … I'm tired of fighting with the
- * cheap solution."* Measured that day: 581 text generations in 26 days (~22 a
- * day, 177 on the busiest), at Haiku 5.5's $0.10 / $0.50 per MTok and ~100 in /
- * ≤400 out per call, is about $2 a year — against the $60 a year he paid Mochi.
- * Gemini stays behind it, free, for when Anthropic is down or overloaded.
+ * Zach, 2026-11-15: *"I cannot risk memorizing weird sentence using weird
+ * particles … each card I will review like probably 10 times … those sentences
+ * would stuck in my head forever."* On the 35-word test that day Sonnet 5.5
+ * wrote 35 natural sentences; Haiku 5.5 wrote 33 at low effort (繕う echoed
+ * three times, 沁み沁み in kana) and 34 at high (「体を…湯に浸かって」). At
+ * ~8,000 calls a year (581 in 26 days, 177 on the busiest), $2 / $10 per MTok
+ * and ~100 in / ≤400 out per call, about $35 a year, estimated — under the
+ * $60 a year he paid Mochi. Gemini stays behind it, free, for when Anthropic
+ * is down or overloaded.
+ *
+ * Before that, the same day, decision 68: Haiku first — *"I'm tired of
+ * fighting with the cheap solution"* — at about $2 a year.
  *
  * WHAT IT REPLACED, kept for the reasoning. Zach, 2026-11-10, after a side-by-side on twelve of his words
  * (`src/generate/llm.ts`, `viaGemini`): Flash on the free tier, thinking HIGH,
@@ -114,11 +121,12 @@ const ALLOWED: ReadonlySet<string> = new Set(["ai", "translate", "speech"]);
 const MAX_PROMPT = 2_000;
 const MAX_TOKENS = 256;
 /**
- * Claude Haiku 5.5, the fallback — was `claude-opus-5` until 2026-11-11. Haiku
- * wrote all twelve test sentences correctly; it thinks by default and takes the
- * same `effort: "low"` + 2,048-token floor as the call it replaces.
+ * Claude Sonnet 5.5, first in the chain since decision 69 (2026-11-15). Before:
+ * Haiku 5.5 (decision 68, the same day), and `claude-opus-5` as the fallback
+ * until 2026-11-11. It thinks by default and takes the same `effort: "low"` +
+ * 2,048-token floor as the calls it replaces.
  */
-const DEFAULT_MODEL = "claude-haiku-5-5";
+const DEFAULT_MODEL = "claude-sonnet-5-5";
 export const GEN_PREFIX = "gen:";
 
 interface Descriptor {
@@ -374,6 +382,9 @@ export async function generate(
 
   const chain = textProviders(env);
   if (chain.length === 0) return [503, { error: "no GEMINI_API_KEY or ANTHROPIC_API_KEY on the Worker" }];
+  const effort = probeEffort(descriptor.options);
+  const usage = { input: 0, output: 0 };
+  const probing = isProbe(descriptor.options);
   // Each provider in turn; the first usable answer wins. Every failure is kept,
   // so when the whole chain fails the card's "try again" says why for each.
   const failures: string[] = [];
@@ -386,6 +397,15 @@ export async function generate(
         apiKey: candidate.apiKey,
         model: candidate.model,
         maxTokens: MAX_TOKENS,
+        ...(effort === undefined ? {} : { effort }),
+        ...(probing
+          ? {
+              onUsage: (counted: { input: number; output: number }) => {
+                usage.input += counted.input;
+                usage.output += counted.output;
+              },
+            }
+          : {}),
       });
       // Cleaned BEFORE it is cached, so what every device reads is already right.
       const clean = cleanGenerated(descriptor.text, made);
@@ -418,5 +438,25 @@ export async function generate(
     output,
   };
   await env.MAILBOX.put(textKey, JSON.stringify(record));
-  return [200, { text: output, cached: false, provider, model }];
+  return [200, { text: output, cached: false, provider, model, ...(probing ? { usage } : {}) }];
+}
+
+/**
+ * A BENCHMARK PROBE: a request whose options carry `probe` (any non-empty
+ * string). Options are part of the cache key, so a probe's line is filed under
+ * its own key and no card ever reads it. Only a probe may ask for an
+ * Anthropic `effort` other than the default, and only a probe is told its
+ * token counts. 2026-11-15, Zach: "let's bench mark with high", to see whether
+ * Haiku thinking harder fixes 繕う's echoed sentence and 沁み沁み in kana — and,
+ * after decision 69, to measure what Sonnet really costs per call.
+ */
+function isProbe(options: Readonly<Record<string, string>>): boolean {
+  const probe = options["probe"];
+  return typeof probe === "string" && probe !== "";
+}
+
+export function probeEffort(options: Readonly<Record<string, string>>): AnthropicEffort | undefined {
+  if (!isProbe(options)) return undefined;
+  const asked = options["effort"];
+  return asked === "low" || asked === "medium" || asked === "high" ? asked : undefined;
 }
