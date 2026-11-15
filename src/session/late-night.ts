@@ -11,9 +11,10 @@
  * the new one (`buildSession`). The page clears it when that plan is finished, and
  * the next sitting is an ordinary new day (`app/main.ts`, `endLateNight`).
  *
- * WHAT IT DOES NOT DO: rewrite a grade's time. A card graded at 00:40 is written at
- * 00:40, so its next due date counts from the day it was really seen — decision 6:
- * the review's date is a measurement, not a label. Only the PLAN keeps yesterday.
+ * GRADES COUNT FOR THE KEPT DAY. A card graded at 00:40 with the mode on is written
+ * at 23:59:59.999 of the kept day (`ReviewSession.lateNightStamp`), so its history
+ * and its next interval read as that day — his "as if it's still during the day".
+ * (v0.10.10 wrote the real time; he asked for the 15th the same night.)
  *
  * It reaches ONE day back and no further: a setting left on for a week does not
  * pin the app to last week. A page left open over midnight already keeps its day

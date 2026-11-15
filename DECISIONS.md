@@ -930,9 +930,14 @@ words, the reason, and the measurement that settled it.
      mode on for yesterday, `buildSession` builds from yesterday's last millisecond: the due
      cards of that day, its ten new tracks less those already met (after midnight included),
      and a count of answered that includes the grades made after midnight.
-   * Grades are written at their real time. A card seen at 00:40 counts its next interval
-     from the day it was really seen (decision 6 — a review's date is a measurement). The
-     difference is at most a day on one review.
+   * ~~Grades are written at their real time.~~ Changed the same night (v0.10.12): a grade
+     made past midnight in the mode is written at the kept day's last millisecond, so the
+     card's history says the 15th and its next interval counts from the 15th. His words:
+     *"and the review will be marked on the card as 15 instead of 16 right?"* — "as if it's
+     still during the day" meant the grades too. The timestamp is off by at most the hours
+     he stayed up; a real-time stamp was off by a whole day in the schedule. Decided at
+     grade time (`lateNightStamp`), so a plan built at 23:50 and carried past midnight gets
+     it too.
    * One day back only: a setting left on does not pin the app to last week. "Go back to
      yesterday" is offered before 06:00, for the night he forgot to switch it on.
    * The done screen of the WHOLE plan clears it (a deck or silent focus is a slice, and

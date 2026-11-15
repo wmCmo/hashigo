@@ -458,10 +458,11 @@ export class ReviewSession {
     // BEFORE the write. `gradeTrack` advances the track in place, so this is the only
     // moment the previous schedule exists to be read.
     const snapshot = snapshotTrack(this.db, item.trackId);
+    const at = options.at ?? this.lateNightStamp();
     const review = gradeTrack(this.db, {
       trackId: item.trackId,
       remembered: remembered ? 1 : 0,
-      ...(options.at === undefined ? {} : { reviewedAt: options.at }),
+      ...(at === undefined ? {} : { reviewedAt: at }),
       ...(options.durationMs === undefined ? {} : { durationMs: options.durationMs }),
     });
 
@@ -622,6 +623,21 @@ export class ReviewSession {
     if (this.current() === null) return false;
     this.cursor += 1;
     return true;
+  }
+
+  /**
+   * LATE NIGHT GRADES COUNT FOR THE KEPT DAY — Zach, 2026-11-16: *"and the review
+   * will be marked on the card as 15 instead of 16 right?"* His ask was "as if it's
+   * still during the day", so a grade made past midnight, with the mode on for this
+   * plan's day, is written at that day's last millisecond: the card's history says
+   * the 15th, and its next interval counts from the 15th. Read at grade time, not at
+   * build time, so a plan built at 23:50 with the mode on and carried past midnight
+   * gets it too. Mode off, a page open over midnight writes the real time, as ever.
+   */
+  private lateNightStamp(): string | undefined {
+    if (readSetting(this.db, LATE_NIGHT_KEY) !== this.today) return undefined;
+    const now = nowInHostOffset();
+    return localDate(now) > this.today ? endOfDay(this.today, now) : undefined;
   }
 
   /**

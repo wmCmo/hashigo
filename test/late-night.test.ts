@@ -165,3 +165,39 @@ describe("the day after a late night", () => {
     expect(stampNow(new Date("2026-11-15T15:40:12.345Z"))).toMatch(/^2026-11-1[56]T\d{2}:40:12\.345[+-]\d{2}:\d{2}$/);
   });
 });
+
+/**
+ * 2026-11-16, Zach: *"and the review will be marked on the card as 15 instead of
+ * 16 right?"* — yes: a grade made past midnight in late night is written on the
+ * kept day. Real clock, because that is what the mode reads at grade time.
+ */
+describe("a grade made in late night", () => {
+  it("is written at the kept day's last millisecond, and its interval counts from there", () => {
+    const db = night();
+    try {
+      const today = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const todayDate = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+      const yesterday = previousDate(todayDate);
+      writeSetting(db, LATE_NIGHT_KEY, yesterday);
+      const session = buildSession(db, { interleave: "due-first" });
+      const result = session.answer(true);
+      expect(result.graded).toBe(true);
+      expect(result.review?.reviewedAt.startsWith(`${yesterday}T23:59:59.999`)).toBe(true);
+      expect(result.review?.dueAt.startsWith(yesterday)).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("is written at the real time when the mode is off", () => {
+    const db = night();
+    try {
+      const session = buildSession(db, { interleave: "due-first" });
+      const result = session.answer(true);
+      expect(result.review?.reviewedAt.includes("T23:59:59.999")).toBe(false);
+    } finally {
+      db.close();
+    }
+  });
+});
