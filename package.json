@@ -1,6 +1,6 @@
 {
   "name": "hashigo",
-  "version": "0.10.9",
+  "version": "0.10.10",
   "private": true,
   "type": "module",
   "description": "Local-first spaced-repetition app replacing Mochi. See SPEC.html.",
