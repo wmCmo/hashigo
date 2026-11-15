@@ -376,7 +376,8 @@ give an honest opinion — and when he decides differently, record the new decis
 71. **Late night: Settings → "late night" keeps a day's plan open past midnight**
     (`session.late-night` = the date; `src/session/late-night.ts`). One day back only. Grades
     keep their real time; only the PLAN (due, new, the count) is yesterday's. The done screen
-    of the whole plan switches it off, and the next sitting is the new day.
+    of the whole plan switches it off, and the next sitting is the new day — counted only from
+    that moment (`session.late-night-ended`), so its ten new cards and its bar start fresh.
 
 ## The template answers most questions about the screen
 

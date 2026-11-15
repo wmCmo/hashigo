@@ -110,7 +110,7 @@ import { fillAccents } from "./accent-helper.js";
 import { watchForUpdates } from "./update-check.js";
 import { localDate, shouldStartNewDay } from "./new-day.js";
 import { isFocused } from "./focus.js";
-import { LATE_NIGHT_KEY } from "../src/session/late-night.js";
+import { LATE_NIGHT_ENDED_KEY, LATE_NIGHT_KEY, stampNow } from "../src/session/late-night.js";
 import {
   closeSidebar,
   fillSidebar,
@@ -4363,8 +4363,13 @@ async function endLateNight(): Promise<void> {
     const settings = await ask<"settings">({ kind: "settings" });
     const stored = settings.values[LATE_NIGHT_KEY];
     if (stored === undefined || stored === "") return;
+    // Past midnight: the new day counts from this moment, so the kept day's
+    // after-midnight grades don't use up its new cards or fill its bar.
+    if (stored < localDate(new Date())) {
+      await ask<"setSetting">({ kind: "setSetting", key: LATE_NIGHT_ENDED_KEY, value: stampNow() });
+      plannedDay = stored;
+    }
     await ask<"setSetting">({ kind: "setSetting", key: LATE_NIGHT_KEY, value: "" });
-    if (stored < localDate(new Date())) plannedDay = stored;
     say(`late night is off — ${stored} is done`);
   } catch (cause) {
     say(`late night could not switch off: ${(cause as Error).message}`, true);

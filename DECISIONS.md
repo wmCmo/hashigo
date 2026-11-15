@@ -940,6 +940,11 @@ words, the reason, and the measurement that settled it.
      view, as after any finished day.
    * The setting syncs like the others, so switching it on at the laptop reaches the phone
      on its next pull, and finishing on either switches it off for both.
+   * **The day after starts when the mode ends** (2026-11-16, v0.10.11). Grades made after
+     midnight are dated the new day, so v0.10.10 let the kept day's late new cards use up the
+     new day's ten and start its bar part-full. Switching off past midnight now stores the
+     moment (`session.late-night-ended`), and that day counts only grades after it. His words
+     on finding it: *"you know what i wanted but you didn't do it?"*
 
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 

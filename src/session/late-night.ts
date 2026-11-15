@@ -20,10 +20,37 @@
  * without this (`app/new-day.ts`); the mode is for opening the app, or reloading
  * it, after midnight.
  *
- * Import-free (no db), so `app/` and `test/` can both reach it.
+ * THE DAY AFTER STARTS WHEN THE MODE ENDS. Grades made after midnight are dated
+ * the new day, so without a marker the new day would count them as its own: the
+ * kept day's new cards learned at 00:30 used up the new day's ten, and its bar
+ * started part-full. So when the mode switches itself off past midnight, the page
+ * stores the moment (`LATE_NIGHT_ENDED_KEY`), and that day counts only grades made
+ * after it (`sinceForToday`). Zach, 2026-11-16, on finding it: *"you know what i
+ * wanted but you didn't do it?"* — "resets just like normal" meant this too.
+ *
+ * Imports only `../scheduler/day.ts` (itself import-free), so `app/` and `test/`
+ * can both reach it.
  */
+import { formatInstant } from "../scheduler/day.js";
 
 export const LATE_NIGHT_KEY = "session.late-night";
+/** When the mode switched itself off past midnight — the new day counts from here. */
+export const LATE_NIGHT_ENDED_KEY = "session.late-night-ended";
+
+/** Now, in the device's offset and in the exact form grades are written in. */
+export function stampNow(at: Date = new Date()): string {
+  return formatInstant(at.getTime(), -at.getTimezoneOffset());
+}
+
+/**
+ * The moment today's counts start from, or null for the whole day: set only on the
+ * day a late night ended, and only past midnight (an end before midnight is just a
+ * finished day).
+ */
+export function sinceForToday(ended: string | null | undefined, today: string): string | null {
+  if (ended === null || ended === undefined || ended.length < 10) return null;
+  return ended.slice(0, 10) === today ? ended : null;
+}
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 

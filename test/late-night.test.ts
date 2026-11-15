@@ -7,7 +7,15 @@ import { describe, expect, it } from "vitest";
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 import { buildSession } from "../src/session/index.js";
 import { writeSetting } from "../src/session/settings.js";
-import { endOfDay, keptDay, LATE_NIGHT_KEY, previousDate } from "../src/session/late-night.js";
+import {
+  endOfDay,
+  keptDay,
+  LATE_NIGHT_ENDED_KEY,
+  LATE_NIGHT_KEY,
+  previousDate,
+  sinceForToday,
+  stampNow,
+} from "../src/session/late-night.js";
 
 describe("the late-night date arithmetic", () => {
   it("keeps yesterday, and only yesterday", () => {
@@ -118,5 +126,42 @@ describe("a session built past midnight", () => {
     } finally {
       db.close();
     }
+  });
+});
+
+/**
+ * 2026-11-16, Zach: *"you know what i wanted but you didn't do it?"* — the day
+ * after a late night must start fresh: the kept day's after-midnight grades are
+ * not its own.
+ */
+describe("the day after a late night", () => {
+  it("counts only from when the mode ended — its own ten new cards, an empty bar", () => {
+    const db = night();
+    try {
+      for (const card of ["x1", "x2", "x3"]) {
+        db.prepare("INSERT INTO cards (id, deck_id, name) VALUES (?, 'd', ?)").run(card, card);
+        db.prepare("INSERT INTO card_tracks (card_id, kind) VALUES (?, 'forward')").run(card);
+      }
+      writeSetting(db, LATE_NIGHT_KEY, "");
+      const before = buildSession(db, { now: AFTER_MIDNIGHT, interleave: "due-first" }).progress();
+      expect(before.newCount).toBe(9); // the bug: the 00:10 new card used one of the 23rd's ten
+      writeSetting(db, LATE_NIGHT_ENDED_KEY, "2026-08-23T00:20:00+09:00");
+      const p = buildSession(db, { now: AFTER_MIDNIGHT, interleave: "due-first" }).progress();
+      expect(p.newCount).toBe(10); // the 23rd's own ten
+      expect(p.answeredToday).toBe(0); // the 00:10 grade was the 22nd's
+      expect(p.dueCount).toBe(2);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("is a whole ordinary day once that date has passed", () => {
+    expect(sinceForToday("2026-08-23T00:20:00+09:00", "2026-08-23")).toBe("2026-08-23T00:20:00+09:00");
+    expect(sinceForToday("2026-08-23T00:20:00+09:00", "2026-08-24")).toBeNull();
+    expect(sinceForToday("", "2026-08-24")).toBeNull();
+  });
+
+  it("stamps the moment in the form grades are written in", () => {
+    expect(stampNow(new Date("2026-11-15T15:40:12.345Z"))).toMatch(/^2026-11-1[56]T\d{2}:40:12\.345[+-]\d{2}:\d{2}$/);
   });
 });
