@@ -19,10 +19,10 @@ passes, update the page too.
      anything in `app/`, `src/` or `cloud/` that repairs something, whether he hit it,
      an audit found it, or it is the look (a spacing or colour fix counts).
    - **Not counted:** new features, docs, the landing page, and tooling in `scripts/`.
-   - **A fix restarts the week.** The last one is `50b5679` (2026-11-15, decision 70:
-     a sentence must carry the card's word — Zach chose to add it knowing it restarts
-     the week), so the first possible pass is the week of 11-16 to 11-22.
-   - Checked **2026-11-23** by a scheduled routine (`trig_01QTk6bozJ3LZu3kf1UFphUx`,
+   - **A fix restarts the week.** The last one is `69826f5` (2026-11-16, decision 71's
+     day-after fix for late night), so the first possible pass is the week of 11-17 to
+     11-23.
+   - Checked **2026-11-24** by a scheduled routine (`trig_01QTk6bozJ3LZu3kf1UFphUx`,
      a fresh session at 10:17 JST). If a fix landed in the week, it reports "not
      yet" and the date the next clean week would end.
 2. **A friend starts from an empty database without help.** Not yet possible: the app
