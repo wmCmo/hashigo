@@ -373,6 +373,10 @@ give an honest opinion — and when he decides differently, record the new decis
     `src/generate/llm.ts`): matched by stem, so conjugations pass; no stray English word.
     A miss is written once more by the same model, then by the next; NEW lines only, never
     a cached one. Every model's commonest slip was the word spelled another way (しみじみ).
+71. **Late night: Settings → "late night" keeps a day's plan open past midnight**
+    (`session.late-night` = the date; `src/session/late-night.ts`). One day back only. Grades
+    keep their real time; only the PLAN (due, new, the count) is yesterday's. The done screen
+    of the whole plan switches it off, and the next sitting is the new day.
 
 ## The template answers most questions about the screen
 

@@ -109,7 +109,8 @@ import {
 // compile time, so nothing here pulls `src/db/browser.ts` (and its sqlite-wasm
 // dynamic import) into the runtime graph. That is what keeps this module
 // browser-portable, and `test/browser-portable.test.ts` walks it to prove so.
-import { readSessionSettings } from "./settings.js";
+import { readSessionSettings, readSetting } from "./settings.js";
+import { endOfDay, keptDay, LATE_NIGHT_KEY } from "./late-night.js";
 
 import type { SqliteHandle } from "../db/browser.js";
 
@@ -364,10 +365,18 @@ export class ReviewSession {
   /** `2026-09-13` — the local date the plan was built for. See `answeredToday`. */
   private readonly today: string;
 
-  constructor(db: SqliteHandle, plan: readonly SessionItem[], today: string) {
+  /**
+   * Late night (`./late-night.ts`): the plan is yesterday's, so "today's" grades
+   * are yesterday's AND everything since — not yesterday's alone, or a grade made
+   * at 00:40 would never reach the bar.
+   */
+  private readonly through: boolean;
+
+  constructor(db: SqliteHandle, plan: readonly SessionItem[], today: string, through = false) {
     this.db = db;
     this.plan = [...plan];
     this.today = today;
+    this.through = through;
   }
 
   /**
@@ -629,7 +638,7 @@ export class ReviewSession {
       .prepare(
         `SELECT COUNT(*) AS n, SUM(CASE WHEN remembered = 0 THEN 1 ELSE 0 END) AS missed
            FROM reviews
-          WHERE reviewed_at >= ? AND substr(reviewed_at, 1, 10) = ?`,
+          WHERE reviewed_at >= ? AND substr(reviewed_at, 1, 10) ${this.through ? ">=" : "="} ?`,
       )
       .get(this.today, this.today) as { n: number; missed: number | null } | undefined;
     // `SUM` over no rows is NULL, not 0 — the one thing that differs from COUNT.
@@ -676,12 +685,12 @@ export class ReviewSession {
  * `countAnsweredToday` does and what `localDate` means. `reviews_track` covers the
  * `NOT EXISTS`, and `reviews_when` seeks the day.
  */
-export function newTracksStartedOn(db: SqliteHandle, today: string): number {
+export function newTracksStartedOn(db: SqliteHandle, today: string, through = false): number {
   const row = db
     .prepare(
       `SELECT COUNT(DISTINCT r.track_id) AS n
          FROM reviews r
-        WHERE r.reviewed_at >= ? AND substr(r.reviewed_at, 1, 10) = ?
+        WHERE r.reviewed_at >= ? AND substr(r.reviewed_at, 1, 10) ${through ? ">=" : "="} ?
           AND NOT EXISTS (SELECT 1 FROM reviews p
                            WHERE p.track_id = r.track_id AND p.reviewed_at < ?)`,
     )
@@ -690,7 +699,13 @@ export function newTracksStartedOn(db: SqliteHandle, today: string): number {
 }
 
 export function buildSession(db: SqliteHandle, options: SessionOptions = {}): ReviewSession {
-  const now = options.now ?? nowInHostOffset();
+  // LATE NIGHT (`./late-night.ts`): past midnight, with the mode on for yesterday,
+  // the plan is yesterday's — built from its last millisecond. A database without
+  // the setting (the corpus, the backtest, every test that does not set it) is
+  // untouched: `keptDay` is null.
+  const realNow = options.now ?? nowInHostOffset();
+  const kept = keptDay(readSetting(db, LATE_NIGHT_KEY), localDate(realNow));
+  const now = kept === null ? realNow : endOfDay(kept, realNow);
   // Decision 12 calls the new-card limit "a SETTING", and until `./settings.ts`
   // existed it was a constant with a CLI flag in front of it — so the app opened
   // every session on 10 whatever he had last chosen. An explicit option still wins:
@@ -702,7 +717,7 @@ export function buildSession(db: SqliteHandle, options: SessionOptions = {}): Re
   // tracks already started today, on any device (a synced grade counts). An
   // explicit `newLimit` still wins outright — the backtest means the number it passes.
   const newLimit =
-    options.newLimit ?? Math.max(0, stored.newLimit - newTracksStartedOn(db, localDate(now)));
+    options.newLimit ?? Math.max(0, stored.newLimit - newTracksStartedOn(db, localDate(now), kept !== null));
   const shared = {
     now,
     ...(options.deckId === undefined ? {} : { deckId: options.deckId }),
@@ -727,5 +742,5 @@ export function buildSession(db: SqliteHandle, options: SessionOptions = {}): Re
     options.interleave ?? stored.interleave,
     options.spreadOver ?? EXPECTED_SESSION_CARDS,
   );
-  return new ReviewSession(db, plan, localDate(now));
+  return new ReviewSession(db, plan, localDate(now), kept !== null);
 }

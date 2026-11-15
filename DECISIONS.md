@@ -918,6 +918,29 @@ words, the reason, and the measurement that settled it.
    * Only new lines. A line already cached is served as it is: a sentence he has already
      reviewed is not swapped behind his back.
 
+71. **Late night keeps a day's plan open past midnight, and ends itself with the plan.**
+    2026-11-15. Settings → "late night"; the setting `session.late-night` holds the date.
+   * His words: *"I need like an emergency mode that like for any day that I don't have time
+     before midnight, I can turn on that mode and then it won't reset at midnight, so it would
+     be like I can still review it as if it's still during the day. And once I finish
+     reviewing, it just resets just like normal, and then it turned off that mode
+     automatically."*
+   * A page left open over midnight already kept its plan (`app/new-day.ts`); what reset was
+     opening or reloading the app after midnight, which built the new day's plan. With the
+     mode on for yesterday, `buildSession` builds from yesterday's last millisecond: the due
+     cards of that day, its ten new tracks less those already met (after midnight included),
+     and a count of answered that includes the grades made after midnight.
+   * Grades are written at their real time. A card seen at 00:40 counts its next interval
+     from the day it was really seen (decision 6 — a review's date is a measurement). The
+     difference is at most a day on one review.
+   * One day back only: a setting left on does not pin the app to last week. "Go back to
+     yesterday" is offered before 06:00, for the night he forgot to switch it on.
+   * The done screen of the WHOLE plan clears it (a deck or silent focus is a slice, and
+     does not). Past midnight, the page then reloads into today the next time it comes into
+     view, as after any finished day.
+   * The setting syncs like the others, so switching it on at the laptop reaches the phone
+     on its next pull, and finishing on either switches it off for both.
+
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
 `OVERNIGHT.md` §4 (in `notes/archive/`) listed ten; five were settled by later

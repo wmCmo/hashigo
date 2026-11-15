@@ -16,6 +16,8 @@ import { setTextWithCode } from "./dom.js";
 import { setIcon } from "./icons.js";
 import { versionLabel } from "./version.js";
 import { ask } from "./worker-client.js";
+import { localDate } from "./new-day.js";
+import { LATE_NIGHT_KEY, previousDate } from "../src/session/late-night.js";
 
 /**
  * *"i want to have a setting screen where i can adjust all the setting that we
@@ -277,6 +279,13 @@ export async function openSettings(): Promise<void> {
   // night are different answers to the same question. See `app/theme.ts`.
   body.appendChild(themeRow());
 
+  // Late night first among the database rows: it is the one he reaches for in a
+  // hurry, at 23:50 (`src/session/late-night.ts`).
+  {
+    const stored = reply.values[LATE_NIGHT_KEY];
+    body.appendChild(settingRow(lateNightRow(stored), stored ?? "", stored === undefined, status));
+  }
+
   for (const row of SETTING_ROWS) {
     const stored = reply.values[row.key];
     body.appendChild(
@@ -405,10 +414,43 @@ function settingRow(
 }
 
 /**
+ * LATE NIGHT — its options name real dates, so the row is built when the panel
+ * opens rather than listed in `SETTING_ROWS`. "Go back to yesterday" is offered
+ * only before 06:00, for the night he forgot to switch it on before midnight.
+ */
+function lateNightRow(stored: string | undefined): SettingRow {
+  const now = new Date();
+  const today = localDate(now);
+  const yesterday = previousDate(today);
+  const options: (readonly [string, string])[] = [
+    ["", "off"],
+    [today, `on — keep ${today} open past midnight`],
+  ];
+  if (now.getHours() < 6) options.push([yesterday, `on — go back to ${yesterday}`]);
+  if (stored !== undefined && stored !== "" && !options.some(([value]) => value === stored)) {
+    options.push([stored, `on — ${stored} (too old, does nothing)`]);
+  }
+  return {
+    key: LATE_NIGHT_KEY,
+    label: "late night",
+    note:
+      "For a night you won't finish before midnight. After midnight the app keeps " +
+      "showing that day's reviews and new cards instead of starting the next day. " +
+      "It turns itself off when you finish them.",
+    when: "now, or after a reload past midnight",
+    control: { kind: "choice", options },
+  };
+}
+
+/**
  * A value as the row shows it: a choice by its option's words up to the dash
  * ("準2級", not "準2"), anything else as typed, and nothing as "empty".
  */
 function shown(row: SettingRow, value: string): string {
+  if (row.control.kind === "choice" && row.control.options.some(([option]) => option === value)) {
+    const text = row.control.options.find(([option]) => option === value)?.[1] ?? value;
+    return text.split(" — ")[0] ?? text;
+  }
   if (value === "") return "empty";
   if (row.control.kind !== "choice") return value;
   const text = row.control.options.find(([option]) => option === value)?.[1];

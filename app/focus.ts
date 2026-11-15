@@ -31,6 +31,11 @@ interface Focus {
 const WHOLE: Focus = { deckId: null, deckName: null, silent: false };
 let current: Focus = WHOLE;
 
+/** A deck or silent focus is on — the plan on screen is not the whole day. */
+export function isFocused(): boolean {
+  return current.deckId !== null || current.silent;
+}
+
 const chip = el<HTMLButtonElement>("focuschip");
 const clear = el<HTMLButtonElement>("focusclear");
 

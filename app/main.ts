@@ -109,6 +109,8 @@ import { newCardFrom, setReviewCard } from "./found-in.js";
 import { fillAccents } from "./accent-helper.js";
 import { watchForUpdates } from "./update-check.js";
 import { localDate, shouldStartNewDay } from "./new-day.js";
+import { isFocused } from "./focus.js";
+import { LATE_NIGHT_KEY } from "../src/session/late-night.js";
 import {
   closeSidebar,
   fillSidebar,
@@ -845,6 +847,7 @@ async function showCardAt(): Promise<void> {
     // One rung, once, when the plan is cleared. Not awaited: the done screen is
     // already correct and the climb is feedback, not a step in the flow.
     void climb.step();
+    void endLateNight();
     return;
   }
 
@@ -4342,12 +4345,39 @@ const STAGE_WORDS: Readonly<Record<SyncProgress["stage"], string>> = {
 };
 const bootSkip = el("bootskip");
 
+/** The local date the plan on screen was built for — late night can make it yesterday. */
+let plannedDay = "";
+
+/**
+ * LATE NIGHT ENDS WITH THE PLAN — Zach, 2026-11-15: *"once I finish reviewing, it
+ * just resets just like normal, and then it turned off that mode automatically."*
+ *
+ * On the done screen of the WHOLE plan (not a deck or silent focus, which is a
+ * slice of it), the setting is cleared. If midnight has passed, the plan just
+ * finished was yesterday's, so `watchForNewDay` is told so: the next time the app
+ * comes into view it reloads into today, exactly as after any finished day.
+ */
+async function endLateNight(): Promise<void> {
+  if (isFocused()) return;
+  try {
+    const settings = await ask<"settings">({ kind: "settings" });
+    const stored = settings.values[LATE_NIGHT_KEY];
+    if (stored === undefined || stored === "") return;
+    await ask<"setSetting">({ kind: "setSetting", key: LATE_NIGHT_KEY, value: "" });
+    if (stored < localDate(new Date())) plannedDay = stored;
+    say(`late night is off — ${stored} is done`);
+  } catch (cause) {
+    say(`late night could not switch off: ${(cause as Error).message}`, true);
+  }
+}
+
 /**
  * A finished plan from an earlier date reloads the page when it comes back into
  * view — `./new-day.ts` says why, and why only then. `plannedOn` is taken at boot,
  * right after `open` built the plan. Once: the reload replaces this page.
  */
 function watchForNewDay(plannedOn: string): void {
+  plannedDay = plannedOn;
   let reloading = false;
   const check = (): void => {
     if (reloading || document.visibilityState !== "visible") return;
@@ -4358,7 +4388,7 @@ function watchForNewDay(plannedOn: string): void {
       isTypingTarget(document.activeElement as KeyTarget | null) ||
       [...fields].some((f) => f.value.trim() !== "");
     const go = shouldStartNewDay({
-      plannedOn,
+      plannedOn: plannedDay,
       today: localDate(new Date()),
       onDone: !doneView.hidden,
       layered: document.body.classList.contains("layered"),
