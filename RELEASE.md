@@ -22,7 +22,7 @@ passes, update the page too.
    - **A fix restarts the week.** The last one is `50b5679` (2026-11-15, decision 70:
      a sentence must carry the card's word — Zach chose to add it knowing it restarts
      the week), so the first possible pass is the week of 11-16 to 11-22.
-   - Checked **2026-11-22** by a scheduled routine (`trig_01QTk6bozJ3LZu3kf1UFphUx`,
+   - Checked **2026-11-23** by a scheduled routine (`trig_01QTk6bozJ3LZu3kf1UFphUx`,
      a fresh session at 10:17 JST). If a fix landed in the week, it reports "not
      yet" and the date the next clean week would end.
 2. **A friend starts from an empty database without help.** Not yet possible: the app
