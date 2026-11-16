@@ -20,9 +20,12 @@ export function previousDate(day: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function keptDay(stored: string | null | undefined, today: string): string | null {
+export const LATE_NIGHT_ENDS_HOUR = 6;
+
+export function keptDay(stored: string | null | undefined, now: string): string | null {
   if (stored === null || stored === undefined || !DATE.test(stored)) return null;
-  return stored === previousDate(today) ? stored : null;
+  if (Number(now.slice(11, 13)) >= LATE_NIGHT_ENDS_HOUR) return null;
+  return stored === previousDate(now.slice(0, 10)) ? stored : null;
 }
 
 export function endOfDay(day: string, now: string): string {

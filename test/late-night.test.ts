@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 import { buildSession } from "../src/session/index.js";
 import { writeSetting } from "../src/session/settings.js";
@@ -14,12 +14,20 @@ import {
 
 describe("the late-night date arithmetic", () => {
   it("keeps yesterday, and only yesterday", () => {
-    expect(keptDay("2026-11-15", "2026-11-16")).toBe("2026-11-15");
-    expect(keptDay("2026-11-16", "2026-11-16")).toBeNull();
-    expect(keptDay("2026-11-13", "2026-11-16")).toBeNull();
-    expect(keptDay("", "2026-11-16")).toBeNull();
-    expect(keptDay(null, "2026-11-16")).toBeNull();
-    expect(keptDay("yesterday", "2026-11-16")).toBeNull();
+    const now = "2026-11-16T01:00:00.000+09:00";
+    expect(keptDay("2026-11-15", now)).toBe("2026-11-15");
+    expect(keptDay("2026-11-16", now)).toBeNull();
+    expect(keptDay("2026-11-13", now)).toBeNull();
+    expect(keptDay("", now)).toBeNull();
+    expect(keptDay(null, now)).toBeNull();
+    expect(keptDay("yesterday", now)).toBeNull();
+  });
+
+  it("ends at 06:00 local, finished or not", () => {
+    expect(keptDay("2026-11-15", "2026-11-16T05:59:59.999+09:00")).toBe("2026-11-15");
+    expect(keptDay("2026-11-15", "2026-11-16T06:00:00.000+09:00")).toBeNull();
+    expect(keptDay("2026-11-15", "2026-11-16T23:30:00.000+09:00")).toBeNull();
+    expect(keptDay("2026-11-15", "2026-11-16T05:00:00.000Z")).toBe("2026-11-15");
   });
 
   it("steps back over month and year ends", () => {
@@ -107,6 +115,19 @@ describe("a session built past midnight", () => {
     }
   });
 
+  it("is the new day's from 06:00, though the setting still holds yesterday", () => {
+    const db = night();
+    try {
+      writeSetting(db, LATE_NIGHT_KEY, "2026-08-22");
+      const p = buildSession(db, { now: "2026-08-23T06:00:00+09:00", interleave: "due-first" }).progress();
+      expect(p.dueCount).toBe(2);
+      expect(p.newCount).toBe(9);
+      expect(p.answeredToday).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
   it("changes nothing when it is set for today, or switched off", () => {
     const db = night();
     try {
@@ -155,18 +176,33 @@ describe("the day after a late night", () => {
 describe("a grade made in late night", () => {
   it("is written at the kept day's last millisecond, and its interval counts from there", () => {
     const db = night();
+    vi.useFakeTimers({ toFake: ["Date"] });
     try {
-      const today = new Date();
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const todayDate = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
-      const yesterday = previousDate(todayDate);
-      writeSetting(db, LATE_NIGHT_KEY, yesterday);
+      vi.setSystemTime(new Date(2026, 7, 23, 0, 30));
+      writeSetting(db, LATE_NIGHT_KEY, "2026-08-22");
       const session = buildSession(db, { interleave: "due-first" });
       const result = session.answer(true);
       expect(result.graded).toBe(true);
-      expect(result.review?.reviewedAt.startsWith(`${yesterday}T23:59:59.999`)).toBe(true);
-      expect(result.review?.dueAt.startsWith(yesterday)).toBe(false);
+      expect(result.review?.reviewedAt.startsWith("2026-08-22T23:59:59.999")).toBe(true);
+      expect(result.review?.dueAt.startsWith("2026-08-22")).toBe(false);
     } finally {
+      vi.useRealTimers();
+      db.close();
+    }
+  });
+
+  it("is written at the real time from 06:00, even on a plan built before it", () => {
+    const db = night();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 7, 23, 5, 50));
+      writeSetting(db, LATE_NIGHT_KEY, "2026-08-22");
+      const session = buildSession(db, { interleave: "due-first" });
+      vi.setSystemTime(new Date(2026, 7, 23, 6, 10));
+      const result = session.answer(true);
+      expect(result.review?.reviewedAt.startsWith("2026-08-23T06:10")).toBe(true);
+    } finally {
+      vi.useRealTimers();
       db.close();
     }
   });

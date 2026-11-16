@@ -43,7 +43,7 @@ import { fillAccents } from "./accent-helper.js";
 import { watchForUpdates } from "./update-check.js";
 import { localDate, shouldStartNewDay } from "./new-day.js";
 import { isFocused } from "./focus.js";
-import { LATE_NIGHT_ENDED_KEY, LATE_NIGHT_KEY, stampNow } from "../src/session/late-night.js";
+import { keptDay, LATE_NIGHT_ENDED_KEY, LATE_NIGHT_KEY, stampNow } from "../src/session/late-night.js";
 import {
   closeSidebar,
   fillSidebar,
@@ -2583,7 +2583,10 @@ async function endLateNight(): Promise<void> {
     const stored = settings.values[LATE_NIGHT_KEY];
     if (stored === undefined || stored === "") return;
     if (stored < localDate(new Date())) {
-      await ask<"setSetting">({ kind: "setSetting", key: LATE_NIGHT_ENDED_KEY, value: stampNow() });
+      const now = stampNow();
+      if (keptDay(stored, now) !== null) {
+        await ask<"setSetting">({ kind: "setSetting", key: LATE_NIGHT_ENDED_KEY, value: now });
+      }
       plannedDay = stored;
     }
     await ask<"setSetting">({ kind: "setSetting", key: LATE_NIGHT_KEY, value: "" });

@@ -943,8 +943,14 @@ words, the reason, and the measurement that settled it.
      it too.
    * One day back only: a setting left on does not pin the app to last week. "Go back to
      yesterday" is offered before 06:00, for the night he forgot to switch it on.
+   * **It ends at 06:00, finished or not** (2026-11-16). Until then it ran through the whole
+     next day, to the following midnight. His words: *"so for the emergency mode, i thought
+     it would reset back to normal after 6 am?"* From 06:00 a reload builds today's plan and
+     every grade is written at its real time, even on a kept plan still open on the page; the
+     setting keeps its date until the done screen clears it, and Settings shows it as too
+     old. `LATE_NIGHT_ENDS_HOUR` in `src/session/late-night.ts`.
    * The done screen of the WHOLE plan clears it (a deck or silent focus is a slice, and
-     does not). Past midnight, the page then reloads into today the next time it comes into
+     does not), if 06:00 has not already. Past midnight, the page then reloads into today the next time it comes into
      view, as after any finished day.
    * The setting syncs like the others, so switching it on at the laptop reaches the phone
      on its next pull, and finishing on either switches it off for both.

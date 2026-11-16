@@ -10,7 +10,7 @@ import { setIcon } from "./icons.js";
 import { versionLabel } from "./version.js";
 import { ask } from "./worker-client.js";
 import { localDate } from "./new-day.js";
-import { LATE_NIGHT_KEY, previousDate } from "../src/session/late-night.js";
+import { LATE_NIGHT_ENDS_HOUR, LATE_NIGHT_KEY, previousDate } from "../src/session/late-night.js";
 
 interface SettingRow {
   readonly key: string;
@@ -339,7 +339,7 @@ function lateNightRow(stored: string | undefined): SettingRow {
     ["", "off"],
     [today, `on — keep ${today} open past midnight`],
   ];
-  if (now.getHours() < 6) options.push([yesterday, `on — go back to ${yesterday}`]);
+  if (now.getHours() < LATE_NIGHT_ENDS_HOUR) options.push([yesterday, `on — go back to ${yesterday}`]);
   if (stored !== undefined && stored !== "" && !options.some(([value]) => value === stored)) {
     options.push([stored, `on — ${stored} (too old, does nothing)`]);
   }
@@ -349,7 +349,7 @@ function lateNightRow(stored: string | undefined): SettingRow {
     note:
       "For a night you won't finish before midnight. After midnight the app keeps " +
       "showing that day's reviews and new cards instead of starting the next day. " +
-      "It turns itself off when you finish them.",
+      "It turns itself off when you finish them, or at 06:00, whichever comes first.",
     when: "now, or after a reload past midnight",
     control: { kind: "choice", options },
   };

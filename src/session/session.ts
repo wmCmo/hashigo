@@ -235,9 +235,9 @@ export class ReviewSession {
   }
 
   private lateNightStamp(): string | undefined {
-    if (readSetting(this.db, LATE_NIGHT_KEY) !== this.today) return undefined;
     const now = nowInHostOffset();
-    return localDate(now) > this.today ? endOfDay(this.today, now) : undefined;
+    if (keptDay(readSetting(this.db, LATE_NIGHT_KEY), now) !== this.today) return undefined;
+    return endOfDay(this.today, now);
   }
 
   private countAnsweredToday(): { answered: number; missed: number } {
@@ -298,7 +298,7 @@ export function newTracksStartedOn(
 
 export function buildSession(db: SqliteHandle, options: SessionOptions = {}): ReviewSession {
   const realNow = options.now ?? nowInHostOffset();
-  const kept = keptDay(readSetting(db, LATE_NIGHT_KEY), localDate(realNow));
+  const kept = keptDay(readSetting(db, LATE_NIGHT_KEY), realNow);
   const now = kept === null ? realNow : endOfDay(kept, realNow);
   const since = kept === null ? sinceForToday(readSetting(db, LATE_NIGHT_ENDED_KEY), localDate(now)) : null;
   const stored = readSessionSettings(db);
