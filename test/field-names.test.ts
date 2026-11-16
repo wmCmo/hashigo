@@ -1,15 +1,3 @@
-/**
- * A FIELD MATCHED BY NAME HAS ITS NAME WRITTEN ONCE.
- *
- * `読み` (decision 10) is found by name, not role, and until 2026-10-29 the name
- * was typed into three separate SQL strings. `src/fields/yomi.ts` owns it now;
- * this refuses the literal anywhere else in code, so a fourth copy cannot arrive
- * unnoticed and a rename stays a one-line change.
- *
- * The one other use of the word is a different thing: `src/text/parenthesis.ts`
- * and `scripts/reading-parse.ts` label a VERDICT about a parenthesis as "読み" —
- * a category, not a field lookup — so they are named here rather than rewritten.
- */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
@@ -30,7 +18,6 @@ describe("the 読み field's name", () => {
     const offenders: string[] = [];
     for (const file of ["src", "app", "scripts", "cloud"].flatMap(files)) {
       if (file === OWNER || VERDICT_LABELS.has(file)) continue;
-      // Code only: a comment may name the field, and most of them should.
       const code = readFileSync(file, "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .replace(/\/\/.*$/gm, "");

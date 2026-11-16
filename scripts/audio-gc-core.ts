@@ -1,8 +1,3 @@
-/**
- * `scripts/audio-gc.ts` の測る半分。`scripts/app-bootstrap.ts` も同じものを呼び、片付ける
- * ものが残っているうちは種を作らない — 2026-09-28、*"we have to prevent this to not let
- * it happen again"*。理由と「届く」の定義は `audio-gc.ts` の冒頭にある。
- */
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -31,13 +26,11 @@ export interface AudioAudit {
   readonly rowlessBytes: number;
   readonly reachLaptop: AudioReach;
   readonly reachMerged: AudioReach;
-  /** Reached only through a device's edits: the laptop alone would have removed these. */
   readonly reachedOnlyOnDevices: number;
   readonly sources: readonly string[];
   readonly store: BlobStore;
 }
 
-/** Every device's latest payload: the local mailbox files, then the cloud mailbox. */
 async function payloads(): Promise<{ from: string; payload: SyncPayload }[]> {
   const found: { from: string; payload: SyncPayload }[] = [];
   const local = resolve(ROOT, "build/sync");
@@ -67,7 +60,6 @@ async function payloads(): Promise<{ from: string; payload: SyncPayload }[]> {
   return found;
 }
 
-/** Measure what is unreached. Changes nothing: the merge happens on a throwaway copy. */
 export async function measureAudio(options: {
   readonly db: string;
   readonly storeDb: string;
@@ -77,7 +69,6 @@ export async function measureAudio(options: {
   const scratch = resolve(ROOT, "build/audio-gc");
   mkdirSync(scratch, { recursive: true });
   const merged = resolve(scratch, `merged-${Date.now()}.db`);
-  // SQLite's own backup, not a file copy: a copy taken beside a WAL is not a database.
   {
     const source = new Database(options.db, { readonly: true });
     await source.backup(merged);

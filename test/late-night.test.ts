@@ -1,8 +1,3 @@
-/**
- * Late night — Zach, 2026-11-15: *"for any day that I don't have time before
- * midnight, I can turn on that mode and then it won't reset at midnight … once I
- * finish reviewing, it just resets just like normal."* `src/session/late-night.ts`.
- */
 import { describe, expect, it } from "vitest";
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 import { buildSession } from "../src/session/index.js";
@@ -20,9 +15,9 @@ import {
 describe("the late-night date arithmetic", () => {
   it("keeps yesterday, and only yesterday", () => {
     expect(keptDay("2026-11-15", "2026-11-16")).toBe("2026-11-15");
-    expect(keptDay("2026-11-16", "2026-11-16")).toBeNull(); // midnight has not come
-    expect(keptDay("2026-11-13", "2026-11-16")).toBeNull(); // left on for days
-    expect(keptDay("", "2026-11-16")).toBeNull(); // off
+    expect(keptDay("2026-11-16", "2026-11-16")).toBeNull();
+    expect(keptDay("2026-11-13", "2026-11-16")).toBeNull();
+    expect(keptDay("", "2026-11-16")).toBeNull();
     expect(keptDay(null, "2026-11-16")).toBeNull();
     expect(keptDay("yesterday", "2026-11-16")).toBeNull();
   });
@@ -39,10 +34,6 @@ describe("the late-night date arithmetic", () => {
   });
 });
 
-/**
- * One track due on the 22nd, one due at midnight on the 23rd, and five new
- * tracks; on the 22nd he met three new tracks before midnight and one after.
- */
 function night(): Db {
   const db = openDatabase(MEMORY);
   db.prepare("INSERT INTO decks (id, name) VALUES ('d', '日本語')").run();
@@ -95,8 +86,8 @@ describe("a session built past midnight", () => {
     const db = night();
     try {
       const p = buildSession(db, { now: AFTER_MIDNIGHT, interleave: "due-first" }).progress();
-      expect(p.dueCount).toBe(2); // both due tracks
-      expect(p.newCount).toBe(9); // 10 a day, 1 met today
+      expect(p.dueCount).toBe(2);
+      expect(p.newCount).toBe(9);
       expect(p.answeredToday).toBe(1);
     } finally {
       db.close();
@@ -108,9 +99,9 @@ describe("a session built past midnight", () => {
     try {
       writeSetting(db, LATE_NIGHT_KEY, "2026-08-22");
       const p = buildSession(db, { now: AFTER_MIDNIGHT, interleave: "due-first" }).progress();
-      expect(p.dueCount).toBe(1); // the track due at midnight waits for its own day
-      expect(p.newCount).toBe(6); // 10 for the 22nd, 4 already met — 3 before midnight, 1 after
-      expect(p.answeredToday).toBe(4); // the 00:10 grade counts toward the kept day
+      expect(p.dueCount).toBe(1);
+      expect(p.newCount).toBe(6);
+      expect(p.answeredToday).toBe(4);
     } finally {
       db.close();
     }
@@ -129,11 +120,6 @@ describe("a session built past midnight", () => {
   });
 });
 
-/**
- * 2026-11-16, Zach: *"you know what i wanted but you didn't do it?"* — the day
- * after a late night must start fresh: the kept day's after-midnight grades are
- * not its own.
- */
 describe("the day after a late night", () => {
   it("counts only from when the mode ended — its own ten new cards, an empty bar", () => {
     const db = night();
@@ -144,11 +130,11 @@ describe("the day after a late night", () => {
       }
       writeSetting(db, LATE_NIGHT_KEY, "");
       const before = buildSession(db, { now: AFTER_MIDNIGHT, interleave: "due-first" }).progress();
-      expect(before.newCount).toBe(9); // the bug: the 00:10 new card used one of the 23rd's ten
+      expect(before.newCount).toBe(9);
       writeSetting(db, LATE_NIGHT_ENDED_KEY, "2026-08-23T00:20:00+09:00");
       const p = buildSession(db, { now: AFTER_MIDNIGHT, interleave: "due-first" }).progress();
-      expect(p.newCount).toBe(10); // the 23rd's own ten
-      expect(p.answeredToday).toBe(0); // the 00:10 grade was the 22nd's
+      expect(p.newCount).toBe(10);
+      expect(p.answeredToday).toBe(0);
       expect(p.dueCount).toBe(2);
     } finally {
       db.close();
@@ -166,11 +152,6 @@ describe("the day after a late night", () => {
   });
 });
 
-/**
- * 2026-11-16, Zach: *"and the review will be marked on the card as 15 instead of
- * 16 right?"* — yes: a grade made past midnight in late night is written on the
- * kept day. Real clock, because that is what the mode reads at grade time.
- */
 describe("a grade made in late night", () => {
   it("is written at the kept day's last millisecond, and its interval counts from there", () => {
     const db = night();

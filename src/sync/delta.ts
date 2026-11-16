@@ -1,33 +1,3 @@
-/**
- * 差分 — 前回送った後の採点だけを運ぶ、小さな payload。2026-10-10。
- *
- * Zach: *"so it's guaranteed that my last min of reviewing won't be synced from my
- * tablet"* — そして *"as long as we don't end up like mochi flashcards im fine"*。
- *
- * ─── なぜ要るか ─────────────────────────────────────────────────────────────
- *
- * 全体の payload は ~2 MB（gzip で ~350 KB）。採点のたびにそれを送るのは通信量
- * として重く、しかも閉じる瞬間には届かない：ページが閉じても走り切る `fetch`
- * （`keepalive`）は本文 64 KB までで、全体はその五倍以上ある。差分は数十件の
- * 採点とその軌道の状態だけ、数 KB で、`keepalive` に収まる。だからタブレットを
- * 閉じた直後の最後の一枚も届く。
- *
- * ─── マージの規則は増やさない ───────────────────────────────────────────────
- *
- * 受け取る側は差分を「review と trackState しか持たない普通の payload」に包んで
- * `mergeSync` に渡す（`deltaPayload`）。review は和集合、状態は最後の採点が勝つ —
- * 全体のマージと一字一句同じ規則が、同じコードで当たる。差分専用のマージを書けば
- * 二つの規則がいつか食い違う。
- *
- * ─── 印（mark）は端末内の reviews.id ─────────────────────────────────────────
- *
- * 「どこまで送ったか」は、その端末のローカルな行番号で数える。他の端末と比べる
- * ことは無い（mailbox は印を比べるだけで、意味は知らない）。時刻ではないのは、
- * 同じ瞬間の採点や時計のずれで取りこぼさないため。
- *
- * BROWSER-PORTABLE: `SqliteHandle` のみ。OPFS のワーカーで走る。
- */
-
 import {
   ARCHIVE_VERSION,
   archivedReview,
@@ -41,18 +11,10 @@ import { editsSince, noEdits, type SentIndex, type SyncEdits } from "./sent.js";
 
 export interface SyncDelta {
   readonly syncVersion: number;
-  /** 差分であることの印。全体の payload と取り違えないため。 */
   readonly delta: 1;
-  /** この差分に入っている最大の reviews.id（送った端末のローカル番号）。 */
   readonly mark: number;
   readonly reviews: readonly ArchivedReview[];
-  /** 上の採点が触った軌道の、今の状態。 */
   readonly trackState: readonly ArchivedTrackState[];
-  /**
-   * Everything else that changed since this device last sent — decision 64,
-   * `./sent.ts`. Absent on a grade-only delta, and on every delta before
-   * SYNC_VERSION 2.
-   */
   readonly edits?: SyncEdits;
 }
 
@@ -71,7 +33,6 @@ SELECT t.card_id AS card_id, t.kind AS kind, t.due_at, t.scheduled_days, t.reps,
   FROM card_tracks t
  WHERE t.card_id = ? AND t.kind = ?`;
 
-/** この端末の採点の最大 id。採点が一つも無ければ 0。 */
 export function maxLocalReviewId(db: SqliteHandle): number {
   const row = db.prepare("SELECT max(id) AS m FROM reviews WHERE source = 'local'").get() as
     | { m: number | null }
@@ -79,7 +40,6 @@ export function maxLocalReviewId(db: SqliteHandle): number {
   return Number(row?.m ?? 0);
 }
 
-/** `after` より後の採点と、それが触った軌道の状態。 */
 export function exportDelta(db: SqliteHandle, after: number): SyncDelta {
   const rows = db.prepare(SELECT_NEW_REVIEWS).all(after) as Record<string, unknown>[];
   const reviews = rows.map(archivedReview);
@@ -97,16 +57,6 @@ export function exportDelta(db: SqliteHandle, after: number): SyncDelta {
   return { syncVersion: SYNC_VERSION, delta: 1, mark, reviews, trackState };
 }
 
-/**
- * The grades after `after`, PLUS every row whose group changed since the
- * fingerprint `sent` — decision 64. Returns the fingerprint to keep once the
- * delta has been delivered; until then the caller keeps the old one, so a send
- * that fails is simply recomputed next time.
- *
- * This is a full export followed by a diff, and that is deliberate: the export is
- * what the full push did anyway, so an edit push costs less than it did before —
- * the same CPU, and a few KB on the wire instead of the whole base.
- */
 export function exportEditDelta(
   db: SqliteHandle,
   after: number,
@@ -127,14 +77,6 @@ export function isDelta(value: unknown): value is SyncDelta {
   );
 }
 
-/**
- * 差分を、review と状態しか持たない普通の payload に包む。
- *
- * 空の配列は「何も言わない」と読まれる：`cardFlags` が空なら旗は一つも動かず、
- * `settings` が空なら設定は一つも上書きされず、`retiredClips` が無ければ退役の
- * 和集合は手元のまま。`voicesCarried` を付けないのは、付けると「声の欄が無い ＝
- * 声なし」と読まれて誰かの設定を消すから。
- */
 export function deltaPayload(delta: SyncDelta, createdAt: string): SyncPayload {
   if (!noEdits(delta.edits)) return editPayload(delta, delta.edits as SyncEdits, createdAt);
   return {
@@ -167,15 +109,6 @@ export function deltaPayload(delta: SyncDelta, createdAt: string): SyncPayload {
   };
 }
 
-/**
- * A delta that carries edits, as a payload — decision 64. The same shape as a full
- * payload holding only the changed groups (`./sent.ts` says why a subset merges
- * exactly as the whole would have merged those rows).
- *
- * `voicesCarried` IS set here, unlike the grade-only wrapper above: these flag
- * rows come whole from `exportSync`, which always carries voices, so a row with no
- * `voice` really means none. A flag row that is not in the list is not touched.
- */
 function editPayload(delta: SyncDelta, edits: SyncEdits, createdAt: string): SyncPayload {
   return {
     syncVersion: delta.syncVersion,
@@ -205,8 +138,6 @@ function editPayload(delta: SyncDelta, edits: SyncEdits, createdAt: string): Syn
     cardFlags: edits.cardFlags,
     deckFlags: edits.deckFlags,
     voicesCarried: true,
-    // Every flag row in an edit delta comes from `exportSync`, so it says its
-    // template the same way — decision 66.
     templatesCarried: true,
     retiredClips: edits.retiredClips,
   };

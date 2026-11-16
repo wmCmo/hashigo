@@ -1,10 +1,3 @@
-/**
- * DECK OPERATIONS AND THE DECK MENUS — the rest of his #14: create, rename, move,
- * archive, delete, each with its undo.
- *
- * Moved out of `main.ts` on 2026-09-25. It needed nothing from that file.
- */
-
 import type { DeckBrief, DeckOp } from "./protocol.js";
 import { openGallery } from "./gallery.js";
 import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
@@ -16,14 +9,6 @@ import { openVoiceDialog } from "./voice-dialog.js";
 import { icon, type IconName } from "./icons.js";
 import { count } from "./plural.js";
 
-/**
- * Every deck operation goes through here, so undo and the error path exist once.
- *
- * The undo is spread from `reply.undo` rather than rebuilt: `restoreArchive`
- * carries the exact card ids the archive flipped, and reconstructing the inverse
- * op instead of replaying the recorded one is the bug that un-archived 234
- * individually-archived cards on a single ctrl+Z.
- */
 export async function runDeckOp(request: {
   op: DeckOp;
   deckId: string;
@@ -52,27 +37,9 @@ export async function runDeckOp(request: {
     }
     await refreshAfterOp();
   } catch (cause) {
-    // The worker refuses a delete that would take cards and a move that would make
-    // a cycle, and both messages explain themselves. Shown as-is.
     say((cause as Error).message, true);
   }
 }
-
-/**
- * His #14, in full: *"and also, we need CRUD for decks"*.
- *
- * Every operation the worker supports, each with the sentence that makes it a
- * decision rather than a button. It is a LAYER like everything else, so Escape
- * peels it and the review underneath is untouched.
- *
- * ─── WHAT IS DELIBERATELY NOT HERE ──────────────────────────────────────────
- *
- * Per-deck `reverse` and `target_retention` overrides. Both are real columns with
- * real resolution views, and both change what he is DRILLED on — the line decision
- * 31 draws around what stays his. The workspace defaults are in settings, where a
- * change is one row and obvious; a per-deck override buried in a context menu is
- * how a deck ends up scheduled differently for a reason nobody remembers.
- */
 
 export function openDeckMenu(deck: DeckBrief): void {
   const root = document.createElement("div");
@@ -142,9 +109,6 @@ export function openDeckMenu(deck: DeckBrief): void {
 
   item("arrows-out-cardinal", "move", "put it under another deck, or at the top", () => openDeckMove(deck));
 
-  // Stage E — the per-deck voice. Unlike reverse and retention (see the header)
-  // it changes how a card SOUNDS, not what he is drilled on, and it is priced
-  // before it is set.
   item("speaker-high", "voice", "which voice new clips in this deck are made in", () =>
     openVoiceDialog("deck", deck.id, deck.path),
   );
@@ -156,10 +120,6 @@ export function openDeckMenu(deck: DeckBrief): void {
       ? "put it and its cards back in the queue"
       : "this deck and every card under it stop being scheduled",
     () => {
-      // It flips the deck AND every card under it, because the review queue
-      // filters on the card. Unarchiving flips every card back, including ones
-      // archived one at a time (`archiveSubtree`); only the undo restores exactly
-      // the rows it changed. Each arm says its own consequence.
       const cards = count(totals.cards, "card");
       openConfirm(
         deck.path,
@@ -170,19 +130,11 @@ export function openDeckMenu(deck: DeckBrief): void {
             `scheduled and keep their history. Undo puts back exactly what this changes.`,
         deck.archived ? "unarchive deck" : "archive deck",
         () => void runDeckOp({ op: deck.archived ? "unarchive" : "archive", deckId: deck.id }),
-        // Undo restores exactly the rows it flipped, and no history is destroyed
-        // either way — an archived track goes dormant, it does not lose its reviews.
         "normal",
       );
     },
   );
 
-  // ONLY AN EMPTY DECK CAN GO, and a deck that is not empty is never offered a
-  // red "delete" that can only fail. The worker refuses a deck that holds cards
-  // (`cards.deck_id` is ON DELETE RESTRICT, on purpose), and the database refuses
-  // one with sub-decks (`decks.parent_id` is too) — the second with a raw
-  // constraint error. `totals.cards` counts the whole subtree, so a parent whose
-  // cards all sit in sub-decks is caught here as well.
   const subDecks = childrenOf(deck.id).length;
   const blocked = totals.cards > 0 || subDecks > 0;
   const holds = totals.cards > 0 ? count(totals.cards, "card") : count(subDecks, "sub-deck");
@@ -200,8 +152,6 @@ export function openDeckMenu(deck: DeckBrief): void {
           () => void runDeckOp({ op: "delete", deckId: deck.id }),
         );
       } else if (totals.cards > 0 && !deck.archived) {
-        // The exit the sentence names, as the button: archiving is what takes a
-        // deck out of the way without losing anything, and it has an undo.
         openConfirm(
           `${deck.name} isn't empty`,
           `It holds ${holds}, and only an empty deck can be deleted. Archive it ` +
@@ -230,11 +180,6 @@ export function openDeckMenu(deck: DeckBrief): void {
   (list.firstElementChild as HTMLElement | null)?.focus();
 }
 
-/**
- * A dialog that only explains: a heading, a sentence and "ok". For a request that
- * cannot be done and has no one-press way out — `openConfirm` always offers a
- * second button, and here it would have nothing true to do.
- */
 function openNotice(title: string, body: string): void {
   const root = document.createElement("div");
   root.className = "layer layer-confirm";
@@ -262,14 +207,6 @@ function openNotice(title: string, body: string): void {
   ok.focus();
 }
 
-/**
- * Choose a new parent.
- *
- * The list EXCLUDES the deck and everything under it, because moving a deck into
- * its own descendant makes `deck_ancestry` — a recursive view with no depth bound —
- * loop, and every path, count and inheritance query goes through it. The worker
- * refuses it as well; this stops him getting as far as an error message.
- */
 function openDeckMove(deck: DeckBrief): void {
   const under = new Set<string>();
   const walk = (id: string): void => {

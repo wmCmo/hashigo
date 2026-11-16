@@ -1,15 +1,3 @@
-/**
- * The mark's geometry is DERIVED, and this file is what stops it being tidied.
- *
- * The design brief (decision 32) is explicit: *"Do not 'clean up' these numbers.
- * Every one of them follows from a rule."* The committed SVGs carry the derived
- * values as literals, so nothing in the repo would notice if somebody rounded
- * `18.09` to `18` — it would still look like a ladder, and the rungs would stop
- * meeting the rails.
- *
- * So: recompute every rung endpoint from the rail equation and require the
- * committed artwork to agree, to the digit.
- */
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
@@ -18,7 +6,6 @@ import { DURATION_MS, easeOutCubic, railX, SLOPE, SLOT_Y } from "../app/climb.js
 
 const mark = readFileSync(new URL("../app/brand/mark.svg", import.meta.url), "utf8");
 
-/** Every `M<x> <y>H<x2>` in a document, which is how a rung is drawn. */
 function rungsIn(svg: string): { y: number; left: number; right: number }[] {
   return [...svg.matchAll(/M([\d.]+) ([\d.]+)H([\d.]+)/g)].map((m) => ({
     left: Number(m[1]),
@@ -30,7 +17,6 @@ function rungsIn(svg: string): { y: number; left: number; right: number }[] {
 describe("the mark's geometry is derived, not authored", () => {
   it("every rung in app/brand/mark.svg lands exactly on the rail equation", () => {
     const rungs = rungsIn(mark);
-    // three rungs plus the loose one
     expect(rungs).toHaveLength(4);
 
     for (const rung of rungs) {
@@ -44,36 +30,28 @@ describe("the mark's geometry is derived, not authored", () => {
     const ys = rungsIn(mark)
       .map((r) => r.y)
       .sort((a, b) => a - b);
-    // At rest the mark occupies slots 0-3. Slot 4 is off the bottom.
     expect(ys).toEqual([SLOT_Y[0], SLOT_Y[1], SLOT_Y[2], SLOT_Y[3]]);
   });
 
   it("the loose rung sits exactly where a fourth rung would be", () => {
-    // "The loose rung sits 27 units above the top rung — exactly where a fourth
-    // rung would be if the ladder went that far." The gaps foreshorten 20 then
-    // 17 climbing upward, so the next gap up is the one the brief names.
     expect(SLOT_Y[3] - SLOT_Y[2]).toBe(20);
     expect(SLOT_Y[2] - SLOT_Y[1]).toBe(17);
     expect(SLOT_Y[1] - SLOT_Y[0]).toBe(27);
   });
 
   it("the exit slot is clear of the rail feet, so a rung leaves rather than piling up", () => {
-    // Rails run to y=87. A rung exiting at 101 is fully past them.
     expect(SLOT_Y[4]).toBeGreaterThan(87);
   });
 
   it("the rails lean about 12 degrees, which is what SLOPE encodes", () => {
-    // 11.5 units of lean over a 55-unit rise.
     expect(SLOPE).toBeCloseTo(11.5 / 55, 5);
     expect((Math.atan(SLOPE) * 180) / Math.PI).toBeCloseTo(11.8, 1);
   });
 
   it("the small-size mark is a DIFFERENT construction, not a scaled one", () => {
-    // Below 24px the three-rung mark collapses: the rungs go sub-pixel and the
-    // loose rung reads as a floating dash. The favicon is two rungs by design.
     const small = readFileSync(new URL("../app/brand/favicon.svg", import.meta.url), "utf8");
-    expect(rungsIn(small)).toHaveLength(3); // two rungs + the loose one
-    expect(small).toContain('stroke-width="12"'); // heavier rails than the 10 above
+    expect(rungsIn(small)).toHaveLength(3);
+    expect(small).toContain('stroke-width="12"');
   });
 });
 
@@ -83,9 +61,6 @@ describe("the climb's motion is the brief's, and the brief forbids two changes",
   });
 
   it("never overshoots", () => {
-    // easeOutBack was tried and rejected: the accent travels 27 units while the
-    // rung below travels 17, so it is already 1.6x faster, and overshoot closed
-    // the gap to ~13 units and read as a near-collision.
     for (let p = 0; p <= 1; p += 0.001) {
       expect(easeOutCubic(p)).toBeLessThanOrEqual(1);
       expect(easeOutCubic(p)).toBeGreaterThanOrEqual(0);
@@ -106,11 +81,7 @@ describe("the done screen's climb takes its colours from the theme (decision 57)
   const css = readFileSync(new URL("../app/style.css", import.meta.url), "utf8");
 
   it("bakes no colour into the rungs", () => {
-    // It used to write `stroke="rgb(224,69,29)"`, the retired vermilion, so the
-    // done screen kept the decision-32 palette through decision 57 and ignored
-    // the dark theme entirely.
     const code = climb.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
-    // The rails' `currentColor` is the theme's ink, so it is the one stroke allowed.
     expect(code).not.toMatch(/rgb\(|#[0-9a-f]{6}\b|"stroke",(?!\s*"currentColor")/i);
     expect(code).toContain('setProperty("--t"');
   });

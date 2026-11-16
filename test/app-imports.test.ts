@@ -3,29 +3,6 @@ import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-/**
- * THE TWO RULES THE 2026-09-25 SPLIT OF `app/main.ts` DEPENDS ON.
- *
- * Zach, that day: *"how many lines do we have in main.ts...? few thousands line?
- * is this even healthy...?"* — 7,386 lines, 46 shared mutable variables, touched
- * by 73 commits. It was split along its own section banners into feature modules,
- * and the split holds only while two things stay true. Both are the kind of rule a
- * comment states and a later edit quietly breaks, so they are pinned here.
- *
- *   1. NOTHING IMPORTS `main.ts`. It is the entry point and the review screen, and
- *      the one module with side effects at load. A feature that needs something it
- *      still owns goes through `app/shell.ts`, the port `main.ts` provides once at
- *      boot. A cycle through the entry works only while no module reads an import
- *      during evaluation — true today, and not something anyone would check.
- *   2. THE WORKER IS CREATED ONCE, in `app/worker-client.ts`. Two workers means two
- *      sqlite-wasm instances contending for one OPFS SAH pool, and the second one
- *      fails with "this page is already open in another tab" — the exact error a
- *      stale tab produced during the split, which is how its shape is known.
- *
- * Plain text reads of the sources, because `test/` cannot import `app/` modules
- * that touch the DOM at load — which is most of them.
- */
-
 const APP = resolve(import.meta.dirname, "..", "app");
 
 function sources(): { name: string; text: string }[] {
@@ -34,7 +11,6 @@ function sources(): { name: string; text: string }[] {
     .map((name) => ({ name, text: readFileSync(join(APP, name), "utf8") }));
 }
 
-/** Every module specifier a file imports, static or dynamic. */
 function specifiers(text: string): string[] {
   const out: string[] = [];
   for (const m of text.matchAll(/^\s*(?:import|export)\b[^;]*?\bfrom\s+"([^"]+)"/gm)) {
@@ -77,8 +53,6 @@ describe("the split of app/main.ts", () => {
   });
 
   it("keeps main.ts the only caller of provideShell", () => {
-    // The port is provided ONCE, by the entry point. A second provider would
-    // silently replace the first and a feature would call into whichever won.
     const providers = sources()
       .filter((s) => s.name !== "shell.ts" && /\bprovideShell\s*\(/.test(s.text))
       .map((s) => s.name);

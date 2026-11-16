@@ -1,15 +1,3 @@
-/**
- * THROWAWAY (spike harness) — `spike/persist/db.worker.ts`.
- *
- * The dedicated Worker. Everything that touches SQLite or a sync access handle
- * happens here and nowhere else, and it deliberately does NOT try to ask for
- * storage persistence: proving that it *cannot* is one of the results.
- *
- * It reaches SQLite only through `src/db/browser.ts` (the production adapter) so
- * that whatever this measures is a fact about the shipping code path, not about
- * a bespoke one.
- */
-
 import {
   applySchema,
   databaseFilesInOpfs,
@@ -27,11 +15,8 @@ import viewsSql from "../../src/schema/views.sql?raw";
 
 import { gib, mib, type LogLevel, type PersistMessage, type PersistRequest } from "./protocol.js";
 
-/** The bootstrap database, served by vite.config.ts's middleware. */
 const BOOTSTRAP_URL = "/hashigo-bootstrap.db";
-/** The card database, in the production pool under the production name. */
 const CARD_DB = "/hashigo.db";
-/** Mine, and obviously mine, so cleanup is unambiguous. */
 const BLOB_DB = "/persist-spike-blobs.db";
 
 const SCHEMA = [
@@ -55,7 +40,6 @@ function ms(start: number): string {
   return `${(performance.now() - start).toFixed(1)}ms`;
 }
 
-/** The one handle. Held across messages so "hold" can mean something. */
 let card: BrowserDb | undefined;
 
 async function estimate(): Promise<{ usage: number; quota: number }> {
@@ -63,13 +47,6 @@ async function estimate(): Promise<{ usage: number; quota: number }> {
   return { usage: e.usage ?? 0, quota: e.quota ?? 0 };
 }
 
-// -- 1. what a worker can and cannot see about storage -----------------------
-
-/**
- * The finding this spike exists for. A Worker can *observe* persistence and
- * *measure* quota, but it cannot *request* persistence: `persist` is defined on
- * `StorageManager` only in a Window context.
- */
 async function probe(): Promise<void> {
   log("A. what the WORKER can see about storage", "step");
   const storage = navigator.storage as unknown as Record<string, unknown>;
@@ -78,13 +55,10 @@ async function probe(): Promise<void> {
     const type = typeof storage[name];
     log(`  navigator.storage.${name.padEnd(12)} in worker: ${type}`, type === "undefined" ? "bad" : "good");
   }
-  // On the prototype too, in case something polyfilled an own property.
   const proto = Object.getPrototypeOf(navigator.storage) as object;
   log(`  StorageManager.prototype has "persist": ${Object.prototype.hasOwnProperty.call(proto, "persist")}`);
   log(`  own+inherited keys: ${[...names].filter((n) => n in (navigator.storage as object)).join(", ")}`);
 
-  // Call it anyway. An agent reading a `typeof` check will not believe it; a
-  // pasted TypeError is harder to argue with.
   try {
     await (navigator.storage as unknown as { persist(): Promise<boolean> }).persist();
     log("  !!! persist() SUCCEEDED in the worker — the note is wrong, re-measure", "bad");
@@ -105,8 +79,6 @@ async function probe(): Promise<void> {
   log(`  sqlite ${await sqliteVersion()}, schema version ${SCHEMA_VERSION}`);
 }
 
-// -- 2. the real database, in the production pool ----------------------------
-
 const ORACLE = {
   cards: 7716,
   reviews: 102020,
@@ -118,12 +90,6 @@ const ORACLE = {
   card_links: 8744,
 } as const;
 
-/**
- * The same SQL `spike/db.worker.ts` uses, so a mismatch here would be a
- * mismatch there too. `direction` is not a column: forward/reverse is
- * `card_tracks.kind`, and the tag oracle is 19 tags *with cards on them*
- * (`tag_usage.cards_direct > 0`), not 20 `tags` rows.
- */
 function verifyOracle(db: BrowserDb): boolean {
   const one = (sql: string): number => Number(db.prepare(sql).pluck().get() ?? -1);
   const totals = db
@@ -191,17 +157,6 @@ async function open(reimport: boolean): Promise<void> {
   stat("quota", gib(quota));
 }
 
-// -- 3. ~700 MB, at the real size distribution -------------------------------
-
-/**
- * The real corpus's external blob sizes, read out of the real database. Using
- * the true distribution matters: 10,816 payloads averaging 60 KB is a very
- * different write pattern from one 624 MiB row, and SQLite page allocation
- * behaves differently for each.
- *
- * The *bytes* are synthetic — the mp3s are not reachable from the page — but the
- * count and every individual length are the corpus's own.
- */
 function realBlobSizes(db: BrowserDb): number[] {
   return (
     db
@@ -222,13 +177,11 @@ async function fill(limitBytes: number): Promise<void> {
   const before = await estimate();
   log(`  estimate() BEFORE: usage ${mib(before.usage)} / quota ${gib(before.quota)}`);
 
-  // A second file in the SAME pool, which is the shape src/blobs/ would take.
   const blobs = await openDatabaseBrowser({ filename: BLOB_DB, schema: SCHEMA, applySchema: false });
   blobs.exec("CREATE TABLE IF NOT EXISTS blob_bytes (hash TEXT PRIMARY KEY, bytes BLOB NOT NULL)");
   blobs.exec("DELETE FROM blob_bytes");
   const insert = blobs.prepare("INSERT OR REPLACE INTO blob_bytes (hash, bytes) VALUES (?, ?)");
 
-  // One buffer, sliced. Allocating 10,816 typed arrays is not what we measure.
   const scratch = new Uint8Array(Math.max(...sizes));
   for (let i = 0; i < scratch.length; i += 1) scratch[i] = i & 0xff;
 
@@ -253,7 +206,6 @@ async function fill(limitBytes: number): Promise<void> {
     try {
       blobs.exec("ROLLBACK");
     } catch {
-      // A failed rollback must not hide the write failure.
     }
     log(`  WRITE FAILED after ${count.toLocaleString()} rows / ${mib(written)}`, "bad");
     log(`  the error, verbatim: ${quotaError}`, "bad");
@@ -271,7 +223,6 @@ async function fill(limitBytes: number): Promise<void> {
   const bytes = Number(blobs.prepare("SELECT coalesce(sum(length(bytes)),0) FROM blob_bytes").pluck().get() ?? 0);
   log(`  readback: ${rows.toLocaleString()} rows, ${mib(bytes)}`);
 
-  // Random reads, which is what playing a card's audio actually does.
   if (rows > 0) {
     const read = blobs.prepare("SELECT bytes FROM blob_bytes WHERE hash = ?").pluck();
     const t1 = performance.now();
@@ -294,7 +245,6 @@ async function fill(limitBytes: number): Promise<void> {
 
   blobs.close();
 
-  // Does deleting a pool file give the space back? Measured, not assumed.
   const removed = await deleteDatabaseBrowser(BLOB_DB);
   const afterUnlink = await estimate();
   log(`  unlink(${BLOB_DB}) = ${removed}; usage now ${mib(afterUnlink.usage)}`, "warn");
@@ -305,11 +255,6 @@ async function fill(limitBytes: number): Promise<void> {
   stat("OPFS usage", mib(afterUnlink.usage));
 }
 
-/**
- * The write that matters: one row, the size of a graded review. Bulk-fill
- * failures are dramatic but a review is 100 bytes, and whether *that* survives
- * a full origin is the difference between "slow" and "lost a review".
- */
 async function probeWrite(): Promise<void> {
   log("F. one small write, the shape of grading a card", "step");
   if (card === undefined) throw new Error("open the card database first");
@@ -326,7 +271,6 @@ async function probeWrite(): Promise<void> {
     try {
       card.exec("ROLLBACK");
     } catch {
-      // Keep the original failure.
     }
     log(`  THE SMALL WRITE FAILED: ${String(error)}`, "bad");
     log("  a review graded at this moment would be lost unless the app notices this", "bad");
@@ -337,8 +281,6 @@ async function probeWrite(): Promise<void> {
     .all() as string[];
   log(`  most recent probe rows: ${JSON.stringify(survivors)}`);
 }
-
-// -- 4. multi-tab: hold, and hand over ---------------------------------------
 
 async function hold(on: boolean): Promise<void> {
   if (on) {
@@ -355,28 +297,6 @@ async function hold(on: boolean): Promise<void> {
   }
 }
 
-/**
- * Does `BrowserDb.close()` actually give the OPFS file back?
- *
- * `pauseVfs()` throws SQLITE_MISUSE while ANY file is open at the VFS level, so
- * it is a precise, cheap oracle for "is the handle really released". Three
- * variants, differing only in what they do with prepared statements:
- *
- *   A  exec() only, no prepare()      -> expect pause to succeed
- *   B  prepare(), then finalize()      -> expect pause to succeed
- *   C  prepare(), NO finalize()        -> ?
- *
- * If C fails while A and B pass, then every statement Hashigo prepares and
- * abandons pins an OPFS file open for the lifetime of the page.
- *
- * IT DID FAIL, and that is now fixed. Measured here 2026-08-19: C threw
- * `SQLITE_MISUSE: Cannot pause VFS opfs-sahpool because it has opened files`
- * because `oo1.DB.close()` finalizes nothing (dist/index.mjs:10282 passes
- * forEach's INDEX where it means the statement). `WasmDb` in
- * `src/db/browser.ts` now tracks the statements it hands out and finalizes them
- * in `close()`; re-run afterwards, all three of A, B and C report
- * `pauseVfs() SUCCEEDED`. Keep this probe: it is the oracle for that fix.
- */
 async function handles(): Promise<void> {
   log("G. does close() actually release the OPFS file?", "step");
   const pool = await installPool();
@@ -398,8 +318,6 @@ async function handles(): Promise<void> {
     log(`     ${verdict}`, verdict.startsWith("pauseVfs() SUCCEEDED") ? "good" : "bad");
   };
 
-  // Order matters: a variant that leaks poisons every later one, so the
-  // suspected-bad case runs last.
   card?.close();
   card = undefined;
   try {
@@ -426,9 +344,6 @@ async function handles(): Promise<void> {
     db.prepare("SELECT count(*) FROM t").pluck().get();
   });
 
-  // C's leak, if it is one, is permanent for this page: the statement object is
-  // unreachable, so nothing can finalize it. Say so rather than pretending the
-  // pool is clean.
   log(`  pool after the three attempts: isPaused=${pool.isPaused()}, files ${pool.getFileCount()}`);
   try {
     await deleteDatabaseBrowser(NAME);
@@ -438,23 +353,6 @@ async function handles(): Promise<void> {
   }
 }
 
-/**
- * THE RETRY FINDING.
- *
- * `sqlite3.installOpfsSAHPoolVfs()` memoises its result per VFS name in a
- * module-private `initPromises` map, and on a *failed* install it caches the
- * REJECTION and re-throws it forever — unless the caller passes
- * `forceReinitIfPreviouslyFailed: true` (index.mjs ~15626).
- *
- * `installPool()` in src/db/browser.ts used to clear its own memo on failure
- * without passing that flag, so once a tab had lost the race to another tab it
- * could never take the database, even after the other tab was gone. It now
- * passes `forceReinitIfPreviouslyFailed: true`, and the `multitab` scenario
- * shows a forced open recovering on the very next attempt after the other tab
- * releases. This probe bypasses `installPool()` on purpose and is now expected
- * to report "plain retry SUCCEEDED ... nothing to recover from": that sentence
- * is the fix being visible, not the test failing to fire.
- */
 async function retryInstall(): Promise<void> {
   log("H. can a tab that already lost the race ever recover?", "step");
   const api = await sqlite3();
@@ -498,23 +396,12 @@ async function pause(paused: boolean): Promise<void> {
   }
 }
 
-// -- 5. eviction, simulated exactly: the whole origin, gone ------------------
-
-/**
- * Recursively empty OPFS. This is what an eviction does to a best-effort
- * origin — everything at once, database and audio together.
- */
 async function evict(): Promise<void> {
   log("D. simulated eviction — remove EVERYTHING from OPFS", "step");
   const before = await estimate();
   log(`  usage before: ${mib(before.usage)}`);
   card?.close();
   card = undefined;
-  // `pauseVfs()` refuses while any file is open, and `close()` does not close
-  // (see step G), so the polite route is unavailable. `removeVfs()` releases the
-  // handles unconditionally and deletes the pool's directory — the only thing
-  // that works from inside the page. It also makes the pool unrevivable, so the
-  // page MUST be reloaded afterwards.
   try {
     const pool = await installPool();
     const removed = await pool.removeVfs();
@@ -539,7 +426,6 @@ async function evict(): Promise<void> {
   stat("oracle from OPFS", "GONE - evicted", "bad");
 }
 
-/** The recovery path, timed end to end from an empty OPFS. */
 async function recover(): Promise<void> {
   log("E. recovery from an empty OPFS, timed", "step");
   const whole = performance.now();
@@ -575,7 +461,6 @@ async function recover(): Promise<void> {
   stat("OPFS usage", mib(usage));
 }
 
-/** A fresh schema straight from src/schema/*.sql — proves the empty-start path. */
 async function freshSchema(): Promise<void> {
   const t0 = performance.now();
   const fresh = await openDatabaseBrowser({
@@ -591,8 +476,6 @@ async function freshSchema(): Promise<void> {
   fresh.close();
   await deleteDatabaseBrowser("/persist-spike-fresh.db");
 }
-
-// -- dispatch ---------------------------------------------------------------
 
 self.onmessage = async (event: MessageEvent<PersistRequest>): Promise<void> => {
   const request = event.data;

@@ -1,23 +1,7 @@
-/**
- * The key table, enumerated — the rule the two most expensive bugs in `app/` lived
- * inside.
- *
- * Both were the same shape: a key correct in one state doing something destructive
- * in another, with nothing on screen to say so. Typing a deck name into the
- * gallery's filter box archived and GRADED the card behind it. Grading during his
- * #9 look-ahead moves a due date on a card he is not reading. Neither is visible
- * when it happens, and each was one boolean in a long `if` chain.
- *
- * So the tests here are not "does `j` grade". They are the STATES: what does `j` do
- * when he is typing, when a preview is up, when the sidebar is open, when he is
- * looking ahead. That is the axis the bugs were on.
- */
-
 import { describe, expect, it } from "vitest";
 
 import { REVIEWING, reviewAction, type KeyState } from "../app/review-keys.js";
 
-/** A keystroke, defaulting to no modifiers. */
 const press = (key: string, mods: Partial<Record<string, boolean>> = {}) => ({ key, ...mods });
 
 const state = (over: Partial<KeyState> = {}): KeyState => ({ ...REVIEWING, ...over });
@@ -26,16 +10,9 @@ describe("reviewing a card", () => {
   it("reveals, then grades", () => {
     expect(reviewAction(press(" "), state())).toBe("reveal");
     expect(reviewAction(press("Enter"), state())).toBe("reveal");
-    // SPACE WALKS, AND `revealed` DOES NOT STOP IT — Zach's stepped reveal,
-    // 2026-09-12. Mid-walk the answer is partly up (so `revealed`) and there is
-    // still somewhere to go (so `moreToReveal`), and space has to keep going or
-    // the keyboard stops halfway through a card the thumb can still finish.
     expect(reviewAction(press(" "), state({ revealed: true }))).toBe("reveal");
-    // At the END of the walk it stops: a spare space must not re-enter anything.
     expect(reviewAction(press(" "), state({ revealed: true, moreToReveal: false }))).toBeNull();
 
-    // f and j are DEAD until the reveal. That is decision 2's binary grade being
-    // an answer to a question he has actually been asked.
     expect(reviewAction(press("f"), state())).toBeNull();
     expect(reviewAction(press("j"), state())).toBeNull();
     expect(reviewAction(press("f"), state({ revealed: true }))).toBe("gradeForgot");
@@ -45,19 +22,6 @@ describe("reviewing a card", () => {
     expect(reviewAction(press("r"), state({ revealed: true }))).toBe("replay");
   });
 
-  /**
-   * DECISION 42 — THE TWO GRADES DO NOT UNLOCK TOGETHER.
-   *
-   * Zach, 2026-09-13: *"you don't know if you actually remember the card until
-   * you're at the last slide, so maybe we don't even need remembered button when
-   * we still have next button"*.
-   *
-   * `forgot` needs ONE failure, so it is settled the moment the first cloze
-   * contradicts him. `remembered` is a conjunction over every side and is not
-   * settled until the last one is up. Both arms are asserted together, because
-   * the failure mode is someone "restoring symmetry" here and taking `forgot`
-   * down with it — which WOULD be the 2026-09-07 defect coming back.
-   */
   it("`f` fires from the first step; `j` waits for the last", () => {
     const midWalk = state({ revealed: true, moreToReveal: true });
     expect(reviewAction(press("f"), midWalk)).toBe("gradeForgot");
@@ -67,40 +31,20 @@ describe("reviewing a card", () => {
     expect(reviewAction(press("f"), walkDone)).toBe("gradeForgot");
     expect(reviewAction(press("j"), walkDone)).toBe("gradeRemembered");
 
-    // SPACE still reaches the end from mid-walk, so "too early" is one press from
-    // being answerable. A refusal with no way forward is the thing to avoid.
     expect(reviewAction(press(" "), midWalk)).toBe("reveal");
 
-    // Look-ahead still wins over both, in both halves of the walk: grading there
-    // moves a due date on a card he is not reading, which is worse than early.
     expect(reviewAction(press("j"), state({ ...midWalk, peeking: true }))).toBe("gradeBlocked");
     expect(reviewAction(press("j"), state({ ...walkDone, peeking: true }))).toBe("gradeBlocked");
   });
 
-  /**
-   * REPLAY BEFORE THE REVEAL, and only when the clip is the QUESTION.
-   *
-   * Zach hit the first arm on a 数字 card: *"why can't i see the play button, now i
-   * can't replay it even if i want to, i would have to click review first"*. On a
-   * mode-2 card revealing to hear the question again shows him the answer, which is
-   * the exercise on 3,177 cards.
-   *
-   * The second arm is decision 29 and must NOT be relaxed with it: on the 692
-   * `Reading = true` cards the clip is the answer, so replay stays behind the
-   * reveal. Both arms are asserted here for the same reason the mode-1 autoplay
-   * tests are — so that fixing one does not quietly delete the other.
-   */
   it("REPLAYS BEFORE THE REVEAL when the card asked — and not when it did not", () => {
     expect(reviewAction(press("r"), state({ asked: true }))).toBe("replay");
     expect(reviewAction(press("r"), state({ asked: false }))).toBeNull();
-    // Once revealed, both arms replay: the answer is already on screen.
     expect(reviewAction(press("r"), state({ asked: false, revealed: true }))).toBe("replay");
     expect(reviewAction(press("r"), state({ asked: true, revealed: true }))).toBe("replay");
   });
 
   it("does not let `asked` leak into grading — that is still the reveal's job", () => {
-    // The narrow fix must stay narrow. `asked` is about the QUESTION being audible,
-    // and nothing about it means he has answered.
     const asked = state({ asked: true });
     expect(reviewAction(press("f"), asked)).toBeNull();
     expect(reviewAction(press("j"), asked)).toBeNull();
@@ -120,8 +64,6 @@ describe("reviewing a card", () => {
 
   it("SHIFT-qualifies pin, because `p` alone is one slip from `o`", () => {
     expect(reviewAction(press("P", { shiftKey: true }), state())).toBe("pin");
-    // Unlike `a` and `d` a pin has no visible consequence on the card, so a
-    // silently pinned card is one he finds later and cannot explain.
     expect(reviewAction(press("p"), state())).toBeNull();
   });
 
@@ -130,31 +72,16 @@ describe("reviewing a card", () => {
     for (const key of ["a", "d", "P", "ArrowRight", "ArrowLeft"]) {
       expect(reviewAction(press(key, { shiftKey: true }), s), key).toBeNull();
     }
-    // `e` and reveal are about the screen, not the card, and stay reachable.
     expect(reviewAction(press("e"), s)).toBe("edit");
   });
 });
 
 describe("TYPING MUST NEVER GRADE, ARCHIVE OR DELETE", () => {
-  /**
-   * The bug, by name. Every single-key shortcut fired while he typed in the
-   * gallery's filter box, because `reviewView.hidden` is FALSE the whole time the
-   * gallery is up — it is shown by `data-view` on the body and hidden in CSS.
-   *
-   *   a  ->  archived the review card behind the gallery
-   *   d  ->  opened the delete-confirm for it
-   *   j  ->  graded it REMEMBERED, if it had been revealed
-   *   f  ->  graded it FORGOT
-   *   space/enter -> revealed it, which is what made j and f live
-   *
-   * Typing "japanese" was an archive and a grade.
-   */
   it("swallows every destructive key while a text field has focus", () => {
     const typing = state({ typing: true, revealed: true });
     for (const key of ["a", "d", "f", "j", "e", "r", " ", "Enter", "/", "P"]) {
       expect(reviewAction(press(key, { shiftKey: true }), typing), key).toBeNull();
     }
-    // The exact word that was typed, letter by letter, against a revealed card.
     for (const key of [..."japanese"]) {
       expect(reviewAction(press(key), typing), key).toBeNull();
     }
@@ -170,8 +97,6 @@ describe("TYPING MUST NEVER GRADE, ARCHIVE OR DELETE", () => {
   });
 
   it("lets Ctrl+K through and holds Ctrl+Z back", () => {
-    // Ctrl+K over a filter box is a reasonable thing to press. Ctrl+Z inside a text
-    // field means the browser's own undo, not the app's card-operation stack.
     expect(reviewAction(press("k", { ctrlKey: true }), state({ typing: true }))).toBe("palette");
     expect(reviewAction(press("z", { ctrlKey: true }), state({ typing: true }))).toBeNull();
     expect(reviewAction(press("z", { ctrlKey: true }), state())).toBe("undo");
@@ -204,14 +129,10 @@ describe("a layer owns the keyboard", () => {
   });
 
   it("REFUSES THEM ON THE EDITOR, which also carries a card id", () => {
-    // `layerActs` is deliberately not "the layer has a card". The editor has one and
-    // every field in it is an input, so a rule keyed on the id would archive the card
-    // he is editing the moment focus sat on the panel instead of in a box.
     const editor = state({ layerOpen: true, layerActs: false });
     expect(reviewAction(press("a"), editor)).toBeNull();
     expect(reviewAction(press("d"), editor)).toBeNull();
     expect(reviewAction(press("P", { shiftKey: true }), editor)).toBeNull();
-    // `e` and Escape still work: closing it and re-opening it are not destructive.
     expect(reviewAction(press("Escape"), editor)).toBe("closeLayer");
     expect(reviewAction(press("e"), editor)).toBe("editLayer");
   });
@@ -223,17 +144,10 @@ describe("a layer owns the keyboard", () => {
 });
 
 describe("HIS #9: looking ahead must not grade a card he is not reading", () => {
-  /**
-   * `answer()` grades the SESSION's current item, not what is displayed. So `j`
-   * during a look-ahead writes a `reviews` row and advances the FSRS schedule of a
-   * different card — silently, from the key he presses a hundred times a day.
-   */
   it("blocks both grade keys and says so, rather than ignoring them", () => {
     const peeking = state({ peeking: true, revealed: true });
     expect(reviewAction(press("j"), peeking)).toBe("gradeBlocked");
     expect(reviewAction(press("f"), peeking)).toBe("gradeBlocked");
-    // SAID, not swallowed: the two keys he uses constantly doing nothing without
-    // explanation reads as the app being broken.
     expect(reviewAction(press("j"), peeking)).not.toBeNull();
   });
 
@@ -245,8 +159,6 @@ describe("HIS #9: looking ahead must not grade a card he is not reading", () => 
   });
 
   it("leaves Escape inert when he is NOT looking ahead", () => {
-    // Nothing else in review answers to Escape, and inventing a meaning for it
-    // there would make the one key that always means "get out of this" ambiguous.
     expect(reviewAction(press("Escape"), state({ revealed: true }))).toBeNull();
   });
 
@@ -265,33 +177,19 @@ describe("the sidebar and the boot screen", () => {
   });
 
   it("does nothing while the review view is not on screen", () => {
-    // Boot, and the done screen. There is no card, and `reviewHidden` is the only
-    // flag that is actually true in those states.
     const hidden = state({ reviewHidden: true, revealed: true });
     for (const key of ["a", "d", "f", "j", "e", " ", "r", "ArrowRight"]) {
       expect(reviewAction(press(key), hidden), key).toBeNull();
     }
-    // The two global ones survive: he can still undo and still search.
     expect(reviewAction(press("k", { ctrlKey: true }), hidden)).toBe("palette");
     expect(reviewAction(press("z", { ctrlKey: true }), hidden)).toBe("undo");
   });
 
   it("ignores an auto-repeating key", () => {
-    // Holding `j` down must grade once, not once per repeat.
     expect(reviewAction({ key: "j", repeat: true }, state({ revealed: true }))).toBeNull();
   });
 });
 
-/**
- * THE SHADOWING CONTROLS SIT BEFORE THE REVEAL, AND THAT IS THE POINT.
- *
- * The drill is produce-then-verify: look at the kanji, recall the contour, say it
- * aloud, THEN reveal and compare. Setting the rate and arming the recorder belong
- * to the first half. A control reachable only after the reveal is a control for
- * an exercise he has already finished — which is the same mistake decision 29's
- * `asked` gate exists to prevent for replay, and Zach reported that one out loud:
- * *"now i can't replay it even if i want to"*.
- */
 describe("loop, speed and recording (2026-09-12)", () => {
   it("all work BEFORE anything is revealed", () => {
     const fresh = state({ revealed: false, moreToReveal: true });
@@ -308,18 +206,12 @@ describe("loop, speed and recording (2026-09-12)", () => {
   });
 
   it("shift+m plays the take, and does nothing when there is none", () => {
-    // `event.key` for shift+m is "M", which lowercases to the same "m" as the
-    // record key — so the shifted branch has to come first or recording starts
-    // every time he asks to hear himself.
     expect(reviewAction(press("m", { shiftKey: true }), state({ hasTake: true }))).toBe("playTake");
     expect(reviewAction(press("m", { shiftKey: true }), state({ hasTake: false }))).toBeNull();
-    // And the unshifted key is unaffected by the take existing.
     expect(reviewAction(press("m"), state({ hasTake: true }))).toBe("toggleRecord");
   });
 
   it("does not reach past a text field, a layer, or a hidden review screen", () => {
-    // The guard every single-key shortcut in this table lives behind. Typing
-    // "small" into the gallery filter must not cycle the speed and open the mic.
     for (const key of ["l", "s", "m"]) {
       expect(reviewAction(press(key), state({ typing: true })), key).toBeNull();
       expect(reviewAction(press(key), state({ layerOpen: true })), key).toBeNull();
@@ -329,8 +221,6 @@ describe("loop, speed and recording (2026-09-12)", () => {
   });
 
   it("takes no key that already meant something", () => {
-    // `l`, `s` and `m` were free; the ones in his fingers are not. If a future
-    // control reaches for one of these, this is where it gets caught.
     const fresh = state();
     expect(reviewAction(press("f"), state({ revealed: true }))).toBe("gradeForgot");
     expect(reviewAction(press("j"), state({ revealed: true, moreToReveal: false }))).toBe(

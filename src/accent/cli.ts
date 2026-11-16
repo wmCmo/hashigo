@@ -1,19 +1,3 @@
-/**
- * `npx vite-node src/accent/cli.ts -- <command>`
- *
- *   words --db D --out F        normalised head words, one per line
- *   load  --db D --in  F        JSONL from tools/accent_derive.py -> accents
- *   write --db D [--dry-run]    the resolved 型 label -> card_field_values
- *   show  --db D <word>...      what the resolved accent is, and on what basis
- *   respeak --db D [--dry] [--limit N] [--store DIR]
- *                               re-synthesise every head word on 単語 + 言葉 with
- *                               its accent notation, then adopt the new voice
- *
- * The three-step shape exists because the analyser is Python-only and the text
- * transform must not be. `words` is the seam: TypeScript decides what string an
- * accent is filed under, Python only analyses the strings it is handed.
- */
-
 import { readFileSync, writeFileSync } from "node:fs";
 import { openDatabase } from "../db/index.js";
 import { accentKey, readingLooksUnanalysed } from "./key.js";
@@ -28,22 +12,6 @@ import { arg, flag } from "../cli/args.js";
 import { respeakCommand } from "./respeak-cli.js";
 import { declareField, extractSentences, loadMarks, type AnnotatedLine } from "./marks.js";
 
-/**
- * The head words, by the SAME basis as the distribution table in
- * notes/pitch-accent-pipeline.md: `card_field_values.value` for the field whose
- * id is `name`, on templates 単語 and 言葉.
- *
- * Template-scoped on purpose. `name` is not unique across templates — it is also
- * 基本情報's Cue — and an unscoped query silently pulls in another template's
- * sentences. That mistake produced a count of 3,668 "misses" earlier in this
- * work when the real number was 189.
- *
- * BY DATA since stage G of fields-as-modules: the head word is whatever field the
- * template's `accent` field reads (`source_field_id`), which is how
- * `src/accent/store.ts` has always found it. Still template-scoped — by the
- * accent field's own template — so 基本情報's `name` stays out, and on this corpus
- * the answer is the same 単語/言葉 `name` fields the literal named.
- */
 const HEAD_WORDS_SQL = `
   SELECT DISTINCT v.value
     FROM card_field_values v
@@ -63,10 +31,8 @@ interface DerivedLine {
   version: string;
   probe: string;
   reason?: string | null;
-  /** Present on cross-check rows. Defaults to the primary analyser. */
   analyser?: string;
 }
-
 
 async function main(): Promise<number> {
   const command = process.argv[2];
@@ -87,8 +53,6 @@ async function main(): Promise<number> {
   try {
     if (command === "words") {
       const rows = db.prepare(HEAD_WORDS_SQL).all() as { value: string }[];
-      // Deduped AFTER normalisation, not before: 準‎備 and 準備 are one word and
-      // deriving both would put two rows in `accents` for one string.
       const keys = [...new Set(rows.map((row) => accentKey(row.value)))].filter((k) => k !== "");
       keys.sort();
       writeFileSync(arg("out"), keys.join("\n") + "\n", "utf8");
@@ -106,9 +70,6 @@ async function main(): Promise<number> {
       let unanalysed = 0;
       for (const line of lines) {
         const parsed = JSON.parse(line) as DerivedLine;
-        // The analyser returns the kanji back when it does not know a word (嗤う
-        // -> 嗤ウ) and the failure is otherwise SILENT: the mora count and the
-        // accent type both come out plausible. Refuse those here.
         const bad = parsed.ok && readingLooksUnanalysed(parsed.reading);
         if (bad) unanalysed += 1;
         const guarded = !parsed.ok || bad;
@@ -140,9 +101,6 @@ async function main(): Promise<number> {
     }
 
     if (command === "queue") {
-      // The adjudication queue, from the view rather than a report file so it
-      // cannot go stale. Zach's instruction for settling these: OJAD, through
-      // its own interface, driven the way a person would — not a scraper.
       const rows = db
         .prepare(
           `SELECT text, primary_type, primary_accent, primary_basis, primary_reading,
@@ -164,8 +122,6 @@ async function main(): Promise<number> {
     }
 
     if (command === "ojad") {
-      // The hand-entered adjudications. They land as manual overrides, so they
-      // beat both the primary derivation and the cross-check.
       const { applied } = applyOjadAdjudications(db);
       console.log(
         `applied ${applied} adjudication(s) as manual overrides ` +
@@ -204,15 +160,8 @@ async function main(): Promise<number> {
       return 0;
     }
 
-    // ─── stage 12: the per-mora sentence annotation ─────────────────────────
-    //
-    // TWO commands and not one, because the analyser is Python and lives behind
-    // a file — the same three-step shape as `words` / accent_derive / `load`,
-    // for the same reason `src/accent/README.md` gives.
     if (command === "sentences") {
       const report = extractSentences(db);
-      // Deduped: the same sentence is one pronunciation however many cards
-      // carry it, and analysing it twice would cost time and prove nothing.
       const distinct = [...new Set(report.clean.map((row) => row.sentence))].sort();
       writeFileSync(arg("out"), distinct.join("\n") + "\n", "utf8");
       console.log(`${report.cards} card(s) with an 例文 field -> ${report.clean.length} sentence(s)`);

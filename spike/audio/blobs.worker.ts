@@ -1,25 +1,3 @@
-/**
- * THROWAWAY (spike harness). The dedicated Worker for the audio spike: both
- * SQLite databases live here and nothing else touches them.
- *
- * The path it walks is the production path, module for module:
- *
- *   src/db/browser.ts        opens /spike-audio-meta.db and /spike-audio-store.db
- *                            in OPFS through `opfs-sahpool`
- *   src/blobs/sqlite.ts      SqliteBlobStore over the store database — locked
- *                            decision 4, BLOB rows and not one file per payload
- *   src/blobs/db.ts          readBlob(metaDb, hash, store): the join between an
- *                            address in `blobs` and the bytes in the store
- *   src/blobs/sha256.ts      re-hashes what came back, in the browser, so the
- *                            claim "these are the corpus's bytes" is checked
- *                            rather than asserted
- *
- * Then the payload is handed to the page, because that is where the `<audio>`
- * element and therefore the object URL belong. `workerUrl` deliberately does it
- * the other way round once, to find out whether a URL minted in a worker is even
- * usable in the document.
- */
-
 import metaDatabaseUrl from "./hashigo-audio-meta.db?url";
 import storeDatabaseUrl from "./hashigo-audio-store.db?url";
 
@@ -74,7 +52,6 @@ self.onmessage = (event: MessageEvent<AudioSpikeRequest>): void => {
   });
 };
 
-/** Fetch a prebuilt database and put it in OPFS, unless it is already there. */
 async function ensureInOpfs(name: string, url: string, reimport: boolean): Promise<void> {
   const present = (await databaseFilesInOpfs()).includes(name);
   if (present && !reimport) {
@@ -180,8 +157,6 @@ async function open(id: number, reimport: boolean): Promise<void> {
     const bytes = readBlob(metaDb, row.hash, store);
     const readMs = performance.now() - readStart;
     readTotal += readMs;
-    // Copied out of the wasm heap once so the buffer can be transferred to the
-    // page without the page ever holding a view onto SQLite's memory.
     const owned = new Uint8Array(bytes);
     const addressOk = sha256Hex(owned) === row.hash;
     if (!addressOk) bad(`  ADDRESS MISMATCH in the browser for ${row.hash}`);
@@ -219,11 +194,6 @@ async function open(id: number, reimport: boolean): Promise<void> {
   self.postMessage({ kind: "opened", id, facts, clips } satisfies OpenedMessage, transfer);
 }
 
-/**
- * Mint an object URL in the WORKER and hand the string over. The page then tries
- * to play it. This is the arrangement `src/blobs/url.ts` advises against; the
- * spike exists to find out whether it merely smells or actually fails.
- */
 function mintInWorker(id: number, hash: string): void {
   try {
     if (metaDb === null || store === null) throw new Error("open the databases first");

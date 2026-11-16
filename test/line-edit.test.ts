@@ -1,8 +1,3 @@
-/**
- * VS Code's line keys (`app/line-edit.ts`) — the arithmetic, on the kind of text
- * his 意味 fields hold. Zach, 2026-11-13: *"alt ⬆️⬇️ to move lines and like ctrl x
- * to cut the entire line"*.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -16,7 +11,6 @@ import {
   type TextState,
 } from "../app/line-edit.js";
 
-/** `|` marks the caret, `[` `]` a selection. */
 function at(marked: string): TextState {
   const caret = marked.indexOf("|");
   if (caret !== -1) return { value: marked.replace("|", ""), start: caret, end: caret };
@@ -148,9 +142,7 @@ describe("Enter continues a Markdown list", () => {
     expect(continueList(at("Godan verb|"))).toBeNull();
     expect(continueList(at("|1. stiff"))).toBeNull();
     expect(continueList(at("1. [stiff]"))).toBeNull();
-    // A year is not a list: no space after the dot.
     expect(continueList(at("2026.11|"))).toBeNull();
-    // Japanese text with a full stop is not a list either.
     expect(continueList(at("最近はどんな物に凝っているの？|"))).toBeNull();
   });
 });

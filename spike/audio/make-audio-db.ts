@@ -1,33 +1,3 @@
-/**
- * THROWAWAY (spike harness) — step 2 of 3 for the audio spike.
- *
- *   npx vite-node spike/audio/make-audio-db.ts
- *     [--db build/hashigo.db] [--store build/hashigo.db.blobs]
- *     [--clips build/spike/audio-clips.json] [--out spike/audio]
- *
- * Produces the TWO files the page fetches, and they are two on purpose, because
- * that is the production split:
- *
- *   hashigo-audio-meta.db    the card-database side: `blobs` rows — address,
- *                            sniffed mime, size, provenance — and NO payloads and
- *                            NO locations. Plus one throwaway `spike_clips` table
- *                            carrying what Mochi *declared* the type was, which
- *                            production rightly does not keep anywhere.
- *   hashigo-audio-store.db   a real `SqliteBlobStore` (src/blobs/sqlite.ts),
- *                            created by the production class, holding the real
- *                            mp3 payloads as BLOB rows. This is locked decision 4
- *                            in its actual shape.
- *
- * The payloads are read out of the existing content-addressed directory store by
- * hash and re-hashed on the way in, so the browser is playing bytes that provably
- * still match the address the database refers to. Nothing is copied by path: the
- * only thing that crosses is `hash -> bytes`.
- *
- * Run under vite-node because it uses `src/blobs/sqlite.ts` rather than a second
- * copy of its DDL. A spike that hand-rolls the store's schema would prove the
- * spike works, not that the store does.
- */
-
 import { createHash } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -81,7 +51,6 @@ for (const [what, path] of [
   process.exit(1);
 }
 
-/** Header bytes 18/19: 1 = rollback journal, 2 = WAL. Only 1 imports into OPFS. */
 function journalHeader(file: string): { write: number; read: number } {
   const fd = openSync(file, "r");
   try {
@@ -138,7 +107,6 @@ for (const clip of manifest.clips) {
     continue;
   }
   if (row.path !== null) pathsInSource += 1;
-  // The store's layout, derived from the hash exactly as src/blobs/address.ts does.
   const file = join(storeDir, clip.hash.slice(0, 2), clip.hash);
   if (!existsSync(file)) {
     console.log(`  MISSING PAYLOAD  ${clip.file_name} ${clip.hash.slice(0, 12)}`);
@@ -165,7 +133,6 @@ if (kept.length === 0) {
 
 mkdirSync(outDir, { recursive: true });
 
-// ── the payload store, created by the production class ─────────────────────────
 fresh(storeFile);
 const storeDatabase = new Database(storeFile);
 const store = new SqliteBlobStore(storeDatabase as never, {
@@ -180,14 +147,12 @@ const written = store.batch(() => {
   return count;
 });
 const writeMs = performance.now() - writeStart;
-// The store's own invariant, checked here so the browser is not the first to try.
 let verified = 0;
 for (const { clip } of kept) {
   if (store.verify(clip.hash)) verified += 1;
 }
 storeDatabase.close();
 
-// ── the metadata database: production column names, no payloads ────────────────
 fresh(metaFile);
 const meta = new Database(metaFile);
 meta.pragma("journal_mode = delete");

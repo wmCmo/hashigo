@@ -4,16 +4,6 @@ import { describe, expect, it } from "vitest";
 
 import { handleApp, makeCookie, unlocked, type AppEnv } from "../cloud/app/src/app.js";
 
-/**
- * The app Worker — the whole of Hashigo from one public origin — tested before it
- * is deployed. Two properties carry the weight:
- *
- *   1. NOTHING behind the lock is reachable without the cookie: not the app, not
- *      the seed (his cards and audio), not the mailbox (his review history).
- *   2. The 674 MB audio database, uploaded in parts, arrives as ONE file whose
- *      bytes and declared length are exactly the original's.
- */
-
 const PASSPHRASE = "ladder-kite-orbit-mango";
 
 function r2(objects: Record<string, Uint8Array | string>) {
@@ -127,7 +117,6 @@ describe("nothing behind the lock without the cookie", () => {
     for (const path of ["/manifest.webmanifest", "/sw.js", "/icons/icon-192.png", "/brand/favicon.svg"]) {
       expect((await handleApp(get(path), e)).status, path).toBe(200);
     }
-    // 鍵の外はこの四種類だけ。似た名前でも種と mailbox には届かない。
     for (const path of ["/icons/../hashigo-app.db", "/iconsx/a.png", "/sync/", "/"]) {
       expect((await handleApp(get(path), e)).status, path).toBe(401);
     }

@@ -1,10 +1,3 @@
-/**
- * THE DASHBOARD FROM THE SIDEBAR — his #1, moved out of `main.ts` on 2026-09-25.
- *
- * Self-contained: the only thing it needs besides the worker is closing the drawer
- * on a phone before it opens, which `./sidebar.ts` owns.
- */
-
 import type { GlanceDay, GlanceDeck } from "../src/dashboard/index.js";
 import { recallOf } from "../src/dashboard/recall.js";
 import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
@@ -14,28 +7,9 @@ import { setIcon } from "./icons.js";
 import { say } from "./ui.js";
 import { ask } from "./worker-client.js";
 
-/**
- * A day under this recall is tinted. ONE number: the bar's tone and the legend
- * that explains it read the same constant, so changing it cannot leave the legend
- * naming a band the chart no longer uses.
- */
 export const LOW_RECALL = 0.85;
 const LOW_RECALL_LEGEND = `under ${Math.round(LOW_RECALL * 100)}% remembered, not counting new cards`;
 
-/**
- * His #1, and the answer to *"what about just simple dashboard in mobile app and
- * full suit dashboard on laptop?"*
- *
- * **The split is right; the axis is not device.** He reviews on the laptop too, and
- * a laptop tab runs the same sqlite-wasm in the same one worker — so the full
- * report is the same 81 seconds there. It splits by what the numbers are FOR: this
- * is "how am I doing", and the four-year analysis is a button inside it.
- *
- * Rendered in the app's own palette rather than in an iframe, which is the other
- * half of his question. The full report is a complete document with its own white
- * stylesheet and has no choice; a dozen figures do, and on a phone a white sheet
- * dropped into a dark app at night is its own answer.
- */
 export async function openDashboard(): Promise<void> {
   closeSidebar();
 
@@ -70,10 +44,6 @@ export async function openDashboard(): Promise<void> {
   panel.appendChild(body);
   root.appendChild(panel);
 
-  // THE PANEL OPENS NOW, AS A SKELETON. Zach, 2026-10-29: *"we needs skeleton while
-  // loading instead of it freezing"*. The figures come from the worker — 162 ms on
-  // the laptop, more on the phone, and longer when it is mid-way through something
-  // else — and until this the tap did nothing visible for all of it.
   body.setAttribute("aria-busy", "true");
   body.appendChild(glanceSkeleton());
   pushLayer(bareLayer(root));
@@ -87,18 +57,13 @@ export async function openDashboard(): Promise<void> {
     say((cause as Error).message, true);
     return;
   }
-  // Closed while it loaded: nothing to fill.
   if (!root.isConnected) return;
   const g = reply.glance;
-  // The heading stays "dashboard". The build time is a developer's figure; it
-  // hovers on the heading for whoever wants it.
   title.title = `${reply.elapsedMs.toFixed(0)} ms`;
   body.replaceChildren();
   body.removeAttribute("aria-busy");
 
   const pct = (r: number | null): string => (r === null ? "—" : `${(100 * r).toFixed(1)}%`);
-  // The readout says what the tone was computed over, so "95 reviews · 77.8%"
-  // does not read as 77.8% of all 95.
   const dayDetail = (day: GlanceDay): string => {
     if (day.reviews === 0) return `${day.date} · nothing reviewed`;
     const head = `${day.date} · ${day.reviews.toLocaleString()} reviews`;
@@ -110,7 +75,6 @@ export async function openDashboard(): Promise<void> {
       : `${head} · ${pct(recall)} remembered, ${fresh} not counted`;
   };
 
-  // ── today, and the streak ──
   body.appendChild(
     glanceTiles([
       ["due now", g.today.due.toLocaleString(), `${g.today.fresh} new waiting`],
@@ -122,15 +86,8 @@ export async function openDashboard(): Promise<void> {
       [
         "streak",
         `${g.streakDays}`,
-        // Said out loud because the number is generous on purpose — see
-        // `Glance.streakDays`. A streak that reads 0 at breakfast is a number that
-        // punishes him for the time of day.
         g.today.reviews === 0 && g.streakDays > 0 ? "through yesterday" : "days",
       ],
-      // REPLACES "live tracks", which said 12,917 of 13,393 — the gap being the
-      // dormant and archived ones, a number he cannot act on. This is the same
-      // denominator carrying a figure that moves: decision 12 introduces 10 new
-      // tracks a day, so "to go" is the runway and it shortens every session.
       [
         "learned",
         g.collection.learned.toLocaleString(),
@@ -140,16 +97,12 @@ export async function openDashboard(): Promise<void> {
     ]),
   );
 
-  // ── how fast that number moves ──
   body.appendChild(glanceHead("tracks learned, last 12 months"));
   body.appendChild(
     glanceBars(
       g.learnedByMonth.map((month) => ({
         label: month.month.slice(5),
         value: month.learned,
-        // No tone: `is-low` means "retention under 0.85" on the chart above, and
-        // there is no such thing as a bad month for STARTING cards. Reusing the
-        // red here would make the same colour mean two things on one screen.
         good: null,
         detail:
           `${month.month} · ${month.learned.toLocaleString()} learned · ` +
@@ -158,33 +111,20 @@ export async function openDashboard(): Promise<void> {
     ),
   );
 
-  // ── the last 14 active days ──
   body.appendChild(glanceHead("the last 14 days you studied"));
   body.appendChild(
     glanceBars(
       g.recent.map((day) => ({
         label: day.date.slice(5),
         value: day.reviews,
-        // Retention as the bar's TONE, not a second bar. Two bars per day on a
-        // 375px screen is four pixels each.
-        // OVER CARDS ALREADY LEARNED: a new card's first press tests no memory,
-        // and counting it turned 4 of his 6 red days red (`recallOf`). The bar's
-        // HEIGHT still counts every review.
         good: recallOf(day),
-        // The readout is where retention becomes a NUMBER. The tone says "this
-        // day was below 0.85" and cannot say by how much; a quiet day says so in
-        // words rather than showing "0 reviews · —% remembered".
         detail: dayDetail(day),
       })),
     ),
   );
 
-  // The tone needs a KEY. Without one the chart is blue and orange days with nothing
-  // to say which is which — and orange reads as "missed" here only if you already
-  // know `.is-low` is the 0.85 band, which nothing on the screen said.
   body.appendChild(glanceLegend(LOW_RECALL_LEGEND));
 
-  // ── what is coming ──
   body.appendChild(glanceHead("scheduled, next 14 days"));
   body.appendChild(
     glanceBars(
@@ -197,11 +137,9 @@ export async function openDashboard(): Promise<void> {
     ),
   );
 
-  // ── where it stands, deck by deck ──
   body.appendChild(glanceHead("learned by deck"));
   body.appendChild(glanceDecks(g.decks));
 
-  // ── the two windows ──
   body.appendChild(glanceHead("windows"));
   body.appendChild(
     glanceTiles([
@@ -218,10 +156,6 @@ export async function openDashboard(): Promise<void> {
     ]),
   );
 
-  // ── the full report ──
-  // The warning is the point (3e2a7bf): building it freezes grading, so the note
-  // says so with a measured figure — the desktop's said as the desktop's until
-  // this device has run it (see `dashboardLastMs`).
   const note = document.createElement("p");
   note.className = "settings-note";
   note.textContent =
@@ -239,18 +173,6 @@ export async function openDashboard(): Promise<void> {
   body.append(glanceHead("the four-year report"), note, full);
 }
 
-/**
- * What the dashboard looks like before its figures arrive — BUILT BY THE SAME
- * FUNCTIONS as the real render (`glanceTiles`, `glanceHead`, `glanceBars`), with
- * the real headings and labels, which never change, and stand-in text of the real
- * length where a number goes. `.glance-skeleton` paints those stand-ins as grey
- * blocks. So every box is the size it will be and nothing moves when the numbers
- * land: a first cut drew fixed-height blocks and came out 84px per tile against
- * the real 118, with the charts 38px higher, measured.
- *
- * Bar heights are fixed and varied — a row of equal stubs reads as a chart of
- * equal days.
- */
 function glanceSkeleton(): HTMLElement {
   const wrap = document.createElement("div");
   wrap.className = "glance-skeleton";
@@ -273,10 +195,8 @@ function glanceSkeleton(): HTMLElement {
     const chart = glanceBars(
       heights.map((value) => ({ label: "00", value, good: null, detail: "0000-00-00 · 00 reviews" })),
     );
-    // Not pressable while it stands in: a column here has no day behind it.
     for (const column of chart.querySelectorAll("button")) column.disabled = true;
     wrap.appendChild(chart);
-    // The real render keys this one chart; without the line the next one sits higher.
     if (heading === "the last 14 days you studied") {
       wrap.appendChild(glanceLegend(LOW_RECALL_LEGEND));
     }
@@ -330,30 +250,6 @@ function glanceTiles(rows: readonly (readonly [string, string, string])[]): HTML
   return grid;
 }
 
-/**
- * The deck breakdown of the learned figure — a row per deck, tree order.
- *
- * ─── NOT `glanceBars`, AND NOT THE FULL REPORT'S TABLE ──────────────────────
- *
- * `glanceBars` is for a series over TIME: it shares one vertical scale across
- * columns, which is what makes two weeks of reviews comparable at a glance. Decks
- * are not a series and their sizes differ by three orders of magnitude — 単語 has
- * 7,192 live tracks and 原神 has 2 — so one shared scale would render every deck
- * but the largest as a hairline. Each row carries its OWN proportion instead, so
- * a small deck at 90% reads as 90%.
- *
- * ─── THE NUMBER IS TEXT, NOT A TOOLTIP ─────────────────────────────────────
- *
- * The time charts need a readout because a bar has no room for its figure and a
- * `title` is a hover affordance, which decision 19 forbids as a sole carrier. A
- * row is wide, so `learned / live` simply sits in it and there is nothing to
- * reveal, nothing to press, and no state to get wrong.
- *
- * DEPTH IS INDENTATION, and the rows arrive in path order so it reads as a tree.
- * The leaf name is shown rather than the full path: `deck_paths` spells
- * `日本語/単語/ビジネス`, and at depth 2 in a 375px column the ancestors are
- * already above it on screen.
- */
 function glanceDecks(decks: readonly GlanceDeck[]): HTMLElement {
   const list = document.createElement("div");
   list.className = "glance-decks";
@@ -364,8 +260,6 @@ function glanceDecks(decks: readonly GlanceDeck[]): HTMLElement {
 
     const name = document.createElement("span");
     name.className = "glance-deck-name";
-    // The leaf, but the full path is the accessible name — a screen reader has no
-    // indentation to read the nesting off.
     name.textContent = deck.path.slice(deck.path.lastIndexOf("/") + 1);
     name.title = deck.path;
 
@@ -373,9 +267,6 @@ function glanceDecks(decks: readonly GlanceDeck[]): HTMLElement {
     track.className = "glance-deck-track";
     const fill = document.createElement("i");
     fill.className = "glance-deck-fill";
-    // `live` is 0 only for a deck holding no cards at all, which decision 3 drops
-    // from the tree — but an empty deck is creatable from the app, so guard it
-    // rather than paint a NaN-wide bar.
     const share = deck.live === 0 ? 0 : deck.learned / deck.live;
     fill.style.width = `${(100 * share).toFixed(1)}%`;
     if (deck.learned === deck.live && deck.live > 0) fill.classList.add("is-done");
@@ -395,48 +286,16 @@ function glanceDecks(decks: readonly GlanceDeck[]): HTMLElement {
   return list;
 }
 
-/** One column of a glance chart. `detail` is the sentence the readout says. */
 interface GlanceColumn {
   readonly label: string;
   readonly value: number;
   readonly good: number | null;
-  /** What this bar MEANS, in words. The only place its number is legible. */
   readonly detail: string;
 }
 
-/**
- * A bar row in CSS, with no chart library and no canvas.
- *
- * SPEC problem #1 is battery: this is the same reason the standalone dashboard
- * ships zero JavaScript. A `<div>` with a percentage height computes once at layout
- * and never again.
- *
- * ─── THE NUMBER HAS TO BE REACHABLE BY THUMB — Zach, 2026-09-14 ─────────────
- *
- * *"on mobile dashboard, there are bar charts, i want to see numbers when i press
- * them or hold"*. The figure was on `title` and nowhere else, which is a HOVER
- * affordance — the sole-carrier case decision 19 forbids, on the one screen with
- * no keycaps to excuse it. And it was worse than "hard to reach" on his handset:
- * the tick labels under the bars are `display: none` below 520px (two weeks of
- * dates do not fit 375px), so a bar on a phone carried **no number and no date at
- * all**. Fourteen anonymous rectangles.
- *
- * So every column is a real button and the chart carries a readout line above it.
- * **`pointerdown`, not `click`** — that is what makes "or hold" work with no timer
- * and no long-press gesture to learn: the readout fills the instant the finger
- * lands and stays until the next press, so holding and releasing both show it.
- * `click` is bound as well, for the keyboard, and is idempotent with it.
- *
- * The readout starts on the LAST column rather than empty. An empty line is a
- * band of blank space that has to be discovered before it explains anything, and
- * the most recent day — today's work, or tomorrow's load — is the one worth
- * reading unprompted.
- */
 function glanceBars(days: readonly GlanceColumn[]): HTMLElement {
   const chart = document.createElement("div");
   chart.className = "glance-chart";
-  // `output` with `aria-live`: a bar is a picture, and this line is the only form
-  // of it a screen reader can read at all.
   const readout = document.createElement("output");
   readout.className = "glance-read";
   readout.setAttribute("aria-live", "polite");
@@ -458,15 +317,11 @@ function glanceBars(days: readonly GlanceColumn[]): HTMLElement {
     const column = document.createElement("button");
     column.type = "button";
     column.className = "glance-col";
-    // Kept for a pointer that has one, and repeated as the accessible name so the
-    // button is not announced as an empty control.
     column.title = day.detail;
     column.setAttribute("aria-label", day.detail);
     column.setAttribute("aria-pressed", "false");
     const bar = document.createElement("i");
     bar.className = "glance-bar";
-    // A zero-review day still gets a hairline, so a GAP reads as a gap rather
-    // than as a day the chart forgot.
     bar.style.height = `${Math.max(2, Math.round((100 * day.value) / peak))}%`;
     if (day.good !== null && day.good < LOW_RECALL) bar.classList.add("is-low");
     const label = document.createElement("span");
@@ -515,8 +370,6 @@ async function buildDashboard(): Promise<void> {
 
   const ops = document.createElement("div");
   ops.className = "layer-ops";
-  // Decision: English by default, `ja` byte-identical to a committed golden file.
-  // Both are one render, so the toggle re-asks rather than translating on screen.
   const language = document.createElement("button");
   language.type = "button";
   language.className = "layer-op";
@@ -524,8 +377,6 @@ async function buildDashboard(): Promise<void> {
   language.addEventListener("click", () => {
     dashboardLocale = dashboardLocale === "ja" ? "en" : "ja";
     closeIfTop(root);
-    // Straight to the build: he has already agreed to the cost once, and asking
-    // again for the same data in the other language is a question with one answer.
     void buildDashboard();
   });
   ops.appendChild(language);
@@ -542,28 +393,15 @@ async function buildDashboard(): Promise<void> {
   const frame = document.createElement("iframe");
   frame.className = "dashboard-frame";
   frame.setAttribute("title", "dashboard");
-  // No `allow-scripts`: the document contains none, and saying so here is what
-  // makes that a guarantee rather than an observation.
   frame.setAttribute("sandbox", "");
   frame.srcdoc = reply.html;
   panel.appendChild(frame);
   root.appendChild(panel);
 
-  // No toast: the report opening is the signal, and `dashboardLastMs` carries
-  // the cost into the next note.
   pushLayer(bareLayer(root));
   close.focus();
 }
 
-/** Remembered for the session only; the render is per open either way. */
 let dashboardLocale = "en";
 
-/**
- * What the last build actually cost HERE.
- *
- * Null until one has run, and the fallback is the desktop figure said as a desktop
- * figure. His phone wrote the corpus 1.44x faster than this machine, so quoting 81
- * seconds at him there would be wrong in the direction that reads as a warning —
- * which is the direction that stops him using something that works.
- */
 let dashboardLastMs: number | null = null;

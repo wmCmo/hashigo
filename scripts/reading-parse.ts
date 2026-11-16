@@ -1,20 +1,3 @@
-/**
- * A4 — parse the parenthesis workaround into a `読み` reading and a `かな主流`
- * flag.  READ-ONLY: this writes nothing.  It prints the before/after rows for
- * approval, because CLAUDE.md decision 10 settled the RULE and not the rows.
- *
- * The rule is decidable from script alone (decision 10):
- *
- *   kanji outside, kana inside   -> the parenthesis holds a READING     -> 読み
- *   kana outside, kanji inside   -> the parenthesis holds the KANJI     -> かな主流
- *   Latin inside                 -> the parenthesis holds a GLOSS       -> 意味
- *
- * Note the two are MIRRORS, and applying one to the other's cards is the exact
- * failure the workaround was hiding: putting a reading inside a head word is
- * what breaks TTS, and the brackets get spoken.
- *
- *   npx vite-node scripts/reading-parse.ts -- --db build/hashigo.db
- */
 import { openDatabase } from "../src/db/index.js";
 import {
   PARENTHESIS,
@@ -22,11 +5,6 @@ import {
   parseReading,
   type ReadingVerdict,
 } from "../src/text/parenthesis.js";
-
-// The rule lives in `src/text/parenthesis.ts` so that this read-only view and
-// `scripts/reading-apply.ts`, which writes, cannot classify differently. They
-// used to hold one copy each, which is one copy too many for a rule whose
-// failure mode is writing a kana head word with a kanji reading.
 
 const dbIndex = process.argv.indexOf("--db");
 const path = dbIndex >= 0 ? process.argv[dbIndex + 1] : "build/hashigo.db";
@@ -70,9 +48,6 @@ hits.forEach((r, i) => {
   );
 });
 
-// The override above is applied and labelled in the table, so a reader can see
-// both what the rule said and what Zach ruled.  Nothing else needs a second look:
-// the remaining 12 rows are decided by script position alone.
 if (READING_OVERRIDES.size > 0) {
   out.push("");
   out.push(`${READING_OVERRIDES.size} ratified override(s) applied — see the note in this file.`);

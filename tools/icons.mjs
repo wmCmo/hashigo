@@ -1,32 +1,3 @@
-/**
- * Rasterise the mark into the PNGs a web app manifest needs.
- *
- *     node tools/icons.mjs
- *
- * Output is `app/public/icons/`. They are GENERATED — deleting them and
- * re-running is always correct, and `test/icons.test.ts` re-derives the geometry
- * from the same rule `app/brand/mark.svg` follows.
- *
- * ─── WHY A RASTERISER RATHER THAN A DEPENDENCY OR A HAND-PUSHED BITMAP ───────
- *
- * `spike/persist/make-icons.mjs` pushes pixels in a loop and draws a crude
- * ladder, which was right for a throwaway that only had to be 48px-legible. This
- * one has to be the ACTUAL mark: the round line caps are load-bearing (they are
- * why the wordmark is set at maximum softness) and a nearest-neighbour loop
- * cannot draw a round cap.
- *
- * It does not need a library either. Every element of this mark is a THICK LINE
- * SEGMENT WITH ROUND CAPS — which is exactly a capsule, and the signed distance
- * to a capsule is four lines of algebra. Anti-aliasing is then a smoothstep over
- * one pixel of that distance, which is what a real rasteriser does anyway.
- *
- * ─── THE BADGE IS THE ONE PLACE THE BRIEF ALLOWS A CONTAINER ────────────────
- *
- * "Do not add a container. No rounded-square badge behind the mark except in the
- * app-icon context, where the badge is `rx: 15` on a 64-unit square." This is
- * that context, and 15/64 is the radius ratio used below. Everywhere else in the
- * app the mark sits on the bare paper.
- */
 import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -35,47 +6,21 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "app", "public", "icons");
 
-// ─── the mark, in its 100-unit box. These numbers are DERIVED — see
-// `app/brand/mark.svg` and the rail equation in `app/climb.ts`. Do not tidy. ───
-
 const SLOPE = 0.20909;
 const railX = (y) => [16 + (87 - y) * SLOPE, 84 - (87 - y) * SLOPE];
 
-// Decision 57: the mark is `--ink` with its top rung in `--ruri`. The names
-// below are the roles the rest of this file speaks; the values are the new ones.
 const INDIGO = [0x3a, 0x3a, 0x3a];
 const VERMILION = [0x1f, 0x5f, 0xe0];
 const PAPER = [0xf2, 0xf2, 0xf2];
 
-/**
- * THE COLOURWAY IS NOT IN THE BRIEF. Checked 2026-09-12: §2 constrains the
- * app-icon badge to `rx: 15` on a 64-unit square and says nothing about what
- * colour either the badge or the mark is there. Both readings below obey every
- * rule it DOES state — round caps kept, only the top rung vermilion.
- *
- *   ink-on-paper   paper badge, indigo mark. The literal palette default.
- *   paper-on-ink   indigo badge, paper mark. More separation on a home screen,
- *                  where the icon competes with other icons rather than sitting
- *                  on the app's own ground.
- */
 const CARD = [0xfc, 0xfc, 0xfc];
 
 const WAYS = {
   "ink-on-paper": { ground: PAPER, ink: INDIGO },
   "paper-on-ink": { ground: INDIGO, ink: PAPER },
-  // Zach, 2026-09-12, looking at the installed icon: "the logo doesn't sit on
-  // paper, you think it's a little gray". Measured, and he is right about what
-  // he is seeing: --paper is luminance 0.82 against white's 1.00, so it is 18%
-  // darker than white. IN THE APP that reads as paper, because the whole screen
-  // is that colour and --card sits brighter on top of it — paper is paper by
-  // RELATIONSHIP. An icon has no relationship; it is one small tile alone on a
-  // wallpaper, and 18% below white with nothing to compare against is read as
-  // grey. --card is 0.96, only 4% below white, and it is also the honest token:
-  // the palette's RAISED surface, which is exactly what an app tile is.
   "ink-on-card": { ground: CARD, ink: INDIGO },
 };
 
-/** Two rails, three rungs, one loose rung. Each is a round-capped segment. */
 function markSegments(ink) {
   const segments = [
     { a: [16, 87], b: [27.5, 32], w: 10, colour: ink },
@@ -86,13 +31,10 @@ function markSegments(ink) {
     segments.push({ a: [l, y], b: [r, y], w: 9, colour: ink });
   }
   const [ll, lr] = railX(13);
-  // The one vermilion in the whole system: the step not yet taken. Unchanged in
-  // both colourways, because that rule IS in the brief.
   segments.push({ a: [ll, 13], b: [lr, 13], w: 9, colour: VERMILION });
   return segments;
 }
 
-/** The drawn extent of the mark in viewBox units, stroke width included. */
 function markBounds(segments) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const s of segments) {
@@ -105,7 +47,6 @@ function markBounds(segments) {
   return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
 }
 
-/** Signed distance from `p` to the capsule of radius w/2 around segment a-b. */
 function capsuleDistance(px, py, [ax, ay], [bx, by], w) {
   const dx = bx - ax, dy = by - ay;
   const len2 = dx * dx + dy * dy;
@@ -114,7 +55,6 @@ function capsuleDistance(px, py, [ax, ay], [bx, by], w) {
   return Math.hypot(px - cx, py - cy) - w / 2;
 }
 
-/** Signed distance to a rounded rectangle centred on the canvas. */
 function roundedRectDistance(px, py, size, radius) {
   const hx = size / 2 - radius, hy = size / 2 - radius;
   const qx = Math.abs(px - size / 2) - hx, qy = Math.abs(py - size / 2) - hy;
@@ -122,20 +62,10 @@ function roundedRectDistance(px, py, size, radius) {
   return outside + Math.min(Math.max(qx, qy), 0) - radius;
 }
 
-/** Coverage in [0,1] from a signed distance, anti-aliased over one pixel. */
 const coverage = (d) => Math.max(0, Math.min(1, 0.5 - d));
 
 const over = (src, dst, alpha) => src.map((c, i) => Math.round(c * alpha + dst[i] * (1 - alpha)));
 
-/**
- * Draw the mark on a badge.
- *
- * `inset` is the fraction of the canvas the mark's drawn extent may occupy.
- * MASKABLE ICONS GET A SMALLER ONE AND THE REASON IS GEOMETRY, NOT TASTE: the
- * platform may crop to a circle of 80% diameter, and the largest square that
- * fits inside that circle is 0.8/√2 ≈ 56.6% of the canvas. Anything larger can
- * have its corners cut, which on this mark means the rail feet.
- */
 function render(size, { inset, badge, way = "ink-on-paper" }) {
   const { ground, ink } = WAYS[way];
   const segments = markSegments(ink);
@@ -144,37 +74,25 @@ function render(size, { inset, badge, way = "ink-on-paper" }) {
   const offsetX = size / 2 - ((bounds.minX + bounds.maxX) / 2) * scale;
   const offsetY = size / 2 - ((bounds.minY + bounds.maxY) / 2) * scale;
 
-  // Map a canvas pixel back into viewBox units, so distances stay in those units
-  // and the stroke widths mean what the SVG says they mean.
   const toBox = (p, offset) => (p - offset) / scale;
   const radius = (15 / 64) * size;
 
   const raw = Buffer.alloc(size * (size * 4 + 1));
   for (let y = 0; y < size; y += 1) {
     const row = y * (size * 4 + 1);
-    raw[row] = 0; // PNG filter type 0
+    raw[row] = 0;
     for (let x = 0; x < size; x += 1) {
       const px = x + 0.5, py = y + 0.5;
 
-      // `badge` rounds the corners and lets the platform's own background show
-      // through outside them — that is the brief's rx:15-on-64 square, and it is
-      // the shape desktop Chrome and Windows actually display.
-      // A MASKABLE ICON MUST NOT DO THIS: the platform crops it to whatever
-      // shape it likes, and a transparent corner under that crop is a visible
-      // notch. Maskable is full bleed, alpha 255 everywhere.
       let alpha = badge ? coverage(roundedRectDistance(px, py, size, radius)) : 1;
       let colour = ground;
 
       const bx = toBox(px, offsetX), by = toBox(py, offsetY);
-      // Painted in order, so the rails sit under the rungs exactly as the SVG
-      // stacks them.
       for (const s of segments) {
         const d = capsuleDistance(bx, by, s.a, s.b, s.w) * scale;
         const a = coverage(d);
         if (a > 0) {
           colour = over(s.colour, colour, a);
-          // Ink is opaque even where it overhangs the badge's rounded corner,
-          // so a cap never gets sliced by the container it sits in.
           alpha = Math.max(alpha, a);
         }
       }
@@ -188,8 +106,6 @@ function render(size, { inset, badge, way = "ink-on-paper" }) {
   }
   return png(size, raw);
 }
-
-// ─── PNG container: signature, IHDR, one deflated IDAT, IEND ────────────────
 
 const table = Uint32Array.from({ length: 256 }, (_, n) => {
   let c = n;
@@ -213,8 +129,8 @@ function png(size, raw) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(size, 0);
   ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // colour type 6 = truecolour with alpha
+  ihdr[8] = 8;
+  ihdr[9] = 6;
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk("IHDR", ihdr),
@@ -226,20 +142,6 @@ function png(size, raw) {
 const DEST = process.argv.includes('--compare') ? join(ROOT, 'build', 'icon-compare') : OUT;
 mkdirSync(DEST, { recursive: true });
 
-/**
- * `node tools/icons.mjs --compare` renders BOTH colourways into
- * `build/icon-compare/` so they can be looked at side by side rather than
- * argued about. The brief does not settle this — see WAYS above.
- *
- * `--paper-on-ink` switches the shipped set to the inverted reading.
- */
-/**
- * SHIPPED: `ink-on-card`. Zach's call, 2026-09-12, after seeing the installed
- * icon on his home screen — `--paper` read as grey there, and the measurement
- * says why rather than it being a matter of taste: #ECEAE5 is luminance 0.82
- * against white's 1.00. The other two remain reachable by flag so the
- * comparison can be re-run rather than re-argued.
- */
 const WAY = process.argv.includes('--paper-on-ink')
   ? 'paper-on-ink'
   : process.argv.includes('--ink-on-paper')
@@ -248,20 +150,14 @@ const WAY = process.argv.includes('--paper-on-ink')
 
 const targets = process.argv.includes('--compare')
   ? [
-      // Full bleed, like the MASKABLE icon the launcher actually shows, so the
-      // comparison is of what lands on a home screen rather than of a badge.
       { file: 'A-paper-ECEAE5.png', size: 384, inset: 0.52, badge: false, way: 'ink-on-paper' },
       { file: 'B-card-FBFAF7.png', size: 384, inset: 0.52, badge: false, way: 'ink-on-card' },
       { file: 'C-indigo-1B3B6F.png', size: 384, inset: 0.52, badge: false, way: 'paper-on-ink' },
     ]
   : [
-      // `any`: the mark on its badge, generous.
       { file: 'icon-192.png', size: 192, inset: 0.68, badge: true, way: WAY },
       { file: 'icon-512.png', size: 512, inset: 0.68, badge: true, way: WAY },
-      // `maskable`: full bleed, mark inside the safe circle. See `render`.
       { file: 'icon-maskable-512.png', size: 512, inset: 0.52, badge: false, way: WAY },
-      // iOS never reads the manifest; it wants its own square and does not round
-      // the corners on every version, so this one carries the badge.
       { file: 'apple-touch-icon.png', size: 180, inset: 0.68, badge: true, way: WAY },
     ];
 

@@ -1,16 +1,3 @@
-/**
- * THE TYPE SCALE IS ENFORCED, NOT SUGGESTED.
- *
- * Zach, 2026-10-29, after another project counted its own drift: `app/style.css`
- * had 126 font-size declarations over 41 distinct values in px, rem and em
- * (0.72rem, 0.74rem, 0.76rem, 0.78rem, 12.5px, …), each picked in the moment,
- * while `design-system/tokens.json` already named the steps. They now all name a
- * `--fs-*` step, and this is what stops the 42nd value arriving.
- *
- * Two halves: no raw size outside the deliberate exceptions, and every step is a
- * size the design system itself names — so the stylesheet cannot quietly grow a
- * scale of its own beside the system's.
- */
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
@@ -20,9 +7,6 @@ const tokens = JSON.parse(readFileSync("design-system/tokens.json", "utf8")) as 
   type: { groups: { styles: { fontSize: string; usage?: string }[] }[] };
 };
 
-/**
- * Where a raw size is RIGHT, each with its reason. A new entry needs one too.
- */
 const EXEMPT: readonly (readonly [RegExp, string])[] = [
   [/\.hashigo-/, "card content: sized against the card's own text (decisions 35, 57)"],
   [/ruby/, "furigana: a fraction of the word it annotates, with a floor"],
@@ -30,7 +14,6 @@ const EXEMPT: readonly (readonly [RegExp, string])[] = [
   [/(^|[\s,])\.replay\b/, "the play disc's icon, sized to the 60px disc"],
 ];
 
-/** A size relative to its own line (inline code, a glyph) is not an interface step. */
 const RELATIVE = /^[\d.]+em$/;
 
 interface Decl {
@@ -74,7 +57,6 @@ describe("the type scale", () => {
   it("is made of sizes the design system names", () => {
     const styles = tokens.type.groups.flatMap((group) => group.styles);
     const named = new Set(styles.map((style) => style.fontSize));
-    // `label` names chips at 11px in its usage rather than as a style of its own.
     for (const style of styles) for (const px of style.usage?.match(/\d+px/g) ?? []) named.add(px);
     const steps = [...css.matchAll(/--fs-([a-z]+):\s*([^;]+);/g)].map((m) => [m[1], (m[2] as string).trim()]);
     expect(steps.length).toBeGreaterThan(5);

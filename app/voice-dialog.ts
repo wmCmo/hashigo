@@ -1,26 +1,3 @@
-/**
- * A VOICE FOR ONE CARD, OR ONE DECK — stage E of fields-as-modules, and the one
- * stage that is a new feature rather than a repair.
- *
- * The fifth pain point this project exists for, in `src/generate/voice.ts`'s own
- * words: Mochi sets the voice on the TEMPLATE, so four years of shadowing happened
- * against a voice nobody chose, because changing it meant changing it for every
- * card at once. The resolution for card → deck chain → workspace → field was
- * written and tested long ago and had no caller. This is the caller.
- *
- * ─── THE PRICE COMES FIRST, FOR THE SAME REASON AS THE FIELD EDITOR ─────────
- *
- * A clip is addressed by the voice that made it. Moving a card to a new voice
- * silences its clips in the old one until each is generated again — on purpose,
- * because a looser resolver would hide a half-finished voice change behind the
- * old audio (`src/cards/audio.ts`). So choosing a voice here prices it straight
- * away, measured by the worker through the inheritance views, and the button
- * says what it costs before it is pressed.
- *
- * An override reaches SPEECH IN ITS OWN LANGUAGE only. A Japanese voice set on a
- * deck that also holds New Vocab cards leaves their English clips alone.
- */
-
 import { GOOGLE_VOICES } from "../src/generate/voices.js";
 import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
 import { pushUndo, refreshAfterOp } from "./ops.js";
@@ -88,7 +65,7 @@ export function openVoiceDialog(target: VoiceTarget, targetId: string, name: str
     const voice = select.value === "" ? null : select.value;
     try {
       const reply = await ask<"voice">({ kind: "voice", target, targetId, voice, dry: true });
-      if (ticket !== asked) return; // a newer choice is already being priced
+      if (ticket !== asked) return;
       const unchanged = voice === reply.previous;
       price.textContent = unchanged ? "This is what it is set to now." : reply.lines.join("\n\n");
       go.disabled = unchanged;
@@ -126,15 +103,11 @@ export function openVoiceDialog(target: VoiceTarget, targetId: string, name: str
   root.append(backdrop, panel);
   pushLayer(bareLayer(root));
 
-  // Open on what the row carries now, so the first price is "unchanged" rather
-  // than a proposal he did not make.
   void (async () => {
     try {
       const reply = await ask<"voice">({ kind: "voice", target, targetId, voice: null, dry: true });
       const current = reply.previous;
       if (current !== null && ![...select.options].some((option) => option.value === current)) {
-        // An override written by something older than this catalogue. Shown as
-        // itself so opening the dialog never proposes a change.
         const option = document.createElement("option");
         option.value = current;
         option.textContent = `${current} — set before this list existed`;

@@ -19,13 +19,6 @@ import {
 } from "../src/import/reviews.js";
 import { loadExport, walkCards, walkDecks } from "../src/import/transit.js";
 
-/**
- * Stage 1 acceptance for the review-history import — the one part of the corpus
- * that cannot be regenerated. The synthetic blocks pin each rule the real export
- * taught us; the last block replays all three real exports and asserts the
- * oracle: 103,110 reviews, 59,514 forward, 43,596 reverse, 96.24% retention.
- */
-
 let db: Db;
 
 beforeEach(() => {
@@ -36,9 +29,6 @@ afterEach(() => {
   db.close();
 });
 
-// ─── fixtures ────────────────────────────────────────────────────────────────
-
-/** 2022-06-27T15:00:00Z — the oldest review in the corpus, i.e. JST midnight. */
 const T0 = Date.UTC(2022, 5, 27, 15, 0, 0);
 const DAY = 86_400_000;
 
@@ -72,8 +62,6 @@ function reviewsOf(cardId: string, kind: string): Record<string, unknown>[] {
     .all(cardId, kind) as Record<string, unknown>[];
 }
 
-// ─── array -> track mapping ──────────────────────────────────────────────────
-
 describe("Mochi's three arrays map onto three track kinds", () => {
   it("routes reviews / reverse-reviews / cloze-reviews to forward / reverse / cloze:0", () => {
     seedDeck("d");
@@ -98,8 +86,6 @@ describe("Mochi's three arrays map onto three track kinds", () => {
       { kind: "forward", reps: 1, dormant: 0 },
       { kind: "reverse", reps: 2, dormant: 0 },
     ]);
-    // Each track is independently scheduled: the reverse lapse belongs to the
-    // reverse track only.
     const byKind = db
       .prepare("SELECT kind, lapses FROM card_tracks WHERE card_id = 'c1' ORDER BY kind")
       .all() as { kind: string; lapses: number }[];
@@ -117,7 +103,6 @@ describe("Mochi's three arrays map onto three track kinds", () => {
       deckReverse: new Map([["d", "off"]]),
     });
     expect(result.tracks).toBe(1);
-    // SPEC derives `new?` from an empty track rather than storing it.
     expect(
       db
         .prepare(
@@ -130,13 +115,10 @@ describe("Mochi's three arrays map onto three track kinds", () => {
   });
 });
 
-// ─── the first review ────────────────────────────────────────────────────────
-
 describe("the first review of a track", () => {
   it("is imported even though it has no interval and no duration", () => {
     seedDeck("d");
     seedCard("c", "d");
-    // Verbatim shape of a real first record: due == date, no interval, no duration.
     importReviews(
       db,
       [
@@ -177,8 +159,6 @@ describe("the first review of a track", () => {
     );
     const reverse = plans.find((p) => p.kind === "reverse");
     expect(reverse?.reviews[0]?.nextScheduledDays).toBe(5);
-    // Still no PRECEDING interval, planned or measured: there is no earlier
-    // review to take one from or to measure a gap against.
     expect(reverse?.reviews[0]?.scheduledDays).toBeNull();
     expect(reverse?.reviews[0]?.elapsedDays).toBeNull();
     expect(reverse?.reviews[1]?.scheduledDays).toBe(5);
@@ -192,13 +172,10 @@ describe("the first review of a track", () => {
   });
 });
 
-// ─── interval direction ──────────────────────────────────────────────────────
-
 describe("interval direction", () => {
   it("keeps Mochi's `interval` as the NEXT interval and derives the preceding one", () => {
     seedDeck("d");
     seedCard("c", "d");
-    // Real chain from 基本情報 card zBUXn1Q: intervals 3, 12, 54, 191.
     importReviews(
       db,
       [
@@ -221,30 +198,21 @@ describe("interval direction", () => {
       planned: r["scheduled_days"],
       next: r["next_scheduled_days"],
     }));
-    // Row 1 is the case the two-column split exists for: Mochi recorded no
-    // interval on record 0, so `planned` is NULL — but the timestamps still say
-    // the two reviews were the same day, so `elapsed` is 0 and the row stays
-    // scorable. 8,934 rows in the real corpus are exactly this shape.
     expect(rows).toEqual([
       { elapsed: null, planned: null, next: null },
       { elapsed: 0, planned: null, next: 3 },
       { elapsed: 3, planned: 3, next: 12 },
       { elapsed: 12, planned: 12, next: 54 },
     ]);
-    // The track's own interval is the last one Mochi scheduled.
     expect(
       db.prepare("SELECT scheduled_days FROM card_tracks WHERE card_id = 'c'").pluck().get(),
     ).toBe(54);
-    // And the schema's own audit agrees with every number above, re-deriving
-    // both chains from the raw rows rather than trusting the stored copies.
     expect(db.prepare("SELECT * FROM review_interval_audit").all()).toEqual([]);
   });
 
   it("measures elapsed from the timestamps even when Mochi planned something else", () => {
     seedDeck("d");
     seedCard("c", "d");
-    // Planned 3 days; actually taken 10 days later. Both facts are kept, and
-    // they disagree — which is the case for 22,226 reviews in the corpus.
     importReviews(
       db,
       [
@@ -266,8 +234,6 @@ describe("interval direction", () => {
   });
 });
 
-// ─── timestamps ──────────────────────────────────────────────────────────────
-
 describe("review timestamps", () => {
   it("flags every imported review time-unknown and keeps the real local DATE", () => {
     seedDeck("d");
@@ -282,7 +248,6 @@ describe("review timestamps", () => {
     const row = db
       .prepare("SELECT reviewed_at, tz_offset_minutes, time_unknown FROM reviews")
       .get() as Record<string, unknown>;
-    // 15:00:00Z is midnight JST; the date is real, the clock time is not.
     expect(row).toEqual({
       reviewed_at: "2022-06-28T00:00:00+09:00",
       tz_offset_minutes: JST_OFFSET_MINUTES,
@@ -293,7 +258,6 @@ describe("review timestamps", () => {
       .prepare("SELECT local_date, local_hour, time_unknown FROM review_log")
       .all() as Record<string, unknown>[];
     expect(log).toEqual([{ local_date: "2022-06-28", local_hour: null, time_unknown: 1 }]);
-    // The whole point: no imported review can reach the by-hour analysis.
     expect(db.prepare("SELECT count(*) FROM retention_by_hour").pluck().get()).toBe(0);
   });
 
@@ -304,8 +268,6 @@ describe("review timestamps", () => {
     expect(formatInstant(T0 + 1234, JST_OFFSET_MINUTES)).toBe("2022-06-28T00:00:01.234+09:00");
   });
 });
-
-// ─── duration ────────────────────────────────────────────────────────────────
 
 describe("duration", () => {
   it("converts Mochi's seconds to milliseconds and keeps a present-but-null value null", () => {
@@ -319,7 +281,6 @@ describe("duration", () => {
           "deck-id": "d",
           reviews: [
             { date: T0, due: T0 + DAY, interval: 1, duration: 10, "remembered?": true },
-            // 17 real rows look exactly like this: the key is there, the value is null.
             { date: T0 + DAY, due: T0 + 2 * DAY, interval: 1, duration: null, "remembered?": true },
           ],
         },
@@ -335,8 +296,6 @@ describe("duration", () => {
   });
 });
 
-// ─── three-state reverse ─────────────────────────────────────────────────────
-
 describe("three-state reverse resolution", () => {
   it("maps review-reverse? true to on and absent-or-false to inherit, never to off", () => {
     expect(mochiCardReverse({ id: "a", "review-reverse?": true })).toBe("on");
@@ -345,7 +304,6 @@ describe("three-state reverse resolution", () => {
   });
 
   it("resolves inherit up the deck tree with the workspace default off at the root", () => {
-    // 日本語 shape: the root is silent, 単語 sets the flag, and a subdeck inherits.
     const decks: MochiDeck[] = [
       { id: "日本語" },
       { id: "単語", "parent-id": "日本語", "review-reverse?": true },
@@ -385,15 +343,7 @@ describe("three-state reverse resolution", () => {
   });
 });
 
-// ─── the invariant ───────────────────────────────────────────────────────────
-
 describe("CRITICAL INVARIANT: reverse history is never orphaned", () => {
-  /**
-   * The real failure, reproduced. Six cards in the corpus carry reverse history
-   * while neither they nor any ancestor deck sets review-reverse?, so they
-   * resolve to the workspace default 'off' — five in English/Vocabulary and one
-   * in 基本情報/第15章.
-   */
   function seedTheRealFailure(): MochiCard {
     seedDeck("English");
     seedDeck("Vocabulary", { parent: "English" });
@@ -427,18 +377,14 @@ describe("CRITICAL INVARIANT: reverse history is never orphaned", () => {
     seedDeck("root");
     seedDeck("with-flag", { parent: "root", reverse: "on" });
     const cards: MochiCard[] = [
-      // deck says on
       { id: "a", "deck-id": "with-flag", "reverse-reviews": [{ date: T0, "remembered?": true }] },
-      // card says on
       {
         id: "b",
         "deck-id": "root",
         "review-reverse?": true,
         "reverse-reviews": [{ date: T0, "remembered?": true }],
       },
-      // nothing says on — the invariant is the only thing that saves it
       { id: "c", "deck-id": "root", "reverse-reviews": [{ date: T0, "remembered?": true }] },
-      // no reverse history, and correctly stays off
       { id: "d", "deck-id": "root" },
     ];
     for (const card of cards) {
@@ -460,8 +406,6 @@ describe("CRITICAL INVARIANT: reverse history is never orphaned", () => {
       { card_id: "c", reverse: "on", reverse_tracks: 1 },
       { card_id: "d", reverse: "off", reverse_tracks: 0 },
     ]);
-    // Stated as the invariant itself, over the database: no reverse review row
-    // may exist on a card that does not resolve to 'on'.
     expect(
       db
         .prepare(
@@ -480,9 +424,6 @@ describe("CRITICAL INVARIANT: reverse history is never orphaned", () => {
     const result = importReviews(db, [card], { enforceReverseInvariant: false });
 
     expect(result.reverseForced).toEqual([]);
-    // The records are still written — the importer will not drop an array — but
-    // the track is dormant and the card resolves off, so nothing will schedule
-    // or show it. That is the orphaning SPEC warns about.
     expect(reviewsOf("irksome", "reverse")).toHaveLength(1);
     expect(tracksOf("irksome")).toEqual([
       { kind: "forward", reps: 1, dormant: 0 },
@@ -491,8 +432,6 @@ describe("CRITICAL INVARIANT: reverse history is never orphaned", () => {
     expect(() => assertNoOrphanedReverseHistory(db)).toThrow(/irksome \(1 reviews/);
   });
 });
-
-// ─── the {} trap ─────────────────────────────────────────────────────────────
 
 describe("leech flags are per track", () => {
   it("treats cloze/needs-rereview? = {} as not set, because Boolean({}) is true", () => {
@@ -507,10 +446,8 @@ describe("leech flags are per track", () => {
           reviews: [{ date: T0, "remembered?": true }],
           "reverse-reviews": [{ date: T0, "remembered?": true }],
           "cloze/reviews": [{ date: T0, "remembered?": true }],
-          // All 24 cards that carry this key carry the empty MAP, not `true`.
           "cloze/needs-rereview?": {},
           "reverse/needs-rereview?": true,
-          // 7 of the 8 cards carrying this key carry `false`.
           "needs-rereview?": false,
         },
       ],
@@ -528,8 +465,6 @@ describe("leech flags are per track", () => {
   });
 });
 
-// ─── idempotence ─────────────────────────────────────────────────────────────
-
 describe("re-importing", () => {
   it("is idempotent: import_key stops a second pass duplicating four years of history", () => {
     seedDeck("d");
@@ -546,7 +481,7 @@ describe("re-importing", () => {
     const second = importReviews(db, [card], { deckReverse: new Map([["d", "off"]]) });
 
     expect(first.reviews).toBe(2);
-    expect(second.reviews).toBe(0); // nothing new inserted
+    expect(second.reviews).toBe(0);
     expect(db.prepare("SELECT count(*) FROM reviews").pluck().get()).toBe(2);
     expect(db.prepare("SELECT count(*) FROM card_tracks").pluck().get()).toBe(1);
     expect(db.prepare("SELECT reps, lapses FROM card_tracks").get()).toEqual({
@@ -565,8 +500,6 @@ describe("re-importing", () => {
   });
 });
 
-// ─── the real corpus ─────────────────────────────────────────────────────────
-
 const EXPORT_DIRS = ["日本語", "English", "基本情報"].map((name) =>
   resolve(import.meta.dirname, "..", "exports", name),
 );
@@ -576,9 +509,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
   it(
     "imports exactly 103,110 reviews, 59,514 forward + 43,596 reverse, at 96.24% retention",
     () => {
-      // The shared reader owns Transit decoding and the deduped walk (its own
-      // traps, its own tests). This file owns only what happens to the reviews
-      // inside the cards it hands back.
       const decks: MochiDeck[] = [];
       const cards: MochiCard[] = [];
       for (const dir of EXPORT_DIRS) {
@@ -587,8 +517,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
         for (const { card } of walkCards(root)) cards.push(card as unknown as MochiCard);
       }
 
-      // Stand in for the deck and card importers (other agents' files): only the
-      // columns this module reads, so a bug there cannot flatter these numbers.
       const insertDeck = db.prepare(
         "INSERT INTO decks (id, parent_id, name, reverse) VALUES (?, ?, ?, ?)",
       );
@@ -613,7 +541,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
 
       const result = importReviews(db, cards);
 
-      // ── THE PASS CONDITION ──────────────────────────────────────────────
       expect(result.reviews).toBe(103_110);
       expect(result.reviewsByKind["forward"]).toBe(59_514);
       expect(result.reviewsByKind["reverse"]).toBe(43_596);
@@ -622,7 +549,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
       expect(result.lapses).toBe(3_882);
       expect(((result.retention ?? 0) * 100).toFixed(2)).toBe("96.24");
 
-      // The same figures read back out of SQL, through views.sql.
       const totals = db
         .prepare(
           `SELECT reviews, passed, lapses, round(retention * 100, 2) AS retention_pct,
@@ -639,11 +565,9 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
         hours: 641.2,
         study_days: 1_333,
         first_review_date: "2022-06-28",
-        // LOCAL date: every review is stamped 15:00:00Z, midnight at +09:00.
         last_review_date: "2026-09-06",
         reviews_time_unknown: 103_110,
       });
-      // Every single review is date-only, so the by-hour analysis must be empty.
       expect(db.prepare("SELECT count(*) FROM retention_by_hour").pluck().get()).toBe(0);
 
       const byKind = db
@@ -657,7 +581,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
         { track_kind: "reverse", reviews: 43_596 },
       ]);
 
-      // ── the invariant, over the real data ───────────────────────────────
       expect(() => assertNoOrphanedReverseHistory(db)).not.toThrow();
       expect([...result.reverseForced].sort()).toEqual(
         ["6bOaHfsA", "9IsiWF95", "J3R240Q0", "izVJ06yd", "oYjmEPwB", "rhX2sKTs"].sort(),
@@ -677,36 +600,20 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
           .get(),
       ).toBe(0);
 
-      // Tracks: one forward per card, plus one reverse per reverse-enabled card.
       expect(result.tracksByKind).toEqual({ forward: 7_716, reverse: 5_677 });
       expect(result.tracks).toBe(13_393);
 
-      // THE TWO INTERVALS, over the real corpus.
-      //
-      // PLANNED is missing on a track's first review and wherever the
-      // predecessor carried no Mochi `interval`. Never guessed.
       expect(result.reviewsWithoutScheduled).toBe(18_073);
-      // MEASURED is missing on exactly the first review of each track that has
-      // any reviews at all — there is no other way to lack a predecessor. 13,393
-      // tracks exist; the ones with no reviews contribute no rows.
       const tracksWithReviews = db
         .prepare("SELECT count(*) FROM card_tracks WHERE reps > 0")
         .pluck()
         .get() as number;
       expect(result.reviewsWithoutElapsed).toBe(tracksWithReviews);
-      // And the difference is the point of the split: 8,988 rows that have no
-      // planned interval but DO have a measured one, so they are scorable and
-      // bucketable where before they were NULL and silently dropped.
       expect(result.reviewsElapsedOnly).toBe(18_073 - tracksWithReviews);
       expect(result.reviewsElapsedOnly).toBe(8_988);
       expect(result.reviewsWithoutDuration).toBe(103_110 - 93_124);
 
-      // The stored columns agree with the same chains re-derived from the raw
-      // rows by SQL. This is what makes the stored copies checkable.
       expect(db.prepare("SELECT * FROM review_interval_audit").all()).toEqual([]);
-      // The `> 365d` bucket is the direct evidence for lengthening intervals
-      // past a year: empty under PLANNED (Mochi capped at 365 until 2026-02-21)
-      // and real under MEASURED. Both are now on record.
       const past365 = (view: string): number =>
         db
           .prepare(`SELECT coalesce(sum(reviews), 0) FROM ${view} WHERE interval_bucket = 8`)

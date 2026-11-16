@@ -1,19 +1,3 @@
-/**
- * Regenerate `manifest.json` — the 11 real template rows, lifted verbatim out of
- * the three exports.
- *
- *   npx vite-node test/fixtures/templates/extract.ts
- *
- * `exports/` is 657 MB and gitignored, so the manifest is what lets
- * `test/template.test.ts` golden-test the real templates on a clean clone. It is
- * generated, never hand-edited: the corpus check in that test re-reads the
- * exports and fails if the two have drifted.
- *
- * ELEVEN ROWS, TEN TEMPLATES. `oiaISYb2` (単語) is defined in both 日本語 and
- * 基本情報, byte-identically, so both rows are kept — SPEC's surface-2 counts
- * (19 `---`, 73 `<<Field>>`, 8 clozes) are totals over all eleven.
- */
-
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -64,8 +48,6 @@ export function buildManifest(): TemplateManifest {
         pos: asText(template["pos"]),
         sides: sideCount(content),
         content,
-        // Mochi keys `fields` by id; `pos` is the authored order and is what the
-        // editor shows, so sort by it to keep the fixture deterministic.
         fields: Object.entries(asRecord(template["fields"]))
           .flatMap(([key, raw]) => (isRecord(raw) ? [[key, raw] as const] : []))
           .map(([key, raw]) => ({
@@ -101,8 +83,5 @@ function main(): void {
   );
 }
 
-// Only when run as the entry point. `test/template.test.ts` imports
-// `buildManifest` to check the committed manifest has not drifted, and a module
-// that rewrote the fixture on import would make that check vacuous.
 const entry = process.argv[1];
 if (entry !== undefined && pathToFileURL(entry).href === import.meta.url) main();

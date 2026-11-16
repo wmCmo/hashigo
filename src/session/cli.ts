@@ -1,32 +1,9 @@
-/**
- * `npx vite-node src/session/cli.ts -- plan --db build/hashigo.db`
- *
- *   plan --db D [--new N] [--due N] [--order new-first|due-first|spread]
- *               [--now INSTANT] [--deck ID] [--limit N]
- *
- * READ-ONLY, and deliberately so: there is no `grade` command. Grading from a
- * terminal would write real review rows into his real database with no card in
- * front of him, which is the one thing this CLI must not make easy. `buildSession`
- * itself only reads; `answer()` is the writer and is not reachable from here.
- *
- * WHY A CLI FOR A MODULE WHOSE UI DOES NOT EXIST YET. Same reason
- * `src/scheduler/cli.ts` has one: the review screen is stage 7 and it is not
- * built, so without this the only way to see what tomorrow's session actually
- * looks like — the ORDER, not just the counts — is to read a test. This calls the
- * same `buildSession` the screen will call, not a parallel query written for the
- * terminal.
- */
-
 import { openDatabase } from "../db/index.js";
 import { nowInHostOffset } from "../scheduler/index.js";
 import { DEFAULT_NEW_LIMIT, buildSession, type InterleavePolicy } from "./index.js";
 import { arg } from "../cli/args.js";
 
-// Japanese card names go to a cp932 console otherwise. Every script here sets its
-// own encoding rather than asking for an env prefix: his shell is PowerShell 5.1,
-// where `VAR=value cmd` is a parser error. See CLAUDE.md "Environment".
 process.stdout.setDefaultEncoding("utf8");
-
 
 const ORDERS = new Set<string>(["new-first", "due-first", "spread"]);
 
@@ -64,10 +41,6 @@ function main(): void {
         `  due ${p.dueCount}  new ${p.newCount}  planned ${p.planned}\n\n`,
     );
 
-    // The Japanese card name goes LAST and is never padded. `padEnd` counts
-    // UTF-16 units, so a CJK name throws every column after it out by its own
-    // width — putting it at the end of the line sidesteps the whole problem
-    // without reimplementing an East Asian width table here.
     process.stdout.write("  #     track  origin  kind      card\n");
     for (const [i, item] of plan.slice(0, Math.max(0, limit)).entries()) {
       process.stdout.write(

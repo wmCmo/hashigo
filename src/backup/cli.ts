@@ -1,20 +1,3 @@
-/**
- * `npx vite-node src/backup/cli.ts -- <command>`
- *
- *   export --db D --out F.json          write the archive (READ-ONLY on D)
- *   apply  --db D --in  F.json [--dry]  restore it (WRITES to D; idempotent)
- *
- * Decision 17's backup, from a terminal. The browser gets the same two functions
- * behind a one-tap button; this is how it gets tested and how a backup gets taken
- * before a rebuild.
- *
- * `apply` is the only WRITING command in this file and it runs in one transaction,
- * so a foreign-key surprise leaves the database as it was rather than half
- * restored. `--dry` runs the whole thing and rolls back, which is the honest way to
- * find out what an archive would do: the counts come from the real inserts, not
- * from a simulation of them.
- */
-
 import { readFileSync, writeFileSync } from "node:fs";
 
 import { openDatabase } from "../db/index.js";
@@ -22,11 +5,7 @@ import { applyLocalArchive, exportLocalArchive, verifyLocalArchive } from "./arc
 import type { LocalArchive } from "./archive.js";
 import { arg } from "../cli/args.js";
 
-// Japanese field names and card ids go to a cp932 console otherwise. Every script
-// here sets its own encoding rather than asking for an env prefix — PowerShell 5.1
-// treats `VAR=value cmd` as a parser error. See CLAUDE.md "Environment".
 process.stdout.setDefaultEncoding("utf8");
-
 
 function doExport(): void {
   const db = openDatabase(arg("db"), { readOnly: true, applySchema: false });
@@ -35,9 +14,6 @@ function doExport(): void {
     const out = arg("out");
     const json = `${JSON.stringify(archive, null, 1)}\n`;
     writeFileSync(out, json, "utf-8");
-    // `json.length` is UTF-16 CODE UNITS, not bytes, and this archive is mostly
-    // Japanese — it under-reported by 15,402 on the real corpus (316,860 against
-    // 332,262). Name the basis or the number is not a fact (decision 6).
     const bytes = Buffer.byteLength(json, "utf8");
     process.stdout.write(
       `wrote ${out} — ${bytes} bytes on disk (UTF-8), schema v${archive.schemaVersion}\n` +
@@ -81,10 +57,6 @@ function doApply(): void {
         );
       }
     }
-    // One transaction: a foreign-key surprise must not leave a half restore.
-    // `report` is captured OUTSIDE it so `--dry` can still print what the real
-    // inserts did before the rollback — a dry run that tells you nothing is not a
-    // dry run.
     let report: ReturnType<typeof applyLocalArchive> | null = null;
     try {
       db.transaction(() => {

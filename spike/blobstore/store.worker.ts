@@ -1,32 +1,3 @@
-/**
- * THROWAWAY (spike harness) — but every line of production code it exercises is
- * imported from `src/`, unmodified. That is the point: this file proves that
- * `SqliteBlobStore` is one implementation and not two, by running the very class
- * `test/blobs.test.ts` runs, over `opfs-sahpool` instead of better-sqlite3.
- *
- * WHAT IT SETTLES
- *
- *   1. The full corpus — 10,816 payloads, 654,917,364 bytes of real mp3 — written
- *      into a BLOB table in OPFS, with write throughput measured against
- *      notes/archive/browser-feasibility.md §4's 4.9 s. READ THE README BEFORE QUOTING A
- *      TIME FROM THIS PAGE: the counts repeat exactly on every machine, the
- *      timings spread 3×–8× (insert 2.5–24.8 s, reclaim 6.6–53.9 s across three
- *      environments), and the first version of that README quoted its own fastest
- *      run as the answer. This page reports what one run cost; only the range is
- *      a fact.
- *   2. Random-read latency, against §4's 0.54 ms for BLOB rows and 10.60 ms for
- *      individual OPFS files.
- *   3. Every payload rehashed IN THE BROWSER, by `src/blobs/sha256.ts`, because
- *      `crypto.subtle` is async and `BlobStore.verify` is not.
- *   4. `auditBlobStore` across the two OPFS databases: the real card database and
- *      the payload store, 10,816 present, 0 missing, 0 orphaned.
- *   5. The three things §4 listed as untested at ~700 MB under sahpool:
- *      incremental growth, free-page reuse, and VACUUM.
- *
- * Everything runs in a dedicated Worker because `opfs-sahpool` is built on
- * `createSyncAccessHandle`, which the platform allows nowhere else.
- */
-
 import { auditBlobStore, findLocations } from "../../src/blobs/db.js";
 import { sha256Hex } from "../../src/blobs/sha256.js";
 import { BATCH_FLUSH_BYTES, SqliteBlobStore, STORE_PAGE_SIZE } from "../../src/blobs/sqlite.js";
@@ -78,7 +49,6 @@ async function run(
   request: SpikeRequest,
   summary: Record<string, string | number>,
 ): Promise<void> {
-  // -- 1. environment -------------------------------------------------------
   log("1. environment", "step");
   log(`  inDedicatedWorker()      ${inDedicatedWorker()}`);
   log(`  isSecureContext          ${self.isSecureContext}`);
@@ -88,7 +58,6 @@ async function run(
   const api = await sqlite3();
   log(`  sqlite ${api.version.libVersion}`);
 
-  // -- 2. the pool ----------------------------------------------------------
   log("2. opfs-sahpool", "step");
   const pool = await installPool();
   log(`  capacity ${pool.getCapacity()}, files ${pool.getFileCount()}`);
@@ -100,11 +69,9 @@ async function run(
     log(`  --fresh: unlinked ${STORE_FILE} in ${(performance.now() - started).toFixed(1)}ms`, "info");
   }
 
-  // -- 3. the store ---------------------------------------------------------
   log("3. the blob store, in OPFS", "step");
   const existed = pool.getFileNames().includes(STORE_FILE);
   const storeDb = await openDatabaseBrowser({ filename: STORE_FILE, applySchema: false });
-  // THE PRODUCTION CLASS, over a wasm handle. Nothing here is a browser variant.
   const store = new SqliteBlobStore(storeDb);
   log(`  ${existed ? "reattached" : "created"} ${store.describe}`);
   let stats = store.stats();
@@ -120,7 +87,6 @@ async function run(
     );
   }
 
-  // -- 4. write the corpus --------------------------------------------------
   log("4. the corpus, into the store", "step");
   if (stats.payloads > 0 && !request.fresh) {
     log(`  ${fmt(stats.payloads)} payloads are already here — NOT rewriting (the reload path)`);
@@ -153,8 +119,6 @@ async function run(
     const result = await readPack(request.packUrl, (hash, bytes) => {
       pending.push({ hash, bytes });
       pendingBytes += bytes.length;
-      // Same threshold the store commits at, so memory stays bounded at one
-      // chunk rather than at the corpus. A phone cannot hold 625 MiB of mp3.
       if (pendingBytes >= BATCH_FLUSH_BYTES) flush();
     });
     flush();
@@ -191,7 +155,6 @@ async function run(
   summary["payload bytes"] = stats.bytes;
   summary["file bytes"] = stats.fileBytes;
 
-  // -- 5. random reads ------------------------------------------------------
   log("5. random reads", "step");
   const hashes = [...store.list()];
   log(`  store.list() -> ${fmt(hashes.length)} addresses`);
@@ -216,7 +179,6 @@ async function run(
   );
   summary["random read ms"] = Number((readMs / picks.length).toFixed(3));
 
-  // -- 6. rehash everything, in the browser --------------------------------
   log("6. verify: rehash every payload with src/blobs/sha256.ts", "step");
   const verifyStarted = performance.now();
   let bad = 0;
@@ -241,7 +203,6 @@ async function run(
   summary["verified"] = verified;
   summary["verify mismatches"] = bad;
 
-  // -- 7. no location in the store's own file ------------------------------
   log("7. the store file holds no location", "step");
   const sweep = findLocations(storeDb, { exclude: ["blob_payloads.bytes"] });
   log(`  swept ${sweep.columns} columns across ${sweep.tables} tables`);
@@ -256,7 +217,6 @@ async function run(
   }
   summary["store offenders"] = sweep.offenders.length;
 
-  // -- 8. the card database, and the audit across both ---------------------
   log("8. the real card database, and auditBlobStore across the two files", "step");
   const hadCards = (await databaseFilesInOpfs()).includes(CARDS_FILE);
   if (!hadCards) {
@@ -309,10 +269,6 @@ async function run(
   summary["audit missing"] = audit.missing;
   summary["audit orphaned"] = audit.orphaned;
 
-  // -- 9. growth, free-page reuse, incremental_vacuum ----------------------
-  // §4 flagged all three as untested at this size under sahpool. Done with
-  // SYNTHETIC payloads so the real corpus is never touched and the audit above
-  // stays true across a reload.
   log("9. incremental growth, free-page reuse and reclaim at ~660 MB", "step");
   const synthetic = (seed: number): Uint8Array => {
     const bytes = new Uint8Array(60_000);
@@ -386,7 +342,6 @@ async function run(
   summary["pages after reclaim"] = afterReclaim.pageCount;
   summary["integrity"] = problems.length === 0 ? "ok" : problems.join("; ");
 
-  // -- 10. VACUUM, the last untested thing ---------------------------------
   if (request.vacuum) {
     log("10. VACUUM on the ~660 MB OPFS file — the untested one", "step");
     log(
@@ -415,7 +370,6 @@ async function run(
     log("10. VACUUM not requested (tick the box to run it)", "step");
   }
 
-  // -- 11. pool and quota ---------------------------------------------------
   log("11. pool and quota", "step");
   log(`  capacity ${pool.getCapacity()}, files ${pool.getFileCount()}`);
   log(`  files: ${JSON.stringify(pool.getFileNames())}`);

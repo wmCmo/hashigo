@@ -1,14 +1,9 @@
-/**
- * Ctrl+L in the card editor toggles a cloze (`app/cloze-toggle.ts`).
- */
 import { describe, expect, it } from "vitest";
 
 import { toggleCloze, type ClozeEdit } from "../app/cloze-toggle.js";
 import { parseInline } from "../src/template/parse.js";
 
-/** Apply an edit and mark the resulting selection with [ ]. */
 function run(source: string): string {
-  // `|` marks a caret, `[` … `]` a selection, in the INPUT.
   const caret = source.indexOf("|");
   const text = source.replace(/[|[\]]/g, "");
   const start = caret >= 0 ? caret : source.indexOf("[");

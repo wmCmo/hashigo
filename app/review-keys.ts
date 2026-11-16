@@ -1,110 +1,16 @@
-/**
- * WHICH KEY DOES WHAT, GIVEN WHAT IS ON SCREEN — as one pure function.
- *
- * ─── THIS FILE EXISTS BECAUSE THIS RULE HAS BEEN WRONG TWICE, SILENTLY ──────
- *
- * The keydown handler in `main.ts` is where the app's most expensive bugs have
- * lived, and both were the same shape: a key that was correct in one state doing
- * something destructive in another, with nothing on screen to say so.
- *
- * **1. Typing in the gallery filter box graded cards.** Every single-key review
- * shortcut fired while he typed a deck name into a search box, because
- * `reviewView.hidden` looks like it covers the gallery and does not — the gallery
- * is shown by `data-view` on the body and hidden in CSS, so `hidden` is false the
- * whole time it is up. Typing "japanese" archived the review card behind it and
- * graded it. A grade writes a `reviews` row and advances the FSRS schedule, so this
- * corrupted the study history the app exists to protect, from a search box.
- *
- * **2. Grading while looking ahead grades a different card.** `answer()` acts on
- * the SESSION's current item, not on what is displayed, so `j` pressed during his
- * #9's look-ahead moves a due date on a card he is not reading.
- *
- * Neither is visible when it happens. Both are one boolean in a long `if` chain.
- * So the chain is a table now, in a module with no imports, and `test/app-keys.test.ts`
- * enumerates it — including the two states above, by name.
- *
- * ─── WHY IT RETURNS AN ACTION INSTEAD OF DOING ONE ──────────────────────────
- *
- * The same reason `app/keys.ts` and `app/review-boundary.ts` are shaped this way:
- * the root `tsconfig.json` excludes `app/`, so a module with no imports is reachable
- * from `test/` and one that touches the DOM is not. `main.ts` maps the action to a
- * call; everything decidable is decided here.
- */
-
-// `survivesTyping` lives in `./keys.ts` and is IMPORTED rather than repeated. It is
-// one line, which is exactly why a second copy would never be noticed drifting —
-// and `test/app-logic.test.ts` already pins that one. `./keys.ts` has no imports of
-// its own, so this module stays reachable from `test/`.
 import { survivesTyping } from "./keys.js";
 
-/** Everything about the screen that changes what a key means. */
 export interface KeyState {
-  /** Focus is in a text field. `app/keys.ts` decides this from the event target. */
   readonly typing: boolean;
-  /** A modal layer is open — a preview, the editor, a confirm, the palette. */
   readonly layerOpen: boolean;
-  /**
-   * The top layer accepts the single-key card operations. TRUE for a preview only.
-   *
-   * Deliberately not derived from "the layer has a card id": the EDITOR carries one
-   * too and every one of its fields is an input, so keying off the id alone would
-   * archive the card he is editing the moment focus sat on the panel.
-   */
   readonly layerActs: boolean;
   readonly sidebarOpen: boolean;
-  /** The review view is not on screen at all — boot, or the done screen. */
   readonly reviewHidden: boolean;
-  /**
-   * The answer is on screen, so grading is meaningful.
-   *
-   * SINCE ZACH'S STEPPED REVEAL (2026-09-12) THIS IS NOT THE OPPOSITE OF
-   * `moreToReveal`, and conflating them re-creates a bug he has already hit once.
-   * A reveal is a walk now — one cloze, then the next, then the next side — and
-   * this turns true on the FIRST step, so `f` works from there. If this were "the
-   * walk is finished", `forgot` would sit on screen looking pressable and do
-   * nothing, which is exactly what *"it won't let me click remember"* was.
-   *
-   * **AMENDED 2026-09-13 for `j` ALONE — decision 42.** `remembered` now waits
-   * for the end of the walk, on his argument that it is not answerable before
-   * then. That is NOT the old bug returning: the old bug was a live-looking
-   * button that did nothing, and this takes the button OFF SCREEN and says why
-   * when the key is pressed. `forgot` is unchanged and still fires from step one.
-   */
   readonly revealed: boolean;
-  /**
-   * Steps remain in the walk, so `space` has somewhere to go — and, since
-   * decision 42, so `j` does not yet grade. See the `j` branch below.
-   */
   readonly moreToReveal: boolean;
-  /**
-   * The card ASKED something on entry — decision 29's mode 2, or a widget card.
-   *
-   * It decides whether `r` works before the reveal, and the distinction is the
-   * decision rather than a convenience:
-   *
-   *   * asked  — the clip is the QUESTION. Replaying it is repeating the question,
-   *              so it must work immediately. Zach hit this on a 数字 card:
-   *              *"now i can't replay it even if i want to, i would have to click
-   *              review first"* — and revealing to hear the question again hands
-   *              him the answer, which deletes the exercise.
-   *   * not    — the clip is the ANSWER (the 692 `Reading = true` cards). Replay
-   *              stays behind the reveal. That is decision 29 working, not a bug:
-   *              on those cards the silence IS the exercise.
-   */
   readonly asked: boolean;
-  /** His #9: the screen is showing a neighbour, and the session cursor has not moved. */
   readonly peeking: boolean;
-  /** There is a card to act on. */
   readonly hasCard: boolean;
-  /**
-   * A recording of his own voice exists for this card, so there is something for
-   * `shift+m` to play.
-   *
-   * A flag rather than a no-op in `main.ts` for the reason the rest of this table
-   * exists: a key whose meaning depends on state should say so HERE, where it can
-   * be enumerated, instead of dying quietly at the call site. The take is
-   * ephemeral (see `app/shadow-controls.ts`), so this is false on every fresh card.
-   */
   readonly hasTake: boolean;
 }
 
@@ -133,11 +39,8 @@ export type ReviewAction =
   | "cycleSpeed"
   | "toggleRecord"
   | "playTake"
-  /** A grade was pressed while looking ahead. Say so; write nothing. */
   | "gradeBlocked"
-  /** `j` before the walk finished. Say what is missing; write nothing. */
   | "gradeTooEarly"
-  /** Nothing, and the browser keeps the keystroke. */
   | null;
 
 export interface KeyEventShape {
@@ -153,22 +56,12 @@ export function reviewAction(event: KeyEventShape, state: KeyState): ReviewActio
   const key = event.key.toLowerCase();
   const mod = event.ctrlKey === true || event.metaKey === true;
 
-  // ── global, and deliberately above the typing guard ──
-  // Ctrl+K over a filter box is a reasonable thing to press. Ctrl+Z is not, while
-  // he is typing — the browser's own undo is what he means there.
   if (mod && key === "k") return "palette";
   if (mod && key === "z") return state.typing ? null : "undo";
   if (mod) return null;
 
-  // ── THE GUARD THAT WAS MISSING ──
-  // Every branch below is a single-key shortcut. Without this they all fired while
-  // he typed in the gallery's filter box: `a` archived, `d` opened delete, `j`
-  // graded remembered, `f` graded forgot, space revealed — which is what made j
-  // and f live. Typing "japanese" was an archive and a grade.
   if (state.typing && !survivesTyping(event.key)) return null;
 
-  // ── a layer owns the keyboard ──
-  // Without this, space would grade the card UNDERNEATH the preview he is reading.
   if (state.layerOpen) {
     if (event.key === "Escape") return "closeLayer";
     if (state.typing) return null;
@@ -180,7 +73,6 @@ export function reviewAction(event: KeyEventShape, state: KeyState): ReviewActio
     return null;
   }
 
-  // ── the sidebar is navigation, and answers only when nothing is over it ──
   if (state.sidebarOpen) {
     if (event.key === "Escape") return "closeSidebar";
     if (state.typing) return null;
@@ -190,11 +82,8 @@ export function reviewAction(event: KeyEventShape, state: KeyState): ReviewActio
   if (state.reviewHidden) return null;
 
   if (key === "e") return "edit";
-  // `moreToReveal`, NOT `!revealed` — see `KeyState.revealed`. Space walks the
-  // reveal; the two questions stopped being the same one on 2026-09-12.
   if (key === " " || key === "enter") return state.moreToReveal ? "reveal" : null;
 
-  // ── operations, which act WITHOUT grading ──
   if (!state.hasCard) return null;
   if (key === "a") return "archive";
   if (key === "p" && event.shiftKey === true) return "pin";
@@ -203,47 +92,16 @@ export function reviewAction(event: KeyEventShape, state: KeyState): ReviewActio
   if (event.key === "ArrowLeft") return "previous";
   if (event.key === "Escape") return state.peeking ? "backToCard" : null;
 
-  // REPLAY IS ABOVE THE REVEAL GATE WHEN THE CLIP IS THE QUESTION. See
-  // `KeyState.asked`: on a mode-2 card, needing to reveal in order to hear the
-  // question again hands over the answer.
   if (key === "r" && state.asked) return "replay";
 
-  // ── the shadowing controls, and they are ALL above the reveal gate ──
-  //
-  // Not a convenience. The drill is: look at the kanji, recall the contour, SAY
-  // IT ALOUD, and only then reveal and compare. Every one of these belongs to the
-  // half that happens BEFORE the reveal — he sets the rate and arms the recorder
-  // while the answer is still hidden, and a control he can only reach afterwards
-  // is a control for an exercise he has already finished.
-  //
-  // None of them unmask anything, so decision 29 is untouched: `l` and `s` change
-  // settings and `m` opens a microphone. The one that sounds a clip is `replay`,
-  // above, which has its own gate.
   if (key === "l") return "toggleLoop";
   if (key === "s") return "cycleSpeed";
-  // Shift first: `event.key` for shift+m is "M", which lowercases to the same "m".
   if (key === "m" && event.shiftKey === true) return state.hasTake ? "playTake" : null;
   if (key === "m") return "toggleRecord";
 
   if (!state.revealed) return null;
 
-  // ── grading ──
-  // GRADING IS THE SESSION'S CURSOR, NOT THE SCREEN'S. `answer()` grades whatever
-  // the session is on, so a keystroke here while looking ahead moves a due date on
-  // a card he is not reading. Blocked and SAID, not silently ignored: the two keys
-  // he presses a hundred times a day doing nothing without explanation reads as the
-  // app being broken.
   if (key === "f") return state.peeking ? "gradeBlocked" : "gradeForgot";
-  // `j` WAITS FOR THE WALK; `f` DOES NOT. Zach, 2026-09-13: *"you don't know if
-  // you actually remember the card until you're at the last slide"*. One failure
-  // settles `forgot`, so it stays live from the first step; `remembered` is a
-  // conjunction over every side and is not answerable until the last one is up,
-  // which is why the button is off screen there (`style.css`).
-  //
-  // It is SAID rather than dropped, for this file's standing reason: `j` is a key
-  // he presses a hundred times a day, and one that quietly does nothing reads as
-  // the app being broken — which is how *"it won't let me click remember"* felt.
-  // Here there is a real answer to give him, and it is one press away.
   if (key === "j") {
     if (state.peeking) return "gradeBlocked";
     return state.moreToReveal ? "gradeTooEarly" : "gradeRemembered";
@@ -252,7 +110,6 @@ export function reviewAction(event: KeyEventShape, state: KeyState): ReviewActio
   return null;
 }
 
-/** The state a freshly-opened review screen is in. Handy for tests and defaults. */
 export const REVIEWING: KeyState = {
   typing: false,
   layerOpen: false,

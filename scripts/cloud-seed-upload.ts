@@ -1,36 +1,9 @@
-/**
- * UPLOAD THE SEED TO R2, so Cloudflare can serve it (`cloud/app/src/app.ts`).
- *
- *     npx vite-node scripts/cloud-seed-upload.ts
- *
- * The seed is what `npm run app:bootstrap` writes to `build/app/`: the card
- * database, the generations, the local fields, the audio store and the
- * freshness manifest. The laptop served those files from disk; the cloud serves
- * them from the `hashigo-seed` bucket under the same names, so the app fetches
- * exactly what it always did.
- *
- * ─── THE 300 MB CEILING ─────────────────────────────────────────────────────
- *
- * `wrangler r2 object put` refuses a file over 300 MB, and the audio store is
- * 674 MB. It goes up as R2 MULTIPART through the app Worker (`putLarge`), which
- * R2 joins into one object the Worker can serve natively.
- *
- * ─── THE MANIFEST GOES LAST, ON PURPOSE ─────────────────────────────────────
- *
- * `hashigo-app.json` is what tells a device a newer seed exists. Uploaded first,
- * a device could see the new manifest while the databases are still the old ones
- * — or half-new — and import a mismatched pair. So every database goes up
- * before it, and a failed upload stops the script before the manifest moves.
- *
- * Re-run it after every `app-bootstrap`.
- */
 import { spawnSync } from "node:child_process";
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const BUCKET = "hashigo-seed";
 const SEED_DIR = resolve("build/app");
-/** R2 multipart parts: equal size, ≥ 5 MiB, and under the 100 MB request cap. */
 const PART_BYTES = 64 * 1024 * 1024;
 const WHOLE_LIMIT = 290 * 1024 * 1024;
 const DATABASES = ["hashigo-app.db", "hashigo-app-gen.db", "hashigo-app-fields.db", "hashigo-app-blobs.db"];
@@ -48,7 +21,6 @@ function put(key: string, file: string): void {
   console.log(`  uploaded ${key} (${(statSync(file).size / 1024 / 1024).toFixed(1)} MiB)`);
 }
 
-/** The app Worker, whose `/admin/multipart/*` routes join a big file inside R2. */
 const APP = "https://hashigo.titan-zp4.workers.dev";
 
 if (existsSync(".env")) process.loadEnvFile(".env");
@@ -64,12 +36,6 @@ async function admin(method: string, path: string, body?: BodyInit): Promise<unk
   return response.json();
 }
 
-/**
- * A file over wrangler's 300 MB ceiling, sent as R2 multipart through the app
- * Worker. R2 joins the parts into ONE object, which the Worker then serves
- * natively — the earlier design stitched parts inside the Worker and the free
- * plan's CPU budget cut it off at 108 MB of 674.
- */
 async function putLarge(key: string, file: string): Promise<void> {
   if (token === "") throw new Error("VITE_MAILBOX_TOKEN must be in .env — the multipart route needs it");
   const size = statSync(file).size;
@@ -112,6 +78,5 @@ for (const name of DATABASES) {
   if (statSync(file).size <= WHOLE_LIMIT) put(name, file);
   else await putLarge(name, file);
 }
-// LAST — see the header.
 put(MANIFEST, join(SEED_DIR, MANIFEST));
 console.log("seed uploaded");

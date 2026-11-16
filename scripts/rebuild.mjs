@@ -1,48 +1,4 @@
 #!/usr/bin/env node
-/**
- * THE SCHEMA-BUMP CHORE, AS ONE COMMAND THAT CANNOT MAKE THE QUIET MISTAKE.
- *
- * `SCHEMA_VERSION` refuses any version but its own, so a schema change means a full
- * rebuild rather than a migration. `CLAUDE.md` documents that as ten commands in a
- * required order and warns, in bold, that "this happened three times in one session"
- * — three separate times someone ran some of them.
- *
- * Ten ordered commands is not the problem. The problem is that skipping one FAILS
- * QUIETLY, and the worst of them is documented in as many words:
- *
- *   > Do not skip the second `load`. The UniDic cross-check is a separate file, and
- *   > without it `accent/cli.ts queue` reports 0 disputed instead of 57 — which
- *   > reads as "nothing left to adjudicate" rather than "the cross-check is missing".
- *
- * A zero that means "done" and a zero that means "never loaded" are the same zero.
- * Same shape for the last line: `rm build/hashigo.db` takes every locally-authored
- * field with it, so a rebuild that stops after the import leaves a database that
- * looks complete and has no 型 labels, no 読み rows, no かな主流 values.
- *
- * SO THIS SCRIPT'S REAL JOB IS THE LAST THIRD, NOT THE FIRST. Anyone can run ten
- * commands. What nobody can do reliably is notice the absence of something that
- * prints nothing. Every step is checked afterwards against an invariant that the
- * skipped step would violate, and a violated invariant is a hard failure with the
- * command that fixes it.
- *
- * TWO DELIBERATE SAFETY CHOICES:
- *
- * 1. **Prerequisites are checked BEFORE the database is deleted.** The derived
- *    `build/*.jsonl` files survive a rebuild — that is why four of the six accent
- *    steps are "the fast path" and Python is not needed. But if one of them is
- *    missing, finding out AFTER the wipe means the corpus is gone and the analyser
- *    has to be re-run. So: verify, then delete.
- * 2. **`--force` is required when the target database already exists.** The
- *    documented workflow opens with `rm`, so deletion is expected — but a 76 MB
- *    database with his local field edits in it should not evaporate because a path
- *    was mistyped.
- *
- * ON THE REFERENCE FIGURES. The expected counts below were measured on 2026-08-26.
- * They are printed for comparison and a difference is reported as INFO, never as a
- * failure — decision 16's one final import from Mochi will legitimately change every
- * one of them. Only the INVARIANTS fail the run, because those are the shape of the
- * mistake rather than the size of the corpus.
- */
 import { spawnSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
@@ -67,11 +23,6 @@ const DASHBOARD = !flag("no-dashboard");
 
 const EXPORTS = ["exports/日本語", "exports/English", "exports/基本情報"];
 
-/**
- * Ordered. `needs` is checked before anything is deleted; `invariant` is checked
- * immediately after the step runs, and is the assertion that the step's absence
- * would break.
- */
 const STEPS = [
   {
     name: "import",
@@ -107,8 +58,6 @@ const STEPS = [
     ],
   },
   {
-    // THE ONE THE DOCS WARN ABOUT. Its absence makes `queue` report 0 disputed,
-    // which reads as success.
     name: "accent: load unidic (the cross-check)",
     cmd: `npm exec vite-node src/accent/cli.ts -- load --db "${DB}" --in build/accents-unidic.jsonl`,
     needs: ["build/accents-unidic.jsonl"],
@@ -157,14 +106,6 @@ const STEPS = [
     },
   },
   {
-    /**
-     * 数字 keeps ONE number field and the comma becomes presentation — Zach's call,
-     * 2026-09-07. The importer rewrites the values, `cards.name`, the field row and
-     * the template body from the export, so every rebuild undoes all of it.
-     *
-     * Position is not delicate, unlike `reverse-dormant-apply`: this touches no
-     * track, no due date and no review, so it moves NO dashboard figure.
-     */
     name: "local: 数字 merges its two number fields",
     cmd: `npm exec vite-node scripts/number-field-apply.ts -- --db "${DB}" --apply`,
     invariant: (db) => {
@@ -175,8 +116,6 @@ const STEPS = [
             "WHERE t.name = '数字' AND f.type = 'number'",
         )
         .get();
-      // Exactly one number field, and it must carry the display rule — otherwise
-      // either the merge did not run or it ran and the comma never comes back.
       if (row.n !== 1) return `数字 has ${row.n} number field(s); expected exactly 1`;
       const primary = db
         .prepare(
@@ -217,20 +156,6 @@ const STEPS = [
       ],
     ],
   },
-  /**
-   * DECISION 43'S ANNOTATIONS — MISSING FROM THIS SEQUENCE UNTIL 2026-09-25.
-   *
-   * A rebuild took all 3,719 `ojad` values and both `<ojad>` body insertions with
-   * it, with every invariant above still green: this list ran `cli.ts ojad` (the
-   * 33 hand adjudications, a different thing with a similar name) and none of
-   * the three steps below. `src/template/ast.ts` even claimed the template step
-   * was "part of the documented rebuild sequence". It was not, anywhere.
-   *
-   * The analyser's OUTPUT is the input here, the same fast path as
-   * `accents.jsonl`: `build/sentence-marks.jsonl` survives the `rm` and Python
-   * is only needed when the sentences themselves change. `marks` also declares
-   * the field — with its role and source pointer since stage F.
-   */
   {
     name: "accent: ojad per-mora annotations (declare + load)",
     cmd: `npm exec vite-node src/accent/cli.ts -- marks --db "${DB}" --in build/sentence-marks.jsonl`,
@@ -262,12 +187,6 @@ const STEPS = [
     ],
   },
   {
-    /**
-     * Decision 29's switch, declared by ROLE (stage G). The mode still falls back
-     * to name + type, so a rebuild without this renders correctly — but the role
-     * is what survives a rename, and a rebuild that silently dropped it would put
-     * the name back in charge with nothing to say so.
-     */
     name: "local: 単語's Reading carries the reading-switch role",
     cmd: `npm exec vite-node scripts/reading-role-apply.ts -- --db "${DB}" --apply`,
     invariant: (db) => {
@@ -304,32 +223,9 @@ if (DASHBOARD) {
   });
 }
 
-/**
- * LAST, AND STRICTLY AFTER THE DASHBOARD — the ordering is the whole point.
- *
- * The committed `dashboard.html` is the IMPORTER'S ORACLE: `test/dashboard.test.ts`
- * imports `exports/` into an in-memory database and compares byte-for-byte, so the
- * page is a pure function of the export. Every other local step above is safe to run
- * before it because none of them moves a dashboard figure — head words and template
- * bodies do not appear in it.
- *
- * **This one does.** `dormant` feeds deck progress, the backlog and the interval-cap
- * ratio. Regenerating the dashboard after it turned two oracle tests red on
- * 2026-09-07 (backlog 108 -> 102, overdue 76 -> 70, the dormant column, and the cap
- * denominator 8,956 -> 8,955). So the working database and the committed page differ
- * by exactly these six tracks, deliberately.
- */
 STEPS.push({
   name: "local: the 6 forced reverse tracks go dormant (AFTER the dashboard)",
   cmd: `npm exec vite-node scripts/reverse-dormant-apply.ts -- --db "${DB}" --apply`,
-  /**
-   * Checks the EFFECT, not the message — and as a property rather than a count.
-   *
-   * "Exactly 3 remain" would be wrong the first time he turns reverse on for a
-   * fourth card in Mochi. The real property is that no card is scheduled in reverse
-   * against its deck on the strength of one or two stray reviews: his three carry
-   * 14 each, the six turned off carried 1 or 2.
-   */
   invariant: (db) => {
     const stray = db
       .prepare(
@@ -349,8 +245,6 @@ STEPS.push({
         `leaves them on puts deeply overdue reverse cards back at the FRONT of his queue.`;
   },
 });
-
-// ── prerequisites, BEFORE anything is destroyed ────────────────────────────────
 
 const missing = [];
 for (const step of STEPS) {
@@ -387,8 +281,6 @@ if (DRY) {
   process.exit(0);
 }
 
-// ── run ───────────────────────────────────────────────────────────────────────
-
 for (const suffix of ["", "-shm", "-wal"]) {
   const p = `${dbPath}${suffix}`;
   if (existsSync(p)) {
@@ -402,8 +294,6 @@ for (const [i, step] of STEPS.entries()) {
   const label = `[${i + 1}/${STEPS.length}] ${step.name}`;
   console.log(`\n─── ${label}`);
   const started = Date.now();
-  // One string + shell:true — `.cmd` cannot be spawned without a shell on Windows
-  // (EINVAL, CVE-2024-27980), and an args ARRAY with shell:true earns DEP0190.
   const proc = spawnSync(step.cmd, { cwd: ROOT, encoding: "utf8", shell: true, stdio: ["ignore", "pipe", "pipe"] });
   if (proc.error) {
     console.error(`rebuild: step ${i + 1} (${step.name}) NEVER RAN — ${proc.error.code ?? ""} ${proc.error.message}`);

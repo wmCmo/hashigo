@@ -1,13 +1,3 @@
-/**
- * THROWAWAY (spike harness). Not part of the suite; run by hand.
- *
- *   npx vite-node spike/blobstore/measure.ts
- *
- * Answers three things the report needs and the test suite should not spend time
- * on: what incremental auto_vacuum costs in file size and insert time, what the
- * legacy directory store costs on NTFS for the same corpus, and what a random
- * read costs from each backing in Node.
- */
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -67,7 +57,6 @@ function randomReads(store: BlobStore, label: string): void {
   );
 }
 
-// -- 1. auto_vacuum: incremental (the default) versus none -------------------
 for (const mode of ["incremental", "none"] as const) {
   const file = join(dir(mode), `s-${mode}.blobs.db`);
   const target = openBlobStoreDatabase(file, { autoVacuum: mode });
@@ -84,7 +73,6 @@ for (const mode of ["incremental", "none"] as const) {
   }
 }
 
-// -- 2. the legacy directory store, on NTFS, same corpus ---------------------
 const root = join(dir("files"), "blobs");
 const files = openBlobStore(root);
 copyInto(files, "insert, 10,816 files on NTFS");

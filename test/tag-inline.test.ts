@@ -11,22 +11,6 @@ import {
 } from "../src/template/index.js";
 import { stripInvisible } from "../src/text/index.js";
 
-/**
- * `#Mathematics` STOPS BEING INERT TEXT.
- *
- * Zach, 2026-09-18: *"i want the tag to behave like hyperlink too, but looks
- * different than like hyperlink"*.
- *
- * The tag was always in two places: `card_tags` holds it as data, and Mochi ALSO
- * wrote the literal `#Mathematics` into the field — 約数's 意味 really is
- * `divisor; factor; measure #Mathematics`. Only the first half was reachable.
- *
- * THE GRAMMAR IS GENEROUS AND THE RESOLVER IS THE GUARD, which is `wikiLink`'s
- * shape and SPEC's rule: an unresolved link renders as plain text rather than
- * being dropped. A parser cannot see the tag table, so it must not be the thing
- * that decides.
- */
-
 const CORPUS = "build/hashigo.db";
 
 function corpus(): Database.Database | null {
@@ -37,7 +21,6 @@ function corpus(): Database.Database | null {
   }
 }
 
-/** Every inline node under these blocks, depth first — nested children too. */
 function inlines(blocks: readonly Block[]): Inline[] {
   const out: Inline[] = [];
   const visit = (nodes: readonly unknown[]): void => {
@@ -52,14 +35,12 @@ function inlines(blocks: readonly Block[]): Inline[] {
   return out;
 }
 
-/** Tags in a FIELD VALUE — the place every `#` in the corpus actually lives. */
 function tagsIn(value: string): { path: string; source: string }[] {
   return inlines(parseFieldValue(value))
     .filter((node): node is Inline & { kind: "tag" } => node.kind === "tag")
     .map((node) => ({ path: node.path, source: node.source }));
 }
 
-/** Tags in a TEMPLATE BODY, where the `#`s are sigils and headings instead. */
 function tagsInTemplate(body: string): { path: string; source: string }[] {
   const blocks = parseTemplate(body).flatMap((side) => [...side.blocks]);
   return inlines(blocks)
@@ -86,12 +67,8 @@ describe("the grammar", () => {
   });
 
   it("STRIPS the zero-width space, which 11 of the corpus's 49 carry", () => {
-    // `src/import/tags.ts` had to repair exactly this on the way in, where
-    // `Mathematics` and `<ZWSP>Mathematics` read as two tags nobody could tell
-    // apart. Refusing them here would leave those 11 inert for the same reason.
     const [tag] = tagsIn("syntax #​Computing");
     expect(tag?.path).toBe("Computing");
-    // The SOURCE keeps it, because the unresolved case must render what he wrote.
     expect(tag?.source).toBe("#​Computing");
   });
 
@@ -127,8 +104,6 @@ describe("the grammar", () => {
   });
 
   it("does not eat a URL fragment's meaning — it just parses and fails to resolve", () => {
-    // The node is made; the RENDERER refuses it and prints the text back. This
-    // test pins the parse so the renderer test can pin the refusal.
     expect(tagsIn("https://x.com/#section")).toEqual([
       { path: "section", source: "#section" },
     ]);
@@ -156,9 +131,6 @@ describe("against every `#` in the real corpus", () => {
           if (!known.has(tag.path)) unknown.push(tag.path);
         }
       }
-      // 49 `#` tokens, all tags. If a later import brings a `C#` or a colour
-      // literal into a field VALUE, this is where it shows up — as a name that
-      // resolves to nothing, which the renderer then prints as plain text.
       expect(parsed).toBe(49);
       expect(unknown).toEqual([]);
     } finally {
@@ -178,9 +150,6 @@ describe("against every `#` in the real corpus", () => {
       for (const body of bodies) {
         for (const tag of tagsInTemplate(body.content)) found.push(`${body.name}:${tag.path}`);
       }
-      // `<<#Reading>>` is masked to a private-use marker before inline runs, and
-      // `#FF0000` lives inside a 漢字 ATTRIBUTE, which the markup parser takes
-      // first. Both would be silent damage if this were ever untrue.
       expect(found).toEqual([]);
     } finally {
       db.close();

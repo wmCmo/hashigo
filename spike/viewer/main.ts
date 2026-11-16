@@ -1,36 +1,3 @@
-/**
- * THROWAWAY (spike harness) — the page where Zach sees his own cards for the
- * first time. An inspection harness over stage 4, not the review UI: there is no
- * grading, no queue and no scheduler anywhere in this file, because those need
- * his taste and belong to stage 7.
- *
- * WHAT IT IS FOR, in one sentence: to let him check, on his own phone, that a
- * clip is silent when a side appears and fires on the reveal.
- *
- * THE FOUR THINGS THIS FILE IS SHAPED BY
- *
- * 1. IT RENDERS THROUGH `src/render`, not a copy. `renderResolvedCard` builds the
- *    DOM; every class on a card comes from that module's `CLASS`; the only DOM
- *    this file creates inside a card is one `<span class="viewer-audio-note">` per
- *    media element, and one drawing surface's backing store.
- *
- * 2. NOTHING PLAYS, AND NOTHING IS EVEN FETCHED, UNTIL A REVEAL. Stepping onto a
- *    side sends no `payload` message, mints no object URL, assigns no `src` and
- *    calls no `play()`. The gate panel counts all four, from GLOBAL instruments
- *    installed before the first render, so the claim is measured rather than
- *    asserted — and the instruments catch a call from anywhere on the page, this
- *    file included.
- *
- * 3. THE SCOPE THAT MINTS A URL REVOKES IT. One `BlobUrlScope` per card
- *    presentation, `releaseAll()` when the card is replaced (src/blobs/url.ts,
- *    rules 1 and 2). Attachments are detached — pause, clear, load, revoke, in
- *    that order — before the scope is released.
- *
- * 4. POINTER, NOT MOUSE. He reviews on Android in Samsung Internet. Buttons use
- *    `click` (pointer-agnostic and keyboard-reachable), the drawing surface uses
- *    `pointerdown/move/up`, and nothing anywhere is revealed by hover.
- */
-
 import { BlobUrlScope, attachMedia } from "../../src/blobs/url.js";
 import {
   DATA,
@@ -53,18 +20,6 @@ import type {
   ViewerRequest,
 } from "./protocol.js";
 
-// ─── global instruments, installed FIRST ─────────────────────────────────────
-
-/**
- * The hard rule is a claim about things that did NOT happen, so it is measured by
- * wrapping the two platform calls that would have to happen for a clip to be
- * heard — anywhere on this page, by any code, including this file's own.
- *
- * `HTMLMediaElement.prototype.play` is the only way audio starts (there is no
- * `autoplay` and no `src` in the renderer's output — see the audit button), and
- * `URL.createObjectURL` is the only way stored bytes become loadable, because
- * nothing in this app has a path. Two counters and a log line each.
- */
 interface Instruments {
   plays: number;
   mints: number;
@@ -98,8 +53,6 @@ const instruments: Instruments = { plays: 0, mints: 0, revokes: 0, payloadReads:
     nativeRevoke(url);
   };
 })();
-
-// ─── the page ────────────────────────────────────────────────────────────────
 
 const need = <T extends Element>(selector: string): T => {
   const element = document.querySelector<T>(selector);
@@ -162,8 +115,6 @@ function rows(
 
 const n = (value: number): string => value.toLocaleString("en-US");
 
-// ─── the worker ──────────────────────────────────────────────────────────────
-
 const worker = new Worker(new URL("./cards.worker.ts", import.meta.url), {
   type: "module",
   name: "hashigo-viewer",
@@ -189,11 +140,6 @@ worker.onerror = (event: ErrorEvent): void => {
   write(`worker error: ${event.message} (${event.filename}:${event.lineno})`, "bad");
 };
 
-/**
- * `Omit` over a union collapses it into one object type, which would let a
- * `browse` request carry a `hash`. Distributing keeps the four request shapes
- * apart, so the compiler still checks which fields go with which `kind`.
- */
 type WithoutId<T> = T extends { readonly id: number } ? Omit<T, "id"> : never;
 
 function ask<T extends ViewerMessage>(request: WithoutId<ViewerRequest>): Promise<T> {
@@ -205,9 +151,6 @@ function ask<T extends ViewerMessage>(request: WithoutId<ViewerRequest>): Promis
   });
 }
 
-// ─── state ───────────────────────────────────────────────────────────────────
-
-/** How a clip was matched to an audio element. Printed, never hidden. */
 type MatchTier = "ref_key" | "source_text" | "unclaimed" | "none";
 
 interface AudioSlot {
@@ -216,14 +159,7 @@ interface AudioSlot {
   readonly note: HTMLSpanElement;
   readonly attachment: AttachmentRow | null;
   readonly tier: MatchTier;
-  /** The text the generator would have said, for the report. */
   readonly text: string;
-  /**
-   * How to undo the attach. `attachMedia` for `<audio>`/`<video>`; a hand-rolled
-   * pair for `<img>`, because `attachMedia`'s `detach()` calls `load()`, which an
-   * `HTMLImageElement` does not have — routing an image through it threw a
-   * TypeError out of teardown. Found by loading `Hz4r241V`, which has one.
-   */
   live: { detach(): void } | null;
 }
 
@@ -236,7 +172,6 @@ interface Presentation {
   readonly scope: BlobUrlScope;
   readonly revealed: Set<number>;
   position: number;
-  /** Instrument counters as they stood when the current side was entered. */
   entered: { plays: number; mints: number; payloadReads: number; label: string };
 }
 
@@ -245,7 +180,6 @@ let direction: Direction = "forward";
 let bridgeOn = true;
 let decks: readonly DeckBrief[] = [];
 
-/** The cards make-viewer-db.ts pins, so audio is guaranteed for each. */
 const DEMOS: readonly (readonly [string, string])[] = [
   ["29thh3wW", "単語 Reading=false"],
   ["ChtBgqLJ", "単語 Reading=true"],
@@ -254,8 +188,6 @@ const DEMOS: readonly (readonly [string, string])[] = [
   ["FnsfOCqt", "content card"],
   ["MhjRjdgV", "単語 links"],
 ];
-
-// ─── rendering a card ────────────────────────────────────────────────────────
 
 function templateInput(bundle: CardBundle): { template: TemplateInput | null; rewrites: readonly Rewrite[] } {
   if (bundle.template === null) return { template: null, rewrites: [] };
@@ -278,29 +210,6 @@ function templateInput(bundle: CardBundle): { template: TemplateInput | null; re
   };
 }
 
-/**
- * Which stored clip belongs to which audio element.
- *
- * Two exact rules and one honest guess, and the UI prints which one fired:
- *
- *   `ref_key`      the element came from an authored `@media/<file>` reference and
- *                  `MediaMount.reference.key` IS `blob_refs.ref_key`. Exact.
- *   `source_text`  the element came from a generator, and a `speech` blob on this
- *                  card has `source_text` equal to the text the generator would
- *                  say. This is the generation identity, minus the hashing that
- *                  stage 9 owns. Exact for the word clip on every 単語 card.
- *   `unclaimed`    a leftover `speech` blob assigned to a leftover element. A
- *                  GUESS, and labelled as one: it is what picks up the
- *                  example-SENTENCE clip, whose text lives inside an `ai`
- *                  generation this harness does not resolve.
- *
- * THE TIERS RUN AS THREE SEPARATE PASSES, and that is a bug fix rather than a
- * style: matching greedily in document order gave the RIGHT answers forward and
- * the WRONG ones in reverse. In reverse, 単語's empty `<<Audio>>` element comes
- * first, took the word clip as `unclaimed`, and left the sentence clip for the
- * element whose text was an exact match. Every exact match therefore has to be
- * settled before any guess is allowed to consume a clip.
- */
 function matchAudio(
   result: RenderResult<HTMLElement>,
   bundle: CardBundle,
@@ -328,7 +237,6 @@ function matchAudio(
     };
   });
 
-  // Pass 1: `blob_refs.ref_key`, which is what `MediaMount.reference.key` IS.
   for (const slot of draft) {
     const key = slot.mount.reference.key;
     if (key === null) continue;
@@ -338,7 +246,6 @@ function matchAudio(
     slot.tier = "ref_key";
     claimed.add(row.hash);
   }
-  // Pass 2: generation identity by text. Every exact match, before any guess.
   for (const slot of draft) {
     if (slot.attachment !== null || slot.text === "") continue;
     const row = speech.find(
@@ -350,7 +257,6 @@ function matchAudio(
     slot.tier = "source_text";
     claimed.add(row.hash);
   }
-  // Pass 3: the leftovers, in document order, and labelled as a guess.
   for (const slot of draft) {
     if (slot.attachment !== null || slot.mount.kind !== "audio") continue;
     const row = speech.find((attachment) => !claimed.has(attachment.hash));
@@ -379,13 +285,10 @@ function paintCard(): void {
   if (presentation === null) return;
   const { bundle, result, rewrites } = presentation;
 
-  // Sides: everything up to the current position is visible, the rest is `hidden`.
-  // The renderer built them all; this only chooses what is on screen.
   for (const side of result.sides) {
     side.element.hidden = side.position > presentation.position;
   }
 
-  // The side chips ARE the stepper: one tap per side, thumb-sized, always visible.
   chipsBar.textContent = "";
   for (const side of result.sides) {
     const chip = document.createElement("button");
@@ -527,7 +430,6 @@ function paintCard(): void {
   paintGate();
 }
 
-/** The gate panel. Everything here is read off the live DOM, not remembered. */
 function paintGate(): void {
   const presentation = current;
   const gate = need<HTMLElement>("#gate");
@@ -586,8 +488,6 @@ function paintGate(): void {
   );
 }
 
-// ─── stepping ────────────────────────────────────────────────────────────────
-
 function enterSide(label: string): void {
   const presentation = current;
   if (presentation === null) return;
@@ -617,14 +517,6 @@ function goTo(position: number): void {
   enterSide("side entry");
 }
 
-/**
- * Reveal the current side.
- *
- * Revealing the clozes fires their own `onReveal` listeners, and the audio hangs
- * off THAT — not off this function — so the wiring is the same one stage 7 will
- * use. A side with no cloze (敬語's first, 単語's third) has no reveal event of
- * its own, so this counts as the explicit reveal for that side and says so.
- */
 function revealSide(): void {
   const presentation = current;
   if (presentation === null) return;
@@ -641,10 +533,6 @@ function revealSide(): void {
   paintCard();
 }
 
-/**
- * Attach and start the clips on one side. THE ONLY PLACE `play()` IS CALLED and
- * the only place a `payload` message is sent.
- */
 async function armSide(authoredSide: number, why: string): Promise<void> {
   const presentation = current;
   if (presentation === null) return;
@@ -677,7 +565,6 @@ async function armSide(authoredSide: number, why: string): Promise<void> {
     const lease = presentation.scope.claim({ hash, bytes: message.bytes, mime: message.mime });
     const element = slot.element as HTMLMediaElement;
     if (slot.mount.kind === "image") {
-      // `attachMedia` is for media elements; see the note on `AudioSlot.live`.
       slot.element.setAttribute("src", lease.url);
       slot.live = {
         detach(): void {
@@ -705,9 +592,6 @@ async function armSide(authoredSide: number, why: string): Promise<void> {
           paintGate();
         },
         (error: unknown) => {
-          // Not a failure of the rule: a browser may refuse playback without a
-          // user gesture. The reveal IS a gesture, so this should not fire — and
-          // if it does, it is worth seeing rather than swallowing.
           write(`  play() rejected: ${String(error)} (element attached and ready to tap)`, "warn");
           paintGate();
         },
@@ -717,18 +601,6 @@ async function armSide(authoredSide: number, why: string): Promise<void> {
   paintGate();
 }
 
-// ─── the drawing surface ─────────────────────────────────────────────────────
-
-/**
- * Size and wire one `<canvas class="hashigo-draw">`.
- *
- * The renderer deliberately emits no width/height: a backing store has to be
- * sized to `devicePixelRatio` at mount or the strokes blur, and only the code
- * that knows the device can do it. PROVISIONAL: plain pointer strokes, the
- * authored brush colour and radius, no smoothing and no pressure — 漢字 is
- * "draw from memory, THEN see the answer", and how that should feel under a
- * finger is exactly the judgement this harness is not making for him.
- */
 function wireCanvas(canvas: HTMLCanvasElement, attributes: Readonly<Record<string, string>>): void {
   const cssHeight = Number.parseInt(attributes["height"] ?? "300", 10) || 300;
   const colour = attributes["brushColor"] ?? "#FF0000";
@@ -781,14 +653,9 @@ function wireCanvas(canvas: HTMLCanvasElement, attributes: Readonly<Record<strin
   canvas.addEventListener("pointercancel", end);
 }
 
-// ─── loading a card ──────────────────────────────────────────────────────────
-
 function teardown(): void {
   const presentation = current;
   if (presentation === null) return;
-  // Order matters: detach each element (pause, clear src, load, revoke) before
-  // releasing the scope, so no element is left holding a URL that no longer
-  // resolves. src/blobs/url.ts rule 3.
   for (const slot of presentation.slots) slot.live?.detach();
   const released = presentation.scope.releaseAll();
   if (released > 0) write(`released ${released} object URL(s) with the previous card`);
@@ -836,14 +703,11 @@ function present(bundle: CardBundle): void {
     entered: { plays: instruments.plays, mints: instruments.mints, payloadReads: instruments.payloadReads, label: "on side entry" },
   };
 
-  // The audio wiring, and the whole point of the harness: it hangs off the
-  // renderer's reveal event, so nothing this file does can start a clip early.
   result.onReveal((cloze: ClozeMount<HTMLElement>) => {
     void armSide(cloze.side, `cloze #${cloze.ordinal} revealed`);
   });
 
   stage.append(result.root);
-  // Canvases can only be sized once they are in the document and have a width.
   for (const entry of canvases) wireCanvas(entry.canvas, entry.attributes);
 
   cardIdInput.value = bundle.id;
@@ -896,8 +760,6 @@ async function refreshCardList(): Promise<void> {
     cardSelect.append(option);
   }
 }
-
-// ─── controls ────────────────────────────────────────────────────────────────
 
 function setDirection(next: Direction): void {
   direction = next;
@@ -959,7 +821,6 @@ need<HTMLButtonElement>("#audit").addEventListener("click", () => {
   audit();
 });
 
-/** Every media element in the page, read straight off the DOM. */
 function audit(): void {
   const media = [...document.querySelectorAll<HTMLMediaElement>("audio, video")];
   write(`AUDIT: ${media.length} media element(s) in the document`, "step");
@@ -984,14 +845,6 @@ function audit(): void {
   );
 }
 
-/**
- * A DEBUG HANDLE, deliberately.
- *
- * `hashigoViewer.snapshot()` returns exactly what the gate panel shows, as data,
- * so the hard rule can be checked by a script — or by Zach in the phone's own dev
- * console — rather than by reading a table off a screen. It is also how the
- * evidence in the report was collected: step, snapshot, step, snapshot.
- */
 interface ViewerSnapshot {
   readonly card: string | null;
   readonly direction: Direction;
@@ -1003,9 +856,7 @@ interface ViewerSnapshot {
     position: number;
     side: number;
     hidden: boolean;
-    /** Every text node the renderer produced, concealed answers included. */
     text: string;
-    /** What is actually on screen: `[hidden]` subtrees dropped. */
     visible: string;
   }[];
   readonly media: readonly Record<string, unknown>[];
@@ -1015,8 +866,6 @@ interface ViewerSnapshot {
 
 function snapshot(): ViewerSnapshot {
   const presentation = current;
-  // The harness's own annotations are stripped before the text is read, so the
-  // evidence is the RENDERER's output and not this file's commentary on it.
   const textOf = (element: HTMLElement, dropHidden: boolean): string => {
     const clone = element.cloneNode(true) as HTMLElement;
     for (const note of clone.querySelectorAll(".viewer-audio-note")) note.remove();
@@ -1031,9 +880,6 @@ function snapshot(): ViewerSnapshot {
     visible: textOf(element, true),
   }));
   const media = (presentation?.slots ?? []).map((slot) => {
-    // `<img>` has none of `currentSrc`'s media siblings, so every one of them is
-    // read through `isMedia`. Reading `played.length` off an image is what threw
-    // out of this function the first time an image card was loaded.
     const isMedia = slot.element instanceof HTMLMediaElement;
     const element = slot.element as HTMLMediaElement;
     return {
@@ -1086,15 +932,11 @@ function snapshot(): ViewerSnapshot {
   instruments,
 };
 
-// `#/card/<id>` is the href the renderer mints for a wiki-link. Following it here
-// costs nothing and checks that the contract is usable.
 window.addEventListener("hashchange", () => {
   const match = /^#\/card\/(.+)$/.exec(location.hash);
   if (match?.[1] === undefined) return;
   void load({ cardId: decodeURIComponent(match[1]), deckId: null, withAudio: false });
 });
-
-// ─── start ───────────────────────────────────────────────────────────────────
 
 for (const [id, label] of DEMOS) {
   const button = document.createElement("button");

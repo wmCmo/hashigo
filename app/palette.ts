@@ -1,10 +1,3 @@
-/**
- * Ctrl+K AND THE NEW-CARD FORM — his #3, and the create half of his #14.
- *
- * Moved out of `main.ts` on 2026-09-25. The palette is decision 47's suggestion
- * list when it opens empty, and a tag's cards when a `#tag` opens it scoped.
- */
-
 import type { BrowseHit, DeckBrief } from "./protocol.js";
 import { prependIcon } from "./icons.js";
 import { bareLayer, closeIfTop, layers, pushLayer } from "./layers.js";
@@ -14,35 +7,10 @@ import { readVisits } from "./visits.js";
 import { ask } from "./worker-client.js";
 import { offerDuplicate, openEditorById, pushUndo, refreshAfterOp } from "./ops.js";
 
-/**
- * *"i want notion, obsidian like searching feature, so like ctrl +k and it pops
- * up a modal that we can search and enter"* — his second time asking.
- *
- * It is a LAYER, like everything else that goes over the card, so Escape peels it
- * and the review underneath is untouched. Arrow keys move the selection, Enter
- * opens the highlighted card as a preview.
- *
- * The query goes through `src/search`, which matters at two characters: `card_fts`
- * uses a trigram tokeniser and CANNOT serve a query shorter than three, and two
- * characters is the commonest search unit in Japanese. That module routes to a
- * ranked scan instead — 意味 returns 0 from MATCH and 3 from the scan.
- */
 let paletteIndex = 0;
 let paletteHits: readonly BrowseHit[] = [];
 let paletteToken = 0;
 
-/**
- * The palette, optionally SCOPED TO A TAG.
- *
- * Ctrl+K opens it with no scope, which is decision 47's suggestion list. A tap on
- * a `#tag` opens it scoped: the box starts empty and lists the tag's cards, and
- * anything he types then searches WITHIN the tag instead of replacing it.
- *
- * The scope is not a seeded query, and the difference is the whole point. Seeding
- * `Mathematics` into the box returned **18 cards where 9 carry the tag** — the
- * other 9 merely say the word somewhere. A tag that lands you next to its own
- * cards is not a link.
- */
 export function openPalette(tagPath: string | null = null): void {
   if (document.querySelector(".palette") !== null) return;
   const root = document.createElement("div");
@@ -73,8 +41,6 @@ export function openPalette(tagPath: string | null = null): void {
 
   const run = async (): Promise<void> => {
     const token = ++paletteToken;
-    // A tag scope is never "suggesting": an empty box under `#Mathematics` means
-    // "the tag's cards", which is a listing and not a guess at what he wants.
     const suggesting = input.value.trim() === "" && tagPath === null;
     const reply = await ask<"browse">({
       kind: "browse",
@@ -88,16 +54,12 @@ export function openPalette(tagPath: string | null = null): void {
     if (token !== paletteToken) return;
     paletteHits = reply.hits;
     paletteIndex = 0;
-    // "recent" rather than "40 of 7,716", which counts the collection and says nothing
-    // about what is on screen. The suggestion list is not a result set.
     const scopeLabel = tagPath === null ? "" : `#${tagPath} · `;
     foot.textContent = suggesting
       ? `recent · ${reply.hits.length}`
       : reply.total === 0
         ? `${scopeLabel}nothing`
         : scopeLabel + `${reply.hits.length} of ${reply.total.toLocaleString()}`;
-    // The engine and the timing are for whoever is debugging, so they hover
-    // rather than print. Set on every run, so an empty box drops a stale one.
     foot.title = reply.mode === null ? "" : `${reply.mode} · ${reply.elapsedMs.toFixed(0)} ms`;
     paintPalette(list);
   };
@@ -130,8 +92,6 @@ function paintPalette(list: HTMLElement): void {
     const row = document.createElement("button");
     row.type = "button";
     row.className = "palette-row";
-    // The row's text is name and deck path run together (`篤日本語/漢字`); the id
-    // is what something driving the page should match on.
     row.dataset["cardId"] = hit.cardId;
     if (index === paletteIndex) row.classList.add("on");
     if (hit.archived) row.classList.add("is-archived");
@@ -140,10 +100,6 @@ function paintPalette(list: HTMLElement): void {
     name.textContent = hit.name === "" ? hit.cardId : hit.name;
     const meta = document.createElement("span");
     meta.className = "palette-meta";
-    // PINNED SAYS SO. Zach, 2026-10-22, over the empty Ctrl+K: *"we need a way to
-    // know that those are pinned cards"*. Decision 47 puts the pins first and
-    // nothing on the row said why they were there. Same place and voice as
-    // "archived", plus the pin the card menu already uses.
     const flags = [hit.pinned ? "pinned" : null, hit.archived ? "archived" : null].filter((f) => f !== null);
     meta.textContent = [hit.deckPath, ...flags].join(" · ");
     if (hit.pinned) {
@@ -161,24 +117,6 @@ function paintPalette(list: HTMLElement): void {
   });
 }
 
-/**
- * The new-card form — his request 5's other half, and the last of the six.
- *
- * Three inputs and nothing more: a title, a deck, a template. It then opens the
- * EDITOR on the card it made, because a card with a title and no fields is not
- * yet a card and the next thing he wants is always to fill it in.
- *
- * **The card does not join the session already in progress.** `buildSession` ran
- * before it existed, and rebuilding mid-session would reshuffle the queue under
- * him — so the reply says which tracks were opened and the form says when it will
- * appear. It enters the NEW queue (due_at NULL, reps 0), which means decision 12's
- * ten-a-day limit applies to it like any other new card.
- */
-// DECLARED ABOVE `buildNewCardForm`, not below it. `let` sits in a temporal dead
-// zone until its own statement executes, and the form is built during module
-// initialisation — so declaring these after the function threw
-// `Cannot access 'newCardDeck' before initialization` and killed the whole
-// module before `boot()` ran. The page came up blank with an empty log.
 let newCardDeck: HTMLSelectElement | null = null;
 let newCardTemplate: HTMLSelectElement | null = null;
 
@@ -202,8 +140,6 @@ export function buildNewCardForm(): HTMLElement {
   template.setAttribute("aria-label", "template");
   const none = document.createElement("option");
   none.value = "";
-  // 66 of his cards have no template at all, so this is a real option and not a
-  // placeholder.
   none.textContent = "no template";
   template.appendChild(none);
 
@@ -220,7 +156,6 @@ export function buildNewCardForm(): HTMLElement {
   const create = (allowDuplicate: boolean): void => {
     if (deck.value === "") return;
     submit.disabled = true;
-    // Read NOW, not in `.then`: he may type the next word during the round trip.
     const name = title.value.trim();
     void ask<"createCard">({
       kind: "createCard",
@@ -245,34 +180,19 @@ export function buildNewCardForm(): HTMLElement {
           return;
         }
         const cardId = reply.cardId;
-        // The word he typed, not the random id — the id is not something he can
-        // recognise. The form allows an empty title, and then the id is all there is.
         const label = name === "" ? cardId : name;
         const made = `made ${label} · ${reply.tracks.join(" + ")} · in the new queue next session`;
         said.classList.remove("bad");
         said.textContent = made;
         title.value = "";
-        // HIS #13's "create card". Undone by deleting it — which is safe here in a
-        // way `delete` generally is not: a card made seconds ago has no review
-        // history to lose, which is the whole reason delete is otherwise final.
         pushUndo({
           describe: `new card ${label}`,
           run: async () => {
             await ask<"cardOp">({ kind: "cardOp", op: "delete", cardId });
-            // The line under the form no longer tells the truth once the card is
-            // gone — unless it has moved on to a later card already.
             if (said.textContent === made) said.replaceChildren();
             await refreshAfterOp();
           },
         });
-        // Straight into the editor on the card just made: a title with no fields
-        // is not yet a card, and this is always the next thing he wants.
-        //
-        // Through `openEditorById`, the path `e` and the `[[` dialog take, and not
-        // `openEditorFor(reply.card)`: that passed NO template choices, so the
-        // editor's header read "template none" on every card made here — a 単語
-        // card rendering as 単語, labelled as having no template (seen 2026-10-21
-        // on all 漢検 cards). The worker's preview reply carries the choices.
         void openEditorById(cardId);
         void loadDecks(true);
       })
@@ -289,7 +209,6 @@ export function buildNewCardForm(): HTMLElement {
     create(false);
   });
 
-  // Filled when the deck list arrives.
   newCardDeck = deck;
   newCardTemplate = template;
   return form;

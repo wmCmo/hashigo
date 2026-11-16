@@ -1,18 +1,3 @@
-/**
- * The install/offline contract, pinned.
- *
- * The expensive failure here is silent and it is not "the app won't install".
- * It is the SERVICE WORKER CACHING A DATABASE. `/hashigo-app-blobs.db` is
- * ~224 MB; a Cache Storage copy sits in the SAME origin quota as the OPFS copy,
- * so the app would hold ~600 MB to use ~300 MB. On a phone that is the
- * difference between fitting and being evicted — and decision 17 exists because
- * eviction has already happened to him once.
- *
- * Nothing about that shows up in a passing build or a working install. It shows
- * up weeks later as a database that went missing. So the rule is tested, and it
- * is tested against the SERVER's own list rather than a copy: if someone adds a
- * fourth seeded file to `vite.app.config.ts`, this fails until `sw.js` knows.
- */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -36,7 +21,6 @@ const manifest = JSON.parse(read("app/public/manifest.webmanifest")) as {
   theme_color: string;
 };
 
-/** The URLs `serveAppDatabases()` answers — parsed from the config, not retyped. */
 function seededUrls(): string[] {
   const block = /const ASSETS: ReadonlyMap<string, string> = new Map\(\[([\s\S]*?)\]\);/.exec(
     viteConfig,
@@ -45,7 +29,6 @@ function seededUrls(): string[] {
   return [...(block?.[1] ?? "").matchAll(/\["(\/[^"]+)"/g)].map((m) => m[1] as string);
 }
 
-/** The URLs `sw.js` refuses to touch. */
 function neverCached(): string[] {
   const block = /const NEVER_CACHE = new Set\(\[([\s\S]*?)\]\);/.exec(sw);
   expect(block, "the NEVER_CACHE set in app/public/sw.js").not.toBeNull();
@@ -55,7 +38,6 @@ function neverCached(): string[] {
 describe("the service worker never caches a database", () => {
   it("refuses every URL the dev/preview server seeds from disk", () => {
     const seeded = seededUrls();
-    // Sanity: the parse found something real.
     expect(seeded).toContain("/hashigo-app.db");
     expect(seeded).toContain("/hashigo-app-blobs.db");
     expect(seeded.length).toBeGreaterThanOrEqual(3);
@@ -71,21 +53,14 @@ describe("the service worker never caches a database", () => {
   });
 
   it("keeps the seed manifest live, because a stale one hides a stale database", () => {
-    // `db.worker.ts` compares the manifest's review count against what OPFS
-    // holds to decide whether to re-fetch. Cached, it would always agree.
     expect(neverCached()).toContain("/hashigo-app.json");
   });
 
   it("passes ranged requests through", () => {
-    // A range request is a media seek; answering it from Cache Storage returns
-    // the whole body and breaks playback.
     expect(sw).toMatch(/headers\.has\("range"\)/);
   });
 
   it("is network-first for the SHELL, so a build can never get stuck behind a stale page", () => {
-    // Since 2026-09-26 the network wait has a deadline (a wifi that swallows
-    // packets froze the app on a bare page), but the shell still ASKS the
-    // network before it reads the cache.
     const body = sw.slice(sw.indexOf("async function networkFirst"));
     const networkAt = body.indexOf("fetch(request)");
     const cacheAt = body.indexOf("fromCache(request)");
@@ -136,14 +111,11 @@ describe("the manifest is the one Samsung Internet needs", () => {
   });
 
   it("uses the brief's palette for the splash, not an invented colour", () => {
-    // background_color is what the OS paints before the first frame. A wrong one
-    // is a flash of the wrong product on every cold launch.
     expect(manifest.background_color.toUpperCase()).toBe("#F2F2F2");
   });
 });
 
 describe("the icons on disk are what the manifest promises", () => {
-  /** width, height and colour type out of a PNG's IHDR. */
   function ihdr(path: string): { width: number; height: number; colourType: number } {
     const bytes = readFileSync(new URL(`../${path}`, import.meta.url));
     expect(bytes.subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
@@ -168,17 +140,9 @@ describe("the icons on disk are what the manifest promises", () => {
   });
 
   it("the icon ground is --card, not --paper", () => {
-    // Zach, 2026-09-12, looking at the installed icon: it read GREY on his home
-    // screen. Measured rather than adjudicated by taste — --paper #ECEAE5 is
-    // luminance 0.82 against white's 1.00, so 18% darker. Inside the app that
-    // reads as paper because the whole screen is that colour and --card sits
-    // brighter on it; paper is paper by RELATIONSHIP. An icon has no
-    // relationship. --card #FBFAF7 is 0.96, and is also the honest token: an
-    // app tile is a raised surface, which is what --card means here.
     const bytes = readFileSync(
       new URL("../app/public/icons/icon-maskable-512.png", import.meta.url),
     );
-    // First pixel of the first row, past the IHDR/IDAT plumbing: decode instead.
     const { inflateSync } = require("node:zlib") as typeof import("node:zlib");
     let offset = 8;
     const chunks: Buffer[] = [];
@@ -207,33 +171,13 @@ describe("the icons on disk are what the manifest promises", () => {
     const bytes = readFileSync(
       new URL("../app/public/icons/icon-maskable-512.png", import.meta.url),
     );
-    // Colour type 6 carries alpha; the maskable one must still be opaque
-    // everywhere, which `tools/icons.mjs` does by not applying the badge.
     expect(bytes[25]).toBe(6);
     expect(bytes.length).toBeGreaterThan(1000);
   });
 });
 
-/**
- * ZACH, ON HIS PHONE, 2026-09-13: `sync failed — Unexpected token '<', "<!doctype "`.
- *
- * The cause was a stale server (see `app/sync-client.ts`), but the sweep that
- * followed found a second, quieter fault in here: this worker was CACHING the
- * mailbox. `/sync/` and every peer payload are served `Cache-Control: no-store`
- * and the store rule — `response.ok && response.type === "basic"` — is true for
- * both, so they went into Cache Storage like any shell asset.
- *
- * Network-first hides it while he is online. Offline it does not: `syncNow`
- * would read a cached peers list, fetch cached payloads, and MERGE A SNAPSHOT of
- * his other device from whenever it was last seen. The push after it is a PUT,
- * which this worker ignores, so the run fails at the end — after the merge has
- * already happened. A partial merge reported as a failure is worse than a clean
- * refusal, and sync simply should not work offline.
- */
 describe("the service worker never caches sync state", () => {
   it("passes the mailbox straight through, like the databases", () => {
-    // A prefix, not a Set entry: `/sync/` carries a device id per peer, so there
-    // is no fixed list of paths to name.
     expect(sw, "no mailbox guard in the fetch handler").toMatch(/isMailbox\(url\.pathname\)/);
     const guard = /function isMailbox\([^)]*\) \{([\s\S]*?)\n\}/.exec(sw)?.[1] ?? "";
     expect(guard, "isMailbox is gone").not.toBe("");
@@ -241,9 +185,6 @@ describe("the service worker never caches sync state", () => {
   });
 
   it("bails BEFORE respondWith, so nothing is stored and nothing is served back", () => {
-    // The guard has to sit with the other pass-throughs, above `event.respondWith`.
-    // Below it, the worker would still answer from cache when the network fails,
-    // which is the half that merges stale state.
     const handler = /addEventListener\("fetch"[\s\S]*$/.exec(sw)?.[0] ?? "";
     const guardAt = handler.indexOf("isMailbox(url.pathname)");
     const respondAt = handler.indexOf("event.respondWith");
@@ -253,22 +194,6 @@ describe("the service worker never caches sync state", () => {
   });
 });
 
-/**
- * ─── THE SEED ROUTE, AND WHY IT IS PATTERN-MATCHED RATHER THAN ENUMERATED ───
- *
- * `ASSETS` is built when the config LOADS. The bundle is read per request — so a
- * running server serves a page asking for a seed file the process has never heard
- * of, and answers it with the SPA fallback: `index.html`, 200. Zach, 2026-09-16,
- * on his phone, after a rebuild added a third file:
- *
- *     /hashigo-app-gen.db returned 19114 bytes that are not a SQLite file
- *     (header "<!doctype html>")
- *
- * `seedFile` removes the restart. It also widens what a URL can reach, which is
- * the half that needs pinning — `server.fs.allow` is narrowed in this repo
- * because `[root]` once exposed `build/hashigo.db` and the 617.9 MiB blob store
- * to anyone who could reach the port.
- */
 describe("the seed-file route", () => {
   it("serves every bootstrap file, including one added after startup", () => {
     for (const url of [
@@ -276,7 +201,6 @@ describe("the seed-file route", () => {
       "/hashigo-app-gen.db",
       "/hashigo-app-blobs.db",
       "/hashigo-app.json",
-      // The point of the pattern: the next seed file needs no restart.
       "/hashigo-app-future-thing.db",
     ]) {
       expect(seedFile(url), url).toBeTypeOf("string");
@@ -285,8 +209,8 @@ describe("the seed-file route", () => {
 
   it("REFUSES anything that is not one plain name in that one directory", () => {
     for (const url of [
-      "/hashigo.db", // the real card database, 74 MB, one directory up
-      "/.env", // the API keys
+      "/hashigo.db",
+      "/.env",
       "/../hashigo.db",
       "/hashigo-app/../../hashigo.db",
       "/hashigo-app.db/../../../.env",
@@ -299,9 +223,6 @@ describe("the seed-file route", () => {
   });
 
   it("never resolves outside the asset directory, whatever the name", () => {
-    // The pattern already forbids a separator; this asserts the second guard
-    // rather than trusting the first, because the cost of being wrong here is
-    // handing out his study history over a tunnel.
     const dir = resolve(process.cwd(), "build/app");
     for (const name of ["hashigo-app.db", "hashigo-app-gen.db", "hashigo-app-x.json"]) {
       expect(seedFile(`/${name}`)?.startsWith(dir)).toBe(true);
@@ -309,13 +230,6 @@ describe("the seed-file route", () => {
   });
 });
 
-/**
- * Zach, 2026-10-27: *"except for the very first time … the rest just only
- * downloads the 差分, not 4mb everytime"*. Install used to re-fetch every precache
- * URL into the new build's cache, so a CSS-only deploy re-downloaded the 2.2 MB
- * Japanese face, the sqlite wasm and both workers. Run the real install handler
- * against a fake Cache Storage and count what goes to the network.
- */
 describe("a new build downloads only the files it has not seen", () => {
   type Handler = (event: { waitUntil(p: Promise<unknown>): void }) => void;
 

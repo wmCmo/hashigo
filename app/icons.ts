@@ -1,41 +1,5 @@
 /// <reference types="vite/client" />
-/**
- * ICONS — Phosphor, Light weight at rest and FILL for "on". Zach, 2026-09-26,
- * after seeing Phosphor Light beside Lucide on a mock of the review screen:
- * *"oh phosphor wins immediately, you're right, filled is a must"*.
- *
- * ─── WHY LIGHT, AND WHY FILL IS THE "ON" STATE ──────────────────────────────
- *
- * Light is the weight that matches decision 32's hairline rules; Lucide's 2px
- * line sat heavier than the borders around it. And an "on" state that is the
- * SAME icon filled reads without colour — which matters twice here: the brief
- * keeps colour scarce, and his phone's bedroom mode is black and white, where
- * the sync dot's red and green were indistinguishable.
- *
- * `dots-three` is REGULAR, not Light: at 18px Light's three dots were the one
- * icon that went faint in the comparison.
- *
- * ─── HOW THEY ARE DELIVERED ─────────────────────────────────────────────────
- *
- * Imported as raw SVG text, one file per icon, so only what is used is bundled,
- * it works offline like the rest of the shell, and `fill="currentColor"` makes
- * every icon the colour of the text around it — dark mode for free. No icon
- * font: nothing to load, no flash of empty boxes.
- *
- * ─── STATIC MARKUP: `data-icon` ─────────────────────────────────────────────
- *
- * 2026-09-27, 全体のアイコン化。`index.html` のボタンは `data-icon="名前"` を書くだけで、
- * 起動時に `hydrateIcons()` がその要素の先頭にアイコンを差し込む。ボタンの文言は
- * 残す — アイコンは文言の代わりではなく目印で、ラベルのないアイコンだけのボタンは
- * 矢印と閉じるの二種類に限る（どちらも aria-label を持つ）。
- *
- * `data-icon-on="名前-fill"` を併記すると二つ差し込み、`.on` / `.arm` /
- * `aria-pressed="true"` のときに塗りの方へ切り替わる（style.css の `.ic-on`）。
- * 状態を色に頼らず形で示すのは同期アイコンと同じ理由 — 就寝モードは白黒。
- */
 
-// The deck line's chips (new card, reversed, …) set their text at 10px, where
-// Light's hairline strokes go faint — the same reason `dots-three` is Regular.
 import arrowsLeftRight from "@phosphor-icons/core/assets/regular/arrows-left-right.svg?raw";
 import calendarBlank from "@phosphor-icons/core/assets/regular/calendar-blank.svg?raw";
 import clock from "@phosphor-icons/core/assets/regular/clock.svg?raw";
@@ -152,10 +116,6 @@ const ICONS = {
 
 export type IconName = keyof typeof ICONS;
 
-/**
- * カードの操作名 → アイコン。ギャラリーの札、プレビューの層、カードの ⋯ が同じ動詞に
- * 同じ形を使うように一箇所に置く。
- */
 const OP_ICONS: Readonly<Record<string, IconName>> = {
   preview: "eye",
   edit: "pencil-simple",
@@ -168,7 +128,6 @@ const OP_ICONS: Readonly<Record<string, IconName>> = {
   "new card": "plus",
 };
 
-/** 操作名のアイコン。知らない名前なら null（文言だけのボタンのまま）。 */
 export function opIcon(label: string): IconName | null {
   return OP_ICONS[label] ?? null;
 }
@@ -177,7 +136,6 @@ function isIconName(name: string): name is IconName {
   return Object.hasOwn(ICONS, name);
 }
 
-/** The icon as an element: a `<span class="ic">` holding the SVG, hidden from screen readers. */
 export function icon(name: IconName): HTMLSpanElement {
   const span = document.createElement("span");
   span.className = "ic";
@@ -186,15 +144,10 @@ export function icon(name: IconName): HTMLSpanElement {
   return span;
 }
 
-/** Replace an element's content with an icon. The element keeps its own label. */
 export function setIcon(element: HTMLElement, name: IconName): void {
   element.replaceChildren(icon(name));
 }
 
-/**
- * 先頭にアイコンを差し込む（文言は残す）。`on` を渡すと Light と Fill の二つを入れ、
- * どちらを見せるかは CSS が要素の状態で決める。二度呼んでも二重にはならない。
- */
 export function prependIcon(element: HTMLElement, name: IconName, on?: IconName): void {
   for (const old of element.querySelectorAll(":scope > .ic")) old.remove();
   const icons = [icon(name)];
@@ -205,16 +158,11 @@ export function prependIcon(element: HTMLElement, name: IconName, on?: IconName)
     icons.push(filled);
   }
   element.prepend(...icons);
-  // 文言が並ぶときだけ間を空ける。アイコンだけのボタン（矢印・閉じる）は中央に一つ。
   if ((element.textContent ?? "").trim() !== "") {
     for (const each of icons) each.classList.add("ic-lead");
   }
 }
 
-/**
- * `data-icon` / `data-icon-on` を持つ要素すべてにアイコンを入れる。名前の打ち間違いは
- * 黙って無視せず投げる — 見えないアイコンは誰にも気付かれない。
- */
 export function hydrateIcons(root: ParentNode = document): void {
   for (const element of root.querySelectorAll<HTMLElement>("[data-icon]")) {
     const name = element.dataset["icon"] ?? "";

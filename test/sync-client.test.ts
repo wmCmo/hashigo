@@ -1,16 +1,3 @@
-/**
- * The sync CLIENT — the transport loop and the words the indicator shows.
- *
- * `src/sync` owns the merge and is tested against real databases. This file owns
- * the part that talks to the mailbox, and the one thing in it that was found by
- * accident rather than by design: ONE BAD PEER MUST NOT STOP THE SYNC.
- *
- * That happened for real on 2026-09-12. A hand-written test payload was left in
- * the mailbox with `archive: {}`; the merge threw, the loop aborted, and the run
- * never reached the good peer or the push. A peer on an older build, or a file
- * caught half-written, does exactly the same thing — so a failure is now carried
- * out in the result rather than thrown.
- */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -32,11 +19,6 @@ import {
 
 const NOW = new Date("2026-09-12T12:00:00.000Z");
 
-/**
- * A response the client will accept. `text`, not `json`: the client reads the
- * body as text and parses it itself, so that an answer which is NOT JSON can be
- * described instead of reaching him as a parser error.
- */
 function json(
   body: unknown,
   sha: string | null = null,
@@ -45,11 +27,6 @@ function json(
   return { ok: true, status: 200, headers, text: async () => JSON.stringify(body) };
 }
 
-/**
- * `shas.listed` is what the listing says each peer's hash is; `shas.served` is the
- * hash that comes back WITH the download. They differ when KV lags — the case the
- * skip rule has to survive. `downloads` counts GETs per peer.
- */
 function fakeMailbox(
   files: Record<string, unknown>,
   shas: { listed?: Record<string, string>; served?: Record<string, string> } = {},
@@ -104,13 +81,11 @@ describe("one bad peer does not stop the sync", () => {
     const seen: unknown[] = [];
     const outcome = await syncNow(ports((p) => seen.push(p)));
 
-    // The bad one was attempted, the other two merged, and the run completed.
     expect(seen).toHaveLength(3);
     expect(outcome.peersMerged).toBe(2);
     expect(outcome.reviewsAdded).toBe(2);
     expect(outcome.failures).toHaveLength(1);
     expect(outcome.failures[0]).toContain("dev-aaa");
-    // The push still happened — this is the half the abort used to swallow.
     expect(outcome.pushedBytes).toBe(2);
   });
 
@@ -124,8 +99,6 @@ describe("one bad peer does not stop the sync", () => {
 });
 
 describe("an unchanged peer is not downloaded again — 2026-09-29", () => {
-  // Measured before this: every press downloaded all eight peers (~2.3 MB) whether
-  // or not they had changed.
   it("skips a peer whose listed hash is the one this device last merged", async () => {
     const shas = { listed: { "dev-bbb": "h1" }, served: { "dev-bbb": "h1" } };
     const box = fakeMailbox({ "dev-bbb": { ok: true } }, shas);
@@ -145,18 +118,14 @@ describe("an unchanged peer is not downloaded again — 2026-09-29", () => {
   });
 
   it("records the hash of what it MERGED, not what the listing claimed — a lagging read is retried", async () => {
-    // KV lag: the listing already says h2, the download still returns h1's bytes.
     const shas = { listed: { "dev-bbb": "h2" }, served: { "dev-bbb": "h1" } };
     const box = fakeMailbox({ "dev-bbb": { ok: true } }, shas);
     await syncNow(ports(() => undefined));
     await syncNow(ports(() => undefined));
-    // Recording h2 would have skipped the second sync and lost h2 until the next change.
     expect(box.downloads.get("dev-bbb")).toBe(2);
   });
 
   it("a peer with no hash (an old payload) is downloaded once, not on every sync — 2026-10-09", async () => {
-    // 実測：クラウドの 6 枠のうち 4 枠が sha 導入前のもので、同期のたびに ~7.4 MB を
-    // 落としてマージし直していた。版の名前は「上げた時刻＋大きさ」で足りる。
     const box = fakeMailbox({ "dev-bbb": { ok: true } });
     await syncNow(ports(() => undefined));
     await syncNow(ports(() => undefined));
@@ -214,26 +183,6 @@ describe("what the indicator says", () => {
   });
 });
 
-/**
- * ─── THE ERROR ZACH GOT ON HIS PHONE, 2026-09-13 ────────────────────────────
- *
- *     sync failed — Unexpected token '<', "<!doctype "... is not valid JSON
- *
- * Nothing in that is actionable. It is `JSON.parse` describing the first
- * character of a web page, and it names neither the request nor the fact that
- * the answer WAS a page — which is the whole diagnosis.
- *
- * **`response.ok` cannot catch this.** A server with no `/sync/` route does not
- * 404: a single-page app's fallback answers 200 with `index.html`, on purpose,
- * because unknown routes are supposed to be the app. So the status check passes
- * and the parser is the first thing to notice anything is wrong.
- *
- * The cause that day was a stale `vite preview` holding port 4274 while
- * `tailscale serve` kept pointing at it — a process whose middleware predated
- * the mailbox, serving a bundle rebuilt that evening. Today's screen, last
- * week's server. `scripts/phone.mjs` now refuses to start into that; this is the
- * half that covers every other way a mailbox can be missing.
- */
 describe("a mailbox that answers with a page", () => {
   function pageInsteadOfJson(): void {
     vi.stubGlobal("localStorage", {
@@ -257,12 +206,8 @@ describe("a mailbox that answers with a page", () => {
   it("names the request, and what to actually do about it", async () => {
     pageInsteadOfJson();
     const failure = await syncNow(ports(() => undefined)).catch((cause: Error) => cause.message);
-    // Which request. Without this he cannot tell a missing mailbox from a
-    // missing peer.
     expect(failure).toContain("/sync/");
-    // And the fix, because the cause is almost always the same one.
     expect(failure).toContain("npm run phone");
-    // The thing it must NOT be.
     expect(failure).not.toContain("Unexpected token");
   });
 
@@ -284,8 +229,6 @@ describe("a mailbox that answers with a page", () => {
   });
 
   it("still reports a plain HTTP failure as a status", async () => {
-    // The case that DID work before must keep working: a real 404 or 500 is
-    // already a clear answer and must not be dressed up as a parse problem.
     vi.stubGlobal("localStorage", {
       getItem: (): string | null => "dev-selftest01",
       setItem: (): void => undefined,
@@ -295,24 +238,12 @@ describe("a mailbox that answers with a page", () => {
   });
 });
 
-/**
- * The failure that arrives one layer BEFORE the mailbox can be inspected.
- *
- * Zach, on his phone, 2026-09-19: *"sync failed — Failed to fetch"*. Checked
- * while he was looking at it — the laptop was serving (200 in 10 ms locally,
- * 200 in 478 ms through `node.tailed819e.ts.net`) and `tailscale status` said
- * his handset was `offline, last seen 2h ago`. Off the tailnet is decision 33's
- * accepted cost, so the message has to name it.
- */
 describe("a device that cannot reach the laptop at all", () => {
   function offTheTailnet(): void {
     vi.stubGlobal("localStorage", {
       getItem: (): string | null => "dev-selftest01",
       setItem: (): void => undefined,
     });
-    // EXACTLY what a browser does for a network-layer failure: `fetch` REJECTS
-    // with a TypeError. There is no response to look at, which is why none of
-    // the mailbox diagnostics above can reach this case.
     vi.stubGlobal("fetch", async () => {
       throw new TypeError("Failed to fetch");
     });
@@ -324,20 +255,15 @@ describe("a device that cannot reach the laptop at all", () => {
     expect(failure).toContain("could not reach the laptop");
     expect(failure).toContain("tailnet");
     expect(failure).toContain("Tailscale");
-    // The string he actually read, which says nothing he can act on.
     expect(failure).not.toContain("Failed to fetch");
   });
 
   it("does not add a second em dash — `paintSync` already supplies one", () => {
-    // Rendered as `sync failed — <detail>`; a dash inside the detail makes the
-    // banner read as three fragments on a 375px screen.
     const rendered = `sync failed — could not reach the laptop.`;
     expect(rendered.split("—")).toHaveLength(2);
   });
 
   it("still rethrows a NON-network error untouched", async () => {
-    // `reach` may only dress up a TypeError. A bug in the client that throws
-    // something else must not come out wearing a networking diagnosis.
     vi.stubGlobal("localStorage", {
       getItem: (): string | null => "dev-selftest01",
       setItem: (): void => undefined,
@@ -349,10 +275,6 @@ describe("a device that cannot reach the laptop at all", () => {
   });
 });
 
-/**
- * The two clocks say different things, and conflating them is what let a day of
- * grading look fine — Zach, 2026-09-14.
- */
 describe("the sent clock is not the synced clock", () => {
   const NOW = new Date("2026-09-14T12:00:00.000Z");
 
@@ -363,8 +285,6 @@ describe("the sent clock is not the synced clock", () => {
   });
 
   it("never lets the push row read `grades sent synced just now`", () => {
-    // The literal defect: `sinceLabel` bakes the verb into every branch, so the
-    // row built from it said "grades sent synced just now".
     for (const at of [
       "2026-09-14T11:59:59.000Z",
       "2026-09-14T11:30:00.000Z",
@@ -376,36 +296,12 @@ describe("the sent clock is not the synced clock", () => {
   });
 
   it("says nothing rather than lying when there is no such moment", () => {
-    // Null is not "just now". A device that has never pushed must not report a
-    // push, which is the whole failure this row exists to make visible.
     expect(agoLabel(null, NOW)).toBeNull();
     expect(agoLabel("not a date", NOW)).toBeNull();
     expect(sinceLabel(null, NOW)).toBe("never synced");
   });
 });
 
-/**
- * A GREEN DOT MUST NOT MEAN "UP TO DATE" WHEN IT ONLY MEANS "MY LAST PULL WORKED".
- *
- * Zach, 2026-09-14, mid-session on the laptop: *"it looks like i already did it
- * in the morning on my phone, same with 4-5 cards before this, but the light is
- * green... which means it's synced...?"*
- *
- * It was green, it was honest, and it was the wrong thing to believe. The
- * automatic half of sync is `pushNow`, which never pulls — deliberately, because
- * a merge mid-card freezes the screen for ~8 seconds and can move what is due
- * underneath him. So `lastSyncedAt` records the last PULL and then stands still
- * while a peer drops newer work into the mailbox a minute later.
- *
- * Reproduced from his own mailbox that evening: the phone's payload carried 36
- * reviews for the day, the laptop had merged none of them, and he re-answered
- * four cards the phone had already done at 08:42. Nothing was lost — reviews
- * UNION — but he did the work twice and the dot said he would not have to.
- *
- * `peersNewerThan` is a LISTING, not a merge: no payload bodies, nothing applied.
- * That is what makes it cheap enough to ask on load and after every push, which
- * is what closes the window the pull's manualness opens.
- */
 describe("knowing a peer is ahead", () => {
   const SYNCED = "2026-09-14T12:00:00.000Z";
 
@@ -438,9 +334,6 @@ describe("knowing a peer is ahead", () => {
   });
 
   it("never counts THIS device — its own push is not news", async () => {
-    // The push that fires on his own grading rewrites this device's own slot and
-    // makes it the newest file in the mailbox, every time. Counting it would put
-    // the dot permanently in `behind` thirty seconds after every card.
     mailbox({ "dev-selftest01": "2026-09-14T23:00:00.000Z" });
     expect(await peersNewerThan(SYNCED)).toBe(0);
   });
@@ -461,17 +354,12 @@ describe("knowing a peer is ahead", () => {
   });
 
   it("propagates a mailbox failure rather than reporting 0 peers ahead", async () => {
-    // Offline must not read as "you are up to date" HERE. The caller swallows it
-    // and keeps the status it had; silently answering 0 would paint the dot green
-    // on a device that simply could not ask, which is the original defect again.
     mailbox({});
     vi.stubGlobal("fetch", async () => ({ ok: false, status: 503, text: async () => "" }));
     await expect(peersNewerThan(SYNCED)).rejects.toThrow();
   });
 
   it("makes `behind` count as needing attention, without waiting a day", async () => {
-    // `isStale` gates the sidebar's own nudge. `behind` is sharper than the
-    // day-old threshold: the grades are in the mailbox NOW.
     expect(
       isStale({ state: "behind", lastSyncedAt: SYNCED, detail: null, peers: 1 }, new Date(SYNCED)),
     ).toBe(true);
@@ -481,19 +369,11 @@ describe("knowing a peer is ahead", () => {
   });
 });
 
-/**
- * 同期の進み具合と、あと何秒か — Zach, 2026-10-09: *"if I'm on a train and I want
- * to review it it would take so much time without knowing how long it would take"*.
- *
- * 見積もりは前回この端末で測った速さから出す。測っていない部分がある間は null —
- * 短い方の半分だけを言う数字は、電車に乗り遅れさせる数字だから。
- */
 describe("how long a sync will take", () => {
   const measured = { mergeMsPerByte: 0.004, downBytesPerMs: 500, sendMs: 900 };
 
   it("adds download, merge and send from the last run's speeds", () => {
     const eta = syncEta(measured, { downloadBytes: 1_000_000, mergeBytes: 2_000_000, send: true });
-    // 2,000 ms + 8,000 ms + 900 ms
     expect(eta).toBeCloseTo(10.9, 5);
   });
 
@@ -506,7 +386,6 @@ describe("how long a sync will take", () => {
   });
 
   it("does not need what is already done", () => {
-    // ダウンロードが終わった後は、ダウンロード速度を知らなくても見積もれる。
     const eta = syncEta(
       { ...measured, downBytesPerMs: null },
       { downloadBytes: 0, mergeBytes: 250_000, send: false },
@@ -569,10 +448,8 @@ describe("what a sync reports while it runs", () => {
     const first: SyncProgress[] = [];
     await syncNow(ports(() => undefined), { onProgress: (p) => first.push(p) });
     expect(first.every((p) => p.etaSeconds === null)).toBe(true);
-    // 二回目は同じ端末に新しい版がある、という状況にする。
     store.set("hashigo.sync.merged", "{}");
     const timing = JSON.parse(store.get("hashigo.sync.timing") ?? "{}") as Record<string, unknown>;
-    // テストの偽物は一瞬で終わるので、マージ速度が測れていれば十分。
     store.set("hashigo.sync.timing", JSON.stringify({ ...timing, mergeMsPerByte: 0.01, downBytesPerMs: 100 }));
     const second: SyncProgress[] = [];
     await syncNow(ports(() => undefined), { onProgress: (p) => second.push(p) });
@@ -590,7 +467,6 @@ describe("what a sync reports while it runs", () => {
     expect(exported).toHaveLength(0);
     expect(outcome.pushedBytes).toBe(0);
     expect(seen.some((p) => p.stage === "sending")).toBe(false);
-    // 受け取る半分は済んだので「同期済み」の時刻は書く。
     expect(box.store.get("hashigo.sync.lastSyncedAt")).toBeDefined();
   });
 
@@ -609,11 +485,6 @@ describe("what a sync reports while it runs", () => {
   });
 });
 
-/**
- * 差分で送る — 2026-10-10。Zach: *"so it's guaranteed that my last min of reviewing
- * won't be synced from my tablet"*。全体（~2 MB）は `keepalive` の 64 KB に入らず、
- * 閉じた瞬間には届かない。差分は数 KB で入る。
- */
 describe("sending grades as a delta", () => {
   interface Call {
     method: string;
@@ -654,11 +525,6 @@ describe("sending grades as a delta", () => {
   }
 
   const exported: string[] = [];
-  /**
-   * `editRows` is what the worker's diff finds when it is handed a fingerprint
-   * (decision 64); the fingerprints are plain labels, so a test can say which
-   * one the page kept.
-   */
   const port = (deltaCount = 2, mark = 42, editRows = 3): SyncPorts => ({
     async exportPayload() {
       exported.push("full");
@@ -716,8 +582,6 @@ describe("sending grades as a delta", () => {
   });
 
   it("an edit goes as a DELTA once a fingerprint exists — decision 64, no full payload for one card", async () => {
-    // The 2026-11-10 measurement: one card made on the laptop sent its whole
-    // 5.3 MB base, and every other device downloaded and merged all of it.
     const box = mailboxRecording();
     box.store.set("hashigo.sync.mark", "40");
     box.store.set("hashigo.sync.sent", "fp1");
@@ -784,8 +648,6 @@ describe("sending grades as a delta", () => {
   });
 
   it("a full push from a port with no fingerprint FORGETS the old one", async () => {
-    // Kept, it would describe a base the mailbox no longer holds: a value edited
-    // back to what it was then would compare equal and never leave the device.
     const box = mailboxRecording();
     box.store.set("hashigo.sync.sent", "stale");
     const old: SyncPorts = { ...port(), exportPayload: async () => ({ json: "{}", bytes: 2, mark: 40 }) };
@@ -819,7 +681,6 @@ describe("sending grades as a delta", () => {
   });
 
   it("an edit asks for a push itself — it does not wait for the next grade (2026-11-05)", () => {
-    // His ガーゼ card never left the laptop: only a grade scheduled a push.
     mailboxRecording();
     let asked = 0;
     whenEdited(() => {
@@ -835,7 +696,6 @@ describe("sending grades as a delta", () => {
     markEdited();
     expect(await pushGradesNow(port(), { keepalive: true })).toBe("delta");
     expect(box.calls[0]).toMatchObject({ method: "POST", keepalive: true });
-    // 編集はまだ送っていない — 次の普通の送信が全体にする。
     expect(box.store.has("hashigo.sync.fullDirty")).toBe(true);
   });
 
@@ -870,7 +730,6 @@ describe("sending grades as a delta", () => {
     await syncNow(ports, { push: false });
     expect(box.calls.filter((c) => c.method === "GET").map((c) => c.url)).toEqual(["/sync/", "/sync/dev-tablet01/delta"]);
     expect(merged).toHaveLength(2);
-    // 二度目は取らない — 差分の sha が記録されている。
     await syncNow(ports, { push: false });
     expect(merged).toHaveLength(2);
   });
@@ -881,7 +740,6 @@ describe("sending grades as a delta", () => {
     });
     box.store.set("hashigo.sync.mark", "42");
     await syncNow(port(), { push: false });
-    // port の merge は markBefore 42 → markAfter 50。
     expect(readMark()).toBe(50);
   });
 
@@ -954,14 +812,11 @@ describe("sending grades as a delta", () => {
     const ports = { ...port(), mergePayload: async (p: unknown) => (merged.push(p), { reviewsAdded: 0, flagsTaken: 0, trackStateTaken: 0 }) };
     await syncNow(ports, { push: false });
     expect(merged).toHaveLength(2);
-    // The stack grew by one entry: its sha moved, it is downloaded again, and only
-    // the new entry is merged.
     entries.push({ delta: 1, mark: 9, reviews: [] });
     box.store.set("hashigo.sync.mergedDelta", JSON.stringify({ "dev-tablet01": "an-older-sha" }));
     await syncNow(ports, { push: false });
     expect(merged).toHaveLength(3);
     expect((merged[2] as { mark: number }).mark).toBe(9);
-    // Forgetting the database forgets this too: everything is merged again.
     forgetMergedPeers();
     box.store.set("hashigo.sync.merged", JSON.stringify({ "dev-tablet01": "base9" }));
     await syncNow(ports, { push: false });

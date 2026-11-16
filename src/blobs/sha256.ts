@@ -1,32 +1,3 @@
-/**
- * SHA-256, synchronous, in pure TypeScript. No `node:crypto`, no `crypto.subtle`.
- *
- * WHY THIS EXISTS, WHEN NODE ALREADY HAS ONE. `BlobStore.verify(hash)` is
- * synchronous by contract (see store.ts) — it re-reads a payload and confirms it
- * hashes to the address it is filed under. `node:crypto` cannot be imported in
- * the browser build and `crypto.subtle.digest` returns a Promise, so on the
- * browser side the *only* way to satisfy the existing synchronous interface is a
- * synchronous digest. `notes/archive/browser-feasibility.md` §5 called
- * `node:crypto -> crypto.subtle` "the one genuinely invasive change"; this file
- * is why it is not one.
- *
- * It is therefore the DEFAULT digest of `SqliteBlobStore`, which is the single
- * implementation both Node and the browser run. Node callers who are hashing
- * 625 MB should inject `contentAddress` from `src/import/blobs.ts` (OpenSSL, via
- * `node:crypto`) instead — it is roughly 5× faster. Both agree bit for bit on
- * all 10,816 payloads of the real corpus; `test/blobs.test.ts` asserts that
- * against `createHash("sha256")` rather than against a fixture.
- *
- * Correctness is pinned by the three FIPS 180-4 vectors, the empty string (which
- * matters: the corpus's 10 zero-byte mp3s all live at sha256("")), a
- * multi-block input, and every length from 0 to 200 bytes cross-checked against
- * `node:crypto`. Nothing here is clever — it is the reference algorithm with the
- * message schedule hoisted out of the loop so it is one allocation per call
- * rather than one per block.
- */
-
-/** FIPS 180-4 §4.2.2: the first 32 bits of the fractional parts of the cube
- * roots of the first 64 primes. */
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
   0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -40,15 +11,6 @@ const K = new Uint32Array([
 
 const HEX = "0123456789abcdef";
 
-/**
- * Streaming SHA-256. One instance per digest; `update` may be called any number
- * of times, `hex()` finalises and must be called once.
- *
- * The 64-byte tail buffer and the 64-word schedule are allocated with the
- * object, not per block: a 3.4 MB mp3 is 52,000 blocks and allocating two typed
- * arrays per block is the difference between this being usable on the corpus and
- * not.
- */
 export class Sha256 {
   readonly #h = new Uint32Array([
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
@@ -56,7 +18,6 @@ export class Sha256 {
   readonly #w = new Uint32Array(64);
   readonly #tail = new Uint8Array(64);
   #tailLength = 0;
-  /** Total bytes consumed. Up to 2^53, which is 9 PB — not a real limit here. */
   #length = 0;
   #done = false;
 
@@ -65,7 +26,6 @@ export class Sha256 {
     this.#length += bytes.length;
     let offset = 0;
 
-    // Top up a partial tail block first, so callers can feed arbitrary chunks.
     if (this.#tailLength > 0) {
       const want = Math.min(64 - this.#tailLength, bytes.length);
       this.#tail.set(bytes.subarray(0, want), this.#tailLength);
@@ -76,7 +36,6 @@ export class Sha256 {
       this.#tailLength = 0;
     }
 
-    // Whole blocks straight out of the caller's buffer: no copy.
     const end = bytes.length - 63;
     for (; offset < end; offset += 64) this.#block(bytes, offset);
 
@@ -87,15 +46,13 @@ export class Sha256 {
     return this;
   }
 
-  /** Finalise and return 64 lowercase hex characters. */
   hex(): string {
     if (this.#done) throw new Error("Sha256: hex() called twice");
     this.#done = true;
 
-    const bitsHigh = Math.floor(this.#length / 0x20000000); // length * 8 / 2^32
+    const bitsHigh = Math.floor(this.#length / 0x20000000);
     const bitsLow = (this.#length << 3) >>> 0;
 
-    // 0x80, then zeros, then the 64-bit big-endian bit length.
     const pad = this.#tail;
     let n = this.#tailLength;
     pad[n] = 0x80;
@@ -184,10 +141,6 @@ export class Sha256 {
   }
 }
 
-/**
- * Lowercase hex sha256 of `bytes`. The same string `node:crypto`'s
- * `createHash("sha256").update(bytes).digest("hex")` returns.
- */
 export function sha256Hex(bytes: Uint8Array): string {
   return new Sha256().update(bytes).hex();
 }

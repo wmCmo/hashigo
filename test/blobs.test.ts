@@ -1,23 +1,3 @@
-/**
- * The content-addressed, refcounted blob store: `src/blobs/*` (the store that
- * owns the bytes) and `src/import/blobs.ts` (what puts the corpus into it).
- *
- * Three halves, really. The unit half proves each rule against hand-built
- * bytes. The corpus half runs the real 657 MB export through it and asserts the
- * oracle: 10,890 live attachments in, 8,983 tombstones out, 10,826 addresses.
- * The third proves THE POINT — that the database holds no location, so the
- * store can be renamed out from under it and every read still resolves. Corpus
- * tests are skipped when exports/ is absent, since exports/ is gitignored.
- *
- * SINCE THE BACKING SWAP there are two implementations of `BlobStore`, and every
- * rule in `store.ts` is asserted against BOTH — `storeImplementations` below. The
- * production one is `SqliteBlobStore` (BLOB rows in a separate `blobs.db`), which
- * is the same class the browser runs; `NodeBlobStore` (one file per payload) is
- * kept for export and interop. Two implementations is what makes it possible to
- * tell a property of the interface from an accident of one backing, and the
- * corpus half now runs through the SQLite one because that is what ships.
- */
-
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -80,24 +60,15 @@ import {
   type MochiMediaSource,
 } from "../src/import/blobs.js";
 
-// ─── throwaway directories ───────────────────────────────────────────────────
-
 const SCRATCH: string[] = [];
 const OPEN_STORES: OpenedSqliteStore[] = [];
 
-/** A directory that exists for one test run and is removed afterwards. */
 function scratchDir(label: string): string {
   const dir = mkdtempSync(join(tmpdir(), `hashigo-${label}-`));
   SCRATCH.push(dir);
   return dir;
 }
 
-/**
- * A throwaway SQLite blob store. Registered for closing: the store borrows a
- * better-sqlite3 handle it does not own, and on Windows an unclosed handle keeps
- * a lock that makes the scratch directory undeletable — a passing test would then
- * leave 660 MB behind.
- */
 function scratchStore(label: string): OpenedSqliteStore {
   const opened = openBlobStoreDatabase(join(scratchDir(label), "hashigo.db.blobs.db"));
   OPEN_STORES.push(opened);
@@ -109,25 +80,17 @@ afterAll(() => {
     try {
       opened.close();
     } catch {
-      /* already closed by the test that opened it */
     }
   }
   for (const dir of SCRATCH) rmSync(dir, { recursive: true, force: true });
 });
 
-// ─── fixtures ────────────────────────────────────────────────────────────────
-
-/** A byte string that sniffs as mp3: bare MPEG-1 Layer III frame sync. */
 function mp3(seed: string): Uint8Array {
   return Uint8Array.from([0xff, 0xf3, 0xe4, 0xc4, ...Buffer.from(seed, "utf8")]);
 }
 const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
 const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-/**
- * blob_refs.card_id is a foreign key, so the cards have to exist. The real
- * pipeline gets them from the card importer; this is the minimum skeleton.
- */
 function seedCards(db: Db, ids: readonly string[]): void {
   db.prepare("INSERT OR IGNORE INTO decks (id, name) VALUES ('d', 'test')").run();
   const insert = db.prepare("INSERT OR IGNORE INTO cards (id, deck_id) VALUES (?, 'd')");
@@ -142,23 +105,18 @@ function fresh(cardIds: readonly string[] = []): Db {
   return db;
 }
 
-/** An in-memory media directory, so the unit tests never touch a disk. */
 function memoryMedia(files: Readonly<Record<string, Uint8Array>>) {
   return (_dir: string, name: string): Uint8Array | null => files[name] ?? null;
 }
 
-// ─── mime is sniffed, never trusted ──────────────────────────────────────────
-
 describe("mime sniffing", () => {
   it("reads mp3 out of bytes that CLAIM to be text/xml", () => {
-    // SPEC: Azure's SSML content-type leaked into Mochi's attachment metadata.
     const record = { size: 31680, type: "text/xml" };
     expect(record.type).toBe("text/xml");
     expect(sniffMime(mp3("audio"))).toBe("audio/mpeg");
   });
 
   it("does not mistake a JPEG for an mp3 frame", () => {
-    // Both start 0xff, and 0xd8 & 0xe0 === 0xc0, so ordering is what saves this.
     expect(sniffMime(JPEG)).toBe("image/jpeg");
     expect(sniffMime(PNG)).toBe("image/png");
   });
@@ -169,8 +127,6 @@ describe("mime sniffing", () => {
     expect(sniffMime(Buffer.from("hello", "utf8"))).toBe("application/octet-stream");
   });
 });
-
-// ─── component-cache keys ────────────────────────────────────────────────────
 
 describe("component-cache keys", () => {
   it("splits the real key shapes", () => {
@@ -188,7 +144,6 @@ describe("component-cache keys", () => {
   });
 
   it("does not eat a cloze in the source text", () => {
-    // {{…}} appears 1,087 times in the corpus; a greedy regex swallows it.
     expect(splitComponentCacheKey('{{食べる}} {:lang "ja-JP"}')).toEqual({
       text: "{{食べる}}",
       options: { lang: "ja-JP" },
@@ -209,8 +164,6 @@ describe("component-cache keys", () => {
   });
 });
 
-// ─── BCP-47 ──────────────────────────────────────────────────────────────────
-
 describe("language codes", () => {
   it("normalises Mochi's inline jp to ja-JP for a voice locale", () => {
     expect(normaliseLanguageTag("jp", true)).toBe("ja-JP");
@@ -221,7 +174,6 @@ describe("language codes", () => {
   });
 
   it("normalises jp to ja for a translation parameter, leaving ja alone", () => {
-    // The corpus has :from "jp" returning 404 and :from "ja" succeeding on 握る.
     expect(normaliseLanguageTag("jp", false)).toBe("ja");
     expect(normaliseLanguageTag("ja", false)).toBe("ja");
     expect(canonicaliseOptions({ from: "jp", to: "en" })).toBe('{"from":"ja","to":"en"}');
@@ -229,15 +181,9 @@ describe("language codes", () => {
   });
 
   it("strips a combining mark so the corpus's one ่jp does not fall through", () => {
-    // U+0E48 THAI CHARACTER MAI EK in front of `jp`. It appears once, on an
-    // inline generator, counted from the raw export with codepoints. Before the
-    // NFKD strip the lookup key was "่jp", which is in neither alias table,
-    // so the tag survived intact all the way into the address — one TTS request
-    // for a locale no provider knows, plus a permanent cache miss.
     expect(normaliseLanguageTag("่jp", true)).toBe("ja-JP");
     expect(normaliseLanguageTag("่jp", false)).toBe("ja");
     expect(canonicaliseOptions({ lang: "่jp" })).toBe('{"lang":"ja-JP"}');
-    // Nothing legitimate moves: no valid BCP-47 tag contains a mark.
     expect(normaliseLanguageTag("zh-Hant", true)).toBe("zh-Hant");
     expect(normaliseLanguageTag("jp-JP", true)).toBe("jp-JP");
   });
@@ -248,8 +194,6 @@ describe("language codes", () => {
     );
   });
 });
-
-// ─── the key ─────────────────────────────────────────────────────────────────
 
 describe("generation key", () => {
   const base = { kind: "speech", text: "領域", voice: "ja-JP-NanamiNeural" } as const;
@@ -277,8 +221,6 @@ describe("generation key", () => {
     ).not.toBe(generationKey(generationIdentity(base)));
   });
 });
-
-// ─── the store itself ────────────────────────────────────────────────────────
 
 describe("content addressing and refcounts", () => {
   it("addresses a blob by sha256 of its bytes, verifiably", () => {
@@ -330,8 +272,6 @@ describe("content addressing and refcounts", () => {
   });
 });
 
-// ─── the fix: identical input is a cache hit ─────────────────────────────────
-
 describe("regenerating identical input", () => {
   const request = {
     kind: "speech",
@@ -345,7 +285,7 @@ describe("regenerating identical input", () => {
     let calls = 0;
     const generate = () => {
       calls += 1;
-      return { bytes: mp3(`take-${calls}`) }; // Azure is not bit-reproducible
+      return { bytes: mp3(`take-${calls}`) };
     };
 
     const first = resolveGeneration(db, request, generate);
@@ -376,7 +316,6 @@ describe("regenerating identical input", () => {
   });
 
   it("a typo and its undo cost nothing and create nothing", () => {
-    // SPEC's exact case: sプリント -> スプリント billed five generations.
     const db = fresh();
     let calls = 0;
     const generate = () => {
@@ -384,16 +323,15 @@ describe("regenerating identical input", () => {
       return { bytes: mp3(`v${calls}`) };
     };
     const before = resolveGeneration(db, request, generate);
-    resolveGeneration(db, { ...request, text: "sプリント" }, generate); // the typo
-    const after = resolveGeneration(db, request, generate); // undone
+    resolveGeneration(db, { ...request, text: "sプリント" }, generate);
+    const after = resolveGeneration(db, request, generate);
     expect(after.hash).toBe(before.hash);
     expect(after.hit).toBe(true);
-    expect(calls).toBe(2); // one per DISTINCT input, not one per edit
+    expect(calls).toBe(2);
     db.close();
   });
 
   it("never serves a zero-byte blob as a cache hit", () => {
-    // 10 live attachments in the corpus are failed Azure calls, 0 bytes.
     const db = fresh();
     putBlob(db, {
       bytes: new Uint8Array(0),
@@ -405,14 +343,12 @@ describe("regenerating identical input", () => {
   });
 });
 
-// ─── importing records ───────────────────────────────────────────────────────
-
 describe("importBlobs", () => {
   it("skips tombstones, dedupes identical bytes, and sniffs past a bad type", () => {
     const files = {
       "live.mp3": mp3("hello"),
-      "copy.mp3": mp3("hello"), // byte-identical to live.mp3
-      "gone.mp3": mp3("orphan"), // tombstoned: must not be imported
+      "copy.mp3": mp3("hello"),
+      "gone.mp3": mp3("orphan"),
       "pic.jpg": JPEG,
     };
     const sources: MochiMediaSource[] = [
@@ -422,7 +358,7 @@ describe("importBlobs", () => {
           {
             id: "c1",
             attachments: {
-              "live.mp3": { size: 9, type: "text/xml" }, // the SSML leak
+              "live.mp3": { size: 9, type: "text/xml" },
               "gone.mp3": { size: 9, type: "text/xml", "deleted?": true },
               "pic.jpg": { size: 6, type: "" },
             },
@@ -450,17 +386,16 @@ describe("importBlobs", () => {
     expect(report.liveAttachments).toBe(3);
     expect(report.tombstonesSkipped).toBe(1);
     expect(report.distinctFiles).toBe(3);
-    expect(report.dedupedFiles).toBe(1); // live.mp3 and copy.mp3 are one blob
+    expect(report.dedupedFiles).toBe(1);
     expect(report.mediaBlobs).toBe(2);
     expect(report.mediaRefs).toBe(3);
     expect(report.cachePointers).toBe(3);
     expect(report.cachePointersLive).toBe(1);
     expect(report.cachePointersTombstoned).toBe(1);
     expect(report.cachePointersDangling).toBe(1);
-    expect(report.cacheFailures).toBe(1); // the 404 is not cached
-    expect(report.textBlobs).toBe(1); // the ai text generation
+    expect(report.cacheFailures).toBe(1);
+    expect(report.textBlobs).toBe(1);
 
-    // The tombstoned file has no blob and no reference anywhere.
     const refKeys = db.prepare("SELECT ref_key FROM blob_refs").pluck().all() as string[];
     expect(refKeys).not.toContain("gone.mp3");
     expect(new Set(refKeys).has("live.mp3")).toBe(true);
@@ -468,7 +403,6 @@ describe("importBlobs", () => {
       db.prepare("SELECT hash FROM blobs WHERE mime = 'audio/mpeg'").pluck().get(),
     );
 
-    // Type came from the bytes, and lang from BCP-47 normalisation.
     const speech = db
       .prepare("SELECT mime, refcount, source_text, lang FROM blobs WHERE kind = 'speech'")
       .get() as { mime: string; refcount: number; source_text: string; lang: string };
@@ -480,7 +414,6 @@ describe("importBlobs", () => {
     const image = db.prepare("SELECT kind, mime FROM blobs WHERE mime LIKE 'image/%'").get();
     expect(image).toEqual({ kind: "image", mime: "image/jpeg" });
 
-    // Re-importing changes nothing: refcounts do not drift.
     const second = importBlobs(db, sources, { store: "inline", readMedia: memoryMedia(files) });
     expect(second.mediaBlobs).toBe(0);
     expect(second.mediaRefs).toBe(0);
@@ -490,7 +423,7 @@ describe("importBlobs", () => {
   });
 
   it("counts rather than forces a reference to a card that was never imported", () => {
-    const db = fresh([]); // no cards at all
+    const db = fresh([]);
     const report = importBlobs(
       db,
       [{ mediaDir: "/memory", cards: [{ id: "ghost", attachments: { "a.mp3": { size: 4 } } }] }],
@@ -502,11 +435,6 @@ describe("importBlobs", () => {
     db.close();
   });
 });
-
-// ─── the corpus ──────────────────────────────────────────────────────────────
-
-
-// ─── the store that owns the bytes ───────────────────────────────────────────
 
 describe("addresses", () => {
   it("is 64 lowercase hex characters, and nothing else is", () => {
@@ -524,18 +452,14 @@ describe("addresses", () => {
     const hash = contentAddress(mp3("a"));
     expect(shardOf(hash)).toBe(hash.slice(0, 2));
     expect(addressPath(hash)).toBe(`${hash.slice(0, 2)}/${hash}`);
-    // Relative: no drive letter, no leading slash, nothing machine-specific.
     expect(addressPath(hash).startsWith("/")).toBe(false);
     expect(addressPath(hash)).not.toContain(":");
   });
 
   it("names a database's default store beside it, never inside exports/", () => {
-    // The production default is a FILE, `<db>.blobs.db`; the legacy directory
-    // store's `<db>.blobs` is still derivable for anything that has one.
     const file = defaultStoreDatabase(join("build", "hashigo.db"));
     expect(file.endsWith(join("build", "hashigo.db.blobs.db"))).toBe(true);
     expect(file).not.toContain("exports");
-    // .gitignore's `*.db` covers it, which is what keeps 660 MB out of the repo.
     expect(file.endsWith(".db")).toBe(true);
 
     const root = defaultStoreRoot(join("build", "hashigo.db"));
@@ -544,17 +468,6 @@ describe("addresses", () => {
   });
 });
 
-// ─── one contract, three implementations ─────────────────────────────────────
-
-/**
- * THE POINT OF RUNNING THIS THREE TIMES. There are now two real backings —
- * `SqliteBlobStore`, which is what ships in Node and in the browser, and
- * `NodeBlobStore`, which is one file per payload and is kept for export and
- * interop — plus the in-memory one. A rule that only one of them happens to
- * satisfy is not a property of `BlobStore`, and the only way to notice that is to
- * assert every rule against every implementation. When the backing was swapped,
- * these are the tests that had to keep passing unchanged.
- */
 const storeImplementations: readonly {
   readonly name: string;
   readonly make: (label: string) => BlobStore;
@@ -594,7 +507,6 @@ describe.each(storeImplementations)("the blob store: $name", ({ make }) => {
     const hash = contentAddress(bytes);
     store.write(hash, bytes);
     expect(() => store.write(hash, mp3("a much longer lie"))).toThrow(BlobConflictError);
-    // …and the payload that was there is still there, unchanged.
     expect(Buffer.from(store.read(hash))).toEqual(Buffer.from(bytes));
   });
 
@@ -636,9 +548,6 @@ describe.each(storeImplementations)("the blob store: $name", ({ make }) => {
   });
 
   it("holds every rule inside a batch, whether or not it has one", () => {
-    // THE CALL-SITE RULE for the optional member: batch when it exists, run the
-    // identical loop when it does not. src/import/blobs.ts and sweepUnreferenced
-    // both do exactly this, so the same loop has to work either way.
     const store = make("store-batch");
     const payloads = [mp3("b1"), mp3("b2"), mp3("b3")];
     const run = (): number => {
@@ -653,7 +562,6 @@ describe.each(storeImplementations)("the blob store: $name", ({ make }) => {
     for (const bytes of payloads) {
       expect(Buffer.from(store.read(contentAddress(bytes)))).toEqual(Buffer.from(bytes));
     }
-    // A throw inside a batch must not leave the store readable-but-wrong.
     const doomed = mp3("rolled back");
     expect(() => {
       const attempt = (): never => {
@@ -674,7 +582,6 @@ describe("the directory store's own rules", () => {
     const bytes = mp3("layout");
     const hash = store.write(contentAddress(bytes), bytes).hash;
     expect(existsSync(join(root, ...addressPath(hash).split("/")))).toBe(true);
-    // The marker and the self-ignore are there; neither is mistaken for a blob.
     expect(existsSync(join(root, "STORE.json"))).toBe(true);
     expect(readFileSync(join(root, ".gitignore"), "utf8").trim()).toBe("*");
     expect([...store.list()]).toEqual([hash]);
@@ -694,9 +601,6 @@ describe("the directory store's own rules", () => {
 
 describe("the SQLite store's own rules", () => {
   it("refuses to add itself to a database that already holds tables", () => {
-    // The mistake this catches: `--store build/hashigo.db`. Scribbling a payload
-    // table into the card database is not a thing that should be recoverable by
-    // apology, so it is refused before a single byte is written.
     const file = join(scratchDir("store-wrong-db"), "cards.db");
     const cards = openDatabase(file);
     cards.close();
@@ -726,8 +630,6 @@ describe("the SQLite store's own rules", () => {
     opened.store.write(contentAddress(bytes), bytes);
     const raw = openDatabase(opened.file, { applySchema: false });
     try {
-      // Three columns, and `hash` is CHECK-ed to 64 hex characters, so the only
-      // column in the whole file that could hold a path is the payload itself.
       const columns = (
         raw.prepare("PRAGMA table_info('blob_payloads')").all() as { name: string }[]
       ).map((column) => column.name);
@@ -738,7 +640,6 @@ describe("the SQLite store's own rules", () => {
       expect(() => insert.run("C:/exports/x.mp3", 1, Buffer.from("x"))).toThrow(
         /CHECK constraint failed/,
       );
-      // …and byte_size cannot lie about the payload either.
       expect(() => insert.run("a".repeat(64), 999, Buffer.from("x"))).toThrow(
         /CHECK constraint failed/,
       );
@@ -751,8 +652,6 @@ describe("the SQLite store's own rules", () => {
     const opened = scratchStore("store-pragmas");
     const stats = opened.store.stats();
     expect(stats.pageSize).toBe(STORE_PAGE_SIZE);
-    // 2 = incremental. Chosen so a sweep can return pages without rewriting a
-    // 660 MB file; see the option's comment in src/blobs/sqlite.ts.
     expect(stats.autoVacuum).toBe(2);
     expect(stats.journalMode).toBe("delete");
     expect(opened.store.checkIntegrity()).toEqual([]);
@@ -768,10 +667,8 @@ describe("the SQLite store's own rules", () => {
       expect(opened.store.stats().autoVacuum).toBe(0);
       opened.store.remove(hash);
       expect(opened.store.stats().freelistPages).toBeGreaterThan(0);
-      // incremental_vacuum is a no-op without auto_vacuum, and reports as one.
       expect(opened.store.reclaim()).toBe(0);
       expect(opened.store.stats().freelistPages).toBeGreaterThan(0);
-      // A full VACUUM still works, at the cost of rewriting the whole file.
       opened.store.vacuum();
       expect(opened.store.stats().freelistPages).toBe(0);
     } finally {
@@ -797,7 +694,6 @@ describe("the SQLite store's own rules", () => {
     const grown = store.stats();
     expect(grown.payloads).toBe(40);
 
-    // Delete half. The pages go on the freelist; the file does not shrink yet.
     store.batch(() => {
       for (const hash of first.slice(0, 20)) store.remove(hash);
     });
@@ -806,9 +702,6 @@ describe("the SQLite store's own rules", () => {
     expect(emptied.freelistPages).toBeGreaterThan(0);
     expect(emptied.pageCount).toBe(grown.pageCount);
 
-    // FREE-PAGE REUSE: 20 new payloads must come out of the freelist rather than
-    // off the end of the file. This is the property that keeps a phone's blob
-    // store from growing without bound as cards are edited and audio regenerated.
     store.batch(() => {
       for (let i = 100; i < 120; i += 1) {
         const bytes = payload(i);
@@ -817,11 +710,6 @@ describe("the SQLite store's own rules", () => {
     });
     const reused = store.stats();
     expect(reused.payloads).toBe(40);
-    // MEASURED, not assumed: 20 payloads of 50,000 B need ~123 pages of 8,192 B,
-    // and the file grew by 1 page (a pointer-map page, which auto_vacuum needs).
-    // So reuse is real and the residual growth is a constant, not a fraction of
-    // the data. Asserting "did not grow at all" would be asserting that
-    // auto_vacuum has no bookkeeping, which it does.
     const wouldHaveNeeded = Math.ceil((20 * 50_000) / grown.pageSize);
     const grewBy = reused.pageCount - grown.pageCount;
     console.log(
@@ -830,7 +718,6 @@ describe("the SQLite store's own rules", () => {
     );
     expect(grewBy).toBeLessThan(wouldHaveNeeded / 10);
 
-    // And the freelist can be handed back without a full rewrite.
     store.batch(() => {
       for (const hash of first.slice(20)) store.remove(hash);
     });
@@ -844,15 +731,9 @@ describe("the SQLite store's own rules", () => {
   });
 
   it("commits a long batch in chunks, so an interrupted import keeps its work", () => {
-    // The batch is deliberately NOT one transaction: it flushes every
-    // BATCH_FLUSH_BYTES so a 625 MB first import loses at most that much. Proved
-    // by throwing after the threshold is crossed and finding the early payloads
-    // still there — and then resuming, which writes only what is missing.
     const opened = scratchStore("store-flush");
     const store = opened.store;
     const chunk = 4 << 20;
-    // One base buffer, copied and stamped. `Uint8Array.from({length}, fn)` over
-    // 68 MB is seconds of JS on its own and would be measuring the test.
     const base = new Uint8Array(chunk);
     for (let i = 0; i < chunk; i += 1) base[i] = i & 0xff;
     const payload = (seed: number): Uint8Array => {
@@ -874,11 +755,8 @@ describe("the SQLite store's own rules", () => {
 
     expect(store.batchFlushes).toBeGreaterThanOrEqual(1);
     const survived = [...store.list()].length;
-    // Everything up to the last flush survived; the tail rolled back. Neither
-    // number is 0 and neither is `needed` — that is the whole claim.
     expect(survived).toBeGreaterThan(0);
     expect(survived).toBeLessThan(needed);
-    // Whatever survived is intact, not truncated: content addressing says so.
     for (const hash of store.list()) expect(store.verify(hash)).toBe(true);
 
     let rewritten = 0;
@@ -893,11 +771,6 @@ describe("the SQLite store's own rules", () => {
   }, 120_000);
 
   it("is the same class over any handle: no Node in it, so the browser runs it", () => {
-    // openSqliteBlobStore takes a handle satisfying the SqliteHandle contract in
-    // src/db/browser.ts. In the browser that handle comes from
-    // openDatabaseBrowser() over opfs-sahpool; here it is better-sqlite3 over a
-    // file. The store code cannot tell, which is the entire reason there is one
-    // implementation instead of two.
     const raw = openDatabase(join(scratchDir("store-handle"), "any.db"), { applySchema: false });
     try {
       const store = openSqliteBlobStore(raw);
@@ -906,8 +779,6 @@ describe("the SQLite store's own rules", () => {
       expect(store.write(hash, bytes).written).toBe(true);
       expect(store.verify(hash)).toBe(true);
       expect(store.describe.startsWith("sqlite:")).toBe(true);
-      // The default digest is the pure-TS one — the browser has no node:crypto —
-      // and it agrees with OpenSSL on the same bytes.
       expect(sha256Hex(bytes)).toBe(hash);
     } finally {
       raw.close();
@@ -923,14 +794,10 @@ describe("sha256, synchronously and without a platform", () => {
     expect(sha256Hex(Buffer.from("abc", "utf8"))).toBe(
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
     );
-    // The empty digest is load-bearing: the corpus's 10 zero-byte mp3s all live
-    // at that address, which is how they collapse into one blob at refcount 10.
     expect(contentAddress(new Uint8Array(0))).toBe(sha256Hex(new Uint8Array(0)));
   });
 
   it("agrees with node:crypto at every length across a block boundary", () => {
-    // 0..200 covers the empty case, the one-block case, the length-56 padding
-    // boundary that needs an extra block, and several whole blocks.
     for (let n = 0; n <= 200; n += 1) {
       const bytes = Uint8Array.from({ length: n }, (_, i) => (i * 37 + n) & 0xff);
       expect(sha256Hex(bytes)).toBe(createHash("sha256").update(bytes).digest("hex"));
@@ -974,14 +841,12 @@ describe("moving the store", () => {
 
     expect(Buffer.from(readBlob(db, hash, store))).toEqual(Buffer.from(bytes));
 
-    // Move it. This is the operation the old design could not survive.
     const second = join(scratchDir("store-after"), "moved-somewhere-else");
     renameSync(first, second);
     expect(existsSync(first)).toBe(false);
 
     const relocated = openBlobStore(second, { create: false });
     expect(Buffer.from(readBlob(db, hash, relocated))).toEqual(Buffer.from(bytes));
-    // Nothing was migrated, updated or rewritten in the database.
     expect(db.prepare("SELECT path FROM blobs WHERE hash = ?").pluck().get(hash)).toBeNull();
   });
 });
@@ -1000,7 +865,6 @@ describe("refcounts, not tombstones", () => {
     addBlobRef(db, { blobHash: hash, cardId: "c2", refKey: "a.mp3" });
     expect(db.prepare("SELECT refcount FROM blobs WHERE hash = ?").pluck().get(hash)).toBe(2);
 
-    // One card goes: still referenced, so the payload stays.
     db.prepare("DELETE FROM cards WHERE id = 'c1'").run();
     expect(sweepUnreferenced(db, store, { graceDays: 0 })).toEqual({
       rowsDeleted: 0,
@@ -1029,10 +893,6 @@ describe("refcounts, not tombstones", () => {
   });
 
   it("HOLDS an unreferenced payload for the grace period, so a voice A/B is free", () => {
-    // The gap this closes: with an immediate sweep, generating two voices and
-    // pointing the card at one destroyed the loser's payload the instant the
-    // winner was chosen, so changing your mind cost another billed request. That
-    // is Mochi's attachment behaviour rebuilt by accident.
     const db = fresh(["c1"]);
     const store = openBlobStore(join(scratchDir("store-grace"), "blobs"));
     const bytes = mp3("the losing voice");
@@ -1044,7 +904,6 @@ describe("refcounts, not tombstones", () => {
     addBlobRef(db, { blobHash: hash, cardId: "c1", refKey: "a.mp3" });
     removeBlobRef(db, { cardId: "c1", refKey: "a.mp3" });
 
-    // Trigger-maintained, in the same statement as refcount so they cannot drift.
     const row = db
       .prepare("SELECT refcount, unreferenced_at FROM blobs WHERE hash = ?")
       .get(hash) as { refcount: number; unreferenced_at: string | null };
@@ -1057,8 +916,6 @@ describe("refcounts, not tombstones", () => {
     expect(held.bytesHeldByGrace).toBe(bytes.length);
     expect(store.has(hash)).toBe(true);
 
-    // Past the grace period it goes. `now` rather than a real clock so the test
-    // asserts the boundary instead of waiting a week for it.
     const later = new Date(Date.now() + 8 * 86_400_000).toISOString();
     const gone = sweepUnreferenced(db, store, { now: later });
     expect(gone.rowsDeleted).toBe(1);
@@ -1067,8 +924,6 @@ describe("refcounts, not tombstones", () => {
   });
 
   it("retargets a reference instead of deleting and re-adding it", () => {
-    // The `blob_refs_au` trigger has existed since stage 1 and nothing called
-    // it, which is exactly "I cannot delete the audio I do not want".
     const db = fresh(["c1"]);
     const nanami = mp3("nanami");
     const neural2 = mp3("neural2-c");
@@ -1093,32 +948,13 @@ describe("refcounts, not tombstones", () => {
     const old = counts.find((r) => r.hash === from);
     const now = counts.find((r) => r.hash === to);
     expect(old?.refcount).toBe(0);
-    // Stamped, so the old clip is a sweep candidate only after the grace period.
     expect(old?.unreferenced_at).not.toBeNull();
     expect(now?.refcount).toBe(1);
-    // And gaining a reference CLEARS the stamp: it must not look like a candidate.
     expect(now?.unreferenced_at).toBeNull();
 
-    // Nothing to retarget reports false rather than inventing a row.
     expect(retargetBlobRef(db, { cardId: "c1", fieldId: "spk", refKey: "nope" }, to)).toBe(false);
   });
 
-  /**
-   * `refcount = 0` WITH `unreferenced_at` NULL IS IMMEDIATELY ELIGIBLE, AND THAT
-   * IS DELIBERATE. Pinned because it looks like an oversight and is not.
-   *
-   * The triggers stamp `unreferenced_at` only on a 1 -> 0 refcount transition, so
-   * a row that started at 0 keeps NULL, and the eligibility test requires a
-   * non-NULL stamp to hold anything back. On the real store 48 rows are in that
-   * state, and they are permanently unreferenced rather than mid-write -- see the
-   * corpus test below and the note in `src/blobs/db.ts`.
-   *
-   * A session tried making eligibility fall back to `created_at` on the theory
-   * that a just-inserted row might be mid-write. It is not: rows and refs are
-   * written in one transaction. The change held genuine debris for a week and
-   * turned the corpus assertion red. This test exists so the next reader sees the
-   * property is chosen, not accidental.
-   */
   it("treats a blob that was NEVER referenced as immediately reclaimable", () => {
     const db = fresh(["c1"]);
     const store = openBlobStore(join(scratchDir("store-never-ref"), "blobs"));
@@ -1133,8 +969,6 @@ describe("refcounts, not tombstones", () => {
       .get(sha256Hex(bytes)) as { refcount: number; unreferenced_at: string | null };
     expect(row).toEqual({ refcount: 0, unreferenced_at: null });
 
-    // Swept even with a long grace period, BECAUSE the stamp is absent. Contrast
-    // the test above, where a blob that LOST its last reference is held.
     const swept = sweepUnreferenced(db, store, { graceDays: 3_650 });
     expect(swept.heldByGrace).toBe(0);
     expect(swept.rowsDeleted).toBe(1);
@@ -1167,14 +1001,12 @@ describe("refcounts, not tombstones", () => {
     expect(clean.missing).toBe(0);
     expect(clean.orphaned).toBe(1);
 
-    // Now break the store the way Mochi broke: a payload simply disappears.
     store.remove(contentAddress(provenanced));
     store.remove(contentAddress(anonymous));
     const broken = auditBlobStore(db, store);
     expect(broken.missing).toBe(2);
     expect(broken.missingRegenerable).toBe(1);
     expect(broken.missingLost).toBe(1);
-    // Detectable, and one of the two can be rebuilt without asking the user.
     expect(broken.missingHashes).toHaveLength(2);
   });
 });
@@ -1199,7 +1031,6 @@ describe("importBlobs and where the payloads go", () => {
     expect(report.storeFilesWritten).toBe(2);
     expect(report.storeFilesPresent).toBe(0);
     expect(report.storeWarnings).toEqual([]);
-    // The mediaDir was an absolute Windows path into exports/. None of it stuck.
     expect(db.prepare("SELECT count(*) FROM blobs WHERE path IS NOT NULL").pluck().get()).toBe(0);
     for (const bytes of Object.values(files)) {
       expect(Buffer.from(readBlob(db, contentAddress(bytes), store))).toEqual(Buffer.from(bytes));
@@ -1222,7 +1053,6 @@ describe("importBlobs and where the payloads go", () => {
       blobStore: store,
       readMedia: memoryMedia(files),
     });
-    // 3 files, 2 addresses: the duplicate is recognised, not copied twice.
     expect(first.storeFilesWritten).toBe(2);
     expect(first.storeFilesPresent).toBe(1);
 
@@ -1245,7 +1075,6 @@ describe("importBlobs and where the payloads go", () => {
     expect(report.payloadStore).toBe("address-only");
     expect(report.storeRoot).toBeNull();
     expect(report.storeWarnings.join(" ")).toMatch(/nowhere durable/);
-    // The row is still right: address, size, type, provenance. Just no bytes.
     const row = db.prepare("SELECT hash, byte_size, path, bytes FROM blobs").get() as {
       hash: string;
       byte_size: number;
@@ -1270,9 +1099,6 @@ describe("importBlobs and where the payloads go", () => {
     );
     db.close();
 
-    // A SQLITE DATABASE beside the card database, not a directory of 10,826
-    // files: `notes/archive/browser-feasibility.md` §4. The importer opened it, so the
-    // importer closed it — hence this test can reopen it and read the payload.
     expect(report.payloadStore).toBe("content-addressed");
     expect(report.storeRoot).toBe(`sqlite:${defaultStoreDatabase(file)}`);
     expect(existsSync(defaultStoreDatabase(file))).toBe(true);
@@ -1298,7 +1124,6 @@ describe("importBlobs and where the payloads go", () => {
     );
     expect(report.payloadStore).toBe("content-addressed");
     expect(report.storeWarnings.join(" ")).toMatch(/legacy one-file-per-payload/);
-    // It really is a directory of files, at the derived location.
     const filed = join(root, ...addressPath(contentAddress(bytes)).split("/"));
     expect(statSync(filed).size).toBe(bytes.length);
   });
@@ -1317,23 +1142,10 @@ describe("importBlobs and where the payloads go", () => {
   });
 });
 
-// ─── the real export ─────────────────────────────────────────────────────────
-
 const EXPORTS = join(import.meta.dirname, "..", "exports");
 const DECKS = ["日本語", "English", "基本情報"];
 const haveCorpus = DECKS.every((deck) => existsSync(join(EXPORTS, deck, "data.json")));
 
-/**
- * Transit decode, mirroring tools/mochi.py. A STOPGAP: src/import owns the real
- * reader, which does not exist yet, and blobs.ts deliberately takes already
- * decoded cards so it never duplicates a decoder.
- *
- * One deliberate difference from mochi.py, which its docstring does not cover:
- * map KEYS also carry the `~~` escape for a literal leading `~`, and mochi.py
- * only unescapes it on values. Card 4nKAg2kH's neighbour ～に越したことはない
- * stores its cache keys as "~~に越したことはない {…}"; leaving that alone imports a
- * doubled tilde as the cached source text, and the input would then never hit.
- */
 function untransit(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(untransit);
   if (typeof node === "object" && node !== null) {
@@ -1362,7 +1174,6 @@ function decodeKey(key: string): string {
   return key;
 }
 
-/** Every card exactly once. A naive recursive walk returns each one twice. */
 function walkCards(root: Record<string, unknown>): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
   const seen = new Set<unknown>();
@@ -1393,18 +1204,6 @@ describe.skipIf(!existsSync(join("build", "hashigo.db")))(
   "the generation key after the move to src/blobs/generation.ts",
   () => {
     it("is BYTE-IDENTICAL to the node:crypto digest it replaced, over the whole corpus", async () => {
-      // THE ASSERTION THE MOVE RESTS ON. `generationKey` used to hash through
-      // `createHash("sha256").update(string)`; it now hashes
-      // `new TextEncoder().encode(string)` through the portable `sha256Hex`,
-      // which is what let `src/generate` become browser-loadable without any
-      // signature changing.
-      //
-      // A one-bit difference here raises NO error anywhere. It turns every
-      // cached generation into a permanent miss and re-bills the corpus — 617.9
-      // MiB of speech, generated once. So this recomputes both digests over
-      // every distinct identity the real database holds and demands they agree.
-      // ASCII agreeing proves nothing: the inputs are Japanese head words, and
-      // the two paths differ precisely in how a string becomes bytes.
       const { createHash } = await import("node:crypto");
       const db = openDatabase(join("build", "hashigo.db"), {
         readOnly: true,
@@ -1436,23 +1235,12 @@ describe.skipIf(!existsSync(join("build", "hashigo.db")))(
             options: row.options,
           };
           const joined = [
-            // The LITERAL, not the imported constant. Using
-            // `GENERATION_KEY_SCHEME` here made this test compare the new
-            // implementation against itself: changing the constant moved both
-            // sides and the test stayed green. Caught by injecting exactly that
-            // fault. The scheme is versioned so it CAN be changed — but then
-            // this literal is what forces the change to be deliberate.
             "hashigo/blob-identity/1",
             identity.kind,
             identity.sourceText,
             identity.voice ?? "",
             identity.lang ?? "",
             identity.options,
-          // `\u0000` rather than a raw NUL byte: identical at runtime, and it keeps
-          // this file TEXT. Two raw control bytes used to sit here and on the regex
-          // below, which is enough for tooling to treat an 89.9 KB test file as
-          // binary and stop showing its matches -- and `git diff` is this repo's
-          // stated review control. Do not put the raw bytes back.
           ].join("\u0000");
           const legacy = createHash("sha256").update(joined).digest("hex");
           const current = generationKey(identity);
@@ -1462,10 +1250,6 @@ describe.skipIf(!existsSync(join("build", "hashigo.db")))(
           checked += 1;
         }
 
-        // Three real keys, pinned as literals. The sweep above proves the two
-        // implementations agree with EACH OTHER; these prove the answer is the
-        // one the 42,569 existing cache rows were filed under. A change to the
-        // separator, the field order, the scheme or the encoding moves them.
         expect(
           generationKey({
             kind: "speech",
@@ -1500,11 +1284,7 @@ describe.skipIf(!existsSync(join("build", "hashigo.db")))(
             `${differing.length} differing`,
         );
         expect(differing.slice(0, 5)).toEqual([]);
-        // The constant is still exported and still versioned; asserting it here
-        // is what ties the literal above to it, so changing one without the
-        // other fails rather than silently diverging.
         expect(GENERATION_KEY_SCHEME).toBe("hashigo/blob-identity/1");
-        // The corpus has to actually contain the hard case, or agreeing is cheap.
         expect(nonAscii).toBeGreaterThan(1_000);
         expect(checked).toBeGreaterThan(30_000);
       } finally {
@@ -1527,10 +1307,6 @@ describe.skipIf(!haveCorpus)("the real export", () => {
     source.cards.map((card) => card.id).filter((id): id is string => typeof id === "string"),
   );
 
-  // A REAL store, at real scale: 654,917,364 bytes of mp3 into a real SQLite
-  // database, as 10,826 BLOB rows. A throwaway file, so the run is honest about
-  // first-write cost, and it is renamed later to prove the database never
-  // depended on where it was.
   const opened = scratchStore("store");
   const store = opened.store;
 
@@ -1549,14 +1325,11 @@ describe.skipIf(!haveCorpus)("the real export", () => {
       );
       console.log(report);
 
-      // THE PASS CONDITION.
       expect(report.liveAttachments).toBe(10_890);
       expect(report.mediaRefs).toBe(10_890);
       expect(report.tombstonesSkipped).toBe(8_983);
       expect(report.filesMissing).toBe(0);
 
-      // Not one tombstoned filename reached the store. Collected independently
-      // of the importer, straight from the decoded records.
       const tombstoned = new Set<string>();
       const liveNames = new Set<string>();
       for (const source of sources) {
@@ -1599,7 +1372,6 @@ describe.skipIf(!haveCorpus)("the real export", () => {
     expect(media.refs).toBe(10_890);
     expect(report.dedupedFiles).toBe(64);
     expect(report.emptyFiles).toBe(3);
-    // The 3 failed generations share sha256("") — one blob, three references.
     expect(
       db.prepare("SELECT refcount FROM blobs WHERE byte_size = 0").pluck().get(),
     ).toBe(3);
@@ -1623,21 +1395,14 @@ describe.skipIf(!haveCorpus)("the real export", () => {
     );
     expect(report.payloadStore).toBe("content-addressed");
     expect(report.storeWarnings).toEqual([]);
-    // 10,890 live files collapse to 10,826 addresses; the 64 duplicates are
-    // recognised as already-present rather than written twice.
     expect(report.storeFilesWritten).toBe(10_826);
     expect(report.storeFilesPresent).toBe(64);
     expect(report.storeFilesWritten + report.storeFilesPresent).toBe(10_890);
     expect(report.storeBytesWritten).toBeGreaterThan(600 * 1024 * 1024);
 
-    // The store agrees with the database about what it is holding, and the file
-    // is a modest constant over the payloads rather than a multiple of them.
     expect(stats.payloads).toBe(10_826);
     expect(stats.bytes).toBe(report.storeBytesWritten);
     expect(stats.pageSize).toBe(STORE_PAGE_SIZE);
-    // 2.85% measured, of which the pointer-map pages auto_vacuum needs are the
-    // bulk; see the report for the `none` comparison. The claim being asserted is
-    // "a small constant factor", not a specific number of pages.
     expect(stats.fileBytes).toBeLessThan(stats.bytes * 1.05);
     expect(store.checkIntegrity()).toEqual([]);
   });
@@ -1645,11 +1410,6 @@ describe.skipIf(!haveCorpus)("the real export", () => {
   it(
     "inserts the whole corpus into a fresh store at a measured rate",
     () => {
-      // THE COMPARABLE NUMBER. notes/archive/browser-feasibility.md §4 measured 4.9 s to
-      // insert 624.6 MiB as BLOB rows in a browser, against 322.1 s for the same
-      // bytes as 10,826 OPFS files. That figure is INSERT ONLY, so this one has
-      // to be too: the reads out of the populated store are timed separately and
-      // subtracted, leaving write() plus the batch's commits.
       const hashes = [...store.list()];
       expect(hashes).toHaveLength(10_826);
 
@@ -1682,7 +1442,6 @@ describe.skipIf(!haveCorpus)("the real export", () => {
         expect(target.store.stats().bytes).toBe(report.storeBytesWritten);
       } finally {
         target.close();
-        // 660 MB of throwaway: released now rather than at the end of the run.
         rmSync(dirname(target.file), { recursive: true, force: true });
       }
     },
@@ -1690,9 +1449,6 @@ describe.skipIf(!haveCorpus)("the real export", () => {
   );
 
   it("answers a random read in a fraction of a millisecond", () => {
-    // The other half of §4's measurement: 0.54 ms per random BLOB read in the
-    // browser against 10.60 ms per random OPFS file. This is the Node number for
-    // the same store class, and it is what the renderer's audio path will pay.
     const hashes = [...store.list()];
     let seed = 20260819;
     const picks: string[] = [];
@@ -1713,17 +1469,12 @@ describe.skipIf(!haveCorpus)("the real export", () => {
       `NODE RANDOM READ: ${picks.length} reads, avg ${ms.toFixed(2)} ms/blob ` +
         `(avg ${Math.round(bytes / picks.length)} B)`,
     );
-    // Not a benchmark assertion — a sanity floor. A regression to per-file
-    // behaviour would be tens of milliseconds, not fractions.
     expect(ms).toBeLessThan(5);
     expect(bytes).toBeGreaterThan(0);
   });
 
   it("stores NO location: every media row is address, size, type and nothing else", () => {
-    // THE DEFECT THIS TASK EXISTS TO REMOVE. The old default wrote
-    // `C:\DEV\WEB\hashigo\exports\日本語\c7EiABp0.mp3` into 10,826 rows.
     expect(db.prepare("SELECT count(*) FROM blobs WHERE path IS NOT NULL").pluck().get()).toBe(0);
-    // Media rows keep the payload out of the database; text rows keep it in.
     expect(
       db
         .prepare(
@@ -1744,9 +1495,6 @@ describe.skipIf(!haveCorpus)("the real export", () => {
       .all() as { hash: string; byte_size: number }[];
     expect(sample).toHaveLength(8);
     for (const blob of sample) {
-      // Nothing here knows a path. The hash is the whole query — and with the
-      // SQLite backing there is not even a filename to know: `addressPath` is
-      // still what a directory store would derive, and nothing consults it.
       const bytes = readBlob(db, blob.hash, store);
       expect(contentAddress(bytes)).toBe(blob.hash);
       expect(bytes.length).toBe(blob.byte_size);
@@ -1774,14 +1522,6 @@ describe.skipIf(!haveCorpus)("the real export", () => {
       expect(audit.sizeMismatched).toBe(0);
       expect(audit.inline).toBe(audit.blobs - 10_826);
 
-      // NOT ONE MEDIA BLOB is unreferenced: every payload in the store is
-      // reachable from a card. The 48 that are unreferenced are inline text
-      // generations (778 bytes in total), and they are a pre-existing
-      // consequence of keying a text reference by generation key: where ONE
-      // card cached two different outputs under the same normalised key, the
-      // second reference is absorbed by blob_refs_scope and its blob lands at
-      // refcount 0. 45 of the 48 have an identity sibling that IS referenced.
-      // Refcounting is why this is visible and reclaimable rather than debris.
       const unreferencedMedia = db
         .prepare(
           `SELECT count(*) FROM blobs
@@ -1797,25 +1537,13 @@ describe.skipIf(!haveCorpus)("the real export", () => {
   );
 
   it("holds no absolute path and no reference to exports/ ANYWHERE in the database", () => {
-    // Every column of every real table, through `findLocations` — the SAME
-    // predicate `src/blobs/cli.ts paths` runs. It used to be a copy here and a
-    // copy there, and both copies were blind to the same four path shapes; the
-    // test below pins every shape so the pair cannot go half-blind again.
     const { offenders, columns, tables } = findLocations(db);
     console.log(`swept ${columns} columns across ${tables} tables; offenders:`, offenders);
     expect(offenders).toEqual([]);
-    // And the narrower, unambiguous claim, stated separately: not one blob row
-    // carries a location of any kind. (This database holds skeleton cards, so
-    // the tariff card's prose is not in it; `src/blobs/cli.ts paths` runs the
-    // same sweep over a fully imported database, where it is.)
     expect(db.prepare("SELECT count(*) FROM blobs WHERE path IS NOT NULL").pluck().get()).toBe(0);
   });
 
   it("catches every shape a location can take, and none of the corpus's prose", () => {
-    // The check has to be able to FAIL, and it has to fail on all eight shapes.
-    // The previous LIKE-chain caught four: it missed drive letters written with
-    // forward slashes (which is the form this CLI's own --store example uses),
-    // UNC shares, and both forms of file:// URL.
     const B = String.fromCharCode(92);
     const locations = [
       ["windows backslash", `C:${B}DEV${B}WEB${B}hashigo${B}media${B}x.mp3`],
@@ -1827,7 +1555,6 @@ describe.skipIf(!haveCorpus)("the real export", () => {
       ["exports, relative", "exports/日本語/c7EiABp0.mp3"],
       ["drive root", `D:${B}x.mp3`],
     ] as const;
-    // Real text from the corpus that must stay green forever.
     const innocent = [
       ["tariff card BE2i4rWu", "a tax or duty to be paid on a particular class of imports or exports."],
       ["jisho link", "https://jisho.org/search/%E8%A8%80"],
@@ -1858,8 +1585,6 @@ describe.skipIf(!haveCorpus)("the real export", () => {
     expect(missed).toEqual([]);
     expect(falsePositives).toEqual([]);
 
-    // BLOB-typed columns are swept too — the old version filtered them out by
-    // declared type, which left blobs.bytes (26,947 inline payloads) unread.
     probe.exec("CREATE TABLE b (v BLOB)");
     probe.prepare("INSERT INTO b (v) VALUES (?)").run(Buffer.from("C:/Users/Zach/x.mp3", "utf8"));
     expect(findLocations(probe).offenders).toContain("b.v: 1 row(s)");
@@ -1885,29 +1610,18 @@ describe.skipIf(!haveCorpus)("the real export", () => {
     expect(report.cachePointersDangling).toBe(7_973);
     expect(report.cacheTextOnly).toBe(31_837);
     expect(report.cacheFailures).toBe(323);
-    // 78 cached generations produced the empty string. A subset of
-    // cacheTextOnly, and not imported: sha256("") is already the address of the
-    // 10 zero-byte mp3s, so importing them would file text under kind 'speech'.
     expect(report.textPayloadsEmpty).toBe(78);
     expect(report.cacheUnusable).toBe(133);
-    // Every one of the 56,767 cache leaves is accounted for.
     expect(
       report.cachePointers + report.cacheTextOnly + report.cacheFailures + report.cacheUnusable,
     ).toBe(56_810);
     expect(report.generationKeys).toBe(10_837);
     expect(report.generationEdges).toBe(10_851);
-    // The cost of having no generation_cache table: see the module header.
     expect(report.generationEdgesDropped).toBe(42);
-    // 30 live files carry no cache entry; 13 of them dedupe onto an address that
-    // another, provenanced file also reaches, so 17 blobs hold no identity tuple
-    // and are addressable only by their bytes. Counted independently above.
     expect(report.blobsWithoutProvenance).toBe(17);
   });
 
   it("a cached input from the real export is a HIT, however the lang is spelled", () => {
-    // 日本語 card FiW5S4Yg: 'だけに {:lang "ja-JP", :voice "ja-JP-NanamiNeural"}'
-    // -> c7EiABp0.mp3. The address must be that file's bytes, and asking again
-    // must not generate.
     const expected = contentAddress(readFileSync(join(EXPORTS, "日本語", "c7EiABp0.mp3")));
     const request = {
       kind: "speech",
@@ -1960,8 +1674,6 @@ describe.skipIf(!haveCorpus)("the real export", () => {
     expect(ai.bytes.length).toBeGreaterThan(0);
   });
 
-  // LAST, because it invalidates `store`: the root is renamed out from under a
-  // database that has 10,826 references into it.
   it(
     "survives the store being renamed: 10,826 references still resolve",
     () => {
@@ -1973,20 +1685,13 @@ describe.skipIf(!haveCorpus)("the real export", () => {
         .all() as { hash: string; byte_size: number }[];
       expect(hashes).toHaveLength(10_826);
 
-      // The handle has to be released before the file can be renamed on Windows;
-      // that is the only thing the SQLite backing changes about this test. The
-      // property under test is unchanged and is now sharper: the store is ONE
-      // file, and moving it is a rename of that file.
       const from = opened.file;
       const moved = join(dirname(from), "renamed-and-somewhere-else-entirely.db");
       opened.close();
       renameSync(from, moved);
       expect(existsSync(from)).toBe(false);
-      // The old location is now nothing, which is the situation the old
-      // `path`-column design put the whole database in permanently.
       expect(() => openBlobStoreDatabase(from, { mustExist: true })).toThrow(/no blob store/);
 
-      // Nothing is migrated. A new store, a new file name, the same rows.
       const relocatedHandle = openBlobStoreDatabase(moved, { mustExist: true, create: false });
       OPEN_STORES.push(relocatedHandle);
       const relocated = relocatedHandle.store;
@@ -1996,7 +1701,6 @@ describe.skipIf(!haveCorpus)("the real export", () => {
         expect(size).toBe(blob.byte_size);
         bytesRead += size ?? 0;
       }
-      // Rehash a deterministic sample through the database's own read path.
       for (const blob of hashes.filter((_, index) => index % 1_000 === 0)) {
         expect(contentAddress(readBlob(db, blob.hash, relocated))).toBe(blob.hash);
       }
@@ -2007,10 +1711,6 @@ describe.skipIf(!haveCorpus)("the real export", () => {
       expect(auditBlobStore(db, relocated).missing).toBe(0);
       expect(db.prepare("SELECT count(*) FROM blobs WHERE path IS NOT NULL").pluck().get()).toBe(0);
 
-      // AND THE STORE FILE ITSELF HOLDS NO LOCATION. The card database is swept
-      // by the test above; this is the second file the acceptance check now has
-      // to answer for. `hash` is CHECK-ed to 64 hex characters and `byte_size` is
-      // an integer, so the sweep is really asking about one column: the payload.
       const storeDb = openDatabase(moved, { applySchema: false, readOnly: true });
       try {
         const sweep = findLocations(storeDb, { exclude: ["blob_payloads.bytes"] });
@@ -2019,18 +1719,10 @@ describe.skipIf(!haveCorpus)("the real export", () => {
             `offenders ${JSON.stringify(sweep.offenders)}; ` +
             `excluded ${JSON.stringify(sweep.excluded)}`,
         );
-        // Two tables (blob_payloads, blob_store_meta), five columns, and nothing
-        // addressable holds a location.
         expect(sweep.tables).toBe(2);
         expect(sweep.columns).toBe(5);
         expect(sweep.offenders).toEqual([]);
 
-        // THE MEASURED REASON THE PAYLOAD COLUMN IS EXCLUDED, asserted so the
-        // exclusion cannot quietly become unnecessary or quietly hide something.
-        // 559 of 10,826 mp3s have a byte sequence in their first 4 KB that
-        // decodes to something LOCATION_PATTERN matches. Compressed audio
-        // contains every byte pair eventually; `C:/` is two bytes and a slash.
-        // A check that fires on 5% of a corpus of correct data is not a check.
         const unfiltered = findLocations(storeDb);
         expect(unfiltered.offenders).toEqual([`blob_payloads.bytes: 559 row(s)`]);
         expect(sweep.excluded).toEqual([`blob_payloads.bytes: 559 row(s)`]);
@@ -2043,10 +1735,7 @@ describe.skipIf(!haveCorpus)("the real export", () => {
 });
 
 describe("LOCATION_PATTERN — the gate that keeps absolute paths out of the DB", () => {
-  // The POSIX branch used to be anchored at ^, so a path embedded mid-string
-  // slipped through. Found by the completeness critic poisoning
-  // template_fields.options and cards.content: 2 of 5 shapes passed the gate.
-  const B = String.fromCharCode(92); // a single backslash, no escaping to misread
+  const B = String.fromCharCode(92);
 
   const MUST_FLAG: ReadonlyArray<readonly [string, string]> = [
     ["/home/zach/a.mp3", "posix at start"],
@@ -2058,7 +1747,6 @@ describe("LOCATION_PATTERN — the gate that keeps absolute paths out of the DB"
     ["file:///c/tmp", "file url"],
   ];
 
-  // A false positive here flags the user's own content as a path.
   const MUST_NOT_FLAG: ReadonlyArray<readonly [string, string]> = [
     ["https://jpdb.io/search?q=x", "his JPDB links"],
     ["https://www.immersionkit.com/dictionary?keyword=y", "his IKD links"],
@@ -2078,8 +1766,6 @@ describe("LOCATION_PATTERN — the gate that keeps absolute paths out of the DB"
   });
 });
 
-// ─── retiring a clip (2026-09-26, "redo a clip") ─────────────────────────────
-
 import { retireBlob, retiredHashes, unretireBlob } from "../src/blobs/retire.js";
 import { lookupGeneration as findClip, generationIdentity as idOf } from "../src/blobs/generation.js";
 import { pausedSsml } from "../src/accent/speech.js";
@@ -2098,12 +1784,11 @@ describe("a retired clip stops playing, keeps its bytes, and can come back", () 
       expect(retireBlob(db, "a".repeat(64))).toBe(true);
       expect(findClip(db, identity)).toBeNull();
       expect(retiredHashes(db)).toEqual(["a".repeat(64)]);
-      expect(retireBlob(db, "a".repeat(64))).toBe(false); // idempotent
+      expect(retireBlob(db, "a".repeat(64))).toBe(false);
       expect((db.prepare("SELECT bytes FROM blobs").get() as { bytes: Uint8Array }).bytes.length).toBe(3);
 
       expect(unretireBlob(db, "a".repeat(64))).toBe(true);
       expect(findClip(db, identity)).toBe("a".repeat(64));
-      // The clip's own row never changed — decision 4's immutability holds.
       expect((db.prepare("SELECT voice FROM blobs").get() as { voice: string }).voice).toBe("ja-JP-Neural2-C");
     } finally {
       db.close();

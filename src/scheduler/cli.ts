@@ -1,22 +1,3 @@
-/**
- * `npx vite-node src/scheduler/cli.ts -- <command> --db <file>`
- *
- *   counts   --db D [--deck ID] [--now INSTANT]      due / overdue / new / scheduled
- *   queue    --db D [--deck ID] [--limit N]          what is due, most overdue first
- *   forecast --db D [--days N]                       復習予測, forward only
- *   seed     --db D [--dry-run]                      replay history into scheduler_state
- *
- * WHY A CLI FOR A STAGE THAT HAS NO UI. Stage 7 is the screen he lives in and it
- * does not exist yet, so without this the only way to find out what tomorrow's
- * session looks like is to read a test. `counts` and `queue` answer that in a
- * second, against the real database, and they are the same functions the review
- * screen will call — not a parallel query written for the terminal.
- *
- * `seed` is the one command that WRITES, and it writes only `scheduler_state`
- * and `scheduler`. It moves no due date, so it cannot change what is due
- * tomorrow; see the note on `seedTrackMemory`.
- */
-
 import { openDatabase } from "../db/index.js";
 import { PARAMETERS_ARE_PROVISIONAL, SCHEDULER_ALGORITHM, SCHEDULER_POLICY } from "./policy.js";
 import { dueTracks, newTracks, queueCounts, reviewForecast } from "./queue.js";
@@ -24,33 +5,20 @@ import { nowInHostOffset } from "./tracks.js";
 import { seedTrackMemory } from "./tracks.js";
 import { arg } from "../cli/args.js";
 
-// Japanese deck and card names go to a cp932 console otherwise. Every script in
-// this repo sets its own encoding rather than asking the caller for an env
-// prefix — his shell is PowerShell 5.1 and `VAR=value cmd` is a parser error
-// there. See CLAUDE.md "Environment".
 process.stdout.setDefaultEncoding("utf8");
 
-
-/**
- * Display width, counting a CJK wide character as two columns.
- *
- * `padEnd` counts UTF-16 code units, so `日本語/数字` (6 units, 11 columns) throws
- * every column after it out by five. In a project whose deck names are Japanese
- * identifiers that is every row of this table.
- */
-/** The East Asian Wide and Fullwidth blocks, as codepoint ranges. */
 const WIDE_RANGES: readonly (readonly [number, number])[] = [
-  [0x1100, 0x115f], // Hangul Jamo
-  [0x2e80, 0x303e], // CJK radicals, Kangxi, CJK punctuation
-  [0x3041, 0x33ff], // kana, Hangul compat, CJK compat
-  [0x3400, 0x4dbf], // CJK Ext A
-  [0x4e00, 0x9fff], // CJK Unified
-  [0xa000, 0xa4cf], // Yi
-  [0xac00, 0xd7a3], // Hangul syllables
-  [0xf900, 0xfaff], // CJK compat ideographs
-  [0xfe30, 0xfe6f], // CJK compat forms
-  [0xff00, 0xff60], // fullwidth forms
-  [0xffe0, 0xffe6], // fullwidth signs
+  [0x1100, 0x115f],
+  [0x2e80, 0x303e],
+  [0x3041, 0x33ff],
+  [0x3400, 0x4dbf],
+  [0x4e00, 0x9fff],
+  [0xa000, 0xa4cf],
+  [0xac00, 0xd7a3],
+  [0xf900, 0xfaff],
+  [0xfe30, 0xfe6f],
+  [0xff00, 0xff60],
+  [0xffe0, 0xffe6],
 ];
 
 function displayWidth(text: string): number {
@@ -138,11 +106,6 @@ function main(): number {
     }
     if (command === "seed") {
       if (flag("dry-run")) {
-        // A dry run has to COMPUTE, or it is a sentence rather than a preview.
-        // This used to print only the due count -- which it then said was
-        // "unaffected either way", i.e. the one number that could not answer the
-        // question being asked. Both in-repo precedents (`blobs sweep --dry-run`,
-        // `accent materialise --dry-run`) do the real work and decline to write.
         const seedable = db
           .prepare(
             `SELECT count(*) AS n FROM card_tracks
@@ -166,8 +129,6 @@ function main(): number {
         return 0;
       }
       const report = seedTrackMemory(db);
-      // The four live figures reconcile against `tracks`, which is why `dormant`
-      // is printed rather than left as an unexplained remainder.
       console.log(
         `${report.seeded} seeded · ${report.alreadyStored} already had state · ` +
           `${report.withoutHistory} have no history (new cards) · ` +

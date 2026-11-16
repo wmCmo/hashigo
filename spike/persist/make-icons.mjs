@@ -1,18 +1,3 @@
-/**
- * THROWAWAY (spike harness). Writes the two PNG icons the web app manifest
- * needs so Chrome will treat `/persist/` as installable — which is the whole
- * point of the phone test, because Chrome grants storage persistence to
- * installed PWAs far more readily than to a plain tab.
- *
- * Hand-rolled rather than pulled from a dependency: a PNG is a signature, an
- * IHDR, one deflated IDAT and an IEND, and adding an image library to this repo
- * for a throwaway icon would be worse than twenty lines of zlib.
- *
- *   node spike/persist/make-icons.mjs
- *
- * The output is `icon-192.png` and `icon-512.png` beside this file. They are
- * generated, not authored — deleting them and re-running is always correct.
- */
 import { deflateSync } from "node:zlib";
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -20,7 +5,6 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** CRC-32, as PNG defines it. */
 const table = Uint32Array.from({ length: 256 }, (_, n) => {
   let c = n;
   for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
@@ -41,11 +25,6 @@ function chunk(type, data) {
   return Buffer.concat([length, body, crc]);
 }
 
-/**
- * A 梯 ("ladder") glyph is out of reach without a font, so the icon is a
- * literal ladder: two rails and five rungs, ink on a dark ground. Legible at
- * 48 px on a home screen, which is all it has to be.
- */
 function ladderPng(size) {
   const bg = [0x18, 0x1c, 0x24];
   const ink = [0xf5, 0xd0, 0x6a];
@@ -55,7 +34,7 @@ function ladderPng(size) {
   const railRight = [10.8 * unit, 12 * unit];
   for (let y = 0; y < size; y += 1) {
     const rowStart = y * (size * 3 + 1);
-    raw[rowStart] = 0; // filter type 0
+    raw[rowStart] = 0;
     const onRung =
       y > 2 * unit &&
       y < 14 * unit &&
@@ -74,8 +53,8 @@ function ladderPng(size) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(size, 0);
   ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // colour type: truecolour
+  ihdr[8] = 8;
+  ihdr[9] = 2;
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk("IHDR", ihdr),

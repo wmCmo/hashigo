@@ -1,13 +1,3 @@
-/**
- * `出典` — a card remembers the card it was found in. Zach, 2026-10-26: he meets
- * 包帯 in an example sentence, makes a card, and until now nothing recorded why.
- *
- * Three properties: the value reads back as the source and the sentence; the
- * SOURCE card lists the new one under "links here" with no second mechanism; and
- * the field and its value reach the other device through sync — a field created
- * on the laptop that the phone never hears of would be a card with its reason
- * missing on the device he reviews on.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -39,7 +29,6 @@ function device(): Db {
   return db;
 }
 
-/** What the worker's `createCard` does with a `source`. */
 function createFound(db: Db): void {
   db.prepare(
     "INSERT INTO cards (id, deck_id, template_id, name, content, archived, local) VALUES ('new', 'd', 'tango', '包帯', '', 0, 1)",
@@ -73,7 +62,6 @@ describe("出典 — where a card was found", () => {
     expect(
       db.prepare("SELECT count(*) AS n FROM template_fields WHERE template_id = 'tango' AND name = '出典'").get(),
     ).toEqual({ n: 1 });
-    // Found by ROLE after a rename, so a renamed field is not duplicated.
     db.prepare("UPDATE template_fields SET name = '由来' WHERE id = ?").run(SOURCE_FIELD_ID);
     expect(ensureSourceField(db, "tango")).toBe(SOURCE_FIELD_ID);
     db.close();
@@ -103,11 +91,6 @@ describe("出典 — where a card was found", () => {
   });
 });
 
-/**
- * "link it" from the found-in flow, when the word already has a card (2026-11-05:
- * *"when i click link it, nothing happens"*). It records where he found it — but
- * a card keeps the FIRST place it was found.
- */
 describe("recordFoundIn — a word that already has a card", () => {
   it("records the source on a card that has none", () => {
     const db = device();

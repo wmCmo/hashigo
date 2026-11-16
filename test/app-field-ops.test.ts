@@ -18,16 +18,6 @@ import {
 } from "../app/field-ops.js";
 import type { SqliteHandle } from "../src/db/browser.js";
 
-/**
- * STAGE C OF FIELDS-AS-MODULES: what an edit to a field's settings or input costs,
- * and what it may not do.
- *
- * Over a COPY of the real database, because the price is only worth anything if it
- * is the price of HIS cards — the 数字 `group` incident that silenced 78 clips was
- * a fact about this corpus, not about a fixture. `serialize()` gives an in-memory
- * copy, so nothing here can touch `build/hashigo.db`.
- */
-
 const CORPUS = "build/hashigo.db";
 const TANGO = "oiaISYb2";
 const SUUJI = "ibeOPZ1V";
@@ -40,8 +30,6 @@ beforeAll(() => {
   try {
     const source = new Database(CORPUS, { readonly: true, fileMustExist: true });
     const bytes = source.serialize();
-    // Bytes 18-19 say WAL (2) on the corpus, and a deserialised buffer cannot
-    // open a WAL: "unable to open database file". 1 is the rollback journal.
     bytes[18] = 1;
     bytes[19] = 1;
     db = new Database(bytes);
@@ -126,7 +114,6 @@ describe("sourceRefusal stops a loop the schema cannot see", () => {
     expect(sourceRefusal(fields, "e", null)).toBeNull();
   });
   it("offers only legal sources — never itself, never a field that already reads from it", () => {
-    // d reads from c, so c may not read from d.
     expect(sourceChoices(fields, "c").map((entry) => entry.id)).toEqual(["a", "b", "e"]);
   });
 });
@@ -136,7 +123,6 @@ describe("over the real corpus", () => {
     if (db === null) return;
     const fields = templateFields(handle(), TANGO);
     const names = consumersOf(fields, "name").map((entry) => entry.name);
-    // The prompt edge is the one a column-only walk never saw.
     expect(names).toContain("例文");
     expect(names).toContain("Audio");
     expect(names).toContain("Translate");
@@ -176,7 +162,7 @@ describe("over the real corpus", () => {
     const price = priceFieldChange(handle(), TANGO, example.id, {
       options: patchOptions(example.options, { "ai-custom-prompt": "A sentence with <<単語>>." }),
     });
-    expect(price.checked).toBeLessThan(price.cards); // sampled, and says so
+    expect(price.checked).toBeLessThan(price.cards);
     const silenced = new Map(price.lines.map((line) => [line.fieldName, line.silenced]));
     expect(silenced.get("例文") ?? 0).toBeGreaterThan(100);
     expect(silenced.get("Audio") ?? 0).toBeGreaterThan(100);
@@ -217,8 +203,6 @@ describe("a text field's price says when the change does not take effect", () =>
     expect(describePrice(price).join(" ")).toMatch(/PREVIOUS settings/);
   });
 });
-
-// ─── stage E: voice overrides ────────────────────────────────────────────────
 
 import { fieldGenerationRequest } from "../src/generate/index.js";
 import { priceVoiceChange, resolvedVoices } from "../app/field-ops.js";
@@ -278,8 +262,6 @@ describe("the price of a deck voice, over the real 数字 cards", () => {
   });
 });
 
-// ─── an inline generator inside a source value (2026-09-25, `snare`) ─────────
-
 import { loadCard } from "../src/cards/index.js";
 import { storeTextResolver } from "../src/generate/index.js";
 
@@ -294,8 +276,6 @@ describe("a speech field reading a value that IS an inline generator speaks what
       values: card?.values ?? new Map(),
       resolveGenerated: storeTextResolver(handle()),
     });
-    // Trimmed: the generation carries leading newlines, and the key trims them
-    // (`normaliseSourceText`), so they cannot split the address.
     expect(request?.text.trim()).toBe("The poacher set a snare to catch the rabbit.");
     expect(request?.text).not.toContain("<ai>");
   });
@@ -326,11 +306,6 @@ describe("a speech field reading a value that IS an inline generator speaks what
   });
 });
 
-/**
- * TEXT ⇄ READING (2026-11-05): the one kind switch the settings screen offers.
- * It writes the role and the input and never a value, so what it may produce is
- * pinned here — the worker only runs it.
- */
 describe("kindChange switches Text and Reading by role and input alone", () => {
   const role = '{"hashigo-role":"reading"}';
   const tpl = [
@@ -375,10 +350,6 @@ describe("kindChange switches Text and Reading by role and input alone", () => {
   });
 });
 
-/**
- * DERIVED FIELDS FOLLOW THEIR WORD (decision 61): what an edit empties. The worker
- * runs it inside `setField`; the rule itself is pinned here.
- */
 describe("staleDerived finds what an edit leaves stale", () => {
   const fields = [
     field({ id: "head", name: "単語" }),
@@ -412,7 +383,6 @@ describe("fieldOutputs over the real corpus", () => {
     const byName = new Map(outputs.map((output) => [names.get(output.fieldId), output]));
     expect(byName.get("例文")?.from).toContain("単語");
     expect(byName.get("Audio")?.from).toEqual(["例文"]);
-    // Speech carries an address or nothing, never text; text kinds never an address.
     for (const output of outputs) expect(output.text !== null && output.audio !== null).toBe(false);
   });
 });

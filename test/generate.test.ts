@@ -1,19 +1,3 @@
-/**
- * Stage 1.5 — the field binding, against the real export.
- *
- * THE POINT OF THIS FILE. The app was silent and every layer was individually
- * correct: the importer landed 42,569 blobs, the renderer rendered all 7,716
- * cards, and nothing connected the two. A unit test over a fixture would have
- * passed throughout. So the load-bearing assertions here are corpus sweeps with
- * numbers in them, and the numbers are stated as MEASURED RANGES or exact counts
- * from `build/step1/probe.ts`, never as "> 0".
- *
- * The no-autoplay rule is tested too, and it has to be: the whole reason to
- * expand a field into a synthetic `<speech>` element rather than a new render
- * path is that the existing path is the one with the guarantees. If that reuse
- * ever breaks, an `<audio src=…>` appears here first.
- */
-
 import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { openDatabase } from "../src/db/index.js";
@@ -67,20 +51,15 @@ const haveCorpus = existsSync(DB);
 
 describe("the generation input transform", () => {
   it("strips cloze braces, which is what made 基本情報 miss all 471 of its cards", () => {
-    // The value; Mochi's cache key was `データとメソッドを1つに`.
     expect(generationInput("{{データ}}と{{メソッド}}を1つに")).toBe("データとメソッドを1つに");
     expect(generationInput("{{1::indexed}}")).toBe("indexed");
   });
 
   it("reduces wiki-links to display text and drops the invisible marks", () => {
-    // 3,016 U+200E on 2,504 cards join split compounds. Both links AND the mark
-    // have to go or the key carries an 8-character opaque id.
     expect(generationInput("[[引き|10PQotxm]]‎[[換え|C1p9g1mL]]")).toBe("引き換え");
   });
 
   it("does NOT normalise whitespace or NFC — that belongs to generationIdentity", () => {
-    // Two definitions of one normalisation is how two spellings of one key
-    // appear. This asserts the split is real, not incidental.
     expect(generationInput("a  b")).toBe("a  b");
   });
 
@@ -138,7 +117,6 @@ describe("building a request from a field", () => {
       options: { "ai-custom-prompt": "X", "ai-task": "custom", randomize: false },
     };
     const request = fieldGenerationRequest(ai, { fields: [ai], values: new Map() });
-    // Not one of the corpus's 42,569 blob identities carries a prompt.
     expect(request?.options).toEqual({ "ai-task": "custom" });
   });
 
@@ -174,8 +152,6 @@ describe("building a request from a field", () => {
     const fields = [word, example, audio];
     const values = new Map([["word", "橋"]]);
 
-    // Without a resolver the upstream generation is unavailable, so the request
-    // is unbuildable rather than built on the prompt text by mistake.
     expect(fieldGenerationRequest(audio, { fields, values })).toBeNull();
 
     const request = fieldGenerationRequest(audio, {
@@ -189,8 +165,6 @@ describe("building a request from a field", () => {
   it("stops rather than recursing forever on a source cycle", () => {
     const a: GeneratorField = { id: "a", name: "A", type: "speech", sourceFieldId: "b" };
     const b: GeneratorField = { id: "b", name: "B", type: "speech", sourceFieldId: "a" };
-    // The schema's CHECK only forbids self-reference, so a two-field cycle is
-    // representable and has to terminate here.
     expect(
       fieldGenerationRequest(a, {
         fields: [a, b],
@@ -222,16 +196,11 @@ describe("expanding a valueless generator field into the AST", () => {
   ];
 
   it("keeps the reference standing instead of resolving it to nothing", () => {
-    // The warning fires either way: the debt is real whether or not the caller
-    // intends to settle it. That is the whole defect in one assertion - the
-    // marker used to be substituted with "" and reported nothing at all.
     const plain = resolveCard({ id: "c", values: { word: "橋" } }, template);
     expect(plain.warnings.map((w) => w.kind)).toContain("generator-pending");
-    // Default: substituted away, so an unexpanded render shows no junk on screen.
     expect(serialise(renderResolvedCard(plain, { document: memoryDocument() }).root)).not.toContain(
       "Speech",
     );
-    // Opted in: the marker stands, for the expansion to pick up.
     const pending = resolveCard({ id: "c", values: { word: "橋" } }, template, {
       pendingGenerators: true,
     });
@@ -251,8 +220,6 @@ describe("expanding a valueless generator field into the AST", () => {
     const html = serialise(result.root);
     expect(html).toContain("<audio");
     expect(html).toContain('preload="none"');
-    // THE RULE. Reuse of the element path is what guarantees these; if the
-    // expansion ever grows its own media code, this is where it shows.
     expect(html).not.toContain("autoplay");
     expect(html).not.toMatch(/<audio[^>]*\ssrc=/);
     expect(result.generations).toHaveLength(1);
@@ -260,8 +227,6 @@ describe("expanding a valueless generator field into the AST", () => {
   });
 
   it("cannot forge markup out of a field value", () => {
-    // The reason this is an AST transform and not a string splice. A value of
-    // `</speech><img src=x>` through the lexer would escape the element.
     const values = new Map([["word", "</speech><script>alert(1)</script>"]]);
     const card = resolveCard({ id: "c", values: Object.fromEntries(values) }, template, {
       pendingGenerators: true,
@@ -353,8 +318,6 @@ describe.runIf(haveCorpus)("the real export", () => {
       }
 
       const attempted = exact + otherVoice + missing + mismatch;
-      // Field SLOTS — one per generator field per card. Not cards, not blobs;
-      // three different numbers and the basis has to be named.
       // eslint-disable-next-line no-console
       console.log(
         `generator field slots ${attempted}: exact ${exact}, other-voice ${otherVoice}, ` +
@@ -362,9 +325,6 @@ describe.runIf(haveCorpus)("the real export", () => {
       );
 
       expect(attempted).toBeGreaterThan(18000);
-      // The measured figures are 17,502 / 507 / 35 / 312 / 159 over this export.
-      // Bounded rather than pinned exactly: the corpus is regenerated by an
-      // import and a re-import must not need a test edit to pass.
       expect(exact).toBeGreaterThan(17000);
       expect(exact + otherVoice).toBeGreaterThan(attempted * 0.97);
       expect(missing).toBeLessThan(100);
@@ -403,8 +363,6 @@ describe.runIf(haveCorpus)("the real export", () => {
       const { diagnostics } = resolveFieldGenerations(db, requests);
       // eslint-disable-next-line no-console
       console.log(`単語 Speech: ${JSON.stringify(diagnostics)} over ${requests.length} requests`);
-      // CLAUDE.md: "単語: 3,477 cards, 3,456 with clips, renders NONE". These are
-      // the ones that stop being silent.
       expect(diagnostics.exact).toBeGreaterThan(3200);
       expect(diagnostics.exact + diagnostics.otherVoice).toBeGreaterThan(3350);
     } finally {
@@ -448,32 +406,12 @@ describe.runIf(haveCorpus)("the real export", () => {
         });
         for (const d of bound.divergent) divergent.add(d);
       }
-      // If this ever fails it names the field and the option, and it means the
-      // request and the renderer's own descriptor would hash differently.
       expect([...divergent]).toEqual([]);
     } finally {
       db.close();
     }
   });
 
-  /**
-   * THE COMPOSED PIPELINE, AT CORPUS SCALE. resolve -> expand -> render, which is
-   * the exact path stage 7 walks for every card, and which nothing tested end to
-   * end: the sweep above stops at the field-slot level and never renders, and
-   * `test/render.test.ts`'s 7,716-card sweep never calls `expandGeneratorFields`.
-   *
-   * BASIS, because three different numbers are available and only one is meant:
-   * forward direction only, the cards that HAVE a template, counting
-   * `GeneratorMount.name === "speech"` from `renderSides` after expansion. Not
-   * field slots (18,356), not blobs (10,791), not media mounts.
-   *
-   * A NOTE ON HOW THESE FIGURES WERE ARRIVED AT, because it nearly went wrong. A
-   * first attempt reported `expanded: 0` on a real card and I nearly recorded that
-   * as a finding. It was an artifact of probing ONE arbitrary card with `LIMIT 1`:
-   * exactly 10 of the 7,716 templated cards carry no field values at all, and that
-   * was one of them. Over the corpus the expansion fires 10,722 times. A count
-   * taken from a single row is not a measurement.
-   */
   it("expands and renders every speech slot in the corpus, and diverges on none", () => {
     const { db, byTemplate } = load();
     try {
@@ -521,8 +459,6 @@ describe.runIf(haveCorpus)("the real export", () => {
             template,
             { pendingGenerators },
           );
-          // The list `load()` already built — reusing it rather than re-shaping
-          // it keeps this sweep on the same field data as the slot sweep above.
           const fields = byTemplate.get(card.template_id) ?? [];
           const bound = expandGeneratorFields(resolved.sides, {
             fields,
@@ -550,13 +486,6 @@ describe.runIf(haveCorpus)("the real export", () => {
           `(expanded ${off.expanded})`,
       );
 
-      // 28 FEWER than before 2026-09-25, and that is the fix. New Vocab's
-      // `Example Sentence` holds `<ai>Example sentence of …</ai>` on 28 cards; its
-      // Example speech used to build a request keyed on THE TAG ITSELF — the
-      // request behind the clips that recite `<ai>…</ai>` aloud. It now resolves
-      // the inline generator first, which needs `resolveGenerated`, and this sweep
-      // passes none, so those 28 are unbuildable here rather than wrong. With a
-      // resolver (the app, `test/app-field-ops.test.ts`) all 28 speak the sentence.
       expect(on).toEqual({
         mounts: 6_829,
         cards: 5_665,
@@ -565,19 +494,9 @@ describe.runIf(haveCorpus)("the real export", () => {
         noValues: 10,
       });
 
-      // `pendingGenerators` IS LOAD-BEARING, and this is the number that says so.
-      // With it off the markers are substituted away, so the expansion has nothing
-      // to rewrite and the only speech left is the handful authored as inline
-      // `<speech>` elements. 31 against 6,855 — a caller that forgets the flag
-      // loses 99.5% of the audio and sees no error.
       expect(off.expanded).toBe(0);
       expect(off.mounts).toBe(31);
 
-      // DIVERGENT IS THE ONE THAT MATTERS MOST. `expandGeneratorFields` documents
-      // it as "the ONE way this module can go quietly wrong": a key option that
-      // cannot ride on the synthetic element makes the renderer hash a different
-      // key than the request beside it, and the two disagree with nothing to show.
-      // The module claims zero over the corpus; asserted here rather than claimed.
       expect(on.divergent).toBe(0);
     } finally {
       db.close();
@@ -598,9 +517,6 @@ describe("voice — pain point #5, in code", () => {
   it("leaves the field's own voice alone by default — the only safe default", () => {
     const db = scratch();
     try {
-      // Every one of the 10,791 speech blobs is addressed by the voice Mochi
-      // recorded. A non-empty default would miss all of them at once and re-bill
-      // the corpus, so shipping `voice.default` empty is load-bearing.
       const resolved = voiceFor(db, "c1", "ja-JP-NanamiNeural");
       expect(resolved).toEqual({ voice: "ja-JP-NanamiNeural", source: "field" });
     } finally {
@@ -624,8 +540,6 @@ describe("voice — pain point #5, in code", () => {
         deckId: "root",
       });
 
-      // The nearer deck wins, which is what makes "単語 gets the male voice,
-      // everything else does not" expressible at all.
       setDeckVoice(db, "kid", "kid-voice");
       expect(voiceFor(db, "c1", "field-voice")).toMatchObject({
         voice: "kid-voice",
@@ -639,7 +553,6 @@ describe("voice — pain point #5, in code", () => {
         source: "card",
       });
 
-      // Clearing goes back to inherit rather than to null-as-provider-default.
       setCardVoice(db, "c1", null);
       expect(voiceFor(db, "c1", "field-voice")).toMatchObject({ source: "deck" });
     } finally {
@@ -693,12 +606,8 @@ describe("resolveGenerationAsync — an HTTP call could not be passed to the syn
       const second = await resolveGenerationAsync(db, request, generate);
       expect(second.hit).toBe(true);
       expect(second.hash).toBe(first.hash);
-      // The point: a hit must not cost a request. The synchronous form could not
-      // express this at all, so the only way to use it was fetch-then-resolve,
-      // which billed on every hit.
       expect(calls).toBe(1);
 
-      // Same identity spelled differently is still one blob and one bill.
       const inline = await resolveGenerationAsync(db, { ...request, lang: "jp" }, generate);
       expect(inline.hash).toBe(first.hash);
       expect(calls).toBe(1);
@@ -708,18 +617,6 @@ describe("resolveGenerationAsync — an HTTP call could not be passed to the syn
   });
 });
 
-// ─── generating what Mochi never generated (Zach, 2026-09-14) ────────────────
-
-/**
- * `storeDescriptorText` — the write side, and the only one in `src/generate`.
- *
- * The claim worth pinning is CLOSURE: whatever the renderer computed as a
- * descriptor, storing under it must make `resolveDescriptorText` find it with the
- * same descriptor. That round trip is the entire contract, and it is exactly what
- * `scripts/generate-examples.ts` once got wrong — it passed an options bag of
- * `{}` instead of the field's own subset and filed all 67 sentences under a
- * near-miss, where they resolved as `other-voice` rather than `exact`.
- */
 const DESCRIPTOR = {
   kind: "ai" as const,
   text: "Describe a word 疑念 using emojis only",
@@ -738,16 +635,10 @@ describe("storing a generation made on demand", () => {
   });
 
   it("derives the identity rather than trusting the caller's option bag", () => {
-    // `generationIdentity` normalises the text and strips lang/voice OUT of the
-    // options. A caller that passed those through would file the blob under a key
-    // the resolver never builds — which is the bug that put 67 sentences at
-    // `other-voice`. Storing with them present and resolving with them present
-    // must still be an EXACT hit, because both go through the same derivation.
     const db = openDatabase(MEMORY);
     const noisy = { ...DESCRIPTOR, options: { lang: "ja", voice: "x", "ai-task": "custom" } };
     storeDescriptorText(db, noisy, "🧐");
     expect(resolveDescriptorText(db, noisy)).toBe("🧐");
-    // And the row it wrote carries the canonical subset, not what was handed in.
     const row = db
       .prepare("SELECT options FROM blobs WHERE kind = 'ai'")
       .get() as { options: string };
@@ -766,9 +657,6 @@ describe("storing a generation made on demand", () => {
   });
 
   it("leaves refcount at 1, because nothing in the schema can point at an inline generator", () => {
-    // 575 of these are `{{<ai>…</ai>}}` in a TEMPLATE BODY. `blob_refs` keys on a
-    // field, so there is no row to hold this down — and a blob at refcount 0 is
-    // what `sweepUnreferenced` collects.
     const db = openDatabase(MEMORY);
     storeDescriptorText(db, DESCRIPTOR, "🤔");
     const row = db.prepare("SELECT refcount, byte_size FROM blobs").get() as {
@@ -781,9 +669,6 @@ describe("storing a generation made on demand", () => {
   });
 
   it("REFUSES a speech kind — nothing here may write audio", () => {
-    // Decision 18 (the TTS key never reaches a client) and the deferral repeated
-    // to five agents. The endpoint refuses earlier so nothing is billed; this is
-    // the second gate, and it is the one a future caller will meet.
     const db = openDatabase(MEMORY);
     expect(() => storeDescriptorText(db, { ...DESCRIPTOR, kind: "speech" }, "nope")).toThrow(
       /not a text generation/,
@@ -793,18 +678,12 @@ describe("storing a generation made on demand", () => {
   });
 
   it("REFUSES an empty generation, which would be a permanent unreadable hit", () => {
-    // `lookupGeneration` filters `byte_size > 0` to keep Mochi's 10 zero-byte
-    // failures from becoming cache hits. A zero-byte row written here could never
-    // be read AND could never be replaced, because the hash would be taken.
     const db = openDatabase(MEMORY);
     expect(() => storeDescriptorText(db, DESCRIPTOR, "")).toThrow(/empty generation/);
     db.close();
   });
 
   it("stores text the review screen reads back through the SAME path it renders with", () => {
-    // Not a second resolver: `resolveDescriptorText` is what `db.worker.ts`'s
-    // `generatedText` calls for every slot on every card, so a hit here is a hit
-    // on screen.
     const db = openDatabase(MEMORY);
     storeDescriptorText(db, DESCRIPTOR, "🤔❓💭🚫🤝");
     const asTheWorkerAsks = resolveDescriptorText(db, {
@@ -819,25 +698,9 @@ describe("storing a generation made on demand", () => {
   });
 });
 
-/**
- * ─── FILLING A CLIP THAT WAS NEVER MADE ─────────────────────────────────────
- *
- * Zach, 2026-09-15, on a 合理 card: *"it won't let me play the audio of the
- * example sentence — do you think because it's missing?"* It was. 785 of 10,420
- * mounts resolve to nothing.
- *
- * The delicate part is not the synthesis, it is the IDENTITY. The card asks for
- * `ja-JP-NanamiNeural` because the voice lives on the field; the bytes come from
- * Google `ja-JP-Neural2-C`. The row must say Neural2-C — anything else makes 785
- * rows claim a provenance they do not have — so the RESOLVER bridges the gap,
- * and only for speech, and only to that one named voice.
- */
 describe("a clip this project synthesised", () => {
   function speechFixture(): { db: Db; store: BlobStore } {
     const db = openDatabase(MEMORY);
-    // The digest is injected so `src/blobs/store.ts` stays free of `node:crypto`
-    // — and it must be the SAME one `storeGeneratedSpeech` uses, or the store
-    // rejects the write as an address that does not match its bytes.
     const store = new MemoryBlobStore(sha256Hex);
     return { db, store };
   }
@@ -853,24 +716,15 @@ describe("a clip this project synthesised", () => {
     expect(row["kind"]).toBe("speech");
     expect(row["mime"]).toBe("audio/mpeg");
     expect(row["byte_size"]).toBe(bytes.length);
-    // THE CLAIM. Nanami never touched these bytes.
     expect(row["voice"]).toBe(FILL_VOICE);
     expect(row["lang"]).toBe("ja-JP");
-    // The payload is in the STORE, never inline — `blobs.bytes` is for text.
     expect(row["bytes"]).toBeNull();
     expect(store.read(hash)).toEqual(bytes);
-    // Refcount 1: a generator mount has no `blob_refs` row, so nothing else will
-    // ever count this reference and a 0 is one sweep away from deletion.
     expect(row["refcount"]).toBe(1);
     db.close();
   });
 
   it("files a clip it did NOT synthesise under the voice that did", () => {
-    // The endpoint can now answer a "generate audio" press from a clip already on
-    // the laptop — Mochi's own `en-US-AIGenerate1Neural`, say — and the device
-    // caches whatever came back. Filing those bytes at `FILL_VOICE` would claim
-    // this project spoke them, which is the same false provenance the test above
-    // refuses in the other direction, and would corrupt the voice survey.
     const { db, store } = speechFixture();
     const bytes = new Uint8Array([0x49, 0x44, 0x33, 7, 7, 7]);
     const text = "she was assiduous in point out every feature";
@@ -885,8 +739,6 @@ describe("a clip this project synthesised", () => {
     expect(row["voice"]).toBe("en-US-AIGenerate1Neural");
     expect(row["lang"]).toBe("en-US");
 
-    // AND IT RESOLVES ON THE FIRST LOOKUP, not through the fill-voice fallback —
-    // which is the other half of why the producing voice is the right key.
     expect(
       resolveAudioHash(db, "someCard", {
         origin: "generator",
@@ -903,8 +755,6 @@ describe("a clip this project synthesised", () => {
   });
 
   it("still defaults to the fill voice when no producing voice is given", () => {
-    // Every existing caller omits it, and the key scheme must not move for them:
-    // `../src/blobs/generation.ts` spells out what one changed bit costs.
     const { db, store } = speechFixture();
     const bytes = new Uint8Array([1, 2, 3, 4, 5]);
     const withOut = storeGeneratedSpeech(db, store, { text: "いぬ", lang: "ja-JP", options: {} }, bytes);
@@ -953,43 +803,18 @@ describe("a clip this project synthesised", () => {
         request: { kind: kind as never, text, voice, lang: "ja-JP", options: {} },
       });
 
-    // The card's own request. Misses on the exact identity, then finds the fill.
     expect(asked("speech", "ja-JP-NanamiNeural")).toBe(hash);
-    // Already asking for the fill voice: a direct hit, no fallback needed.
     expect(asked("speech", FILL_VOICE)).toBe(hash);
-    // NOT A GENERAL "any voice will do". A text kind never falls back — its
-    // identity is the whole cache and a wrong hit there is a wrong answer.
     expect(asked("ai", "ja-JP-NanamiNeural")).toBeNull();
     db.close();
   });
 
-  /**
-   * ─── THE ROW IS NOT THE CLIP, AND THAT MADE THE GAP UNREPAIRABLE ──────────
-   *
-   * Zach, 2026-09-16, on a 略歴 card: *"is it just me or nothing happens when
-   * you click the generate buttons"*. Reproduced in the Browser pane: the
-   * button said `speaking…`, the laptop answered, the worker filed the bytes —
-   * and a fresh `generate audio` button took its place. For ever.
-   *
-   * A device carries every `blobs` ROW (the card seed is whole) and only the
-   * payloads `app-bootstrap` had budget for, which is each card's CHEAPEST clip
-   * first (decision 34). The 2026-09-16 fill gave that sentence a second,
-   * smaller `ja-JP-Neural2-C` row, so the seed shipped the 50 KB Neural2-C
-   * payload and left the 158 KB Nanami one behind — measured in the shipped
-   * seed, 139 speech rows there have no payload.
-   *
-   * The card asks Nanami. The Nanami ROW hits. The fallback never ran, and one
-   * `BlobMissingError` became `null`.
-   */
   it("plays the fill clip when the asked voice's ROW is there and its BYTES are not", () => {
     const { db, store } = speechFixture();
     const text = "彼の略歴を見ると、彼は多くの異なる業界で経験を積んできたことがわかります。";
     const bytes = new Uint8Array([0x49, 0x44, 0x33, 7, 7, 7]);
     const fill = storeGeneratedSpeech(db, store, { text, lang: "ja-JP", options: {} }, bytes);
 
-    // The Mochi-era row, present with its byte_size and WITHOUT its payload —
-    // exactly what a seed rebuild leaves on the device. Written by hand because
-    // nothing in this project can produce that state on purpose.
     db.prepare(
       `INSERT INTO blobs (hash, kind, mime, byte_size, source_text, voice, lang, options, refcount)
        VALUES (?, 'speech', 'audio/mpeg', 158400, ?, 'ja-JP-NanamiNeural', 'ja-JP', '{}', 1)`,
@@ -1000,27 +825,15 @@ describe("a clip this project synthesised", () => {
       request: { kind: "speech", text, voice: "ja-JP-NanamiNeural", lang: "ja-JP", options: {} },
     } as const;
 
-    // The PREFERRED hash is still the row the card asked for — this does not
-    // quietly re-rank provenance, and `fill-generations` still reads it that way.
     expect(resolveAudioHash(db, "someCard", address)).toBe("deadbeef".repeat(8));
     expect(audioHashCandidates(db, "someCard", address)).toEqual(["deadbeef".repeat(8), fill]);
 
-    // But the resolver, which is the half that holds the store, plays the clip
-    // that exists. Before this it returned null and the card was mute.
     const played = cardAudioResolver(db, "someCard", { store })(address);
     expect(played?.hash).toBe(fill);
     expect(played?.bytes).toEqual(bytes);
     db.close();
   });
 
-  /**
-   * 2026-09-27, 基本情報の一枚（DP5xe66N）。「generate audio」を押すとクラウドが
-   * `cached` で答え、保存もされたのに、ボタンがまた出る — 永遠に。
-   *
-   * 声は同じ（Neural2-C）で、文も同じ。違うのは中身だけ: ノートPCが 09-17 に
-   * 作った 26a267…（端末の種には行だけで中身なし）と、クラウドの 6b9f06…。
-   * 上の 09-16 の修正は「次の声」を試したが、同じ声の二つ目の行は試さなかった。
-   */
   it("plays the second row of the SAME identity when only its bytes are on the device", () => {
     const { db, store } = speechFixture();
     const text = "浮動小数点数において、指数（**Exponent**）はその基数を何乗するかを示す数である。";
@@ -1028,19 +841,16 @@ describe("a clip this project synthesised", () => {
       origin: "generator",
       request: { kind: "speech", text, voice: null, lang: "ja-JP", options: {} },
     } as const;
-    // The seed's row: fill voice, byte_size set, NO payload — and it sorts first.
     db.prepare(
       `INSERT INTO blobs (hash, kind, mime, byte_size, source_text, voice, lang, options, refcount)
        VALUES (?, 'speech', 'audio/mpeg', 167232, ?, 'ja-JP-Neural2-C', 'ja-JP', '{}', 1)`,
     ).run("0".repeat(64), text);
     expect(cardAudioResolver(db, "someCard", { store })(address)).toBeNull();
 
-    // What "generate audio" files: the same identity, different bytes.
     const bytes = new Uint8Array([0x49, 0x44, 0x33, 9, 9, 9]);
     const fresh = storeGeneratedSpeech(db, store, { text, lang: "ja-JP", options: {} }, bytes);
     expect(fresh > "0".repeat(64)).toBe(true);
 
-    // The preferred row is unchanged; the one that PLAYS is the one with bytes.
     expect(resolveAudioHash(db, "someCard", address)).toBe("0".repeat(64));
     expect(audioHashCandidates(db, "someCard", address)).toEqual(["0".repeat(64), fresh]);
     const played = cardAudioResolver(db, "someCard", { store })(address);
@@ -1056,8 +866,6 @@ describe("a clip this project synthesised", () => {
       `INSERT INTO blobs (hash, kind, mime, byte_size, source_text, voice, lang, options, refcount)
        VALUES (?, 'speech', 'audio/mpeg', 1200, ?, 'ja-JP-NanamiNeural', 'ja-JP', '{}', 1)`,
     ).run("f0".repeat(32), text);
-    // An empty store, not a missing one: the walk must exhaust its candidates
-    // and return null rather than throw the first `BlobMissingError` at the page.
     const resolver = cardAudioResolver(db, "someCard", { store: new MemoryBlobStore(sha256Hex) });
     expect(
       resolver({
@@ -1080,35 +888,14 @@ describe("a clip this project synthesised", () => {
   });
 });
 
-/**
- * ─── WHICH MODEL, AND WHAT IT IS ACTUALLY ASKED ─────────────────────────────
- *
- * Zach, 2026-09-15: *"instead of a couple $, can we use ollama instead? i have
- * qwen ready on my machine lol"*
- *
- * Two things got pinned here, and the second is a defect that shipped.
- */
 describe("the text provider and its prompt", () => {
   it("adds NOTHING for `ai` — Mochi's prompt is already the instruction", () => {
     const prompt = systemPrompt({ kind: "ai", text: "Describe a word 疑念 using emojis only", options: {} });
-    // Decision 7: the user message is the identity's source_text. A second
-    // opinion about the task would be the renderer arguing with the corpus.
     expect(prompt).not.toMatch(/translate/i);
     expect(prompt).toContain("Reply with the requested content only");
   });
 
   it("TELLS a translate request to translate, which is the bug it shipped without", () => {
-    // ─── MEASURED THE DAY IT WAS FOUND, qwen3:8b, a real corpus sentence ───
-    //
-    //   sent as the endpoint sent it   努力してこそ、成功をつかむことができる。
-    //   came back                      努力してこそ、成功をつかむことができる。
-    //   with the instruction below     Only through effort can one grasp success.
-    //
-    // `vite.generate.ts` sent `descriptor.text` alone under one generic system
-    // prompt. Right for `ai`, where the text IS the instruction; for translate
-    // the text is only a sentence and nothing said what to do with it. Never
-    // caught because the button was tested on emoji and translate is 129 of
-    // 2,446 gaps.
     const prompt = systemPrompt({ kind: "translate", text: "努力してこそ", options: { from: "ja", to: "en" } });
     expect(prompt).toMatch(/Translate/);
     expect(prompt).toContain("text in ja");
@@ -1119,49 +906,34 @@ describe("the text provider and its prompt", () => {
     const prompt = systemPrompt({ kind: "translate", text: "hello", options: { from: "en", to: "ja" } });
     expect(prompt).toContain("text in en");
     expect(prompt).toContain("into ja");
-    // Absent options still produce a usable instruction rather than `undefined`.
     const bare = systemPrompt({ kind: "translate", text: "x", options: {} });
     expect(bare).toContain("text in ja");
     expect(bare).not.toContain("undefined");
   });
 
   it("strips a thinking block, closed or not", () => {
-    // `think: false` is set on every Ollama request, but the flag is a REQUEST
-    // and the tag is a fact — another model or another daemon version can emit
-    // one anyway, and a card whose emoji line is a paragraph of deliberation is
-    // worse than an empty one.
     expect(stripThinking("<think>hmm, 疑念 is doubt</think>🤔❓")).toBe("🤔❓");
     expect(stripThinking("<THINK>x</THINK>  📖  ")).toBe("📖");
-    // TRUNCATED AT THE TOKEN LIMIT mid-thought. Taking everything after an
-    // unclosed tag is deliberate: half a monologue stored in a field is the
-    // worst of the three outcomes.
     expect(stripThinking("<think>I should consider whether")).toBe("");
     expect(stripThinking("📖💡✨")).toBe("📖💡✨");
   });
 
   it("strips the long spelling, <thinking>, that leaked into 朗報's 例文", () => {
-    // Verbatim from the card, 2026-10-29.
     const leaked =
       "<thinking>Create a natural example sentence using 朗報.</thinking>試験に合格したという朗報が届いた。";
     expect(stripThinking(leaked)).toBe("試験に合格したという朗報が届いた。");
     expect(stripThinking("<thinking>I should consider whether")).toBe("");
-    // Mismatched pairs are not a block: `<think>…</thinking>` is left for the
-    // unclosed rule, which takes the rest.
     expect(stripThinking("<think>a</thinking>📖")).toBe("");
   });
 
   it("strips the control tags a hosted model echoed into 左遷's emoji", () => {
-    // Verbatim from the Worker's KV, 2026-10-21.
     const leaked =
       "<thinking_mode>auto</thinking_mode>\n\n<reasoning_effort>medium</reasoning_effort>👔📉🏢➡️🏝️😞";
     expect(stripThinking(leaked)).toBe("👔📉🏢➡️🏝️😞");
-    // A word that happens to be in angle brackets in an answer is not a tag pair.
     expect(stripThinking("<b>🙇</b>")).toBe("<b>🙇</b>");
   });
 
   it("the device cleans what it already holds, on read and on store", () => {
-    // 2026-10-23: the phone still rendered the tags a day after the Worker was
-    // fixed, from its own copy filed on 10-21. The render path must strip too.
     const source = readFileSync(new URL("../app/db.worker.ts", import.meta.url), "utf8");
     const read = source.slice(source.indexOf("function generatedText("));
     expect(read.slice(0, read.indexOf("\n}\n"))).toContain("stripThinking(stored)");
@@ -1190,20 +962,11 @@ describe("the text provider and its prompt", () => {
     );
     expect(out).toBe("🐢🍃");
     expect(seen["prompt"]).toBe("Describe a word おっとり using emojis only");
-    // Qwen3 is a thinking model and Ollama returns the reasoning without this.
     expect(seen["think"]).toBe(false);
     expect(seen["stream"]).toBe(false);
   });
 });
 
-/**
- * ─── GEMINI FLASH (2026-11-10) ──────────────────────────────────────────────
- *
- * Chosen by a side-by-side on twelve of his words (see `viaGemini`). What must
- * hold: the same raw prompt and system prompt as every provider, thinking HIGH
- * with room for it, thoughts dropped, and an answer that did not END is never
- * returned — the playground cut a sentence off mid-word twice in that test.
- */
 describe("the Gemini provider", () => {
   const ok = (parts: unknown[], finishReason = "STOP") => async (): Promise<unknown> => ({
     ok: true,
@@ -1231,7 +994,6 @@ describe("the Gemini provider", () => {
     expect(seen["systemInstruction"]).toEqual({ parts: [{ text: systemPrompt(descriptor) }] });
     const config = seen["generationConfig"] as { maxOutputTokens: number; thinkingConfig: { thinkingLevel: string } };
     expect(config.thinkingConfig.thinkingLevel).toBe("HIGH");
-    // 256 is the ANSWER budget; the thinking shares the cap, as with Ollama.
     expect(config.maxOutputTokens).toBeGreaterThan(2048);
   });
 
@@ -1272,18 +1034,6 @@ describe("the Gemini provider", () => {
   });
 });
 
-/**
- * ─── THE TOKEN BUDGET IS SHARED WITH THE THINKING ───────────────────────────
- *
- * Two of the first three sentences in a real batch run came back empty, and
- * "the model returned nothing" pointed at the model. It was the budget: Ollama
- * counts reasoning against `num_predict` and returns the reasoning in a separate
- * `thinking` field, so a long deliberation stops at `done_reason: "length"` with
- * `response` empty. Measured on gpt-oss:20b:
- *
- *     num_predict=256   eval=256  done=length  response=""
- *     num_predict=2048  eval=421  done=stop    response="When it comes to him…"
- */
 describe("a local reasoning model's token budget", () => {
   it("gives the thinking headroom the caller's answer budget does not have", async () => {
     let seen: Record<string, unknown> = {};
@@ -1295,8 +1045,6 @@ describe("a local reasoning model's token budget", () => {
       { kind: "ai", text: "x", options: {} },
       { provider: "ollama", model: "gpt-oss:20b", maxTokens: 256, fetch: fake as never },
     );
-    // The caller asked for 256 — that is the ANSWER budget, and it must not be
-    // what bounds the reasoning that shares it.
     expect((seen["options"] as { num_predict: number }).num_predict).toBe(OLLAMA_MIN_PREDICT);
     expect(OLLAMA_MIN_PREDICT).toBeGreaterThan(256);
   });
@@ -1319,8 +1067,6 @@ describe("a local reasoning model's token budget", () => {
       ok: true,
       json: async () => ({ response: "  ", done_reason: "stop" }),
     });
-    // Not an error here: the caller decides what an empty field means, and
-    // `vite.generate.ts` already refuses to store one.
     await expect(
       generateText(
         { kind: "ai", text: "x", options: {} },
@@ -1330,78 +1076,42 @@ describe("a local reasoning model's token budget", () => {
   });
 });
 
-/**
- * ─── THE FURIGANA FILL'S OUTPUT FORMAT, AGAINST THE REAL CORPUS ─────────────
- *
- * A furigana generation does NOT hold a reading. It holds the INPUT with a
- * `(reading)` after each KANJI RUN — which is why decision 37's `readingOf()`
- * has to unwrap it, and why dumping the whole reading after a mixed base would
- * put `あり得る(ありえる)` on 350 cards instead of `あり得(え)る`.
- *
- * These cases are lifted from rows that already exist in `build/hashigo.db`, so
- * the test is "does the fill produce what Mochi produced" rather than "does it
- * produce what I expected".
- */
 describe("the furigana fill's bracket form", () => {
   it("annotates each kanji run and leaves the kana alone", () => {
-    // Real rows: "あり得る" -> "あり得(え)る", "おろし金" -> "おろし金(がね)".
     const stored = (base: string, reading: string): string =>
       rubyPlainText(alignFurigana(base, reading));
     expect(stored("あり得る", "ありえる")).toBe("あり得(え)る");
     expect(stored("おろし金", "おろしがね")).toBe("おろし金(がね)");
     expect(stored("お世話", "おせわ")).toBe("お世話(せわ)");
-    // A base that is all kanji takes one bracket over the whole of it.
     expect(stored("試行", "しこう")).toBe("試行(しこう)");
   });
 
   it("leaves an all-kana base exactly as it is", () => {
-    // Real rows: "いたす" -> "いたす", "おっしゃる" -> "おっしゃる". Annotating
-    // すずらん with すずらん is noise on the card.
     const built = alignFurigana("いたす", "いたす");
     expect(built.kind).toBe("none");
-    // `none` carries no segments — the script writes the base through unchanged,
-    // which is exactly the row the corpus holds.
     expect(built.segments).toEqual([]);
   });
 
   it("REFUSES rather than annotating coarsely when the reading will not place", () => {
-    // `alignFurigana` falls back to one reading over the whole base when it
-    // cannot match the kana runs. The corpus holds no such row for a mixed base,
-    // and writing one would put a coarse annotation on exactly the cards where
-    // the reading is the answer being drilled.
     const built = alignFurigana("言い渡す", "いーわたす");
     expect(built.kind).toBe("whole");
     expect(built.reason).not.toBe("");
   });
 });
 
-/**
- * WHICH VOICE READS WHICH LANGUAGE.
- *
- * Zach, 2026-09-20: *"the example sentence is in Japanese voice 😭"*. One global
- * `FILL_VOICE` meant every text this project ever spoke got `ja-JP-Neural2-C`,
- * and 130 English clips in the corpus are exactly that.
- */
 describe("the fill voice is per language", () => {
   it("keeps Japanese on the voice Zach chose by ear, at the SAME key", () => {
-    // Load-bearing: the fill voice is part of the generation identity, so a
-    // changed value here re-keys every clip stored under it. 7,409 Japanese
-    // clips depend on this being the identity function.
     expect(fillVoiceFor("ja-JP")).toBe(FILL_VOICE);
     expect(fillVoiceFor("ja")).toBe(FILL_VOICE);
   });
 
   it("gives English an English voice", () => {
     expect(fillVoiceFor("en-US")).toMatch(/^en-/);
-    // Region-independent: a table keyed on full BCP-47 tags would answer en-US
-    // and silently fall through to Japanese for the rest.
     expect(fillVoiceFor("en-GB")).toBe(fillVoiceFor("en-US"));
     expect(fillVoiceFor("en")).toBe(fillVoiceFor("en-US"));
   });
 
   it("falls back to Japanese for a language nothing has chosen, and for nothing at all", () => {
-    // This app is for studying Japanese; an untagged clip is a Japanese clip.
-    // It also preserves the behaviour every existing caller had.
     expect(fillVoiceFor(null)).toBe(FILL_VOICE);
     expect(fillVoiceFor("")).toBe(FILL_VOICE);
     expect(fillVoiceFor(undefined)).toBe(FILL_VOICE);
@@ -1409,11 +1119,6 @@ describe("the fill voice is per language", () => {
   });
 
   it("files an unvoiced English clip under the English voice", () => {
-    // `storeGeneratedSpeech` defaults the producing voice to the language's fill
-    // voice, so a caller that does not name one still files truthfully.
-    // Inlined rather than reusing `speechFixture`, which is scoped to the
-    // describe above. Same two pieces: the digest must be the one
-    // `storeGeneratedSpeech` uses or the store rejects the address.
     const db = openDatabase(MEMORY);
     const store = new MemoryBlobStore(sha256Hex);
     const hash = storeGeneratedSpeech(
@@ -1428,11 +1133,6 @@ describe("the fill voice is per language", () => {
   });
 });
 
-/**
- * AN EMOJI LINE IS EMOJI (2026-11-06). Zach, over 断片: *"it just says the answer
- * out right 😭"* — "Sure! Here is the word 断片 described using emojis: 🔪🧩".
- * The inputs below are real lines from his store.
- */
 describe("emoji lines are cut to their emoji", () => {
   it("drops the chatter and keeps the first run of emoji", () => {
     expect(emojiOnly("Sure! Here is the word 断片 described using emojis: 🔪🧩")).toBe("🔪🧩");
@@ -1462,26 +1162,19 @@ describe("emoji lines are cut to their emoji", () => {
     const bare = { ...descriptor, text: "Describe a word 興隆 using emojis only" };
     storeDescriptorText(db, bare, "I'm not sure what you mean.");
     expect(resolveDescriptorText(db, bare)).toBeNull();
-    // A remake filed beside it is found, whichever blob `LIMIT 1` would pick.
     storeDescriptorText(db, bare, "📈🏛️✨🌅");
     expect(resolveDescriptorText(db, bare)).toBe("📈🏛️✨🌅");
   });
 });
 
-/**
- * Decision 67. 型's label back to an accent position, and when a card's word clip
- * may be made — 数隻 (かずせき) and *"the accent between 塔 and 問う"*.
- */
 describe("a word clip's reading and accent", () => {
   it("turns every 型 label into the position yomigana takes", () => {
     expect(accentOfLabel("平板", "とう")).toBe(0);
     expect(accentOfLabel("頭高", "とう")).toBe(1);
     expect(accentOfLabel("尾高", "はな")).toBe(2);
-    // Morae, not characters: しゅっぱつ is しゅ・っ・ぱ・つ.
     expect(accentOfLabel("尾高", "しゅっぱつ")).toBe(4);
     expect(accentOfLabel("中高 (3)", "すうせきや")).toBe(3);
     expect(accentOfLabel("中高(2)", "すうせき")).toBe(2);
-    // A 中高 position that is really 頭高 or 尾高, a multi-phrase label, nothing.
     expect(accentOfLabel("中高 (1)", "すうせき")).toBe(null);
     expect(accentOfLabel("中高 (4)", "すうせき")).toBe(null);
     expect(accentOfLabel("平板・頭高", "とう")).toBe(null);
@@ -1544,11 +1237,6 @@ describe("a word clip's reading and accent", () => {
   });
 });
 
-/**
- * 2026-11-15, decision 70: a Japanese example sentence must carry the card's own
- * word. Every case below is a real answer from that day's tests, through the
- * live Worker or the benchmark agents.
- */
 describe("sentenceProblem", () => {
   const ask = (word: string) => `Example sentence using ${word} in Japanese (Don't translate)`;
 

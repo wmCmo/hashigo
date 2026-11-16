@@ -1,17 +1,3 @@
-/**
- * THROWAWAY (spike harness). Streaming reader for the corpus pack that
- * `make-pack.mjs` writes.
- *
- * Streamed, not `arrayBuffer()`d, for one reason: the point of the exercise is a
- * phone, and holding 625 MiB of mp3 in a JS heap next to a growing wasm heap is
- * not a thing a phone does. This hands the caller one payload at a time and keeps
- * peak memory at a chunk plus the largest single payload (3,374,905 B).
- *
- * Each payload is a standalone `Uint8Array`, not a view onto the network buffer:
- * a view would let one 64 MiB chunk stay alive because a 60 KB mp3 still points
- * into it, which is exactly the leak this file exists to avoid.
- */
-
 export interface PackHeader {
   readonly count: number;
   readonly totalBytes: number;
@@ -20,14 +6,11 @@ export interface PackHeader {
 
 const MAGIC = "HSGPACK1";
 
-/** Called once per payload, in pack order. */
 export type PackVisitor = (hash: string, bytes: Uint8Array, index: number) => void;
 
 export interface PackResult {
   readonly header: PackHeader;
-  /** Bytes of payload delivered. Must equal `header.totalBytes`. */
   readonly bytes: number;
-  /** Milliseconds spent awaiting the network, excluding the visitor. */
   readonly networkMs: number;
 }
 
@@ -52,7 +35,6 @@ export async function readPack(url: string, visit: PackVisitor): Promise<PackRes
     return next.value;
   };
 
-  /** Grow `tail` until it holds at least `want` bytes, or the stream ends. */
   const fill = async (want: number): Promise<void> => {
     while (tail.length < want && !done) {
       const chunk = await pull();

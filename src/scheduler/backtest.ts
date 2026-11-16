@@ -1,64 +1,3 @@
-/**
- * Stage 5 — the scheduler backtest.
- *
- * SPEC.html "Scheduling": "Replay the real history and score how well each
- * candidate predicted what actually happened, using log loss and RMSE of
- * predicted recall probability against your true grades." That is all this file
- * does. It reads the imported review log, replays every track in order through
- * each candidate, and scores the predictions. It never writes to the database.
- *
- * FIVE DECISIONS THIS HARNESS MAKES, all of them visible in the numbers and all
- * of them argued in BACKTEST.md rather than buried here:
- *
- * 1. ELAPSED, NOT SCHEDULED — and both are now named columns rather than one
- *    word meaning two things. `reviews.scheduled_days` is what the scheduler
- *    PLANNED for the gap before this review; `reviews.elapsed_days` is what
- *    actually elapsed, backfilled from the timestamps themselves by
- *    `review_log_elapsed`. Measured over this corpus: of 84,060 reviews where
- *    both are known, 49,050 agree to within half a day, 22,226 were taken MORE
- *    than 1.5 days late and 240 early. Forgetting depends on the time that
- *    passed, not on the time that was intended, so elapsed is the independent
- *    variable. It also covers the 8,934 reviews whose planned interval is NULL,
- *    and it is the basis under which the corpus contains 3,009 observations at
- *    intervals over a year — where the scheduled basis contains none, because a
- *    plan only becomes a `scheduled_days` once the review it scheduled has been
- *    taken and none of the 1,356 post-cap plans has come due. `intervalSource:
- *    "scheduled"` reproduces the other choice for comparison.
- *
- *    THE DASHBOARD USES THE SAME BASIS AND THE SAME BOUNDARIES. `> 365d` holds
- *    3,009 reviews here and 3,009 in dashboard.html, and test/backtest.test.ts
- *    asserts the two agree rather than leaving a reader to notice they do not.
- *
- * 2. A TRACK'S FIRST REVIEW IS NOT SCORED. It is the review that creates the
- *    memory, not one that tests it; there is no prior state and no elapsed time.
- *    9,085 of 103,110 reviews are firsts, leaving 94,025 with a predecessor.
- *
- * 3. SAME-DAY REVIEWS ARE NOT SCORED BY DEFAULT. Every timestamp in the corpus
- *    is date-only (SPEC "Review timestamps — the one that cannot wait"), so a
- *    review on the same day as its predecessor has an elapsed time of "somewhere
- *    between a minute and 23 hours", recorded as 0. Scoring a forgetting curve
- *    against an unknown elapsed time measures the harness, not the algorithm —
- *    and it does so unfairly, because an exponential curve predicts exactly 1.0
- *    at t = 0 and is then punished by the log-loss clamp for each of the 256
- *    same-day failures. Those 6,996 reviews still update state, because they
- *    really happened; they are scored in their own separate table.
- *
- * 4. GRADES ARE BINARY, BY DESIGN. There is no `grade` column at all: Anki's
- *    four-button Again/Hard/Good/Easy was considered and REJECTED, so
- *    `remembered` maps to Good (3) and forgotten to Again (1) and ratings 2 and
- *    4 can never occur — not here, and not in any future history. Four of
- *    FSRS-6's 21 parameters are therefore unreachable BY DESIGN and are frozen,
- *    not fitted; see src/scheduler/policy.ts. The upside is worth stating: the
- *    scheduler is fitted on exactly the signal it receives in production, so
- *    there is no train/serve distribution shift.
- *
- * 5. THE FIT NEVER SEES THE EVALUATION WINDOW. Parameters are fitted on reviews
- *    before a cutoff date and scored on reviews on or after it. State for an
- *    evaluation-window review is still produced by replaying that track's
- *    earlier history — which is causal, not leakage: at the moment of the review
- *    that history had already happened.
- */
-
 import type { Db } from "../db/index.js";
 import type { IntervalBasis } from "../schema/index.js";
 import { constantRate, fixedMultiplier } from "./algorithms/baseline.js";
@@ -79,18 +18,12 @@ import {
 } from "./algorithms/index.js";
 import { sm2 } from "./algorithms/sm2.js";
 
-// ─── the history, as the candidates see it ───────────────────────────────────
-
 export interface HistoryReview extends ReviewObservation {
   readonly reviewId: number;
   readonly reviewedAt: string;
-  /** `YYYY-MM-DD` in the authoring timezone; `reviewed_at` already carries it. */
   readonly localDate: string;
-  /** Days actually elapsed since the previous review of this track. */
   readonly measuredElapsedDays: number | null;
-  /** What was PLANNED for the gap before this review: `reviews.scheduled_days`. */
   readonly scheduledDays: number | null;
-  /** False when `elapsedDays` is a fallback rather than the chosen source. */
   readonly intervalKnown: boolean;
   readonly durationMs: number | null;
 }
@@ -107,21 +40,9 @@ export interface TrackHistory {
   readonly reviews: readonly HistoryReview[];
 }
 
-/**
- * Which of the two named intervals the candidates are shown. The names are the
- * schema's (`reviews.elapsed_days` / `reviews.scheduled_days`), deliberately,
- * so that a reader of a backtest table and a reader of the dashboard are
- * looking at the same word for the same number.
- */
 export type IntervalSource = IntervalBasis;
 
 export interface LoadOptions {
-  /**
-   * `"elapsed"` (default) is the measured gap between review dates;
-   * `"scheduled"` is `reviews.scheduled_days`, with the measured gap as a
-   * fallback where it is NULL and `intervalKnown` false on those rows so they
-   * can be excluded from scoring.
-   */
   readonly intervalSource?: IntervalSource;
 }
 
@@ -163,14 +84,6 @@ interface HistoryRow {
 
 const MS_PER_DAY = 86_400_000;
 
-/**
- * Every track that has at least one review, chronological within the track.
- *
- * Ordered by `reviewed_at` then `id`: the dates are date-only, so two reviews of
- * one track routinely share a timestamp exactly, and `reviews.id` ascends in the
- * export's own array order (see `insertPlannedTracks`), which is the only
- * remaining evidence of which came first.
- */
 export function loadHistory(db: Db, options: LoadOptions = {}): readonly TrackHistory[] {
   const source = options.intervalSource ?? "elapsed";
   const rows = db.prepare(HISTORY_SQL).all() as HistoryRow[];
@@ -196,8 +109,6 @@ export function loadHistory(db: Db, options: LoadOptions = {}): readonly TrackHi
         localDate: row.reviewed_at.slice(0, 10),
         measuredElapsedDays: measured,
         scheduledDays: scheduled,
-        // The first review of a track has no elapsed time at all; 0 keeps the
-        // arithmetic total and it is never scored.
         elapsedDays: chosen ?? measured ?? 0,
         intervalKnown: i > 0 && chosen !== null,
         remembered,
@@ -232,16 +143,10 @@ export function loadHistory(db: Db, options: LoadOptions = {}): readonly TrackHi
   return tracks;
 }
 
-// ─── which reviews count ─────────────────────────────────────────────────────
-
 export interface ScoringWindow {
-  /** Score reviews whose local date is >= this. Null for no lower bound. */
   readonly from?: string | null;
-  /** Score reviews whose local date is < this. Null for no upper bound. */
   readonly until?: string | null;
-  /** Minimum elapsed days. Default 1: see decision 3 in the header. */
   readonly minElapsedDays?: number;
-  /** Maximum elapsed days, exclusive. Used to isolate the same-day rows. */
   readonly maxElapsedDaysExclusive?: number | null;
 }
 
@@ -257,11 +162,6 @@ export function isScorable(review: HistoryReview, window: ScoringWindow = {}): b
   return true;
 }
 
-/**
- * The local date at which `fraction` of the scorable reviews have happened.
- * Used to place the train/eval cutoff by review count rather than by calendar,
- * because the study rate is not uniform over four years.
- */
 export function chooseCutoff(
   tracks: readonly TrackHistory[],
   fraction: number,
@@ -278,26 +178,14 @@ export function chooseCutoff(
   return dates[index] as string;
 }
 
-// ─── metrics ─────────────────────────────────────────────────────────────────
-
 export interface Metrics {
   readonly reviews: number;
   readonly passed: number;
-  /** The truth: passes / reviews over exactly the rows scored. */
   readonly observedRetention: number;
   readonly meanPredicted: number;
-  /** Mean negative log likelihood, natural log. Lower is better. */
   readonly logLoss: number;
-  /** Root mean squared error against the 0/1 outcome. Lower is better. */
   readonly rmse: number;
-  /**
-   * Calibration error: RMSE between mean predicted and mean observed within 50
-   * equal-width bins of predicted probability, weighted by bin count. This is
-   * the number that says whether "90%" means 90%; plain RMSE on a 96%-pass
-   * corpus barely moves between candidates.
-   */
   readonly calibrationRmse: number;
-  /** Mann-Whitney AUC: does the model ORDER outcomes at all? Null if degenerate. */
   readonly auc: number | null;
 }
 
@@ -381,11 +269,6 @@ class Accumulator {
   }
 }
 
-/**
- * Mann-Whitney U / rank AUC, ties averaged. Reported because log loss and RMSE
- * both conflate calibration with discrimination: a model can be beaten on log
- * loss purely for being over-confident while still ordering the outcomes better.
- */
 export function auc(predicted: readonly number[], outcomes: readonly number[]): number | null {
   const n = predicted.length;
   const positives = outcomes.reduce((sum, y) => sum + y, 0);
@@ -412,30 +295,6 @@ export function auc(predicted: readonly number[], outcomes: readonly number[]): 
   return (rankSum - (positives * (positives + 1)) / 2) / (positives * negatives);
 }
 
-// ─── scoring ─────────────────────────────────────────────────────────────────
-
-/**
- * Buckets as INCLUSIVE ceilings, `(previous, ceiling]`, which is character for
- * character the rule `review_log_bucketed` applies in views.sql —
- * `WHEN elapsed_days <= 365 THEN '180-365d' ELSE '> 365d'`. It used to be
- * written as the half-open `[low, 366)`, which agrees with the view on every
- * integral gap and disagrees on a fractional one; every elapsed gap in this
- * corpus is integral (measured: 0 of 94,025 are not, because every imported
- * timestamp is date-only), so adopting the view's rule moves nothing here and
- * makes the two tables provably the same partition rather than accidentally
- * the same one.
- *
- * The boundaries matter more than they look: 1,109 reviews sit at exactly 365
- * days, and an edge in the wrong place moves a thousand rows between the last
- * two rows of every table below.
- *
- * This list is FINER than the view's at the short end only: the view merges
- * same-day and 1-day into a single `<= 1d`, because a dashboard reader does not
- * care and a forgetting curve does — decision 3 above turns entirely on the
- * same-day rows being separable. VIEW_BUCKET_LABEL is that mapping, and
- * test/backtest.test.ts folds this table onto the view's through it and checks
- * every row.
- */
 export const INTERVAL_BUCKETS: readonly (readonly [string, number])[] = [
   ["same day", 0],
   ["1d", 1],
@@ -448,11 +307,6 @@ export const INTERVAL_BUCKETS: readonly (readonly [string, number])[] = [
   ["> 365d", Number.POSITIVE_INFINITY],
 ];
 
-/**
- * This table's label -> the label views.sql gives the same reviews. Two rows
- * map onto `<= 1d`; the rest are one to one, and `> 365d` is `> 365d` in both,
- * which is the row the dashboard and this backtest are required to agree on.
- */
 export const VIEW_BUCKET_LABEL: Readonly<Record<string, string>> = {
   "same day": "<= 1d",
   "1d": "<= 1d",
@@ -465,7 +319,6 @@ export const VIEW_BUCKET_LABEL: Readonly<Record<string, string>> = {
   "> 365d": "> 365d",
 };
 
-/** The row every long-interval argument turns on, named once. */
 export const BEYOND_YEAR_LABEL = "> 365d";
 
 export function intervalBucket(elapsedDays: number): string {
@@ -484,7 +337,6 @@ export interface CandidateScore {
   readonly id: string;
   readonly name: string;
   readonly detail: string;
-  /** True when some of the scored rows were also used to fit the parameters. */
   readonly inSample: boolean;
   readonly overall: Metrics;
   readonly byDeck: readonly GroupedMetrics[];
@@ -494,15 +346,9 @@ export interface CandidateScore {
 
 export interface CandidateSpec {
   readonly candidate: Candidate;
-  /** Marks a candidate whose parameters were fitted on part of this window. */
   readonly inSample?: boolean;
 }
 
-/**
- * Replay every track through every candidate and score the reviews inside
- * `window`. One pass per candidate; each track is replayed from its own first
- * review so state is never fabricated.
- */
 export function scoreCandidates(
   tracks: readonly TrackHistory[],
   specs: readonly CandidateSpec[],
@@ -556,13 +402,6 @@ export function scoreCandidates(
   });
 }
 
-// ─── the fitter's view of the same data ──────────────────────────────────────
-
-/**
- * Flatten to typed arrays for `fitFsrs6`. `scored` marks the rows that enter the
- * loss; every other row still advances the state, which is what makes the
- * time-ordered split causal rather than a subset.
- */
 export function toTrainingSet(
   tracks: readonly TrackHistory[],
   window: ScoringWindow = {},
@@ -588,8 +427,6 @@ export function toTrainingSet(
   return { trackOffsets, elapsedDays, remembered, scored };
 }
 
-// ─── measured descriptions of the corpus ─────────────────────────────────────
-
 export interface ForgettingRow {
   readonly bucket: string;
   readonly reviews: number;
@@ -598,11 +435,6 @@ export interface ForgettingRow {
   readonly meanElapsedDays: number;
 }
 
-/**
- * Observed retention by elapsed interval — measured, not modelled. This is the
- * empirical forgetting curve, and it is NOT monotone in this corpus, which is
- * the selection bias made visible rather than merely asserted.
- */
 export function measureForgetting(
   tracks: readonly TrackHistory[],
   window: ScoringWindow = { minElapsedDays: 0 },
@@ -631,12 +463,6 @@ export function measureForgetting(
   });
 }
 
-/**
- * Mean number of extra reviews a lapse costs, measured: reviews of the same
- * track within `withinDays` after a failed one. The workload model needs it
- * because a lower target retention buys longer intervals and pays in relearning,
- * and the size of that payment is in the data rather than in a rule of thumb.
- */
 export function measureRelearningCost(tracks: readonly TrackHistory[], withinDays = 2): number {
   let lapses = 0;
   let followUps = 0;
@@ -660,24 +486,14 @@ export function measureRelearningCost(tracks: readonly TrackHistory[], withinDay
 export interface LossConcentration {
   readonly id: string;
   readonly name: string;
-  /** Scored rows the candidate put below 50% recall. */
   readonly rowsBelowHalf: number;
-  /** Share of the candidate's TOTAL log loss those rows account for. */
   readonly lossShareBelowHalf: number;
-  /** Share contributed by the worst 1% of rows, whatever they are. */
   readonly lossShareWorstPercent: number;
   readonly p01Predicted: number;
   readonly p50Predicted: number;
-  /** Observed retention on the rows the candidate put below 50%. */
   readonly observedBelowHalf: number;
 }
 
-/**
- * Where each candidate's log loss actually comes from. Hypothesis-free on
- * purpose: log loss is a mean over 86,000 rows and a ranking between candidates
- * says nothing about whether the difference is spread evenly or concentrated in a
- * few catastrophic predictions. This says which.
- */
 export function measureLossConcentration(
   tracks: readonly TrackHistory[],
   specs: readonly CandidateSpec[],
@@ -727,13 +543,6 @@ export function measureLossConcentration(
   });
 }
 
-/**
- * Mochi's OWN current schedule, measured from `card_tracks.scheduled_days` —
- * the last interval Mochi chose for each live track. This is the anchor that makes
- * the modelled workload below auditable: run the same steady-state arithmetic
- * over Mochi's real intervals and compare its answer with the review rate the
- * user actually sustains.
- */
 export interface ScheduleSummary {
   readonly label: string;
   readonly tracks: number;
@@ -767,53 +576,17 @@ export function measureMochiSchedule(db: Db): ScheduleSummary {
 }
 
 export interface ScheduleCap {
-  /** The modal plan among live tracks, which is where the cap sits. */
   readonly intervalDays: number;
   readonly tracksAtCap: number;
   readonly liveTracks: number;
   readonly shareAtCap: number;
   readonly reviewsScheduledAtCap: number;
   readonly reviewsScheduledAbove: number;
-  /**
-   * The first local date on which any review planned beyond the cap, or null if
-   * the cap was never lifted. THIS IS THE FIELD THAT KEEPS THE CLAIM HONEST:
-   * without it, "43% of tracks sit on the cap" reads as a constraint that is
-   * still operating, and it is not.
-   */
   readonly liftedOn: string | null;
-  /** The longest interval ever planned, which is what the lift made reachable. */
   readonly maxPlannedDays: number | null;
-  /**
-   * Tracks sitting on exactly the cap whose LAST REVIEW predates the lift —
-   * parked on a stale plan the post-lift scheduler would not have chosen. This
-   * is the part of the censoring claim that survives the lift, and it is
-   * narrower than the headline share.
-   */
   readonly tracksOnStaleCap: number;
 }
 
-/**
- * Mochi's maximum-interval cap, found rather than assumed: the modal value of
- * `card_tracks.scheduled_days` over live tracks, PLUS the date it stopped
- * applying.
- *
- * This is the single most important limit on what the backtest can conclude. If
- * a large share of tracks sit on one exact value, that value is a ceiling the
- * scheduler imposed and not a memory measurement — the data says "at least this
- * long is fine" and nothing more.
- *
- * BUT THE CAP WAS LIFTED, and a report that omits that is wrong in the
- * direction that matters. Measured: no review planned beyond 365 days before
- * `liftedOn`, 1,356 have since, and the longest plan in the corpus is 2,707
- * days falling due in 2033. What survives the lift is narrower and is
- * `tracksOnStaleCap`: the tracks whose last review predates it and which are
- * therefore still parked on a 365-day plan nobody would choose today.
- *
- * What does NOT change is the limit on extrapolation, because it comes from the
- * OBSERVED side rather than the planned one: the longest gap ever actually
- * elapsed is 454 days, so every projection past that is off the end of the
- * support no matter what Mochi has been planning since February.
- */
 export function measureScheduleCap(db: Db): ScheduleCap {
   const rows = db
     .prepare(
@@ -842,10 +615,6 @@ export function measureScheduleCap(db: Db): ScheduleCap {
     .prepare(`SELECT count(*) FROM reviews WHERE next_scheduled_days > ?`)
     .pluck()
     .get(top.scheduled_days) as number;
-  // The LOCAL date, from review_log, not date(reviewed_at): every timestamp
-  // carries +09:00, so date() would normalise to UTC and report the lift a day
-  // early. That one-day slip is the difference between 2026-02-21 and
-  // 2026-02-22, and both numbers are already in circulation.
   const liftedOn = db
     .prepare(`SELECT min(local_date) FROM review_log WHERE next_scheduled_days > ?`)
     .pluck()
@@ -859,12 +628,6 @@ export function measureScheduleCap(db: Db): ScheduleCap {
       ? 0
       : (db
           .prepare(
-            // The SAME live population the share above is quoted over, and the
-            // same one src/dashboard/metrics.ts counts: not dormant, not on an
-            // archived card, with history and a plan. Without the join this
-            // returns 3,827 against the dashboard's 3,796, which is exactly the
-            // sort of "both defensible, neither stated" split that produced the
-            // > 365d contradiction in the first place.
             `SELECT count(*) FROM card_tracks t
                JOIN cards c ON c.id = t.card_id
               WHERE t.dormant = 0 AND c.archived = 0 AND t.reps > 0
@@ -888,7 +651,6 @@ export function measureScheduleCap(db: Db): ScheduleCap {
   };
 }
 
-/** Reviews per calendar day over the last `days` days of history. Measured. */
 export function measureRecentLoad(db: Db, days = 90): { readonly days: number; readonly reviewsPerDay: number } {
   const rows = db
     .prepare(
@@ -905,31 +667,16 @@ export interface WorkloadRow {
   readonly tracks: number;
   readonly medianIntervalDays: number;
   readonly meanIntervalDays: number;
-  /** Steady state: a track with interval I contributes 1/I reviews per day. */
   readonly reviewsPerDay: number;
-  /** The same, inflated by the measured cost of the lapses that target implies. */
   readonly reviewsPerDayWithRelearning: number;
 }
 
 export interface WorkloadOptions {
-  /** From `measureRelearningCost`. */
   readonly relearningCost: number;
-  /** Skip dormant tracks and archived cards. Default true. */
   readonly liveOnly?: boolean;
-  /** Floor on the scheduled interval, in days. Default 1. */
   readonly minimumIntervalDays?: number;
 }
 
-/**
- * MODELLED, not measured, and the distinction matters more here than anywhere
- * else in this file. The measured inputs are each live track's state after its
- * real history and the relearning cost. The model is the steady-state identity
- * "a card reviewed every I days generates 1/I reviews per day", which assumes
- * the interval distribution has settled, ignores new cards entirely, and treats
- * the winning model's stability estimate as correct. It answers "what would the
- * daily load be if today's cards were scheduled at target r forever", which is
- * the question SPEC asks, and nothing more.
- */
 export function estimateWorkload(
   tracks: readonly TrackHistory[],
   candidate: Candidate,
@@ -965,8 +712,6 @@ export function estimateWorkload(
   });
 }
 
-// ─── the whole run ───────────────────────────────────────────────────────────
-
 export interface DatasetSummary {
   readonly tracks: number;
   readonly reviews: number;
@@ -986,40 +731,24 @@ export interface DatasetSummary {
 }
 
 export interface BacktestOptions {
-  /** Train/eval boundary as a local date. Default: the 70% point by count. */
   readonly cutoff?: string;
   readonly targetRetentions?: readonly number[];
-  /** Overrides the committed fitted vector; used by the refit test. */
   readonly fittedParameters?: Fsrs6Parameters;
-  /** Also score under Mochi's planned interval. Default true. */
   readonly includePlanned?: boolean;
 }
 
 export interface BacktestResult {
   readonly dataset: DatasetSummary;
-  /** Every scorable review, elapsed intervals. Fitted arm flagged in-sample. */
   readonly full: readonly CandidateScore[];
-  /** The held-out window only: the one table where all four are comparable. */
   readonly heldOut: readonly CandidateScore[];
-  /** The 6,996 same-day reviews, scored on their own. */
   readonly sameDay: readonly CandidateScore[];
-  /** Sensitivity: the same candidates under Mochi's planned interval. */
   readonly planned: readonly CandidateScore[];
   readonly forgetting: readonly ForgettingRow[];
   readonly relearningCost: number;
-  /**
-   * One block per model whose intervals were projected. Both the fitted and the
-   * stock parameters are reported, and they turn out to agree within 5% on the
-   * median interval — which is worth knowing, because it means the implausibly
-   * long projections below are a property of the censored data and not of the fit.
-   */
   readonly workload: readonly WorkloadBlock[];
-  /** Mochi's own schedule and the review rate actually sustained. Measured. */
   readonly mochiSchedule: ScheduleSummary;
-  /** Mochi's maximum-interval cap and how much of the corpus is pinned to it. */
   readonly cap: ScheduleCap;
   readonly recentLoad: { readonly days: number; readonly reviewsPerDay: number };
-  /** Where each candidate's loss comes from, on the held-out window. */
   readonly concentration: readonly LossConcentration[];
   readonly trainBaseRate: number;
   readonly elapsedMs: number;
@@ -1030,7 +759,6 @@ export interface WorkloadBlock {
   readonly rows: readonly WorkloadRow[];
 }
 
-/** The candidate set SPEC names, plus the two extra rows that keep it honest. */
 export function buildCandidates(options: {
   readonly fittedParameters: Fsrs6Parameters;
   readonly baseRate: number;
@@ -1055,10 +783,6 @@ export function buildCandidates(options: {
   };
 }
 
-/**
- * Run the whole backtest against an imported database. Read-only; the caller
- * owns the connection.
- */
 export function runBacktest(db: Db, options: BacktestOptions = {}): BacktestResult {
   const started = Date.now();
   const tracks = loadHistory(db);
@@ -1116,8 +840,6 @@ export function runBacktest(db: Db, options: BacktestOptions = {}): BacktestResu
 
   const full = scoreCandidates(tracks, specs);
   const heldOut = scoreCandidates(tracks, specs, evalWindow).map((score) =>
-    // The fitted arm is out-of-sample HERE and only here, which is the whole
-    // point of the split; every other table has it in-sample and says so.
     score.id === fittedId ? { ...score, inSample: false } : score,
   );
   const sameDayScores = scoreCandidates(tracks, specs, {
@@ -1177,8 +899,6 @@ export function runBacktest(db: Db, options: BacktestOptions = {}): BacktestResu
   };
 }
 
-// ─── report tables ───────────────────────────────────────────────────────────
-
 function pct(value: number): string {
   return Number.isFinite(value) ? `${(100 * value).toFixed(2)}%` : "—";
 }
@@ -1191,7 +911,6 @@ function count(value: number): string {
   return value.toLocaleString("en-US");
 }
 
-/** One markdown table: candidates down the side, metrics across. */
 export function formatCandidateTable(scores: readonly CandidateScore[]): string {
   const ranked = [...scores].sort((a, b) => a.overall.logLoss - b.overall.logLoss);
   const lines = [
@@ -1210,7 +929,6 @@ export function formatCandidateTable(scores: readonly CandidateScore[]): string 
   return lines.join("\n");
 }
 
-/** One metric per group, candidates across the top, so small samples are visible. */
 export function formatGroupTable(
   scores: readonly CandidateScore[],
   pick: (score: CandidateScore) => readonly GroupedMetrics[],
@@ -1292,7 +1010,6 @@ export function formatWorkloadTable(rows: readonly WorkloadRow[]): string {
   return lines.join("\n");
 }
 
-/** Everything BACKTEST.md quotes, in one string, so the report is pasteable. */
 export function formatBacktestTables(result: BacktestResult): string {
   const d = result.dataset;
   const sections: string[] = [];

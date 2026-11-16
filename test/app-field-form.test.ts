@@ -11,20 +11,6 @@ import {
 } from "../app/field-form.js";
 import { decodeFieldOptions } from "../src/cards/index.js";
 
-/**
- * WHAT THE EDITOR SAYS A FIELD CARRIES.
- *
- * In `app/` over structural inputs, for `app/deck-scope.ts`'s reason: `test/`
- * cannot import the worker, and UI logic nobody can test is how the deck archive
- * shipped inverted. These functions take plain data and return plain strings, so
- * the corpus can be run through them without a DOM.
- *
- * THE PROPERTY THAT MATTERS is that absence is reported as absence. 723 translate
- * blobs and 11,508 `ai` blobs were generated with empty options; a panel that
- * shows what the code WOULD default to teaches him the field carries a value it
- * does not, and the editable version of this would then write it and orphan them.
- */
-
 const CORPUS = "build/hashigo.db";
 
 function corpus(): Database.Database | null {
@@ -54,7 +40,6 @@ describe("the facts line answers WHERE, not just how many", () => {
     expect(factsLine(facts({ type: "plain", references: 1, sides: [2] }))).toBe(
       "Text · 1 reference on side 2",
     );
-    // One value, not "1 value(s)" — the count agrees with its noun.
     expect(factsLine(facts({ values: 1, sides: [1] }))).toBe("Text · on side 1 · 1 value");
   });
 
@@ -65,8 +50,6 @@ describe("the facts line answers WHERE, not just how many", () => {
   });
 
   it("says a field renders nowhere rather than printing a bare zero", () => {
-    // `言葉`'s かな主流 holds all six values and its body never names them. "0
-    // references" states the same fact and buries it.
     const line = factsLine(facts({ name: "かな主流", type: "boolean", values: 6 }));
     expect(line).toContain("renders nowhere in the body");
     expect(line).not.toContain("0 reference");
@@ -74,7 +57,6 @@ describe("the facts line answers WHERE, not just how many", () => {
   });
 
   it("keeps decision 9's local marker, which decides whether an edit survives", () => {
-    // Said as what it does for him; the decision number stays in the repo.
     const line = factsLine(facts({ local: true, sides: [1] }));
     expect(line).toContain("local · kept on re-import");
     expect(line).not.toMatch(/decision/i);
@@ -82,7 +64,6 @@ describe("the facts line answers WHERE, not just how many", () => {
 
   it("uses the registry's label for the kind", () => {
     expect(factsLine(facts({ type: "speech", sides: [3] }))).toMatch(/^Speech · /);
-    // An unknown type falls back to its own name rather than vanishing.
     expect(factsLine(facts({ type: "from-the-future", sides: [1] }))).toMatch(/^from-the-future · /);
   });
 });
@@ -103,8 +84,6 @@ describe("the input line is the pipe he said he could not make", () => {
   });
 
   it("explains that an ai field's input is its prompt, not a column", () => {
-    // `source_field_id` is legitimately NULL on four fields of this corpus for
-    // exactly this reason, and `schema.sql` says so at the column.
     expect(inputLine(facts({ type: "ai" }), nameOf)).toBe(
       "Input: the prompt below, with its <<Field>> markers",
     );
@@ -130,9 +109,6 @@ describe("settings are shown as they ARE", () => {
   });
 
   it("prints ABSENCE as absence, never as the default the code would use", () => {
-    // This is the whole safety argument. `src/generate/llm.ts` supplies ja→en at
-    // USE time; a panel that shows "ja" here would be describing a value the
-    // field does not carry, and the editable version would then write it.
     const lines = settingLines("translate", {});
     expect(lines.map((line) => [line.label, line.value, line.unset])).toEqual([
       ["From", "not set", true],
@@ -148,8 +124,6 @@ describe("settings are shown as they ARE", () => {
   it("marks the keys the editor will never offer to change", () => {
     const lines = settingLines("speech", { voice: "x", lang: "ja-JP", gender: "male" });
     const readOnly = lines.filter((line) => line.readOnly).map((line) => line.label);
-    // `lang` is derived from the voice and `gender` is Azure's — both are part of
-    // the cache key, so offering an edit invites a miss and buys nothing.
     expect(readOnly.sort()).toEqual(["Gender", "Language"]);
   });
 
@@ -189,11 +163,7 @@ describe("over the real 48 fields", () => {
         for (const line of lines) {
           if (line.unset) {
             unset += 1;
-            // An unset line must READ as unset. Anything else is the form
-            // teaching him a value that is not in the database.
             expect(line.value.startsWith("not set"), `${row.type}.${line.key}`).toBe(true);
-            // And it must really be absent in the row, not merely rendered as
-            // absent — `null` counts, because Mochi writes `"gender": null`.
             const raw = options[line.key];
             expect(
               raw === undefined || raw === null || String(raw).trim() === "",
@@ -201,22 +171,15 @@ describe("over the real 48 fields", () => {
             ).toBe(true);
           } else {
             shownValues += 1;
-            // The value shown is the value stored, for the key this line claims.
             const raw = options[line.key];
             const expected = typeof raw === "boolean" ? (raw ? "yes" : "no") : String(raw).trim();
             expect(line.value, `${row.type}.${line.key}`).toBe(expected);
           }
         }
 
-        // NOTHING IS DROPPED on the way to the screen. Every key the row carries
-        // is either a declared setting or an undeclared one that is shown as it
-        // is; a key appearing in neither would vanish silently, which is exactly
-        // what a save would then erase.
         const accounted = new Set([
           ...lines.map((line) => line.key),
           ...undeclaredKeys(row.type, options).map((extra) => extra.key),
-          // The role is shown on its own line (stage F), so it is accounted for
-          // exactly when that line exists.
           ...(roleLine(options) === null ? [] : ["hashigo-role"]),
         ]);
         for (const key of Object.keys(options)) {
@@ -224,9 +187,6 @@ describe("over the real 48 fields", () => {
         }
       }
       expect(shownValues).toBeGreaterThan(0);
-      // 基本情報's Audio carries a lang and no voice; 数字's Voice carries a gender
-      // and no voice; Polysemy's Example-sound carries nothing at all. If this
-      // ever reached zero the corpus would have changed, not the code.
       expect(unset).toBeGreaterThan(0);
     } finally {
       db.close();

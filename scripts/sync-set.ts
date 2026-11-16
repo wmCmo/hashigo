@@ -1,25 +1,3 @@
-/**
- * SET A FIELD VALUE ON EVERY DEVICE — through sync, with a fresh card clock.
- *
- *     npx vite-node scripts/sync-set.ts -- --card <id> --field <id> --value <text> [--card … ] [--apply]
- *     npx vite-node scripts/sync-set.ts -- --card <id> --field <id> --from <deviceId> [--apply]
- *
- * For the case sync cannot settle on its own: two devices hold different values
- * for a card at the SAME clock. That happens to every edit made before e3254c5
- * (2026-10-22), when a field write did not move `cards.updated_at` — the merge
- * keeps the local copy on a tie, so each device keeps its own for ever. First
- * used 2026-10-24 for 憶測's `Reading` (four devices, equal clocks, two answers)
- * and three edits found only on one device by the full-value audit.
- *
- * `--from` copies the value a named device uploaded; `--value` gives it outright.
- * Dry by default. Before sending it merges the freshest device payload and then
- * this one into a scratch copy of `build/hashigo.db`, and refuses unless exactly
- * the named values changed — the payload is hand-built, so that is its test.
- *
- * The slot (`dev-manual-fix`) is CUMULATIVE: earlier entries are kept at the
- * clocks they were sent with, so a device that has not synced since still gets
- * them. A later edit of his carries a newer clock and wins over all of them.
- */
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -44,7 +22,6 @@ async function payloadOf(id: string): Promise<SyncPayload | null> {
   return JSON.parse(bytes.toString("utf8")) as SyncPayload;
 }
 
-// ── the requested values, in order: --card / --field / (--value | --from) ───
 interface Want {
   cardId: string;
   fieldId: string;
@@ -70,7 +47,7 @@ const peers = (
 ).peers;
 let freshest: SyncPayload | null = null;
 for (const { deviceId } of peers) {
-  if (!/^dev-[0-9a-f]{12}$/.test(deviceId)) continue; // real devices only, not tool slots
+  if (!/^dev-[0-9a-f]{12}$/.test(deviceId)) continue;
   const payload = await payloadOf(deviceId);
   if (payload !== null && (freshest === null || payload.archive.createdAt > freshest.archive.createdAt)) {
     freshest = payload;
@@ -130,11 +107,9 @@ const payload: SyncPayload = {
     .filter(([cardId]) => flags.has(cardId))
     .map(([cardId, updatedAt]) => ({ ...flags.get(cardId)!, updatedAt })),
   deckFlags: [],
-  // `voicesCarried` absent: this payload says nothing about voices.
   retiredClips: [],
 };
 
-// ── self-check: merge as a device would, and only the named values may move ─
 const dir = mkdtempSync(join(tmpdir(), "sync-set-"));
 const file = join(dir, "check.db");
 copyFileSync("build/hashigo.db", file);

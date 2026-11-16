@@ -1,44 +1,3 @@
-/**
- * `/generate/` ON CLOUDFLARE — the laptop's `vite.generate.ts`, off the laptop.
- *
- * Zach, 2026-09-26: *"and let's tackle those two while im reviewing?"* — the
- * two things still tied to the laptop after sync moved. This is the first: a
- * "generate audio" or "generate" press on his phone reaches Google and Anthropic
- * from here, over plain internet, so it works on the apartment wifi that cannot
- * carry the tunnel, and with the laptop asleep.
- *
- * ─── DECISION 18, KEPT RATHER THAN BENT ─────────────────────────────────────
- *
- * The keys are Worker SECRETS (`wrangler secret put`), which is exactly where
- * decision 18 always said they would live: *"proxied through the stage-11
- * Worker"*. They reach no response and never the client.
- *
- * ─── SAME REQUEST, SAME REPLY, SAME CACHE KEY ───────────────────────────────
- *
- * The body and the reply are the laptop endpoint's, field for field, so the
- * page cannot tell which one answered. The identity is `generationIdentity`
- * from `src/blobs/generation.ts` — the laptop's own function, imported, not
- * retyped — so a clip made here files under the key a card will look up.
- *
- * ─── WHAT IT CANNOT DO THAT THE LAPTOP COULD, AND WHAT COVERS IT ───────────
- *
- * The laptop answered a press from `build/hashigo.db` first — the 141 clips on
- * the laptop that the seed did not carry. This side has no corpus, so a press
- * for one of those is synthesised again. Cheap (one short clip), and only for
- * clips the seed skipped.
- *
- * And the laptop WROTE every generation into `build/hashigo.db`, the system of
- * record (decision 41), so it survived the next seed rebuild. Here every
- * generation is kept in KV under `gen:<key>`, and
- * `scripts/cloud-generated-pull.ts` files them into the laptop database. Until
- * it runs, a generation lives on the device that asked and in KV — never only
- * on the device.
- *
- * Text goes to Anthropic. The laptop preferred Ollama, which is free and runs on
- * the laptop; there is no laptop here. Short emoji lines and sentences cost
- * fractions of a cent.
- */
-
 import { generationIdentity, generationKey } from "../../../src/blobs/generation.js";
 import { sha256Hex } from "../../../src/blobs/sha256.js";
 import { isKana, splitMoras, synthesise, type SpeechRequest } from "../../../src/accent/speech.js";
@@ -53,9 +12,7 @@ export interface GenerateEnv {
   readonly MAILBOX: KvLike;
   readonly GOOGLE_TTS_SECRET?: string;
   readonly ANTHROPIC_API_KEY?: string;
-  /** Same default as the laptop's `HASHIGO_MODEL`. */
   readonly HASHIGO_MODEL?: string;
-  /** When set, text is made by Gemini, not Anthropic — `textProvider`. */
   readonly GEMINI_API_KEY?: string;
   readonly HASHIGO_GEMINI_MODEL?: string;
 }
@@ -68,40 +25,6 @@ export interface TextProvider {
   readonly model: string;
 }
 
-/**
- * WHO WRITES THE TEXT, IN ORDER: Claude Sonnet first, then Gemini Flash (decision 69).
- *
- * Zach, 2026-11-15: *"I cannot risk memorizing weird sentence using weird
- * particles … each card I will review like probably 10 times … those sentences
- * would stuck in my head forever."* On the 35-word test that day Sonnet 5.5
- * wrote 35 natural sentences; Haiku 5.5 wrote 33 at low effort (繕う echoed
- * three times, 沁み沁み in kana) and 34 at high (「体を…湯に浸かって」). At
- * ~8,000 calls a year (581 in 26 days, 177 on the busiest), $2 / $10 per MTok
- * and a MEASURED ~98 in / ~23 out per call, about $3.40 a year (DECISIONS.md
- * 69) — against the $60 a year he paid Mochi. Gemini stays behind it, free, for when Anthropic
- * is down or overloaded.
- *
- * Before that, the same day, decision 68: Haiku first — *"I'm tired of
- * fighting with the cheap solution"* — at about $2 a year.
- *
- * WHAT IT REPLACED, kept for the reasoning. Zach, 2026-11-10, after a side-by-side on twelve of his words
- * (`src/generate/llm.ts`, `viaGemini`): Flash on the free tier, thinking HIGH,
- * read like Opus. The key decides, not a flag: `wrangler secret put
- * GEMINI_API_KEY` puts Gemini first, `secret delete` takes it out.
- *
- * **WITH A FALLBACK, since 2026-11-11.** The free tier is 5 requests a minute
- * and 20 a day per model (AI Studio's rate-limit page for the Hashigo
- * project), and his own store says 7 of the last 15 days needed more — 51,
- * 64, 87, 177 on 漢検 batch days, a median of 12. So when Gemini refuses (429
- * quota, 503 overload, a timeout, an unfinished answer, nothing usable), the
- * same request goes to Claude Haiku 5.5, which also wrote all twelve
- * correctly. Ordinary days stay free; a batch day pays Haiku for the rest.
- * (The first version had no fallback "so nothing bills silently" — that was
- * an agent's rule, not his, and 20 a day is too few to keep it.)
- *
- * The cache is keyed on the prompt, not the model, so every line already made
- * stays as it is; only new ones come from the chain.
- */
 export function textProviders(env: GenerateEnv): readonly TextProvider[] {
   const chain: TextProvider[] = [];
   const anthropic = env.ANTHROPIC_API_KEY ?? "";
@@ -111,21 +34,13 @@ export function textProviders(env: GenerateEnv): readonly TextProvider[] {
   return chain;
 }
 
-/** The first in the chain — who answers when nothing goes wrong. */
 export function textProvider(env: GenerateEnv): TextProvider | null {
   return textProviders(env)[0] ?? null;
 }
 
-/** Only these can be asked for — the laptop's `ALLOWED`. */
 const ALLOWED: ReadonlySet<string> = new Set(["ai", "translate", "speech"]);
 const MAX_PROMPT = 2_000;
 const MAX_TOKENS = 256;
-/**
- * Claude Sonnet 5.5, first in the chain since decision 69 (2026-11-15). Before:
- * Haiku 5.5 (decision 68, the same day), and `claude-opus-5` as the fallback
- * until 2026-11-11. It thinks by default and takes the same `effort: "low"` +
- * 2,048-token floor as the calls it replaces.
- */
 const DEFAULT_MODEL = "claude-sonnet-5-5";
 export const GEN_PREFIX = "gen:";
 
@@ -136,38 +51,22 @@ interface Descriptor {
   readonly voice: string | null;
   readonly options: Readonly<Record<string, string>>;
   readonly preview: boolean;
-  /**
-   * REDO (2026-09-26): make a new clip even when one is stored — the stored one is
-   * the clip he is discarding.
-   */
   readonly force: boolean;
-  /** How to say particular words (`<sub>`), from the card's own reading. */
   readonly readings: readonly { readonly base: string; readonly alias: string }[];
-  /**
-   * How to say a HEAD WORD: its 読み and 型's accent, spoken through Google's
-   * `yomigana` notation (decision 67). Like `readings`, NOT part of the key — a
-   * clip made with it is filed where the same request without it would be.
-   */
   readonly pronounce: SpeechRequest | null;
-  /** The hash of the clip this one supersedes, so the laptop can retire it too. */
   readonly replaces: string | null;
 }
 
-/** What `gen:<key>` holds — enough for the laptop to file it exactly. */
 export interface GeneratedRecord {
   readonly kind: BlobKind;
   readonly text: string;
   readonly lang: string | null;
-  /** Speech: the voice that REALLY spoke. Text: null. */
   readonly voice: string | null;
   readonly options: Readonly<Record<string, string>>;
   readonly createdAt: string;
-  /** Speech only, base64. */
   readonly audio?: string;
   readonly mime?: string;
-  /** Text kinds only. */
   readonly output?: string;
-  /** A redo: the clip it superseded. `scripts/cloud-generated-pull.ts` retires it. */
   readonly replaces?: string;
 }
 
@@ -214,12 +113,6 @@ export function parse(raw: unknown): Descriptor | string {
   };
 }
 
-/**
- * A word's reading and accent, or null. Kana only — Google discards the notation,
- * silently and with a 200, when the element content is not kana — and an accent
- * inside 0..morae, the range `yomigana` writes. Anything else is ignored rather
- * than refused: the clip is then made as before, from the text.
- */
 function parsePronounce(raw: unknown): SpeechRequest | null {
   if (raw === null || typeof raw !== "object") return null;
   const { reading, accent } = raw as { reading?: unknown; accent?: unknown };
@@ -230,7 +123,6 @@ function parsePronounce(raw: unknown): SpeechRequest | null {
   return { reading: kana, accent };
 }
 
-/** At most a few short readings — this is one card's word, not a pronunciation dictionary. */
 function parseReadings(raw: unknown): { base: string; alias: string }[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -286,7 +178,6 @@ async function read(env: GenerateEnv, key: string): Promise<GeneratedRecord | nu
   }
 }
 
-/** Answer one generation request. Returns [status, body]. */
 export async function generate(
   descriptor: Descriptor,
   env: GenerateEnv,
@@ -308,9 +199,6 @@ export async function generate(
       return [200, { mime: "audio/mpeg", audio: toBase64(bytes), voice: madeWith, text: descriptor.text }];
     }
 
-    // The card's own voice, then the voice this would be made in, then the fill —
-    // the laptop's order, over the clips THIS side has made. Skipped on a REDO:
-    // the stored clip is the one being discarded.
     const fill = fillVoiceFor(descriptor.lang);
     for (const voice of (descriptor.force ? [] : [descriptor.voice, madeWith, fill]).filter(
       (entry, index, all): entry is string => entry !== null && all.indexOf(entry) === index,
@@ -322,7 +210,6 @@ export async function generate(
       }
     }
 
-    // What is spoken is not what is keyed — the laptop's rule, for its reasons.
     const spoken = speakableText(descriptor.text);
     if (spoken === "") {
       return [
@@ -364,15 +251,9 @@ export async function generate(
     ];
   }
 
-  // Text kinds. ALREADY THERE? A second press or a second device must not be a
-  // second bill, and must not return different emoji for a card he has seen.
   const textKey = keyFor(descriptor, descriptor.voice);
   const cached = await read(env, textKey);
   if (cached?.output !== undefined && cached.output !== "") {
-    // A record stored before `stripThinking` knew a tag would be served with the
-    // tag for ever, since the cache is what a second press reads. Repair it here —
-    // and since 2026-11-06 an emoji line's chatter too (`cleanGenerated`). One
-    // that cleans to NOTHING (no emoji in it) falls through and is made again.
     const clean = cleanGenerated(descriptor.text, cached.output);
     if (clean !== cached.output && clean !== "") {
       await env.MAILBOX.put(textKey, JSON.stringify({ ...cached, output: clean }));
@@ -385,14 +266,9 @@ export async function generate(
   const effort = probeEffort(descriptor.options);
   const usage = { input: 0, output: 0 };
   const probing = isProbe(descriptor.options);
-  // Each provider in turn; the first usable answer wins. Every failure is kept,
-  // so when the whole chain fails the card's "try again" says why for each.
   const failures: string[] = [];
   let output = "";
   let used: TextProvider | null = null;
-  // A Japanese example sentence that fails `sentenceProblem` (the card's word
-  // missing, a stray English word) gets ONE more try from the same model, then
-  // the next provider; each failure is kept for the card's "try again".
   chain: for (const candidate of chain) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -411,7 +287,6 @@ export async function generate(
               }
             : {}),
         });
-        // Cleaned BEFORE it is cached, so what every device reads is already right.
         const clean = cleanGenerated(descriptor.text, made);
         if (clean === "") {
           failures.push(
@@ -433,7 +308,6 @@ export async function generate(
     }
   }
   if (used === null) {
-    // One provider: its own words, as before. Several: each one's.
     const message = failures.length === 1 ? (failures[0] as string) : failures.join(" · then ");
     if (failures.length === 1 && /returned no emoji|returned nothing/.test(message)) return [502, { error: message }];
     throw new Error(message);
@@ -452,15 +326,6 @@ export async function generate(
   return [200, { text: output, cached: false, provider, model, ...(probing ? { usage } : {}) }];
 }
 
-/**
- * A BENCHMARK PROBE: a request whose options carry `probe` (any non-empty
- * string). Options are part of the cache key, so a probe's line is filed under
- * its own key and no card ever reads it. Only a probe may ask for an
- * Anthropic `effort` other than the default, and only a probe is told its
- * token counts. 2026-11-15, Zach: "let's bench mark with high", to see whether
- * Haiku thinking harder fixes 繕う's echoed sentence and 沁み沁み in kana — and,
- * after decision 69, to measure what Sonnet really costs per call.
- */
 function isProbe(options: Readonly<Record<string, string>>): boolean {
   const probe = options["probe"];
   return typeof probe === "string" && probe !== "";

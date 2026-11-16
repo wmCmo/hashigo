@@ -1,64 +1,7 @@
-/**
- * THE ACCENT PIPELINE FINALLY REACHING THE AUDIO.
- *
- * ─── WHY THIS EXISTS ────────────────────────────────────────────────────────
- *
- * Zach, 2026-09-13: *"i noticed that some audio pitch aren't accurate — like
- * 医療 is labeled as 頭高 but the audio isn't"*.
- *
- * He was right, and the cause is systemic rather than a bad clip. Measured
- * across the whole corpus that day: **not one speech blob carries accent
- * notation.** Every `options` value is `{}` or a gender hint, on all 7,409
- * ja-JP Nanami clips. So the audio is Azure's unaided frontend prediction from
- * the KANJI, and the 3,816 `型` labels this project derived have never had any
- * influence on it. Where Azure guessed differently from OpenJTalk, the card now
- * shows a label its own audio contradicts — which is worse than showing no
- * label, because decision 29 has him promoting cards to `Reading = true` on the
- * strength of that label.
- *
- * A 362-clip stratified survey put a number on it: **5.5% of 頭高 clips have no
- * audible downstep** (6 of 110; ~75 of 1,372, 95% CI 27-158). The survey also
- * validated itself — 尾高 clips measured identical to 平板 (-1.6 vs -2.2
- * semitones), which is exactly what decision 27 predicts, since a 尾高 word's
- * downstep lands on a particle that is never spoken.
- *
- * ─── THE TRAP, PROVEN RATHER THAN INHERITED ─────────────────────────────────
- *
- * `CLAUDE.md` has always said Google ignores the notation when the element
- * contains kanji. That is now measured, on 医療, with the key this module uses:
- *
- *     plain text 医療                     sha256 e01c0aba…
- *     yomigana ph, KANJI element content  sha256 e01c0aba…   ← THE SAME FILE
- *     yomigana ph, KANA element content   sha256 d6e6e56e…
- *
- * Byte for byte identical. Google accepted the request, returned 200, and threw
- * the notation away. There is no error to catch — which is why `speechSsml`
- * REFUSES to build a request whose content is not kana, rather than trusting a
- * caller to remember. A silent no-op here would reproduce the exact defect this
- * module exists to remove, and nothing downstream could detect it.
- *
- * ─── WHAT IS DELIBERATELY NOT ANNOTATED ─────────────────────────────────────
- *
- * Isolated words only. `notes/pitch-accent-pipeline.md` settled this: a sentence
- * has several accent phrases, the frontend has context and handles them well,
- * and annotating one means getting every phrase boundary right — a heuristic
- * measured to fail SILENTLY on `に引き換え`. A word with no derived accent (the
- * 60 placeholder patterns like `～なり～なり`, where the rule refused) is
- * synthesised plain, for the same reason: no notation beats a guess.
- */
-
 import { FILL_VOICE } from "../generate/speech.js";
 
-/** Small kana bind to the mora before them; `っ` and `ー` are morae of their own. */
 const COMBINING = "ゃゅょャュョぁぃぅぇぉァィゥェォ";
 
-/**
- * Split kana into MORAE, which is the unit an accent position counts in.
- *
- * `キョ` is one mora and `キ` + `ョ` is two, so a naive `[...reading]` puts the
- * downstep one position late on every word containing a small kana — 1,034 of
- * 3,242 bases in this corpus mix kanji and kana and many carry one.
- */
 export function splitMoras(reading: string): string[] {
   const out: string[] = [];
   for (const ch of reading) {
@@ -68,38 +11,12 @@ export function splitMoras(reading: string): string[] {
   return out;
 }
 
-/**
- * Build Google's `yomigana` phoneme string.
- *
- * `^` opens the accent phrase and `!` FOLLOWS the mora carrying the drop. The
- * position is `accents.accent_type` under `position_basis = 'accent-position'`
- * — the last HIGH mora, 1-based (decision 6: name the basis or the number is
- * not a fact). 平板 is 0 and gets no `!` at all, which is correct rather than a
- * missing case: it has no downstep inside the word.
- *
- * An accent past the end of the reading yields the unaccented form. That is the
- * safe direction — a `!` placed off the end would be a malformed request, and a
- * flat rendering of a word is what Azure already gives him.
- */
 export function yomigana(reading: string, accent: number): string {
   const morae = splitMoras(reading);
   if (accent <= 0 || accent > morae.length) return `^${morae.join("")}`;
   return `^${morae.slice(0, accent).join("")}!${morae.slice(accent).join("")}`;
 }
 
-/**
- * 型's LABEL back to the accent position `yomigana` takes, or null when the label
- * does not name one — the inverse of `accentLabel` in `./store.ts`.
- *
- * Zach, 2026-11-13, on the plan to send a word's reading to the voice: *"but it
- * wouldn't know the accent between 塔 and 問う"*. Right — とう is two words, and
- * only 型 says which contour. So a card's word clip is made from 読み AND 型:
- *
- *     平板 → 0   頭高 → 1   中高 (n) → n   尾高 → the last mora (the reading's length)
- *
- * Anything else — empty, a multi-phrase label, a 中高 position outside 2..n-1 —
- * is null, and the caller sends no accent rather than a guessed one (decision 8).
- */
 export function accentOfLabel(label: string, reading: string): number | null {
   const text = label.trim();
   const morae = splitMoras(reading.trim()).length;
@@ -113,7 +30,6 @@ export function accentOfLabel(label: string, reading: string): number | null {
   return at >= 2 && at < morae ? at : null;
 }
 
-/** Katakana, hiragana, the long mark, and the marks a reading may carry. */
 const KANA = /^[ぁ-ゟ゠-ヿーー〜～\s]+$/u;
 
 export function isKana(text: string): boolean {
@@ -132,74 +48,19 @@ export class NotKanaError extends Error {
 }
 
 export interface SpeechRequest {
-  /** The kana the notation is built from, and the element's content. */
   readonly reading: string;
-  /** `accents.accent_type`; 0 for 平板. */
   readonly accent: number;
 }
 
-/**
- * The SSML for one annotated word.
- *
- * THROWS on non-kana content rather than falling back to plain text. A fallback
- * would produce exactly the audio this module exists to replace, and would
- * produce it under a blob row claiming the accent had been applied.
- */
 export function speechSsml(request: SpeechRequest): string {
   if (!isKana(request.reading)) throw new NotKanaError(request.reading);
   const ph = yomigana(request.reading, request.accent);
   return `<speak><phoneme alphabet="yomigana" ph="${ph}">${request.reading}</phoneme></speak>`;
 }
 
-// ─── the pauses a sentence was written with ──────────────────────────────────
-
-/**
- * GOOGLE DOES NOT PAUSE AT `、`, AND THAT IS MEASURED, NOT SUSPECTED.
- *
- * Zach, 2026-09-16, on the 略歴 example sentence: *"i think the generated audio
- * was speaking without pausing on comma or natural pausing section"*. He is
- * right, and the same sentence in Mochi's Azure clip is the control:
- *
- *     彼の略歴を見ると、彼は多くの異なる業界で経験を積んできたことがわかります。
- *     Azure ja-JP-NanamiNeural   7.92 s   gaps at 2.06 s (120 ms), 4.50 s (100 ms)
- *     Google Neural2-C, plain    6.34 s   NO internal gap at all
- *
- * Measured by decoding both and taking a 20 ms RMS envelope, gaps being runs
- * under 2% of peak. **`<speak>` alone changes nothing** — wrapping the identical
- * text in SSML returned a byte-identical 50,688-byte file. The comma has to be
- * spelled as a break or Neural2-C reads straight through it.
- *
- *     <break time="200ms"/>   6.62 s   1.58 s (220 ms), 3.72 s (80 ms)
- *     <break time="400ms"/>   6.84 s   1.58 s (420 ms)
- *     <s> per sentence        7.01 s   1.68 s (400 ms)
- *
- * **200 ms, because the second gap is the point.** Nanami's own comma pause is
- * 120 ms, so 400 is already theatrical beside the thing he has shadowed for four
- * years — and the 200 ms request is the one that also brought back a SECOND
- * phrase break at 3.72 s that the plain reading did not have. Asking for the
- * pause he wrote changes how the model phrases the rest, which is the *"natural
- * pausing section"* half of his sentence.
- *
- * The sentence break is 400 ms on Google's own showing: `<s>` per sentence, the
- * markup that exists to mean exactly this, measured 400 ms at that boundary.
- *
- * ─── WHY THIS IS NOT THE SSML THE HEADER REFUSES ────────────────────────────
- *
- * That refusal is about ACCENT NOTATION on a sentence — `<phoneme>` needs every
- * accent-phrase boundary right and was measured to fail silently on `に引き換え`.
- * This needs no boundary at all: a break goes where HE typed a comma. It is the
- * same argument as decision 44 for `---` — the punctuation is authored, and a
- * renderer that ignores it is overruling the author.
- *
- * Nothing reaches here that has no such punctuation, so the 9,907 word clips are
- * byte-for-byte what they were: `pausedSsml` returns null and the plain path
- * runs. **1,681 of 11,588 speech texts carry a `、`**; 45 carry a sentence end
- * that is not the last character.
- */
 export const COMMA_BREAK_MS = 200;
 export const SENTENCE_BREAK_MS = 400;
 
-/** `、，` pause; `。！？` also pause, but only where the text continues after them. */
 const COMMA = /[、，]/u;
 const SENTENCE_END = /[。．！？!?]/u;
 
@@ -212,25 +73,6 @@ function escapeXml(text: string): string {
     .replace(/'/gu, "&apos;");
 }
 
-/**
- * The sentence as SSML with its written pauses spelled out — or null when it has
- * none, which is every isolated word and is why this cannot change those clips.
- *
- * TRAILING punctuation gets no break. A break at the very end buys nothing but
- * silence at the end of a file that already has 700-900 ms of it, and on a
- * mode-2 card (decision 29) the clip IS the question, so a longer tail is dead
- * time before he can answer.
- */
-/**
- * A word and how to say it — `<sub alias="ひなた">日向</sub>`.
- *
- * Zach, 2026-09-26: *"the audio of 日向 example sentence read it as みゅー"*. Google
- * made that clip itself (`ja-JP-Neural2-C`), and Google answers the same input
- * with the same audio, so asking again would repeat the misreading. The card
- * already knows the word's reading (`読み`, or the derived accent's reading),
- * and SSML's `<sub>` tells the voice to speak THAT for the written word. The
- * sentence keeps its kanji; only what is said changes.
- */
 export interface Reading {
   readonly base: string;
   readonly alias: string;
@@ -244,7 +86,6 @@ export function pausedSsml(text: string, readings: readonly Reading[] = []): str
   let out = "";
   let broke = false;
   for (let i = 0; i < characters.length; i += 1) {
-    // A reading starting here wins, longest first, and is emitted whole.
     const ahead = characters.slice(i).join("");
     const reading = usable.find((entry) => ahead.startsWith(entry.base));
     if (reading !== undefined) {
@@ -255,8 +96,6 @@ export function pausedSsml(text: string, readings: readonly Reading[] = []): str
     }
     const ch = characters[i] as string;
     out += escapeXml(ch);
-    // Anything after this that is not more punctuation or space — otherwise the
-    // break lands inside `。」` or at the end and does nothing but pad the file.
     const rest = characters.slice(i + 1).join("");
     if (rest.trim() === "") continue;
     if (COMMA.test(ch)) {
@@ -270,26 +109,10 @@ export function pausedSsml(text: string, readings: readonly Reading[] = []): str
   return broke ? `<speak>${out}</speak>` : null;
 }
 
-// ─── the call ────────────────────────────────────────────────────────────────
-
-/**
- * Decision 18: THE KEY NEVER GOES IN THE CLIENT. This module is Node-only and
- * is reached from the CLI; nothing in `app/` imports it.
- */
 export const ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
 
-/**
- * Settled by measurement 2026-08-20 — see the TTS section of `CLAUDE.md`.
- *
- * THE SAME CHARACTERS AS `FILL_VOICE`, BY IMPORT rather than by retyping, since
- * 2026-09-25. There were two literals of one string, in the module that speaks
- * and the module that files what was spoken — and `src/cards/audio.ts` already
- * argues that two copies of a voice name is the drift that makes a cache miss
- * permanent and silent.
- */
 export const VOICE = FILL_VOICE;
 
-/** `ja-JP-Neural2-C` → `ja-JP`. Google names every voice `<lang>-<region>-…`. */
 export function languageOf(voice: string): string {
   const parts = voice.split("-");
   return parts.length >= 2 ? `${parts[0]}-${parts[1]}` : "ja-JP";
@@ -298,27 +121,11 @@ export function languageOf(voice: string): string {
 export interface SynthesiseOptions {
   readonly apiKey: string;
   readonly voice?: string;
-  /** `mp3` matches every existing clip and the store's sniffing. */
   readonly encoding?: "MP3" | "LINEAR16";
   readonly fetch?: typeof globalThis.fetch;
-  /** How to say particular words in a sentence (`<sub>`). Ignored for an annotated word. */
   readonly readings?: readonly Reading[];
 }
 
-/**
- * One word, one clip.
- *
- * `input` is SSML when the word has a derived accent and plain text when it does
- * not — see the header on why a guess is worse than nothing.
- *
- * A SENTENCE takes a third path: no accent notation, but its written pauses
- * spelled as `<break>`, because Google reads straight through `、` otherwise.
- * `pausedSsml` carries that measurement. The three are mutually exclusive and
- * ordered — an annotated word is kana and cannot contain punctuation.
- *
- * The key travels in `x-goog-api-key`, NOT `?key=`: a query string lands in
- * server logs, proxy logs and shell history, and a header does not.
- */
 export async function synthesise(
   text: string,
   request: SpeechRequest | null,
@@ -340,15 +147,6 @@ export async function synthesise(
     },
     body: JSON.stringify({
       input,
-      // DERIVED FROM THE VOICE, not stated beside it. Google names every voice
-      // `<lang>-<region>-<family>`, so the two can be made unable to disagree —
-      // and they DID disagree: `languageCode` was pinned to `ja-JP` here, so the
-      // 2026-09-16 fill spoke **130 en-US texts with the Japanese voice**, which
-      // reads English through Japanese phonology. Nothing could notice: the row
-      // records `lang = en-US` and `voice = ja-JP-Neural2-C` truthfully, and the
-      // pair is only wrong together. Picking an English fill voice is Zach's —
-      // he chose this one by ear — so this fixes the disagreement and not the
-      // choice.
       voice: { languageCode: languageOf(options.voice ?? VOICE), name: options.voice ?? VOICE },
       audioConfig: { audioEncoding: options.encoding ?? "MP3" },
     }),

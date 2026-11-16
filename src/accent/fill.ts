@@ -1,49 +1,3 @@
-/**
- * FILL `型`, `読み` AND `OJAD` ON A CARD MADE IN THE APP — from the laptop's helper.
- *
- * Zach, 2026-10-26, over 包帯 with no reading and no 型: *"i have to fill them
- * myself?"* — and then *"can't it just use my laptop automatically?"*. The
- * analysers only run in Python (`tools/accent_helper.py`); this is the database
- * half, run in the app's worker with the helper's answers.
- *
- * ─── THE SAME RULES AS THE BATCH RUN, NOT NEW ONES ──────────────────────────
- *
- *   · `型`: the helper's rows go through `loadAccents` exactly as `cli.ts load`
- *     does (including its "reading came back unanalysed" refusal), the hand
- *     adjudications are applied, and the label is `accentFor` → `accentLabel`:
- *     a manual answer first, else OpenJTalk's. UniDic is stored for the
- *     disagreement view and never decides (decision 8). A guarded word gets no
- *     label, never a guess.
- *   · `OJAD`: `sentenceFor` (the batch run's own per-card path) and `loadMarks`.
- *     A card whose sentence is not on THIS device is planned with
- *     `sentencePending`, so the page can fetch it first — see below.
- *   · `読み`: NEW here, so its rule is stated: only on a head word with kanji, and
- *     only when OpenJTalk's reading and UniDic's pronunciation of the word as ONE
- *     token agree. Then UniDic's written kana (`ホウタイ`, not the spoken `ホータイ`)
- *     goes in, as hiragana. Disagreement leaves it empty — a wrong reading is the
- *     answer on a `Reading = true` card.
- *
- * ─── NEVER OVER ANYTHING HE WROTE ───────────────────────────────────────────
- *
- * Only EMPTY values are filled. `型` and `読み` are fields he edits, and this
- * runs on every boot; a value present is his, or an earlier fill's, and either
- * way is not this function's to change.
- *
- * `読み` does not move a generation: in the app it feeds the furigana fallback and
- * the redo dialog's alias, never a generator's identity — checked before this was
- * written, because changing an identity after the clip exists orphans the clip.
- *
- * ─── A SENTENCE MADE ON ANOTHER DEVICE — 2026-11-11 ─────────────────────────
- *
- * Zach, over 安値 on the tablet: *"why am i not seeing ojad"*. A generation is
- * filed where it was made and in the Worker's KV, never in the sync payload. A
- * card added without the laptop's editor (`scripts/cards-add.ts`, the 漢検
- * batches) gets its example sentence the first time it is SHOWN — on the
- * tablet — so the laptop's boot sweep found no sentence here, skipped OJAD, and
- * kept skipping: 13 cards had none. `sentencePending` names those cards (OJAD
- * empty, its sentence not on this device) so the page can ask the Worker for
- * the sentence, which answers from its cache, and then plan again.
- */
 import { loadCard } from "../cards/index.js";
 import type { Db } from "../db/index.js";
 import { fieldWithRole } from "../fields/roles.js";
@@ -54,35 +8,22 @@ import { applyOjadAdjudications, cardAccentOverrides } from "./ojad.js";
 import { toHiragana } from "./sentence.js";
 import { accentFor, accentLabel, loadAccents, type AccentRow } from "./store.js";
 
-/** What one card is missing, and where each answer goes. */
 export interface FillItem {
   readonly cardId: string;
-  /** `accentKey` of the head word — what the helper is asked about. */
   readonly key: string;
-  /** The `型` field to fill, or null when it already has a value. */
   readonly labelField: string | null;
-  /** The `読み` field to fill, or null. */
   readonly yomiField: string | null;
-  /** The sentence to annotate, or null (filled already, or not generated yet). */
   readonly ojad: SentenceRow | null;
-  /**
-   * OJAD is empty and its sentence is not on this device — generated elsewhere,
-   * or not yet. The page fetches it (`autoFill`) and plans the card again.
-   */
   readonly sentencePending: boolean;
 }
 
-/** One line of `tools/accent_helper.py`'s `/derive` reply. */
 export interface DeriveResult {
   readonly openjtalk: DerivedLine;
   readonly unidic: DerivedLine | null;
-  /** UniDic's written kana for the word as one token (`ホウタイ`), else null. */
   readonly kana: string | null;
-  /** UniDic's spoken form (`ホータイ`), to compare with OpenJTalk's reading. */
   readonly pron: string | null;
 }
 
-/** The shape `accent_derive.py` / `accent_crosscheck.py` write, one per line. */
 export interface DerivedLine {
   readonly value: string;
   readonly ok: boolean;
@@ -104,16 +45,11 @@ const value = (db: Db, cardId: string, fieldId: string): string =>
     | { value: string }
     | undefined)?.value ?? "").trim();
 
-/** The card's OJAD field (found by role, as `sentenceFor` finds it) holds nothing. */
 function ojadIsEmpty(db: Db, cardId: string): boolean {
   const marks = fieldWithRole(loadCard(db, cardId)?.template?.fields ?? [], "ojad");
   return marks !== null && value(db, cardId, marks.id) === "";
 }
 
-/**
- * What needs filling. With `cardIds`, those cards; without, every live card made
- * in the app (`local = 1`) — the imported ones were filled by the batch run.
- */
 export function planAccentFill(db: Db, cardIds?: readonly string[]): FillItem[] {
   const fields = db
     .prepare(
@@ -153,7 +89,6 @@ export function planAccentFill(db: Db, cardIds?: readonly string[]): FillItem[] 
   return items;
 }
 
-/** The `AccentRow` `cli.ts load` would build from one line — the same refusals. */
 function toRow(line: DerivedLine): AccentRow {
   const bad = line.ok && readingLooksUnanalysed(line.reading);
   const guarded = !line.ok || bad;
@@ -181,14 +116,9 @@ export interface FillReport {
   readonly labels: number;
   readonly yomi: number;
   readonly ojad: number;
-  /** Cards whose 型 stayed empty: the rule refused, or nothing was derived. */
   readonly unlabelled: number;
 }
 
-/**
- * Write what the helper answered. `derived` is keyed by `FillItem.key`, `lines`
- * by sentence text — the helper's replies, unaltered.
- */
 export function applyAccentFill(
   db: Db,
   items: readonly FillItem[],
@@ -201,7 +131,6 @@ export function applyAccentFill(
     if (result.unidic !== null) rows.push(toRow(result.unidic));
   }
   if (rows.length > 0) loadAccents(db, rows);
-  // The hand adjudications may postdate this device's seed; idempotent, 75 rows.
   applyOjadAdjudications(db);
   const overrides = cardAccentOverrides();
 

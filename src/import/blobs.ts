@@ -1,122 +1,3 @@
-/**
- * Stage 1 — attachments and Mochi's `component-cache` into the content-addressed,
- * refcounted blob store.  This is the fix for the central bug SPEC.html diagnoses
- * under "Why your attachments keep breaking": Mochi keys its generation cache on
- * the whole concatenated card text, so a one-character typo fix bills a fresh
- * Azure call, writes a new mp3 and tombstones the old one.  Nothing reconciles
- * the leftovers.  Measured consequences in the reference corpus:
- *
- *   10,887  live attachments, all present on disk, `size` exact on every one
- *    8,958  tombstoned attachment records (deleted? true) -- NEVER imported
- *    7,974  cache entries pointing at a file with no attachment record at all:
- *           churn debris whose tombstone was itself lost.  Also never imported.
- *    5,667  cache entries pointing at a tombstoned file.  Same.
- *
- * WHAT THE ADDRESS IS, AND WHY IT IS THE BYTES
- *
- * schema.sql's header suggests hashing the identity tuple (kind, source_text,
- * voice, lang, options).  The corpus rules that out, twice over:
- *
- *   * 12 normalised generation keys resolve to live files whose BYTES DIFFER
- *     (11 keys reach two files, one reaches three).  Azure is not
- *     bit-reproducible: the same text and voice, generated twice, returns two
- *     different mp3s.  Tuple-addressing would force discarding 14 real,
- *     still-referenced files.
- *   * 30 live files have no cache provenance at all -- 28 mp3s whose cache entry
- *     is gone, plus one jpeg and one png.  Their tuple would be
- *     (kind, NULL, NULL, NULL, '{}'): one address for all 30.  After byte
- *     dedup 13 of the 30 share an address with a file that DOES have
- *     provenance, so 17 blobs end up with no identity tuple -- the number
- *     `blobsWithoutProvenance` reports.
- *
- * So `blobs.hash = sha256(payload bytes)`.  That is a real content address: it is
- * verifiable by rehashing, it cannot collide across unrelated payloads, and it
- * deduplicates -- 10,887 files collapse to 10,816 blobs (71 byte-identical: 60
- * pairs, one triple, and one group of 10 discussed below).
- *
- * The generation cache is then the identity tuple *stored on* the blob row and
- * indexed by `blobs_kind_text (kind, source_text)`.  `generationKey()` computes
- * SPEC's sha256(normalised text, voice, lang) for callers that want the key
- * itself; `lookupGeneration()` is the cache-hit path and is what makes
- * regenerating identical input free.
- *
- * KNOWN COST OF HAVING NO CACHE TABLE.  The key -> blob relation is genuinely
- * many-to-many (10,834 keys, 10,848 edges, 10,816 blobs; 12 keys reach two or
- * more blobs, 40 blobs are reached by two or more keys) but a blob row holds
- * exactly one tuple.  49 of 10,848 edges are therefore unrepresentable and are
- * dropped, keeping the lexicographically smallest key per blob deterministically.  Effect
- * in production: 0.45% of cached inputs would miss and re-bill.  A
- * `generation_cache(key TEXT PRIMARY KEY, blob_hash)` table would remove that
- * entirely.  Nothing here modifies the schema.
- *
- * MIME IS SNIFFED, NEVER TRUSTED.  SPEC notes some mp3s claim "text/xml" --
- * Azure's SSML content-type leaking into Mochi's metadata.  It is worse than
- * that: only 41 of 10,887 declared types are correct.  4,979 say
- * application/octet-stream, 3,443 say text/xml and 2,424 say nothing at all,
- * while the bytes are 10,867 mp3, 9 jpeg, 1 png and 10 empty.
- *
- * ZERO-BYTE ATTACHMENTS.  10 live attachments (all in English, all claiming
- * text/xml) are 0 bytes: failed Azure calls Mochi recorded as live.  They are
- * imported, because the reference is live and dropping it would lose the fact,
- * but they all share sha256("") and so collapse into one blob with refcount 10 --
- * a small demonstration of the fix.  `lookupGeneration` refuses to return a
- * zero-byte blob, so those inputs regenerate on demand instead of serving
- * silence forever.
- *
- * LANGUAGE CODES.  Inline tags use lang="jp", field options use "ja-JP" (SPEC),
- * and the corpus also carries bare "ja"/"en" plus `:from "jp"` on dictionary
- * lookups -- where the invalid code demonstrably caused a 404 while `:from "ja"`
- * on the same word (握る) succeeded.  Voice locales normalise to a
- * region-qualified BCP-47 tag (jp -> ja-JP); translation language parameters
- * normalise only the invalid spelling (jp -> ja), because "ja" is already valid
- * BCP-47 and is what a translation API expects.
- *
- * TEXT NORMALISATION.  NFC, zero-width and format characters stripped,
- * whitespace runs collapsed, trimmed.  Measured, not assumed: raw / trim / NFC /
- * NFKC all yield exactly 10,834 keys and 12 collisions on this corpus, so NFKC
- * buys nothing -- and it rewrites 449 of the cached texts (full-width tilde and
- * friends), which is risk with no return.  The normalised text is the cache KEY
- * only; a generator must be handed the raw resolved text.
- *
- * The option map is part of the key.  Dropping `:gender` -- which 10,967 speech
- * entries carry, sometimes alongside a voice -- would merge keys that genuinely
- * produced different audio: collisions rise from 12 to 46.
- *
- * WHERE THE PAYLOADS GO.  Into `src/blobs` -- the store owns the bytes, keyed
- * by the address.  The database records address, size, sniffed mime and
- * provenance and NOTHING about location; `blobs.path` is never written by this
- * module, and the INSERT does not even name the column.
- *
- * As of the blob-store backing swap that store is `<database>.blobs.db`: BLOB
- * rows in a SEPARATE SQLite database, not 10,816 files in a directory.
- * `notes/archive/browser-feasibility.md` §4 measured the identical 624.6 MiB both ways in
- * a real browser -- 322.1 s and 10.60 ms per random read as files, 4.9 s and
- * 0.54 ms as rows -- and the phone is the target.  (Those seconds are one run on
- * one machine; re-measurements span 2.5-24.8 s for the row insert.  The ordering
- * has reproduced everywhere, the numbers have not: `src/blobs/sqlite.ts`.)
- * Nothing in this file changed to make that swap except which store it opens by
- * default: the address is still the bytes, the row still records no location, and
- * `--store-dir` still opens the old directory store for export or interop.
- *
- * This replaces the mode that shipped by accident.  `store: "path"` was the
- * default, and it wrote `C:\DEV\WEB\hashigo\exports\日本語\c7EiABp0.mp3`
- * into 10,816 rows: an absolute path, on one machine, into a gitignored
- * directory of reference data that CLAUDE.md says is not source.  Moving the
- * repo, renaming a folder or clearing exports/ destroyed every audio file in
- * the app, and a phone could never have resolved one of them.
- *
- * The copy costs 657 MB once.  It is idempotent -- `BlobStore.write` on an
- * address the store already holds is a no-op -- so an interrupted import
- * resumes and a second full run copies zero bytes.  Measured on this corpus:
- * 10,816 payloads / 625 MB written at ~30 MB/s on the first run, 0 bytes on
- * the second.
- *
- * Node only, like src/db: the importer and the tests.  The browser/OPFS build
- * gets bytes from a different place, which is why every filesystem touch goes
- * through the injectable `readMedia` hook and every payload write goes through
- * the injectable `blobStore`.
- */
-
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -132,9 +13,6 @@ import {
 import type { Db } from "../db/index.js";
 import type { BlobKind } from "../schema/index.js";
 
-// Imported for use HERE as well as re-exported below: `export ... from` does not
-// bring a name into the re-exporting module's own scope, and this file resolves
-// and stores generations itself.
 import {
   generationIdentity,
   generationKey,
@@ -143,25 +21,6 @@ import {
   type GenerationRequest,
 } from "../blobs/generation.js";
 
-// ─── identity: MOVED to src/blobs/generation.ts ──────────────────────────────
-
-/**
- * The cache key, its normalisation and its lookup used to live here, and that is
- * what made `src/generate` unloadable in a browser: `src/generate/store.ts`
- * value-imports three of them, and this file is 1,177 lines of `node:fs`,
- * `node:path` and `node:crypto`.
- *
- * They moved to `src/blobs/generation.ts` — the layer that already owns content
- * addressing — with ONE line changed: the digest is now `sha256Hex` from
- * `src/blobs/sha256.ts`, which is synchronous, dependency-free and already
- * agrees with `node:crypto` bit for bit on all 10,816 payloads. No signature
- * changed. `test/blobs.test.ts` recomputes every key in the corpus under both
- * digests and demands they match, because a differing key is not an error — it
- * is 42,569 permanent cache misses.
- *
- * They are re-exported here so that every existing caller, and every reference
- * in a doc comment, still resolves.
- */
 export {
   GENERATION_KEY_SCHEME,
   LANGUAGE_ALIASES,
@@ -176,25 +35,10 @@ export {
   type GenerationRequest,
 } from "../blobs/generation.js";
 
-/**
- * Lowercase hex sha256 of the payload. This is `blobs.hash`.
- *
- * DID NOT MOVE, on purpose. It hashes payload BYTES — 625 MB on a full import —
- * where OpenSSL through `node:crypto` is roughly 5× faster than the portable
- * implementation, and this file is Node-only anyway. The browser half gets its
- * addresses from `SqliteBlobStore`, whose default digest is the portable one.
- */
 export function contentAddress(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-// ─── Mochi's component-cache keys ────────────────────────────────────────────
-
-/**
- * Mochi's cache key is `<source text> <edn options map>`, e.g.
- * `だけに {:lang "ja-JP", :voice "ja-JP-NanamiNeural"}`. 42 distinct option maps
- * appear across the three exports; `{}` is the commonest at 17,475.
- */
 export interface ComponentCacheKey {
   readonly text: string;
   readonly options: Readonly<Record<string, string>>;
@@ -202,7 +46,6 @@ export interface ComponentCacheKey {
 
 const EDN_ENTRY = /:([A-Za-z0-9_?*!+-]+)\s+(?:"((?:[^"\\]|\\.)*)"|([^\s,}]+))/g;
 
-/** Parse `{:lang "ja-JP", :voice "…"}`. Unquoted values are tolerated. */
 export function parseEdnOptions(edn: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const match of edn.matchAll(EDN_ENTRY)) {
@@ -214,11 +57,6 @@ export function parseEdnOptions(edn: string): Record<string, string> {
   return out;
 }
 
-/**
- * Split the key on its trailing balanced `{…}`. A backward brace scan rather
- * than a regex, because the source text itself contains braces — `{{…}}` cloze
- * appears 1,087 times in the corpus — and a greedy match would eat it.
- */
 export function splitComponentCacheKey(key: string): ComponentCacheKey {
   if (!key.endsWith("}")) return { text: key, options: {} };
   let depth = 0;
@@ -240,8 +78,6 @@ export function splitComponentCacheKey(key: string): ComponentCacheKey {
   return { text: key, options: {} };
 }
 
-// ─── mime sniffing ───────────────────────────────────────────────────────────
-
 function ascii(bytes: Uint8Array, from: number, to: number): string {
   let out = "";
   for (let i = from; i < to && i < bytes.length; i += 1) out += String.fromCharCode(bytes[i] ?? 0);
@@ -260,11 +96,6 @@ const MAGIC: readonly { readonly mime: string; readonly match: (b: Uint8Array) =
   { mime: "audio/ogg", match: (b) => ascii(b, 0, 4) === "OggS" },
   { mime: "audio/flac", match: (b) => ascii(b, 0, 4) === "fLaC" },
   { mime: "audio/mp4", match: (b) => ascii(b, 4, 8) === "ftyp" },
-  // ID3v2 container, or a bare MPEG audio frame: 11 sync bits set, and neither
-  // the version nor the layer field on its reserved value. Every mp3 in the
-  // corpus is the bare form — fff3e4c4 (8,398), fff3c8c4 (2,085), fff344c4
-  // (383), fff384c4 (1) — which is why the JPEG test comes first: ffd8ff also
-  // starts 0xff.
   {
     mime: "audio/mpeg",
     match: (b) =>
@@ -279,10 +110,6 @@ const MAGIC: readonly { readonly mime: string; readonly match: (b: Uint8Array) =
   { mime: "text/xml", match: (b) => /^\s*<\?xml[\s?]/i.test(ascii(b, 0, 64)) },
 ];
 
-/**
- * The real type, from the bytes. `blobs.mime` is never the record's `type`: only
- * 41 of 10,887 declared types in the corpus are right.
- */
 export function sniffMime(bytes: Uint8Array): string {
   for (const candidate of MAGIC) {
     if (candidate.match(bytes)) return candidate.mime;
@@ -290,12 +117,6 @@ export function sniffMime(bytes: Uint8Array): string {
   return "application/octet-stream";
 }
 
-// ─── prepared statements ─────────────────────────────────────────────────────
-
-/**
- * One compile per database. `putBlob` and `addBlobRef` are called ~43,000 times
- * by a full import, and `db.prepare` compiles on every call.
- */
 interface Statements {
   readonly insertBlob: Statement;
   readonly insertRef: Statement;
@@ -308,9 +129,6 @@ function statements(db: Db): Statements {
   let cached = STATEMENTS.get(db);
   if (cached === undefined) {
     cached = {
-      // `path` is deliberately absent from this statement. It is the one
-      // column that could weld the database to a machine, and the importer is
-      // physically unable to write it: SQLite leaves it NULL.
       insertBlob: db.prepare(
         `INSERT OR IGNORE INTO blobs
            (hash, kind, mime, byte_size, source_text, voice, lang, options, bytes)
@@ -332,29 +150,16 @@ function statements(db: Db): Statements {
   return cached;
 }
 
-// ─── writing blobs ───────────────────────────────────────────────────────────
-
 const TEXT_MIME = "text/plain; charset=utf-8";
 const JSON_MIME = "application/json";
 
 export interface PutBlobArgs {
   readonly bytes: Uint8Array;
   readonly kind: BlobKind;
-  /** Sniffed when omitted. Pass it only for payloads this module created. */
   readonly mime?: string;
   readonly identity?: Omit<GenerationIdentity, "kind">;
 }
 
-/**
- * A blob whose payload lives in the STORE rather than in the row. `hash` and
- * `byteSize` MUST be the real payload's — `contentAddress(bytes)` and
- * `bytes.length` — because nothing downstream can recompute them from a row
- * that holds no bytes.
- *
- * There is no `path`, and that is the point: the payload's location is
- * `addressPath(hash)` under whatever root the reader is holding. See
- * `src/blobs/address.ts`.
- */
 export interface PutBlobRecordArgs {
   readonly hash: string;
   readonly kind: BlobKind;
@@ -365,7 +170,6 @@ export interface PutBlobRecordArgs {
 
 export interface PutBlobResult {
   readonly hash: string;
-  /** False when this address was already present — i.e. a deduplication. */
   readonly inserted: boolean;
 }
 
@@ -392,10 +196,6 @@ function insertBlob(
   return { hash, inserted: info.changes === 1 };
 }
 
-/**
- * Insert a blob at its content address, payload inline, or recognise that it is
- * already there. Never updates: `blobs_immutable` would abort, correctly.
- */
 export function putBlob(db: Db, args: PutBlobArgs): PutBlobResult {
   return insertBlob(
     db,
@@ -408,10 +208,6 @@ export function putBlob(db: Db, args: PutBlobArgs): PutBlobResult {
   );
 }
 
-/**
- * As `putBlob`, but the payload lives in the blob store and only its address,
- * size, type and provenance are recorded. Ask the store for the bytes.
- */
 export function putBlobRecord(db: Db, args: PutBlobRecordArgs): PutBlobResult {
   return insertBlob(db, args.hash, args.kind, args.mime, args.byteSize, args.identity, null);
 }
@@ -419,17 +215,10 @@ export function putBlobRecord(db: Db, args: PutBlobRecordArgs): PutBlobResult {
 export interface BlobRef {
   readonly blobHash: string;
   readonly cardId: string;
-  /** NULL = card content rather than a named field. */
   readonly fieldId?: string | null;
-  /** Attachment filename for imported media; the generation key for cached text. */
   readonly refKey: string;
 }
 
-/**
- * Add a reference; refcount is maintained by trigger. Idempotent: re-importing
- * the same export does not inflate refcounts, because the unique index on
- * (card_id, field_id, ref_key) absorbs the repeat.
- */
 export function addBlobRef(db: Db, ref: BlobRef): boolean {
   const info = statements(db).insertRef.run(
     ref.blobHash,
@@ -440,20 +229,6 @@ export function addBlobRef(db: Db, ref: BlobRef): boolean {
   return info.changes === 1;
 }
 
-/**
- * Point an existing reference at a DIFFERENT blob. Returns false when there was
- * no such reference.
- *
- * THIS IS "I CANNOT DELETE THE AUDIO I DO NOT WANT", fixed. The
- * `blob_refs_au` trigger has always existed and nothing ever called it, so the
- * only way to change a card's clip was to delete the row and insert another —
- * which, with an immediate sweep, destroyed the old payload before the new one
- * had been listened to. Retargeting moves the reference in one statement and
- * leaves the old blob unreferenced-but-present for the grace period.
- *
- * The old blob is NOT deleted here. `sweepUnreferenced` owns that, and only
- * after the grace period, which is what makes a two-voice A/B free to abandon.
- */
 export function retargetBlobRef(
   db: Db,
   ref: Omit<BlobRef, "blobHash">,
@@ -468,13 +243,6 @@ export function retargetBlobRef(
   return info.changes === 1;
 }
 
-/**
- * Drop a reference. Returns false when there was nothing to drop.
- *
- * The blob survives with `refcount` decremented and `unreferenced_at` stamped by
- * trigger. Deleting the payload is a separate, later, deliberate act — the whole
- * complaint about Mochi's attachment handling is that the two were the same act.
- */
 export function removeBlobRef(db: Db, ref: Omit<BlobRef, "blobHash">): boolean {
   const info = db
     .prepare(
@@ -485,7 +253,6 @@ export function removeBlobRef(db: Db, ref: Omit<BlobRef, "blobHash">): boolean {
   return info.changes === 1;
 }
 
-/** Every reference a card holds, so a caller can show what it would delete. */
 export function blobRefsForCard(db: Db, cardId: string): readonly BlobRef[] {
   return (
     db
@@ -507,21 +274,12 @@ export function blobRefsForCard(db: Db, cardId: string): readonly BlobRef[] {
   }));
 }
 
-// ─── the cache-hit path ──────────────────────────────────────────────────────
-
 export interface ResolvedGeneration {
   readonly hash: string;
-  /** True when nothing was generated: the point of the whole exercise. */
   readonly hit: boolean;
-  /** SPEC's sha256(normalised text, voice, lang) for this input. */
   readonly key: string;
 }
 
-/**
- * Resolve a generation request against the store, calling `generate` only on a
- * miss. Two identical requests therefore yield one blob, one address and one
- * billed call — including when they spell the language differently.
- */
 export function resolveGeneration(
   db: Db,
   request: GenerationRequest,
@@ -550,19 +308,6 @@ export function resolveGeneration(
   return { hash, hit: false, key };
 }
 
-/**
- * The same thing, for a generator that has to make a network call.
- *
- * The synchronous form above cannot express real TTS: `generate` returns bytes,
- * so an HTTP request could not be passed to it at all, and the only way to use
- * it was to fetch first and then resolve — which bills the provider on every
- * cache HIT and defeats the entire point of the store.
- *
- * The cache check happens BEFORE the await, so a hit still costs no request and
- * no microtask beyond the one this returns. The write happens after; a caller
- * racing two identical requests writes one blob, because `putBlob` is addressed
- * by content and `INSERT OR IGNORE`.
- */
 export async function resolveGenerationAsync(
   db: Db,
   request: GenerationRequest,
@@ -591,9 +336,6 @@ export async function resolveGenerationAsync(
   return { hash, hit: false, key };
 }
 
-// ─── importing an export's media ─────────────────────────────────────────────
-
-/** One card, as `walk_cards` in tools/mochi.py yields it. */
 export interface MochiMediaCard {
   readonly id?: unknown;
   readonly attachments?: unknown;
@@ -601,91 +343,36 @@ export interface MochiMediaCard {
 }
 
 export interface MochiMediaSource {
-  /** The extracted .mochi root: data.json plus flat media files. */
   readonly mediaDir: string;
-  /** Cards from a DEDUPED walk. A naive recursive walk doubles every count. */
   readonly cards: readonly MochiMediaCard[];
 }
 
-/**
- * Where a media payload ends up.
- *
- *   `content-addressed`  written into the blob store, addressed by its sha256.
- *                        THE DEFAULT, and the only mode that survives the repo
- *                        moving. 657 MB for this corpus, into `<db>.blobs.db`;
- *                        idempotent, so a second run writes nothing.
- *   `inline`             the bytes go in the row. Correct for small payloads
- *                        and for the text generations, which always take this
- *                        path; a 657 MB database for the media is not.
- *   `address-only`       the row records address, size, mime and provenance and
- *                        NOTHING holds the bytes. The honest mode for an
- *                        in-memory database, which has nowhere durable to put
- *                        them, and the automatic fallback when no store can be
- *                        resolved. Reported as such, never assumed.
- */
 export type BlobPayloadStore = "content-addressed" | "inline" | "address-only";
 
-/**
- * `"path"` was the old default and is why 10,816 rows held
- * `C:\DEV\WEB\hashigo\exports\...`. It is accepted so existing callers keep
- * compiling and is treated as `content-addressed`; the report says so in
- * `storeWarnings`. Nothing in this module can write a path any more.
- */
 export type LegacyPayloadStore = BlobPayloadStore | "path";
 
 export interface ImportBlobsOptions {
-  /** Media payload destination. Default `content-addressed`. */
   readonly store?: LegacyPayloadStore;
-  /** An open store to copy media into. Wins over everything below. */
   readonly blobStore?: BlobStore;
-  /**
-   * Blob-store DATABASE to open. Default: `defaultStoreDatabase(db.name)`, i.e.
-   * `<database>.blobs.db` beside the card database. An in-memory database has no
-   * file to derive from, so it falls back to `address-only`.
-   */
   readonly storeDatabase?: string;
-  /**
-   * Directory to open the LEGACY one-file-per-payload store in. Opt-in only —
-   * see the header, and `src/blobs/node.ts` for what it is still good for. Wins
-   * over `storeDatabase` when both are given, because naming a directory can
-   * only be deliberate.
-   */
   readonly storeRoot?: string;
-  /** Injected so the OPFS build can supply bytes without a filesystem. */
   readonly readMedia?: (mediaDir: string, fileName: string) => Uint8Array | null;
-  /**
-   * Also import the cached text generations (ai / translate / furigana) and
-   * dictionary results, so those do not re-bill either. Default true.
-   */
   readonly includeTextGenerations?: boolean;
-  /** Progress callback, every `n` files, for a CLI line on a 657 MB copy. */
   readonly onMediaProgress?: (done: number, total: number, bytes: number) => void;
 }
 
-/** Every claim this importer makes about what it did. */
 export interface BlobImportReport {
-  /** Which mode actually ran, after option resolution and any fallback. */
   readonly payloadStore: BlobPayloadStore;
-  /**
-   * Where the store is RIGHT NOW — `sqlite:<file>` for the default store, a
-   * directory for the legacy one — for the operator's benefit. Reported, logged,
-   * and never written to the database; that is the whole point of this module.
-   */
   readonly storeRoot: string | null;
-  /** Payloads copied into the store on this run. */
   readonly storeFilesWritten: number;
-  /** Payloads the store already held: what makes a re-run cost nothing. */
   readonly storeFilesPresent: number;
   readonly storeBytesWritten: number;
   readonly storeSeconds: number;
-  /** MB/s over `storeBytesWritten`; 0 when nothing was copied. */
   readonly storeMbPerSecond: number;
-  /** Anything the operator should know about how the payloads were handled. */
   readonly storeWarnings: readonly string[];
   readonly liveAttachments: number;
   readonly tombstonesSkipped: number;
   readonly filesMissing: number;
-  /** Live attachment records that resolved to a distinct file. */
   readonly distinctFiles: number;
   readonly emptyFiles: number;
   readonly mediaBlobs: number;
@@ -701,18 +388,7 @@ export interface BlobImportReport {
   readonly cachePointersDangling: number;
   readonly cacheTextOnly: number;
   readonly cacheFailures: number;
-  /**
-   * A SUBSET of cacheTextOnly: 78 cached generations whose output is the empty
-   * string. Not imported — an empty result is a failed generation, and because
-   * the address is the bytes it would otherwise share sha256("") with the 10
-   * zero-byte mp3s and file text under kind 'speech'.
-   */
   readonly textPayloadsEmpty: number;
-  /**
-   * Cache leaves this importer cannot use: an unknown generator bucket, or a
-   * value that is not a map. All 133 in the corpus are the literal string
-   * "loading" -- an in-flight generation frozen into the export.
-   */
   readonly cacheUnusable: number;
   readonly generationKeys: number;
   readonly generationEdges: number;
@@ -754,7 +430,6 @@ interface HashedFile {
   readonly fileName: string;
 }
 
-/** Mochi's generator buckets inside component-cache, mapped onto BLOB_KINDS. */
 const CACHE_KIND_TO_BLOB_KIND: Readonly<Record<string, BlobKind>> = {
   speech: "speech",
   ai: "ai",
@@ -806,35 +481,15 @@ function identityFor(
 interface ResolvedStore {
   readonly store: BlobPayloadStore;
   readonly blobStore: BlobStore | null;
-  /** Diagnostic only. Never reaches a column. */
   readonly storeRoot: string | null;
   readonly storeWarnings: readonly string[];
-  /**
-   * Release a handle THIS FUNCTION opened, and nothing else. The default store
-   * is a SQLite database, so somebody has to close it — and on Windows an
-   * unclosed handle keeps a lock, which is how a passing test leaves an
-   * undeletable temp directory behind. A store the caller handed in is the
-   * caller's to close.
-   */
   readonly close: () => void;
 }
 
-/**
- * Decide where media payloads go, and say so out loud.
- *
- * Order: an explicit store, then an explicit root, then `<database>.blobs`
- * beside the database file. An in-memory database has no file to derive from
- * and nowhere durable to write, so it degrades to `address-only` WITH A
- * WARNING rather than inventing a directory or throwing -- an ephemeral
- * database gets an ephemeral store, and the rows are still correct because a
- * row never claimed to know where the bytes were.
- */
 function resolvePayloadStore(db: Db, options: ImportBlobsOptions): ResolvedStore {
   const warnings: string[] = [];
   let requested: BlobPayloadStore;
   if (options.store === "path") {
-    // The mode that produced 10,816 absolute Windows paths. Honoured as the
-    // thing it was always trying to be.
     requested = "content-addressed";
     warnings.push(
       'store: "path" is gone -- payloads are content-addressed. No location is ' +
@@ -866,7 +521,6 @@ function resolvePayloadStore(db: Db, options: ImportBlobsOptions): ResolvedStore
     };
   }
 
-  // Naming a directory can only be deliberate, so it wins over the default.
   if (options.storeRoot !== undefined) {
     const opened = openBlobStore(options.storeRoot);
     warnings.push(
@@ -909,7 +563,6 @@ function resolvePayloadStore(db: Db, options: ImportBlobsOptions): ResolvedStore
   };
 }
 
-/** `<database>.blobs.db`, or null when the database has no file behind it. */
 function derivedStoreDatabase(db: Db): string | null {
   const file = (db as { name?: unknown }).name;
   if (typeof file !== "string" || file === "" || file === ":memory:") return null;
@@ -917,14 +570,6 @@ function derivedStoreDatabase(db: Db): string | null {
   return defaultStoreDatabase(file);
 }
 
-/**
- * Read every live attachment and cache entry across `sources` into the blob
- * store, skipping tombstones.
- *
- * Cards must already exist: `blob_refs.card_id` is a foreign key, and a
- * reference to a card that was never imported is exactly the dangling state this
- * store exists to make impossible. Such refs are counted, not forced.
- */
 export function importBlobs(
   db: Db,
   sources: readonly MochiMediaSource[],
@@ -940,7 +585,6 @@ export function importBlobs(
     close: closeStore,
   } = resolvePayloadStore(db, options);
 
-  // ── phase 1: scan the records. No I/O, no writes.
   const live: LiveAttachment[] = [];
   const liveSlots = new Set<string>();
   const tombstoneSlots = new Set<string>();
@@ -963,8 +607,6 @@ export function importBlobs(
       if (isRecord(attachments)) {
         for (const [fileName, record] of Object.entries(attachments)) {
           if (!isRecord(record)) continue;
-          // THE SKIP THAT MATTERS: 8,958 tombstones are Mochi's regeneration
-          // debris, not content. Importing them would import the bug.
           if (record["deleted?"] === true) {
             tombstonesSkipped += 1;
             tombstoneSlots.add(slotOf(source.mediaDir, fileName));
@@ -982,9 +624,6 @@ export function importBlobs(
       for (const [cacheKind, entries] of Object.entries(cache)) {
         if (!isRecord(entries)) continue;
         for (const [rawKey, value] of Object.entries(entries)) {
-          // 133 leaves in the corpus are the bare string "loading" -- Mochi's
-          // in-flight placeholder, frozen into the export. Caching one would
-          // permanently serve the word "loading" in place of the generation.
           if (!isRecord(value)) {
             cacheUnusable += 1;
             continue;
@@ -1007,10 +646,8 @@ export function importBlobs(
             });
             continue;
           }
-          // `attachment: null` on 20,813 entries. A trap: those are TEXT
-          // generations, not broken media pointers.
           if (value["error"] !== undefined || value["status"] !== undefined) {
-            cacheFailures += 1; // never cache a failure
+            cacheFailures += 1;
             continue;
           }
           const text = value["text"];
@@ -1047,10 +684,6 @@ export function importBlobs(
     }
   }
 
-  // ── phase 2: hash the bytes, once per live file, and write them to the store.
-  // Outside any transaction ON THE CARD DATABASE: 657 MB of reads must not hold
-  // its write lock. The store is a different database and does hold a
-  // transaction of its own -- see hashAndCopy below.
   const hashed = new Map<string, HashedFile>();
   const sniffedMimes = new Map<string, number>();
   let filesMissing = 0;
@@ -1082,11 +715,6 @@ export function importBlobs(
           fileName: attachment.fileName,
         };
         hashed.set(slot, entry);
-        // Copy in the same pass that hashed: the bytes are already here, and
-        // reading 657 MB twice to save nothing would be the wrong trade. The
-        // write is idempotent, so an interrupted import resumes by re-reading
-        // and re-hashing but copying only what is genuinely absent -- and a
-        // second full run copies zero bytes.
         if (blobStore !== null && store === "content-addressed") {
           const written = blobStore.write(entry.hash, bytes);
           if (written.written) {
@@ -1109,21 +737,13 @@ export function importBlobs(
 
   let storeSeconds = 0;
   try {
-    // BATCHED, when the store can batch. `SqliteBlobStore` commits every 64 MiB
-    // instead of once per payload, which is the whole difference between the
-    // note's 4.9 s and 10,816 transactions. A store that cannot batch (the
-    // directory one, a Map) runs the identical loop unwrapped.
     if (blobStore !== null && blobStore.batch !== undefined) blobStore.batch(hashAndCopy);
     else hashAndCopy();
     storeSeconds = (Date.now() - storeStarted) / 1000;
   } finally {
-    // Only ever closes a handle resolvePayloadStore opened itself.
     closeStore();
   }
 
-  // ── phase 3: decide one identity per blob. The key -> blob relation is
-  // many-to-many and a blob row holds one tuple, so keep the lexicographically
-  // smallest key per blob and count what that costs.
   const provenance = new Map<string, CachePointer>();
   const keys = new Set<string>();
   const edges = new Set<string>();
@@ -1152,7 +772,6 @@ export function importBlobs(
     if (held === undefined || pointer.key < held.key) provenance.set(entry.hash, pointer);
   }
 
-  // ── phase 4: write. One transaction.
   const cardExists = db.prepare("SELECT 1 FROM cards WHERE id = ?").pluck();
   const known = new Map<string, boolean>();
   const hasCard = (cardId: string): boolean => {
@@ -1195,9 +814,6 @@ export function importBlobs(
           ...(identity === undefined ? {} : { identity }),
         });
       } else {
-        // Address, size, type and provenance. NO LOCATION: the payload is in
-        // the store under `addressPath(hash)`, wherever the store happens to
-        // be mounted when someone asks for it.
         result = putBlobRecord(db, {
           hash,
           kind,

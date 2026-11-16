@@ -1,29 +1,3 @@
-/**
- * THROWAWAY (spike harness). The page: real mp3s out of the corpus, into real
- * `<audio>` elements, through `src/blobs/url.ts` — which is the one PRODUCTION
- * file this spike exists to exercise.
- *
- * What it is trying to disprove, in order:
- *
- *   1. "The bytes reached the element" — which looks identical to a `src` that
- *      404s if all you check is that the element exists. So every clip is judged
- *      on `duration` being a finite number, `canplay`/`playing` actually firing,
- *      `currentTime` advancing, and (for one clip) `ended` arriving after a seek.
- *      A second, independent decode through `AudioContext.decodeAudioData` reports
- *      sample rate and channel count, which no amount of assignment can fake.
- *   2. "A browser handed text/xml in an <audio> element will not play it, so this
- *      breaks playback outright" — SPEC.html's claim, which nobody had run. The same real
- *      mp3 is offered to four differently-labelled Blobs and to a `<source
- *      type=…>`, and the results are printed side by side.
- *   3. "Revoking is a detail." Six lifecycle probes, including revoking before the
- *      element loads and revoking after it has started, because those two have
- *      opposite outcomes and only one of them is a bug.
- *
- * The autoplay policy is measured, not worked around silently:
- * `navigator.getAutoplayPolicy()` is read and the first `play()` is attempted
- * BEFORE any click, so the transcript says whether this browser needed a gesture.
- */
-
 import { BlobUrlScope, attachMedia, playableMime } from "../../src/blobs/url.js";
 
 import type { AudioSpikeMessage, AudioSpikeRequest, ClipPayload } from "./protocol.js";
@@ -43,7 +17,6 @@ if (
   throw new Error("page markup is missing");
 }
 
-/** Everything written to the log, so a driver can lift the whole transcript. */
 const transcript: string[] = [];
 declare global {
   interface Window {
@@ -75,8 +48,6 @@ const fact = (term: string, value: string): void => {
 };
 const n = (value: unknown): string => Number(value).toLocaleString("en-US");
 const secs = (value: number): string => (Number.isFinite(value) ? `${value.toFixed(3)}s` : String(value));
-
-// ── the worker ────────────────────────────────────────────────────────────────
 
 const worker = new Worker(new URL("./blobs.worker.ts", import.meta.url), {
   type: "module",
@@ -128,8 +99,6 @@ function workerMintedUrl(hash: string): Promise<{ url: string | null; error?: st
   });
 }
 
-// ── media helpers ─────────────────────────────────────────────────────────────
-
 const MEDIA_ERRORS: Record<number, string> = {
   1: "MEDIA_ERR_ABORTED",
   2: "MEDIA_ERR_NETWORK",
@@ -158,7 +127,6 @@ const WATCHED = [
 
 interface Recorder {
   readonly seen: string[];
-  /** The furthest playback position any `timeupdate` reported. */
   readonly maxTime: () => number;
   count(name: string): number;
   stop(): void;
@@ -185,7 +153,6 @@ function recordEvents(element: HTMLMediaElement): Recorder {
   };
 }
 
-/** Resolve with the first of `names` to fire, or "timeout". */
 function firstEvent(element: HTMLMediaElement, names: readonly string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve) => {
     let done = false;
@@ -209,26 +176,11 @@ function firstEvent(element: HTMLMediaElement, names: readonly string[], timeout
   });
 }
 
-/**
- * Load whatever is on `element.src` and try to play it, reporting what the
- * platform did. `element.src` must already be set.
- *
- * THE MEASUREMENT BUG THIS FUNCTION EXISTS TO NOT HAVE: the obvious version
- * awaits `play()`, then waits for `playing`, then samples `currentTime` twice
- * 400 ms apart. `playing` fires *during* the await of `play()`, so the wait times
- * out; four seconds later the 1.6-second clips have run to their end and the two
- * `currentTime` samples are identical — which reads exactly like a clip that
- * never played. The fix is to arm the listener before calling `play()`, and to
- * judge progress by the furthest position any `timeupdate` reported rather than
- * by a difference between two arbitrary moments.
- */
 interface PlaybackProbe {
   readonly settled: string;
   readonly playing: string;
-  /** The name of the error `play()` rejected with — `NotAllowedError` is the autoplay policy. */
   readonly playError: string | null;
   readonly duration: number;
-  /** Furthest position reached. > 0 is the thing that cannot be faked. */
   readonly maxTime: number;
   readonly advanced: number;
   readonly ended: boolean;
@@ -269,10 +221,6 @@ async function probePlayback(
     playing,
     playError,
     duration,
-    // `timeupdate` only fires every ~250 ms, so the last sample of `currentTime`
-    // is usually further along than any event reported. Fold it in, or a 250 ms
-    // probe of a clip that IS playing reads as a clip that never moved — which is
-    // the false negative that made the first run of this page lie about autoplay.
     maxTime: Math.max(recorder.maxTime(), element.currentTime),
     advanced,
     ended: recorder.count("ended") > 0,
@@ -287,7 +235,6 @@ const sleep = (millis: number): Promise<void> =>
     setTimeout(resolve, millis);
   });
 
-/** An `<audio controls>` in the page, labelled, so the screenshot means something. */
 function player(label: string): HTMLAudioElement {
   const row = document.createElement("div");
   row.className = "player";
@@ -304,8 +251,6 @@ function player(label: string): HTMLAudioElement {
 const audioClips = (): ClipPayload[] => clips.filter((clip) => clip.mime === "audio/mpeg");
 const clipLabel = (clip: ClipPayload): string =>
   `${clip.deck}/${clip.fileName} ${n(clip.byteSize)}B ${clip.sourceText === null ? "" : JSON.stringify(clip.sourceText)}`;
-
-// ── phase 0: before any user gesture ──────────────────────────────────────────
 
 async function autoplayProbe(): Promise<void> {
   step("7. BEFORE any click: does decode need a gesture, and does playback?");
@@ -348,8 +293,6 @@ async function autoplayProbe(): Promise<void> {
   write(`  events: ${probe.events.join(" ")}`);
   write(`  after detach: lease.revoked ${String(lease.revoked)}, scope.live ${scope.live}`);
 }
-
-// ── phase 1: every clip, judged on decode ─────────────────────────────────────
 
 interface PlayResult {
   readonly clip: ClipPayload;
@@ -413,7 +356,6 @@ async function playEverything(): Promise<PlayResult[]> {
   return results;
 }
 
-/** One clip played to its end, after a seek: proof the whole pipeline works. */
 async function playToEnd(): Promise<void> {
   step("9. one clip seeked near its end and played out — 'ended' has to arrive");
   const clip = audioClips()[0];
@@ -441,14 +383,10 @@ async function playToEnd(): Promise<void> {
   attachment.detach();
 }
 
-// ── phase 2: an independent decode ────────────────────────────────────────────
-
 async function decodeIndependently(): Promise<void> {
   step("10. the same bytes through AudioContext.decodeAudioData — PCM, not a promise");
   const context = new AudioContext();
   for (const clip of audioClips().slice(0, 3)) {
-    // decodeAudioData detaches the buffer it is given, so hand it a copy: the
-    // page still needs these bytes for the <audio> tests.
     const copy = clip.bytes.slice().buffer as ArrayBuffer;
     const start = performance.now();
     try {
@@ -465,8 +403,6 @@ async function decodeIndependently(): Promise<void> {
   write(`  AudioContext state ${context.state}, sampleRate ${n(context.sampleRate)}`);
   await context.close();
 }
-
-// ── phase 3: does the mime label matter? ──────────────────────────────────────
 
 async function mimeMatrix(): Promise<void> {
   step("11. THE MIME QUESTION: one real mp3, five labels, <audio src=blob:…>");
@@ -530,8 +466,6 @@ async function mimeMatrix(): Promise<void> {
   }
 }
 
-// ── phase 4: the lifecycle, which is the whole reason url.ts exists ───────────
-
 async function lifecycle(): Promise<void> {
   step("13. revocation: who revokes, when, and what breaks if it is done wrongly");
   const clip = audioClips()[0];
@@ -541,7 +475,6 @@ async function lifecycle(): Promise<void> {
     return;
   }
 
-  // (a) revoked before the element ever looks at it.
   {
     const scope = new BlobUrlScope();
     const lease = scope.claim({ hash: clip.hash, bytes: clip.bytes, mime: clip.mime });
@@ -564,7 +497,6 @@ async function lifecycle(): Promise<void> {
     write(`  (a) attachMedia() on a revoked lease refuses: ${threw}`);
   }
 
-  // (b) revoked after the element has already loaded it.
   {
     const scope = new BlobUrlScope();
     const lease = scope.claim({ hash: other.hash, bytes: other.bytes, mime: other.mime });
@@ -581,7 +513,6 @@ async function lifecycle(): Promise<void> {
         `(the resource was already fetched; revoking does not reclaim it mid-play)`,
     );
     element.pause();
-    // And the state rule 3 warns about: a revoked URL still assigned to src.
     element.load();
     const reload = await firstEvent(element, ["canplay", "error"], 3000);
     write(
@@ -591,7 +522,6 @@ async function lifecycle(): Promise<void> {
     );
   }
 
-  // (c) idempotence and reuse.
   {
     const scope = new BlobUrlScope();
     const first = scope.claim({ hash: clip.hash, bytes: clip.bytes, mime: clip.mime });
@@ -605,7 +535,6 @@ async function lifecycle(): Promise<void> {
     write(`  (c) revoke twice: revoked ${String(first.revoked)}, stats ${JSON.stringify(scope.stats)}`);
   }
 
-  // (d) a second payload under one address is a content-address violation.
   {
     const scope = new BlobUrlScope();
     scope.claim({ hash: clip.hash, bytes: clip.bytes, mime: clip.mime });
@@ -619,7 +548,6 @@ async function lifecycle(): Promise<void> {
     scope.releaseAll();
   }
 
-  // (e) the cap: a caller who forgets releaseAll() leaks a BOUNDED amount.
   {
     const scope = new BlobUrlScope({ maxLive: 3 });
     const leases = audioClips()
@@ -644,7 +572,6 @@ async function lifecycle(): Promise<void> {
     write(`  (e) releaseAll() revoked ${scope.releaseAll()} + ${byBytes.releaseAll()}`);
   }
 
-  // (f) the review-session shape: one scope per card, releaseAll on card exit.
   {
     let peak = 0;
     let revoked = 0;
@@ -663,8 +590,6 @@ async function lifecycle(): Promise<void> {
     );
   }
 }
-
-// ── phase 5: minting the URL in the worker instead ────────────────────────────
 
 async function workerMinted(): Promise<void> {
   step("14. an object URL minted in the WORKER, consumed in the document");
@@ -696,8 +621,6 @@ async function workerMinted(): Promise<void> {
   element.removeAttribute("src");
   element.load();
 }
-
-// ── the image control, so "it decoded" is not just "an element existed" ───────
 
 async function imageControl(): Promise<void> {
   step("15. the non-audio controls, through the same code path");
@@ -731,10 +654,7 @@ async function imageControl(): Promise<void> {
   } else {
     bad("  the jpeg did not decode either — something is wrong with the byte path, not the mime");
   }
-  // Left attached on purpose: the screenshot wants it. The scope goes with the page.
 }
-
-// ── driver ────────────────────────────────────────────────────────────────────
 
 async function pageFacts(): Promise<void> {
   fact("origin", location.origin);
@@ -779,10 +699,6 @@ async function boot(): Promise<void> {
   write("READY — click Run (a real click is a user gesture, which is what the", "step");
   write("autoplay policy wants). The driver clicks it; a human can too.", "step");
   runButton!.disabled = false;
-  // `?auto=1` runs the suite without waiting for a click. It exists because the
-  // dev server reloads this page whenever another agent saves a file in src/, and
-  // a run that has to be re-clicked never finishes. A gesture-driven run is the
-  // one worth reporting; this one is for when the gesture cannot survive.
   if (new URLSearchParams(location.search).get("auto") === "1") {
     write("?auto=1 — running without waiting for a click", "step");
     await suite();
@@ -820,13 +736,9 @@ async function suite(): Promise<void> {
     bad("  SOMETHING FAILED — read the BAD lines above");
   }
   window.__state.suiteDone = true;
-  // The dev server full-reloads this page whenever anything under src/ is saved,
-  // which in a repo with several agents in it is often. Keep the transcript where
-  // a reload cannot take it.
   try {
     sessionStorage.setItem("hashigo-audio-transcript", transcript.join("\n"));
   } catch {
-    // Private mode, quota, whatever — the DOM still has the log.
   }
 }
 

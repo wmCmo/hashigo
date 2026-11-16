@@ -1,45 +1,3 @@
-/**
- * ADD CARDS WITHOUT A BROWSER — through the mailbox, like `ojad-fill.ts`.
- *
- *     npx vite-node scripts/cards-add.ts -- --in cards.jsonl            # what it would send
- *     npx vite-node scripts/cards-add.ts -- --in cards.jsonl --apply    # send it
- *
- * One card per line:
- *
- *     {"deck":"日本語/単語","template":"単語","name":"停滞",
- *      "values":{"読み":"ていたい","意味":"stagnation","Reading":"false","優先":"true"}}
- *
- * `deck` is a path or an id, `template` a name or an id, and `values` are keyed
- * by FIELD NAME (an id works too). `"allowDuplicate": true` makes a card whose
- * name the template already has; without it the line is refused and the existing
- * card is printed — the same rule the app's form follows.
- *
- * ─── WHY THIS EXISTS ────────────────────────────────────────────────────────
- *
- * Until 2026-10-29 the only way to add a 漢検 batch was to drive the live app in
- * Chrome: the database is single-tab, so Zach had to close his own window for
- * the length of the batch, every browser call timed out at 45 s, and a fill that
- * lost its race left a card with empty fields. The devices already merge whatever
- * any sync slot holds (`ojad-fill.ts` relies on it), and a merge INSERTS a card
- * created elsewhere with its values and tracks. So a card can arrive the same way.
- *
- * ─── WHAT IT DOES ───────────────────────────────────────────────────────────
- *
- *   1. Pull the freshest real device's payload and this slot's own previous one,
- *      and merge both into a scratch copy of `build/hashigo.db` — so a card this
- *      script sent earlier, not yet merged by any device, still counts as existing
- *      (a kanji made in one run is linkable, by id, in the next).
- *   2. Make each card with `createCard` (`src/cards/create.ts`) — the app's own
- *      code: one transaction, values included, tracks opened, duplicates refused.
- *   3. Build a payload of ONLY those cards (plus any this slot sent before that
- *      no device has merged yet — never one a device already holds, or a card
- *      he deleted would come back on the next send), and merge it
- *      into a second fresh copy exactly as a device would. Refuse to send unless
- *      every card lands with every value and NOTHING ELSE changed.
- *
- * Dry by default. Cards reach a device on its next pull (decision 50: the boot
- * screen, or "sync now").
- */
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -87,13 +45,11 @@ async function payloadOf(id: string): Promise<SyncPayload | null> {
   return JSON.parse(bytes.toString("utf8")) as SyncPayload;
 }
 
-// ── 1. the freshest device, plus what this slot already sent ───────────────
 const listing = (await (await fetch(`${base}/sync/`, { headers })).json()) as {
   peers: { deviceId: string }[];
 };
 let freshest: SyncPayload | null = null;
 for (const { deviceId } of listing.peers) {
-  // Real devices only — `dev-` + 12 hex. The tool slots carry fragments.
   if (!/^dev-[0-9a-f]{12}$/.test(deviceId)) continue;
   const payload = await payloadOf(deviceId);
   if (payload !== null && (freshest === null || payload.archive.createdAt > freshest.archive.createdAt)) {
@@ -116,7 +72,6 @@ const fresh = (file: string): Db => {
 
 const db = fresh("hashigo.db");
 try {
-  // ── 2. make the cards ─────────────────────────────────────────────────────
   const deckId = (key: string): string => {
     const row = db.prepare("SELECT deck_id AS id FROM deck_paths WHERE deck_id = ? OR path = ?").get(key, key) as
       | { id: string }
@@ -163,14 +118,7 @@ try {
     console.log("nothing to send");
     process.exitCode = refused > 0 ? 1 : 0;
   } else {
-    // ── 3. the payload: these cards, plus what this slot carried before ──────
     const now = new Date().toISOString();
-    // What this slot sent before is carried again ONLY while no device has it.
-    // Once the freshest device holds a card, its own payload carries it to every
-    // other device, and re-sending it here would be the one way a card he has
-    // since DELETED comes back: a delete leaves no tombstone, a merge re-inserts
-    // any app-made card a payload holds, and a device re-merges a slot whenever
-    // its sha changes — which is every time this script sends.
     const onDevice = new Set((freshest.archive.localCards ?? []).map((card) => card.id));
     const pending = new Set(
       (previous?.archive.localCards ?? []).map((card) => card.id).filter((id) => !onDevice.has(id)),
@@ -229,11 +177,9 @@ try {
       },
       cardFlags,
       deckFlags: [],
-      // `voicesCarried` left out ON PURPOSE: absent means "says nothing about voices".
       retiredClips: [],
     };
 
-    // ── SELF-CHECK: merge it into a fresh copy exactly as a device would ─────
     const check = fresh("check.db");
     try {
       const snapshot = (): Map<string, string> =>

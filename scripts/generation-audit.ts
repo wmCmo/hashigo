@@ -1,39 +1,3 @@
-/**
- * What is actually missing from every generated field, per template.
- *
- *     npx vite-node scripts/generation-audit.ts -- --db build/hashigo.db
- *     npx vite-node scripts/generation-audit.ts -- --db build/hashigo.db --field 例文 --list
- *
- * ─── WHY THIS EXISTS ────────────────────────────────────────────────────────
- *
- * "Generate the missing example sentences" is a question before it is a task,
- * and the answer is not the one the field values suggest. `card_field_values`
- * holds ZERO rows for `例文` on all 3,478 単語 cards — not because they are
- * missing, but because `例文` is an `ai` generator field and Mochi keeps
- * generated content in `component-cache`, keyed by the generator's identity.
- * Counting empty value rows says "3,478 missing" and is wrong by two orders of
- * magnitude.
- *
- * ─── IT USES THE REAL RESOLVER, AND THAT IS THE POINT ───────────────────────
- *
- * The first version of this audit hand-rolled the cache key in SQL and got a
- * different answer from the app. `src/generate/store.ts` already resolves a
- * field against the store and already sorts every miss into four buckets, so
- * this drives THAT rather than a second implementation of the same rule — the
- * whole hazard being that an audit which computes the key differently from the
- * renderer reports on a card the renderer never sees.
- *
- *   exact        the identity Mochi filed — renders today
- *   other-voice  same kind and text, different voice or options — plays today
- *   mismatch     the card HAS a generation of that kind, but NOT for this text.
- *                For `ai` fields this is almost always a PROMPT CHANGE: the
- *                sentence exists, generated under the field's older wording.
- *   missing      nothing of that kind on the card at all — the only bucket that
- *                genuinely needs a new generation
- *
- * `mismatch` versus `missing` is the distinction that decides how much work
- * there is, and it is invisible to a value-row count.
- */
 import { openDatabase } from "../src/db/index.js";
 import {
   fieldGenerationRequest,
@@ -78,7 +42,6 @@ const fields = db
 
 const generators = fields.filter((f) => isGeneratorType(f.type));
 
-/** Every field on a template, so a prompt's `<<Other>>` reference can resolve. */
 const byTemplate = new Map<string, FieldRow[]>();
 for (const f of fields) {
   const held = byTemplate.get(f.template_id);
@@ -132,10 +95,6 @@ for (const field of generators) {
 
     const request = fieldGenerationRequest(toGeneratorField(field), context);
     if (request === null) {
-      // No input text — an empty head word, or a prompt whose `<<Other>>` is
-      // itself empty. Refusing to build a request is deliberate: a key hashed
-      // from empty text could never match anything, so it would report as a
-      // miss forever. These must NOT be generated.
       noInput += 1;
       continue;
     }

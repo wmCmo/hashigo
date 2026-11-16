@@ -1,15 +1,3 @@
-/**
- * THE TEMPLATE EDITOR — his #11, moved out of `main.ts` on 2026-09-25.
- *
- * It is the feature with the largest blast radius per click in the app (a template
- * edit changes every card on it — 単語 is 3,742), and it lived inside the one file
- * no test can import. The pure half of it — what a field's row SAYS — was already
- * in `./field-form.ts` and tested over the real 48 fields; this is the DOM half.
- *
- * It reloads the deck tree after an edit (`./sidebar.ts`) and pushes each edit's
- * reversal onto the undo stack (`./ops.ts`).
- */
-
 import { decodeFieldOptions } from "../src/cards/index.js";
 import { moveWithin } from "../src/schema/index.js";
 import { referencedNames } from "../src/template/index.js";
@@ -32,34 +20,6 @@ import { pushUndo, refreshAfterOp } from "./ops.js";
 import { prependIcon, setIcon } from "./icons.js";
 import { count } from "./plural.js";
 
-/**
- * *"where can i edit my template? there should be a modal for editing template and
- * fields"* — his #11.
- *
- * ─── THE ONE THING THAT MAKES THIS DIFFERENT FROM THE CARD EDITOR ───────────
- *
- * A card edit changes one card. **A template edit changes every card on it**, and
- * the count is on screen for that reason: 単語 is 3,742. So every row here states
- * its blast radius before he touches it, and the two irreversible-looking ones
- * (rename a field, delete a field) both say what happens to the text underneath.
- *
- * ─── RENAMING A FIELD REWRITES THE BODY, AND HE IS TOLD SO ──────────────────
- *
- * The resolver binds `<<Field>>` by NAME, so a rename that stopped at
- * `template_fields` would unbind every marker in silence. The worker rewrites the
- * body and every generator prompt in the same transaction; this screen shows the
- * reference COUNT beside each field so the number in "rewrote 6 reference(s)" is
- * one he could have predicted.
- *
- * ─── WHAT IS NOT HERE ───────────────────────────────────────────────────────
- *
- * Changing a field's TYPE. It reinterprets every existing value at once — a
- * migration, not a form control — and the worker refuses it rather than this
- * screen hiding it. `templateOp` says why.
- *
- * Repointing a generator's input and editing its settings ARE here since stage C
- * (2026-09-25), each behind a price computed over the real cards first.
- */
 export function openTemplateEditor(brief: TemplateBrief): void {
   void openTemplateEditorById(brief.id);
 }
@@ -103,7 +63,6 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
 
   let detail = reply.template;
 
-  /** Run one op, then repaint from the row the worker sent back. */
   const run: TemplateRunner = async (request) => {
     try {
       const done = await ask<"templateOp">({ kind: "templateOp", ...request });
@@ -133,12 +92,9 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
   };
 
   function paint(): void {
-    // The noun stays: the fields below carry counts of their own, so a bare
-    // number here could be anything.
     title.textContent = `${detail.name} · ${count(detail.cards, "card")}`;
     body.replaceChildren();
 
-    // ── the name ──
     const nameRow = document.createElement("div");
     nameRow.className = "edit-row";
     const nameLabel = document.createElement("span");
@@ -156,7 +112,6 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
     nameRow.append(nameLabel, nameInput);
     body.appendChild(nameRow);
 
-    // ── the fields ──
     const fieldsHead = document.createElement("h3");
     fieldsHead.className = "tpl-head";
     fieldsHead.textContent = `fields (${detail.fields.length})`;
@@ -169,7 +124,6 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
     });
     body.appendChild(list);
 
-    // ── add ──
     const add = document.createElement("button");
     add.type = "button";
     add.className = "tree-add";
@@ -178,7 +132,6 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
     add.addEventListener("click", () => openAddField(detail, run));
     body.appendChild(add);
 
-    // ── the body ──
     const bodyHead = document.createElement("h3");
     bodyHead.className = "tpl-head";
     bodyHead.textContent = "body";
@@ -203,9 +156,6 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
     unknown.className = "settings-bad";
     unknown.hidden = true;
 
-    // AN UNRESOLVED `<<X>>` IS AN EMPTY STRING, NOT AN ERROR. So the one useful
-    // check on a body is "does every name it uses exist here", and it runs while
-    // he types rather than after he saves.
     const check = (): void => {
       const known = new Set(detail.fields.map((entry) => entry.name));
       const missing = [...referencedNames(area.value)].filter((name) => !known.has(name));
@@ -215,8 +165,6 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
         `render as nothing, on every card.`;
     };
     area.addEventListener("input", check);
-    // On BLUR, like the card editor: an OPFS write is 20-80 ms and a keystroke is
-    // not a save. The template is one row, but it is a row 3,742 cards read.
     area.addEventListener("blur", () => {
       if (area.value !== detail.content) {
         void run({ op: "body", templateId: detail.id, content: area.value });
@@ -231,7 +179,6 @@ export async function openTemplateEditorById(templateId: string): Promise<void> 
   close.focus();
 }
 
-/** What every row in the template editor is handed to write with. */
 type TemplateRunner = (request: Omit<TemplateOpRequest, "kind" | "id">) => Promise<void>;
 
 function templateFieldRow(
@@ -270,8 +217,6 @@ function templateFieldRow(
   const step = (delta: number): void => {
     const to = index + delta;
     if (to < 0 || to >= order.length) return;
-    // `before` is the id to land in FRONT of. Moving DOWN has to land in front of
-    // the field AFTER the one being passed, or the swap is a no-op.
     const before = delta < 0 ? order[to] : (order[to + 1] ?? null);
     void run({
       op: "orderFields",
@@ -301,9 +246,6 @@ function templateFieldRow(
     () => {
       openConfirm(
         `Remove ${field.name} from ${detail.name}?`,
-        // The values are never deleted with the field (the values table is not
-        // foreign-keyed to it, on purpose), so the dialog says what that means
-        // for him: they stay, and undo brings the field back over them.
         (field.values === 0
           ? "No card has a value for it. "
           : `${count(field.values, "card")} ${field.values === 1 ? "has" : "have"} a ` +
@@ -346,28 +288,6 @@ function templateFieldRow(
   return row;
 }
 
-/**
- * What a field carries, unfolded under its own row — and, since stage C, what can
- * be CHANGED there.
- *
- * IN THE ROW rather than in a panel beside it or a modal above it — Zach's call,
- * 2026-09-17. `.tpl-field` collapses to one column under 640px already, so a
- * `grid-column: 1 / -1` child is the same thing on the phone as on the laptop and
- * there is no second layout to keep honest. A layer over a layer is the shape his
- * phone handles worst.
- *
- * Every control here is generated from `settingsOf(field.type)`, so this function
- * knows nothing about speech, prompts or translation directions, and a new
- * setting is a registry entry rather than a branch.
- *
- * ─── NOTHING IS WRITTEN WITHOUT ITS PRICE ───────────────────────────────────
- *
- * Edits collect into a patch; `save` asks the worker what the patch would cost
- * (`app/field-ops.ts`), shows it, and only then writes. An untouched control
- * contributes nothing to the patch, which is what keeps a save from materialising
- * a default onto a field that never carried one — the 723 translate blobs with no
- * direction at all.
- */
 function templateFieldSettings(
   detail: TemplateDetail,
   field: TemplateFieldRow,
@@ -383,7 +303,6 @@ function templateFieldSettings(
   const role = roleLine(options);
   const panel = document.createElement("div");
   panel.className = "tpl-settings";
-  // Every field gets a panel now, because every field shows its type row.
   panel.appendChild(typePicker(detail, field, run));
 
   if (role !== null) {
@@ -448,8 +367,6 @@ function templateFieldSettings(
       value = document.createElement("span");
       value.className = "tpl-setting-value";
       value.textContent = line.value;
-      // Said in the row rather than only in the note, because "you cannot change
-      // this" is the first thing a reader wants and the last thing a note gives.
       if (line.readOnly) value.title = "read-only";
     }
 
@@ -462,9 +379,6 @@ function templateFieldSettings(
   }
 
   for (const extra of extras) {
-    // Shown, never dropped. `options` is free-form JSON that survived an import
-    // and will survive a sync; a key this build does not declare is more likely
-    // to be something real than something wrong.
     const item = document.createElement("div");
     item.className = "tpl-setting is-undeclared";
     const label = document.createElement("span");
@@ -503,14 +417,6 @@ function templateFieldSettings(
   return panel;
 }
 
-/**
- * THE PIPE HE SAID HE COULD NOT MAKE — *"i can't pipe example sentence to speech
- * here"*. It was in the data all along; this makes it a control.
- *
- * Only legal inputs are offered (`sourceChoices`): never the field itself, never
- * one that already reads from it. A loop is the one mistake the schema's CHECK
- * cannot see and `fieldText` answers with silence.
- */
 function sourcePicker(
   detail: TemplateDetail,
   field: TemplateFieldRow,
@@ -524,8 +430,6 @@ function sourcePicker(
   select.setAttribute("aria-label", `what ${field.name} reads from`);
   const none = document.createElement("option");
   none.value = "";
-  // A generator with no input makes nothing; a derived field (読み, OJAD) with
-  // none is simply not wired, and "generates" would be the wrong verb for it.
   none.textContent = kindOf(field.type)?.generatable === true ? "nothing — generates nothing" : "nothing — not set";
   select.appendChild(none);
   for (const choice of sourceChoices(detail.fields.map(fieldState), field.id)) {
@@ -537,9 +441,6 @@ function sourcePicker(
   select.value = field.sourceFieldId ?? "";
   select.addEventListener("change", () => {
     const sourceFieldId = select.value === "" ? null : select.value;
-    // Put the control back until the write lands: a cancelled dialog must not
-    // leave the picker showing an input the field does not have. A saved one
-    // repaints the whole editor from the worker's row anyway.
     select.value = field.sourceFieldId ?? "";
     const target = sourceFieldId === null ? "nothing" : (nameOf(sourceFieldId) ?? sourceFieldId);
     void confirmPriced(
@@ -559,19 +460,6 @@ function sourcePicker(
   return [label, select];
 }
 
-/**
- * THE TYPE ROW — on every field, and it names the KIND (`fieldKind`).
- *
- * Zach, 2026-11-05: *"the type doesn't even say boolean"*. It used to appear only
- * where a free conversion existed (plain <-> long text), so most fields showed no
- * type at all and the two that did offered a choice that changed nothing. Now:
- *
- *   · a Text field and a Reading switch freely (`setFieldKind`): same stored
- *     string, the role and the input change, no value moves;
- *   · (Long text, the old free plain <-> text switch, was deleted with the type.)
- *   · everything else shows its kind and offers nothing — every other
- *     conversion reinterprets the values on his cards and stays refused.
- */
 function typePicker(
   detail: TemplateDetail,
   field: TemplateFieldRow,
@@ -606,7 +494,6 @@ function typePicker(
   select.value = kind.id === "reading" ? "reading" : field.type;
   select.addEventListener("change", () => {
     const to = select.value;
-    // No price: the switch moves no value and no clip, by definition.
     void run({
       op: "setFieldKind",
       templateId: detail.id,
@@ -628,20 +515,6 @@ function fieldState(row: TemplateFieldRow): FieldState {
   };
 }
 
-/**
- * THE VOICE PICKER — stage D, and the half of his `<<Example>>` complaint that was
- * a choice rather than a bug.
- *
- * It offers the CATALOGUE voices for the field's own language, never a free-text
- * box: the stored names are Azure's, and the only synthesiser here is Google, so
- * a typed name would be a lookup key that makes nothing. The field's current name
- * stays selectable when it is off-catalogue, labelled as what it is — the voice
- * Mochi's clips are filed under — so opening the panel never proposes a change.
- *
- * `hear it` synthesises one fixed sample line and stores nothing: he picks with
- * his ear, which is how `ja-JP-Neural2-C` was chosen, instead of naming a voice
- * to an agent first.
- */
 function voicePicker(
   spec: SettingSpec,
   current: unknown,
@@ -695,7 +568,6 @@ function voicePicker(
   return wrap;
 }
 
-/** Play one sample line in a catalogue voice. Nothing is stored anywhere. */
 async function audition(voice: string, button: HTMLButtonElement): Promise<void> {
   button.disabled = true;
   const label = [...button.childNodes];
@@ -727,10 +599,6 @@ async function audition(voice: string, button: HTMLButtonElement): Promise<void>
   }
 }
 
-/**
- * One editable control, generated from its spec, or null when this build does
- * not draw one.
- */
 function settingControl(
   spec: SettingSpec,
   current: unknown,
@@ -784,13 +652,6 @@ function settingControl(
   return box;
 }
 
-/**
- * Ask what a change costs, show it, and write only on a yes.
- *
- * The tone follows the price: a change that silences nothing is an ordinary
- * confirm, one that silences clips gets the red button. The sentences are the same
- * either way — the count is the fact, the colour only repeats it.
- */
 async function confirmPriced(
   detail: TemplateDetail,
   field: TemplateFieldRow,
@@ -805,9 +666,6 @@ async function confirmPriced(
       fieldId: field.id,
       ...proposal,
     });
-    // A default that decides cards is RED even though no clip moves: on 単語's
-    // Reading it changes which exercise they run (decision 29), which decision 31
-    // puts on his side of the line — so it is never a quiet confirm.
     const silenced =
       reply.price.lines.some((line) => line.silenced > 0) || (reply.price.defaulted ?? 0) > 0;
     openConfirm(
@@ -823,15 +681,6 @@ async function confirmPriced(
 }
 
 function openAddField(detail: TemplateDetail, run: TemplateRunner): void {
-  // KINDS, named as everywhere else (decision 61). Zach, 2026-11-05, at this very
-  // dialog: *"why are we missing furigana here?"* — it kept its own list of
-  // storage types after the rest of the app moved to kinds, and still offered
-  // Long text. A Reading and a Pitch accent are wired to the head word by the
-  // worker (`addField`), so neither arrives as a field that can never fill.
-  //
-  // The generated kinds (`speech`, `ai`, `translate`) need a source and settings
-  // this form cannot ask for sensibly, and their values live in the generation
-  // cache, not on the card — so they are not offered here.
   const reading = fieldKind({ type: "plain", options: { [ROLE_KEY]: "reading" } }).label;
   const TYPES: readonly (readonly [string, string])[] = [
     ["plain", `${FIELD_KINDS.plain.label} — what you write`],
@@ -854,8 +703,6 @@ function openAddField(detail: TemplateDetail, run: TemplateRunner): void {
   const heading = document.createElement("h2");
   heading.textContent = `Add a field to ${detail.name}`;
   const text = document.createElement("p");
-  // It is still created local (decision 9) — that is the worker's job, and the
-  // reason is in DECISIONS.md, not in the dialog.
   text.textContent = "It shows nowhere until you put <<Name>> in the body.";
 
   const nameRow = document.createElement("label");

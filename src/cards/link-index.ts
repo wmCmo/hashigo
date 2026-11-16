@@ -1,27 +1,3 @@
-/**
- * KEEP `card_links` IN STEP WITH THE TEXT — for cards written after the import.
- *
- * Zach, 2026-10-26, on 紺's card with nothing under it: *"is it just me or I don't
- * see it"*. 濃紺 links `[[紺|JGZk6vTL]]`, and the backlink list (`./backlinks.ts`)
- * printed nothing, because **only the importer ever wrote `card_links`**. Every
- * card made or edited in the app since — and every value a sync brought in —
- * kept its `[[…]]` in `card_field_values` and never got a row. 36 cards on that
- * date, and they are exactly the new 漢検 words, whose links all point at kanji.
- *
- * ONE RECONCILE, NOT A HOOK PER WRITER. Values are written from fourteen places
- * (the editor, local fields, sync's merge, the backup's apply, the accent tools
- * …), so a hook in each is a list that is already incomplete. This compares the
- * parse of every value holding `[[` with the stored FIELD-scoped rows, card by
- * card, and rewrites only the cards that differ — the same delete-then-insert as
- * `importLinks`, for its reason (an upsert by ordinal leaves a ghost tail).
- *
- * CONTENT-SCOPED ROWS (`field_id IS NULL`) ARE NEVER TOUCHED. They came from
- * Mochi's `content`, 889 of them point into text the importer discarded, and 66
- * of those are edges that exist nowhere else (`ImportLinksResult.inDiscardedContent`).
- * Nothing in the app writes `content`, so nothing here could rebuild them.
- *
- * BROWSER-PORTABLE: `SqliteHandle`, no `node:` import. The worker runs it.
- */
 import type { SqliteHandle } from "../db/browser.js";
 import { linkDisplayText, parseWikiLinks } from "../text/render.js";
 
@@ -40,19 +16,14 @@ interface LinkRow {
 }
 
 export interface ReconcileReport {
-  /** Cards whose field-scoped rows were rewritten. 0 when the index was current. */
   readonly cards: number;
-  /** Rows written for those cards. */
   readonly rows: number;
 }
 
 const key = (r: LinkRow): string =>
   [r.field_id, r.ordinal, r.to_card_id, r.display_text].join(String.fromCharCode(0));
 
-/** Rewrite the field-scoped `card_links` of every card whose text says otherwise. */
 export function reconcileCardLinks(db: SqliteHandle): ReconcileReport {
-  // Values on cards that still exist: `from_card_id` is a foreign key, and an
-  // orphaned value (a deleted card's) has no card to hang a row on.
   const values = db
     .prepare(
       `SELECT v.card_id, v.field_id, v.value

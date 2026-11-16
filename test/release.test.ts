@@ -1,7 +1,3 @@
-/**
- * Decision 59's versioning rules — `scripts/release-rules.ts`, the one definition
- * `npm run release` and the cloud build's check both use.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -59,7 +55,6 @@ describe("the deploy check", () => {
   it("builds only a clean, tagged release", () => {
     expect(refuseDeploy({ version: "0.6.0", headTags: ["v0.6.0"], dirty: false })).toBeNull();
     expect(refuseDeploy({ version: "0.6.0", headTags: [], dirty: false })).toMatch(/not release v0\.6\.0/);
-    // A tag for another version is not this release.
     expect(refuseDeploy({ version: "0.6.1", headTags: ["v0.6.0"], dirty: false })).toMatch(/not release/);
     expect(refuseDeploy({ version: "0.6.0", headTags: ["v0.6.0"], dirty: true })).toMatch(/uncommitted/);
   });

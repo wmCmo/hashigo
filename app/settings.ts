@@ -1,10 +1,3 @@
-/**
- * SETTINGS — his #12: *"there should be settings, with all settings that this app
- * should have"*.
- *
- * Moved out of `main.ts` on 2026-09-25.
- */
-
 import type { ReplyFor } from "./protocol.js";
 import { applyTheme, currentTheme } from "./appearance.js";
 import { exportBackup } from "./backup-ui.js";
@@ -19,42 +12,6 @@ import { ask } from "./worker-client.js";
 import { localDate } from "./new-day.js";
 import { LATE_NIGHT_KEY, previousDate } from "../src/session/late-night.js";
 
-/**
- * *"i want to have a setting screen where i can adjust all the setting that we
- * have"*.
- *
- * **"All the settings we have" has an answer, and it is short.** It is the five
- * rows in `settings` plus the two keys `src/session/settings.ts` resolves — seven
- * — and every one of them is here. That is worth saying because the tempting
- * version of this screen invents preferences: a theme, a font size, an autoplay
- * toggle. There is no autoplay toggle, because decision 29 makes autoplay a
- * property of the CARD (`Reading`) and not of the app; putting a global switch
- * beside it would offer to break the 692 cards whose whole exercise is the silence.
- *
- * ─── EVERY CHANGE SAYS WHEN IT TAKES EFFECT, BECAUSE THEY DIFFER ────────────
- *
- * Two of these apply to the next GRADE and two to the next SESSION, and the
- * difference is not cosmetic — it decides whether he should reload:
- *
- *   `target_retention.default`   next grade. Read per card through
- *                                `deck_target_retention_resolved` at schedule time.
- *   `reverse.default`            next card built. `card_reverse_resolved` is a view.
- *   `new.limit`                  next session. `buildSession` runs once per open.
- *   `session.interleave`         next session, same reason.
- *
- * Rebuilding the session on a settings write was the alternative and it is worse:
- * it reshuffles the plan under a card he is halfway through, which is the same
- * reason `createCard` does not do it either.
- *
- * ─── AND WHAT IT SHOWS THAT IS NOT A SETTING ────────────────────────────────
- *
- * Storage, audio coverage and the versions. He would come here to check them and
- * they lived only in the boot log, which scrolls away the moment the first card
- * lands. The audio number is MEASURED here rather than quoted from the bootstrap
- * script's build-time print — see the worker's `settings`.
- */
-
-/** One control's shape, so the rows are data rather than five copies of a form. */
 interface SettingRow {
   readonly key: string;
   readonly label: string;
@@ -64,7 +21,6 @@ interface SettingRow {
     | { readonly kind: "number"; readonly min: number; readonly max: number; readonly step: number }
     | { readonly kind: "choice"; readonly options: readonly (readonly [string, string])[] }
     | { readonly kind: "text"; readonly placeholder: string };
-  /** Shown before the write lands. Absent means write straight away. */
   readonly confirm?: { readonly title: string; readonly body: string };
 }
 
@@ -214,10 +170,6 @@ export async function openSettings(): Promise<void> {
   status.className = "edit-status";
   status.setAttribute("aria-live", "polite");
 
-  // THE PANEL OPENS NOW — the dashboard's skeleton, for the same complaint. Measured
-  // in the pane: 250-300 ms on the laptop with nothing on screen. The theme row is
-  // real at once (it reads no database); every other row has its real label and
-  // note, and a disabled, pulsing control where its value will go.
   body.classList.add("is-loading");
   body.setAttribute("aria-busy", "true");
   body.appendChild(themeRow());
@@ -239,15 +191,11 @@ export async function openSettings(): Promise<void> {
     say((cause as Error).message, true);
     return;
   }
-  // Closed while it loaded: nothing to fill.
   if (!root.isConnected) return;
   body.replaceChildren();
   body.classList.remove("is-loading");
   body.removeAttribute("aria-busy");
 
-  // A stored value the session could not use. Loud, at the top, and naming both
-  // the text and the substitute — `readSessionSettings` collects these precisely
-  // so that a silently ignored setting is impossible.
   for (const bad of reply.resolved.rejected) {
     const warn = document.createElement("p");
     warn.className = "settings-bad";
@@ -258,29 +206,13 @@ export async function openSettings(): Promise<void> {
     body.appendChild(warn);
   }
 
-  // TWO OF THESE KEYS ARE NOT SEEDED, AND A BLANK BOX WOULD LIE ABOUT THEM.
-  //
-  // `new.limit` and `session.interleave` are resolved rather than stored
-  // (`src/session/settings.ts` says why that avoids a SCHEMA_VERSION bump), so on a
-  // database he has never touched they have no row. Rendering "" would show an
-  // empty new-cards box beside a state line reading "10 new/day" — the screen
-  // disagreeing with itself about the same number.
-  //
-  // So an absent row shows the value the session WILL use, and says it is not
-  // stored yet. Typing anything stores it; leaving it alone changes nothing.
   const effective: Readonly<Record<string, string>> = {
     "new.limit": String(reply.resolved.newLimit),
     "session.interleave": reply.resolved.interleave,
     "queue.exam-target": reply.resolved.examTarget,
   };
-  // FIRST, AND IT IS THE ONE ROW THAT DOES NOT WRITE TO THE DATABASE. Every
-  // other setting here syncs between his two devices (decision 33); a theme must
-  // not, because the laptop at his desk in the afternoon and the phone in bed at
-  // night are different answers to the same question. See `app/theme.ts`.
   body.appendChild(themeRow());
 
-  // Late night first among the database rows: it is the one he reaches for in a
-  // hurry, at 23:50 (`src/session/late-night.ts`).
   {
     const stored = reply.values[LATE_NIGHT_KEY];
     body.appendChild(settingRow(lateNightRow(stored), stored ?? "", stored === undefined, status));
@@ -298,14 +230,6 @@ export async function openSettings(): Promise<void> {
   (body.querySelector(".edit-input") as HTMLElement | null)?.focus();
 }
 
-/**
- * The theme picker — the same `.edit-row` shape as the six below it, so it does
- * not read as a different kind of thing, and a plainly different mechanism.
- *
- * `system` is a real choice rather than the absence of one. A phone that turns
- * dark at sunset is a feature he already has, and a two-way switch takes it away
- * the first time he touches it with no way back short of clearing site data.
- */
 function themeRow(): HTMLElement {
   const wrap = document.createElement("label");
   wrap.className = "edit-row";
@@ -380,9 +304,6 @@ function settingRow(
       input.min = String(row.control.min);
       input.max = String(row.control.max);
       input.step = String(row.control.step);
-      // A phone shows a number pad for this, which is the whole reason `type` is
-      // set rather than validating text — his rule is desktop parity, and a
-      // stepper he cannot use one-handed is not parity.
     } else {
       input.type = "text";
       input.placeholder = row.control.placeholder;
@@ -400,9 +321,6 @@ function settingRow(
     if (row.confirm === undefined) write();
     else openConfirm(row.confirm.title, row.confirm.body, "change it", write, "normal");
   };
-  // `change`, not `input`: a number box fires `input` on every keystroke, so
-  // typing "20" over "1" would write 2 and then 20 — two rows in the undo stack
-  // and one of them a value he never chose.
   control.addEventListener("change", commit);
   wrap.appendChild(control);
 
@@ -413,11 +331,6 @@ function settingRow(
   return wrap;
 }
 
-/**
- * LATE NIGHT — its options name real dates, so the row is built when the panel
- * opens rather than listed in `SETTING_ROWS`. "Go back to yesterday" is offered
- * only before 06:00, for the night he forgot to switch it on before midnight.
- */
 function lateNightRow(stored: string | undefined): SettingRow {
   const now = new Date();
   const today = localDate(now);
@@ -442,10 +355,6 @@ function lateNightRow(stored: string | undefined): SettingRow {
   };
 }
 
-/**
- * A value as the row shows it: a choice by its option's words up to the dash
- * ("準2級", not "準2"), anything else as typed, and nothing as "empty".
- */
 function shown(row: SettingRow, value: string): string {
   if (row.control.kind === "choice" && row.control.options.some(([option]) => option === value)) {
     const text = row.control.options.find(([option]) => option === value)?.[1] ?? value;
@@ -466,18 +375,9 @@ async function saveSetting(
   const key = row.key;
   try {
     const reply = await ask<"setSetting">({ kind: "setSetting", key, value });
-    // The row's own label, not the worker's key: "new cards per day: 10 → 20"
-    // rather than "new.limit: 10 → 20". The toast, the status line and the undo
-    // all read this one string.
-    // "From" is the value the worker actually replaced — the one the undo below
-    // restores — not the one the panel showed when it opened, which a second change
-    // in the same visit makes stale. `before` (the effective default) only for a
-    // key that had no stored row.
     const describe = `${row.label}: ${shown(row, reply.previous ?? before)} → ${shown(row, value)}`;
     status.textContent = describe;
     say(describe);
-    // His #13's "etc.". A settings change with no way back is the one kind he would
-    // have to repair by remembering what it used to be.
     pushUndo({
       describe,
       run: async () => {
@@ -490,7 +390,6 @@ async function saveSetting(
   }
 }
 
-/** The things he would open settings to CHECK, which are not rows. */
 function settingsState(reply: ReplyFor["settings"]): HTMLElement {
   const box = document.createElement("div");
   box.className = "settings-state";
@@ -527,9 +426,6 @@ function settingsState(reply: ReplyFor["settings"]): HTMLElement {
     box.appendChild(line);
   }
 
-  // Decision 17. The export lives in the banner too, and belongs here as well:
-  // the banner only appears when persistence was refused, and a backup is
-  // something he should be able to take on a day nothing is wrong.
   const backup = document.createElement("button");
   backup.type = "button";
   backup.className = "gcard-op";

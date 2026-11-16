@@ -1,26 +1,3 @@
-/**
- * WHERE SHOULD THE MAXIMUM INTERVAL BE, AND SHOULD THERE BE ONE AT ALL?
- *
- *   npx vite-node scripts/cap-derive.ts -- --db build/hashigo.db
- *
- * Zach's question, 2026-08-22: "365 days was a default number from mochi
- * flashcards, and I just accepted it as a good number because it's a year, but I
- * didn't derive it.  Are we supposed to have a max date at all?"
- *
- * A fair question, because `BACKTEST.md` shows MOCHI ITSELF LIFTED that cap on
- * 2026-02-22 and has since planned intervals up to 2,707 days.  So 365 is not
- * the source app's number any more either.
- *
- * Three sections, three separate questions:
- *
- *   A. Zach's Math.min proposal -- fuzz two-sided, then clamp back to the cap.
- *      The number to watch is not the worst day but how many tracks land on
- *      EXACTLY the cap, because each of those is back in the clump.
- *   B. Where does OBSERVATION run out?  A cap's only honest job is to stop the
- *      model extrapolating past its evidence, so this asks where the evidence
- *      ends rather than where a calendar year does.
- *   C. What each candidate cap costs in reviews per year.
- */
 import { openDatabase } from "../src/db/index.js";
 import { fsrs6NextInterval } from "../src/scheduler/algorithms/fsrs6.js";
 import {
@@ -70,14 +47,9 @@ function spread(shift: (row: Row) => number): { worst: number; cv: number } {
   return { worst: Math.max(...counts), cv: sd / mean };
 }
 
-// --- A. the Math.min proposal ----------------------------------------------
 console.log(`\nA. TWO-SIDED FUZZ, THEN CLAMPED BACK TO THE CAP - as of ${today}`);
 console.log(`   ${rows.length} live scheduled tracks\n`);
 
-// THE COHORT THAT MATTERS is the one sitting on exactly the cap -- that is the
-// clump fuzz exists to break.  Counting "tracks that end on exactly 365d" is
-// the honest measure of whether a scheme breaks it, because a track shoved back
-// onto the cap by a re-clamp has not been spread at all.
 const atCap = rows.filter((row) => row.sched === MAX_INTERVAL_DAYS);
 
 const report = (label: string, shift: (row: Row) => number): void => {
@@ -102,7 +74,6 @@ report("downward-only, 10% width", (row) => {
   return Math.round(row.sched * (row.sched >= MAX_INTERVAL_DAYS ? -Math.abs(f) : f));
 });
 
-// --- B. where does observation run out? ------------------------------------
 console.log(`\nB. WHERE THE EVIDENCE ENDS - measured elapsed gaps\n`);
 
 const tail = db
@@ -153,13 +124,6 @@ for (const b of buckets) {
   );
 }
 
-// THE CENSORING CHECK, and it decides how much the 454d edge is worth.
-//
-// Mochi capped its own intervals at 365d until 2026-02-22.  So if every gap
-// longer than 365 days came from a 365-day PLAN that he was simply late on,
-// then 454d is not a fact about his memory at 454 days -- it is Mochi's cap plus
-// his lateness.  There would then be no evidence about 500d or 900d at all,
-// and no amount of this corpus can produce any.
 const late = db
   .prepare(
     `SELECT count(*) AS n,
@@ -184,7 +148,6 @@ console.log(
     : `   => ${late.fromBeyond} of them came from a genuinely longer plan.`,
 );
 
-// --- C. what each candidate cap costs -------------------------------------
 console.log(`\nC. WHAT EACH CANDIDATE CAP COSTS\n`);
 
 const ids = db
@@ -210,16 +173,10 @@ console.log(
     `p99 ${at(0.99).toFixed(0)}d - max ${(raw.at(-1) ?? 0).toFixed(0)}d\n`,
 );
 
-// A track on interval i contributes 365/i reviews a year.  Capping LOWERS
-// intervals, so it RAISES this number: the cap's cost is extra reviews.
 const loadPerYear = (cap: number): number =>
   raw.reduce((sum, want) => sum + 365 / Math.max(1, Math.min(want, cap)), 0);
 const uncapped = loadPerYear(Number.POSITIVE_INFINITY);
 
-// The evidence column keys off the longest PLAN (365d), not the longest GAP
-// (454d).  Section B's censoring check is why: every gap past a year is
-// lateness against a <=365d request, so a 454d cap is no better evidenced than
-// a 500d one.  Both are extrapolation; only the amount differs.
 const LONGEST_PLAN = 365;
 console.log(`   cap        clipped tracks       reviews/yr   vs none   extrapolation past any PLAN`);
 for (const cap of [365, 400, 454, 500, 730, 1095, Number.POSITIVE_INFINITY]) {

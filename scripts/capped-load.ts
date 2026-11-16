@@ -1,21 +1,3 @@
-/**
- * What does the daily review load actually become under Zach's chosen policy —
- * FSRS-6 **capped at 365 days** — rather than the uncapped projection in
- * BACKTEST.md's "Target retention and daily load" table?
- *
- * The published table has a floor on the interval and no ceiling, so it answers
- * "what if intervals were unbounded". That is not the shipped policy. Capping
- * interacts with target retention: a cap clips exactly the long intervals that
- * lowering the target is supposed to buy, so the two decisions are not
- * independent and the saving from 0.95 -> 0.90 is smaller than the table implies.
- *
- * Steady-state identity, same as estimateWorkload: a track reviewed every I days
- * contributes 1/I reviews per day. Same ×1.27 correction applies — the model has
- * no new cards, no learning steps and no backlog, and was measured 21% low
- * against Mochi's own intervals.
- *
- *   npx vite-node scripts/capped-load.ts -- --db build/hashigo.db
- */
 import { openDatabase } from "../src/db/index.js";
 import { erase } from "../src/scheduler/algorithms/index.js";
 import {
@@ -34,7 +16,6 @@ const live = tracks.filter((t) => t.dormant === 0 && t.archived === 0);
 const relearningCost = measureRelearningCost(tracks);
 const recent = measureRecentLoad(db, 90);
 
-// The model was calibrated against Mochi's real intervals and ran 21% low.
 const CORRECTION = 1.27;
 
 const CANDIDATES = [

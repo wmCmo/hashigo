@@ -1,32 +1,3 @@
-/**
- * SEND ADJUDICATED `型` LABELS TO THE DEVICES — after an entry is added to
- * `src/accent/ojad.ts`.
- *
- *     npx vite-node scripts/accent-push.ts             # what it would send
- *     npx vite-node scripts/accent-push.ts -- --apply  # send it
- *
- * `accent/cli.ts ojad` + `write` fix `build/hashigo.db`, which no device reads:
- * since decision 41 each device's OPFS is the system of record, and a label only
- * reaches it through decision 33's mailbox. Zach, 2026-10-25, after 15 labels were
- * settled from jpdb.io.
- *
- * Same shape as `scripts/ojad-fill.ts`, for the same reasons:
- *
- *   1. Take what the devices hold: the seed (`build/app/hashigo-app.db`) with
- *      the freshest device payload merged in. That is the baseline, and the
- *      self-check's starting point.
- *   2. Apply every adjudication and re-materialise `型` there. Only cards whose
- *      WORD has an adjudication (or whose id has a card adjudication) are kept —
- *      a label he edited by hand on any other card is never sent back over.
- *   3. Send ONLY those `型` values from a slot of its own (`dev-accent-push`),
- *      each card's clock moved to now and its flags copied from the freshest
- *      payload. Values merge by their card's clock (e3254c5), so these win, and
- *      no other field of those cards is in the payload.
- *
- * The slot is CUMULATIVE, as `dev-ojad-fill` is: a later run keeps what earlier
- * runs sent. A self-check merges the payload into a fresh copy and refuses to send
- * unless every value lands and nothing else on those cards moved.
- */
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -88,9 +59,6 @@ const LABELS = `SELECT v.card_id AS cardId, v.field_id AS fieldId, v.value AS va
 type Label = { cardId: string; fieldId: string; value: string; name: string };
 
 try {
-  // ── 1-2. the devices' view, then the adjudications over it ───────────────
-  // What a device shows is the SEED it booted from plus every payload since — not
-  // `build/hashigo.db`, which `accent/cli.ts write` may already have corrected.
   const seedCopy = join(scratchDir, "seed.db");
   copyFileSync(SEED, seedCopy);
   const seed = openDatabase(seedCopy, { applySchema: false });
@@ -113,7 +81,6 @@ try {
   for (const l of changed) console.log(`  ${l.name}: ${before.get(`${l.cardId}|${l.fieldId}`)?.value ?? "(none)"} → ${l.value}`);
   console.log(`${changed.length} label(s) differ from what the devices hold`);
 
-  // ── 3. the payload: only 型 values, with a moved clock ───────────────────
   const now = new Date().toISOString();
   const previous = await payloadOf(SLOT);
   const flags = new Map(freshest.cardFlags.map((f) => [f.cardId, f]));
@@ -156,11 +123,9 @@ try {
     },
     cardFlags,
     deckFlags: [],
-    // `voicesCarried` left out: absent means this payload says nothing about voices.
     retiredClips: [],
   };
 
-  // ── SELF-CHECK, as a device would merge it ───────────────────────────────
   const checkFile = join(scratchDir, "check.db");
   copyFileSync(SEED, checkFile);
   const check = openDatabase(checkFile, { applySchema: false });

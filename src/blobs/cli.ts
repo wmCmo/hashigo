@@ -1,36 +1,3 @@
-/**
- * Blob-store operator tool.
- *
- *   npx vite-node src/blobs/cli.ts -- --db build/hashigo.db audit
- *   npx vite-node src/blobs/cli.ts -- --db build/hashigo.db verify
- *   npx vite-node src/blobs/cli.ts -- --db build/hashigo.db paths
- *   npx vite-node src/blobs/cli.ts -- --db build/hashigo.db stats
- *   npx vite-node src/blobs/cli.ts -- --db build/hashigo.db sweep --dry-run
- *   npx vite-node src/blobs/cli.ts -- --db build/hashigo.db --store D:/elsewhere.db audit
- *   npx vite-node src/blobs/cli.ts -- --db build/hashigo.db --store-dir D:/old.blobs audit
- *
- * Commands
- *   audit   Compare the database against the store. One index probe per blob.
- *   verify  As audit, but REHASH every payload. 657 MB of I/O on this corpus.
- *   paths   The acceptance query: sweep every column of every table for a
- *           LOCATION -- a drive-letter path in either separator, a UNC share, a
- *           POSIX absolute path, a file:// URL, or "exports" with a separator
- *           against it. Exits 1 on any hit. This is the check that the database
- *           is not welded to one machine, and the predicate is
- *           `findLocations` in db.ts -- shared with the test, because when the
- *           two were separate copies both were blind to the same four shapes.
- *   sweep   Delete every blob at refcount 0, row and payload. --dry-run counts.
- *   stats   Payload count, bytes, page accounting and free pages of the store
- *           itself, plus its own integrity_check. This is the command that
- *           answers "is the 660 MB file healthy and how much of it is holes".
- *
- * `--store` exists because the store's location is NOT in the database. It names
- * the blob-store DATABASE and defaults to `<database>.blobs.db`; pointing it
- * somewhere else is how you confirm a moved store still serves every reference.
- * `--store-dir` opens the legacy one-file-per-payload store instead — see
- * src/blobs/node.ts for why that still exists and why it is not the default.
- */
-
 import { existsSync } from "node:fs";
 
 import { openDatabase } from "../db/index.js";
@@ -50,7 +17,6 @@ const USAGE = `usage: vite-node src/blobs/cli.ts -- --db <file>
 
 type Command = "audit" | "verify" | "paths" | "sweep" | "stats";
 
-/** A newline, named: escaping one through four layers of tooling is not worth it. */
 const NL = String.fromCharCode(10);
 
 function fail(message: string): never {
@@ -119,14 +85,6 @@ function main(): void {
   const db = openDatabase(cli.dbFile, { applySchema: false });
   const out = (line: string): void => void process.stdout.write(`${line}\n`);
 
-  // Not opened for `paths`, which must work on a database whose payloads are
-  // somewhere else entirely -- that is the property it exists to prove.
-  //
-  // Caught, because "the store is not there" is the single most likely operator
-  // mistake and it deserves the command that fixes it rather than a vite-node
-  // stack trace. It is also not necessarily an error in the world: the store's
-  // location is NOT in the database, so a store that has moved is exactly what
-  // `--store` is for, and the message says so.
   let opened: OpenedSqliteStore | null = null;
   if (cli.command !== "paths" && cli.storeDir === null) {
     const file = cli.storeFile ?? defaultStoreDatabase(cli.dbFile);
@@ -161,21 +119,10 @@ function main(): void {
           : `PATHS FOUND:\n  ${offenders.join("\n  ")}`,
       );
 
-      // The payloads now live in a database of their own, so the acceptance
-      // check has a second file to answer for. Its `hash` column is CHECK-ed to
-      // 64 hex characters, so the only column that could hold a path is the
-      // payload -- which is why this sweeps the store's own tables and says so.
       const storeFile = cli.storeFile ?? defaultStoreDatabase(cli.dbFile);
       if (cli.storeDir === null && existsSync(storeFile)) {
-        // Opened with applySchema:false -- this is a payload store, not a card
-        // database, and openDatabase must not stamp one on top of the other.
         const storeDb = openDatabase(storeFile, { applySchema: false, readOnly: true });
         try {
-          // The payload column is scanned and reported but not failed on: 560 of
-          // the corpus's 10,816 mp3s have a path-shaped byte sequence in their
-          // first 4 KB, because compressed audio contains every byte pair
-          // eventually. See FindLocationsOptions.exclude -- this is the one
-          // exclusion, it is measured, and it is printed.
           const sweep = findLocations(storeDb, { exclude: ["blob_payloads.bytes"] });
           out(`store      sqlite:${storeFile}`);
           out(`  columns swept       ${sweep.columns} across ${sweep.tables} table(s)`);
@@ -236,7 +183,6 @@ function main(): void {
           : `deleted ${result.rowsDeleted} row(s), removed ${result.payloadsRemoved} payload(s), ` +
               `reclaimed ${result.bytesReclaimed} bytes`,
       );
-      // Deleting rows only moves pages to the freelist. Give them back.
       if (!cli.dryRun && opened !== null) {
         const pages = opened.store.reclaim();
         out(`returned ${pages} free page(s) to the filesystem`);

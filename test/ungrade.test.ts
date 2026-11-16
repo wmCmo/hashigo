@@ -10,35 +10,8 @@ import {
 } from "../src/scheduler/index.js";
 import { buildSession } from "../src/session/index.js";
 
-/**
- * UNDOING A GRADE — his request 13, and the one action in the app that could not be
- * taken back.
- *
- * *"when you ctrl+z, it should undo your last action, whether create card, review
- * card, remember card, forget card"*. Card operations had undo. Deck operations had
- * undo. Grading — the FIRST thing he named — pushed nothing onto the stack, and it is
- * the write that matters: a grade inserts a `reviews` row and advances the FSRS
- * schedule, so one mis-tap moved a card's next due date by up to 383 days (decision
- * 11's two-sided fuzz on a 365-day cap) with no way back short of editing SQLite.
- *
- * WHY THE UNDO SNAPSHOTS RATHER THAN DERIVES. `card_tracks.scheduler_state` is
- * serialised FSRS memory. Recomputing the previous value from the previous review
- * would RE-RUN the model — a second write dressed as a reversal. The deck-archive undo
- * learned this the expensive way one commit ago by erasing 234 hand-archived cards, so
- * `answer()` reads the seven columns a grade moves BEFORE moving them and
- * `unanswer()` puts exactly those back.
- *
- * NO CORPUS HERE, DELIBERATELY. An earlier draft imported the real export once per
- * test and took **118.9 seconds** — which is not merely slow, it is over birpc's
- * hard-coded 60 s RPC ceiling, so the file made `npm test` exit 1 on its own (see
- * `vitest.config.ts`). These are tests of undo ARITHMETIC, not of corpus scale, and a
- * hand-built one-track database says everything the 7,716-card one would. It also runs
- * in a bare clone, where `exports/` does not exist.
- */
-
 const MEMORY = ":memory:";
 
-/** One deck, one card, one track — the smallest thing a grade can happen to. */
 function fixture(): { db: ReturnType<typeof openDatabase>; trackId: number } {
   const db = openDatabase(MEMORY);
   db.prepare("INSERT INTO decks (id, name) VALUES ('d', '日本語')").run();
@@ -63,7 +36,6 @@ describe("ungradeTrack", () => {
     const before = snapshotTrack(db, trackId);
 
     const graded = gradeTrack(db, { trackId, remembered: 1 });
-    // The grade really did move things — otherwise the undo proves nothing.
     const moved = snapshotTrack(db, trackId);
     expect(moved).not.toEqual(before);
     expect(moved.reps).toBe(before.reps + 1);
@@ -90,10 +62,6 @@ describe("ungradeTrack", () => {
   });
 
   it("restores `scheduler_state`, which is the value that cannot be recomputed", () => {
-    // GRADE ONCE FIRST, or this test proves nothing: on a FRESH track
-    // `scheduler_state` is null, so "restore null" passes even against an undo
-    // hard-wired to write null. The assertion only has teeth over a track that
-    // already carries FSRS memory. Do not simplify the setup away.
     const { db, trackId } = fixture();
     gradeTrack(db, { trackId, remembered: 1 });
 
@@ -109,8 +77,6 @@ describe("ungradeTrack", () => {
   });
 
   it("restores every one of the seven columns a grade moves, from a non-empty state", () => {
-    // The whole-snapshot form of the above, for the same reason: `toEqual` over a
-    // fresh track compares a lot of nulls to a lot of nulls.
     const { db, trackId } = fixture();
     gradeTrack(db, { trackId, remembered: 1 });
     gradeTrack(db, { trackId, remembered: 0 });
@@ -129,10 +95,6 @@ describe("ungradeTrack", () => {
   });
 
   it("REFUSES to undo anything but the latest review on the track", () => {
-    // The track's schedule was computed FROM the newest review. Deleting an older one
-    // leaves a state derived from a review that is gone, and no later arithmetic is
-    // ever right again. A stack undoes newest-first anyway; this makes the wrong
-    // order impossible rather than merely unlikely.
     const { db, trackId } = fixture();
     const first = snapshotTrack(db, trackId);
     const one = gradeTrack(db, { trackId, remembered: 1 });
@@ -141,7 +103,6 @@ describe("ungradeTrack", () => {
     expect(() => ungradeTrack(db, { reviewId: one.reviewId, snapshot: first })).toThrow(
       /not the latest/,
     );
-    // And the refusal did not half-apply: both reviews are still there.
     expect(reviewCount(db, trackId)).toBe(2);
     db.close();
   });
@@ -168,15 +129,12 @@ describe("ungradeTrack", () => {
   });
 
   it("round-trips ten grades undone newest-first", () => {
-    // The real usage: several mis-taps in a row, ctrl+Z held down.
     const { db, trackId } = fixture();
     const start = snapshotTrack(db, trackId);
 
     const stack: { reviewId: number; snapshot: TrackSnapshot }[] = [];
     for (let i = 0; i < 10; i += 1) {
       const snapshot = snapshotTrack(db, trackId);
-      // `0 | 1`, not a boolean — `gradeTrack` binds this straight into SQLite, and a
-      // boolean throws at bind time rather than being coerced.
       const graded = gradeTrack(db, { trackId, remembered: i % 3 === 0 ? 0 : 1 });
       stack.push({ reviewId: graded.reviewId, snapshot });
     }
@@ -229,9 +187,6 @@ describe("ReviewSession.unanswer", () => {
   });
 
   it("pops the decision-13 re-ask that a FORGOT queued", () => {
-    // Decision 13: a forgotten card is shown again at the end of the session and is
-    // NOT graded. Undoing the forgot must take that queued re-ask with it, or the
-    // session grows a card he never answered.
     const { db } = fixture();
     const session = buildSession(db);
 
@@ -272,9 +227,6 @@ describe("ReviewSession.unanswer", () => {
   });
 
   it("writes the database BEFORE moving the cursor, so a refusal leaves them agreeing", () => {
-    // Order matters. If the cursor moved first, a refused write would leave a session
-    // that has rewound past a grade still on disk — the two halves disagreeing is
-    // worse than either failing.
     const { db } = fixture();
     const session = buildSession(db);
     const first = session.answer(true);
@@ -282,7 +234,6 @@ describe("ReviewSession.unanswer", () => {
     const answered = session.progress().answered;
 
     if (first.undo !== null) {
-      // Undoing the older grade on the same track is refused by `ungradeTrack`.
       const sameTrack =
         (db.prepare("SELECT track_id AS t FROM reviews ORDER BY id DESC LIMIT 1").get() as {
           t: number;

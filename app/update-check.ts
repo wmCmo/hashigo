@@ -1,35 +1,3 @@
-/**
- * A RUNNING APP NOTICES A NEW DEPLOY. Zach, 2026-10-27: his phone said
- * `c1f0cad` two days and six deploys later — *"worse"*. Everything since (the
- * backlink repair, the selection button, the accent helper's fills) had never
- * reached it.
- *
- * ─── WHY IT WAS STUCK ───────────────────────────────────────────────────────
- *
- * `sw.js` is network-first, so a fresh LOAD is current. But nothing checked
- * while the app was RUNNING, and on Android a tab or home-screen app he switches
- * away from is resumed, not reloaded — a page opened on the 25th is still the
- * 25th's code. (Not measured on the phone; it is the only path that fits, and
- * the fix covers the other one too, below.)
- *
- * ─── WHAT THIS DOES ─────────────────────────────────────────────────────────
- *
- * When the page becomes visible (at most once a minute — no timer, no polling:
- * SPEC problem #1), it reads the build's version file — written by
- * `serviceWorkerPrecache()` in `vite.app.config.ts`, and never stored by the
- * service worker. A different build than this one means a deploy
- * landed. Then:
- *
- *   · the service worker is asked to update FIRST, and the reload waits for the
- *     new one to activate — it precaches the new `index.html`, so a slow
- *     network's 3-second fallback (`NETWORK_WAIT_MS`) cannot serve the old shell
- *     straight back;
- *   · away five minutes or more, and no layer open (an editor holds a half-typed
- *     field): reload on its own — he is starting a sitting, and the boot screen
- *     syncs first anyway (decision 50);
- *   · otherwise a bar offers it, because reloading under a card he is halfway
- *     through would throw away the walk.
- */
 import { APP_BUILD } from "./version.js";
 
 const CHECK_GAP_MS = 60_000;
@@ -51,7 +19,6 @@ async function liveBuild(): Promise<string | null> {
   }
 }
 
-/** Ask for the new service worker and wait (bounded) until it is in charge. */
 async function primeWorker(): Promise<void> {
   const registration = await navigator.serviceWorker?.getRegistration().catch(() => undefined);
   if (registration === undefined) return;
@@ -108,7 +75,6 @@ async function check(awayMs: number): Promise<void> {
   offer(live);
 }
 
-/** Start watching. A build with no commit (tests, a bare checkout) never checks. */
 export function watchForUpdates(): void {
   if (APP_BUILD === "") return;
   document.addEventListener("visibilitychange", () => {
@@ -118,7 +84,5 @@ export function watchForUpdates(): void {
     }
     void check(hiddenAt === 0 ? 0 : Date.now() - hiddenAt);
   });
-  // Once after boot as well: a load the service worker answered from its cache
-  // (the network took longer than its deadline) can itself be an old build.
   void check(0);
 }

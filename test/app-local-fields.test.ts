@@ -3,23 +3,6 @@ import { describe, expect, it } from "vitest";
 import { mergeLocalFields, reapplyCorrections, type FieldsDb } from "../app/local-fields.js";
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 
-/**
- * FILE 4, THE ONE THAT CARRIES WHAT MOCHI NEVER HAD.
- *
- * Zach, 2026-09-17, over a 風潮 card on his phone: *"somehow ojad field is not
- * here..."*. It had been fixed on the laptop an hour earlier and could not cross,
- * because the card database is re-fetched only when `seedReviews` differs and
- * authoring a field value moves that by zero.
- *
- * THE PROPERTY THESE PROTECT is that the merge may ADD and may never OVERWRITE —
- * `setField` and decision 29's `Reading → true` both write values on the device,
- * and a seed that took those back would do it silently, on a boot that looked
- * like a download.
- *
- * In `app/` over a structural handle for `deck-scope.ts`'s reason: `test/` cannot
- * import the worker, and worker SQL nobody can test is how the deck archive
- * shipped inverted.
- */
 function fixture(): Db {
   const db = openDatabase(MEMORY);
   db.prepare("INSERT INTO decks (id, name) VALUES ('d', 'deck')").run();
@@ -66,8 +49,6 @@ describe("merging the local-field seed", () => {
       );
       expect(report).toMatchObject({ added: 1, differs: 0, unknownCards: 0, fields: 1 });
       expect(valueOf(db, "c1", "ojad")).toBe("えすえぬえ*す");
-      // The declaration is what makes it renderable at all — this is how `ojad`
-      // itself would arrive on a device that had never seen the field.
       expect(
         db.prepare("SELECT type FROM template_fields WHERE template_id='t' AND id='ojad'").get(),
       ).toMatchObject({ type: "plain" });
@@ -80,7 +61,6 @@ describe("merging the local-field seed", () => {
     const db = fixture();
     try {
       mergeLocalFields(db as unknown as FieldsDb, [OJAD], []);
-      // Stand-in for `setField` / decision 29's `Reading` flip: something he did here.
       db.prepare(
         "INSERT INTO card_field_values (card_id, field_id, value) VALUES ('c1', 'ojad', 'HIS')",
       ).run();
@@ -95,8 +75,6 @@ describe("merging the local-field seed", () => {
       );
       expect(valueOf(db, "c1", "ojad")).toBe("HIS");
       expect(valueOf(db, "c2", "ojad")).toBe("NEW");
-      // AND IT SAYS SO. A value stuck on the device must not look like one in
-      // agreement — that is decision 33's deferred clock made visible.
       expect(report).toMatchObject({ added: 1, differs: 1 });
     } finally {
       db.close();
@@ -118,9 +96,6 @@ describe("merging the local-field seed", () => {
   it("skips a value whose card is not here, instead of losing the whole merge", () => {
     const db = fixture();
     try {
-      // `card_field_values` has a foreign key to `cards`. Letting this throw would
-      // take every other value in the transaction with it, and 8,958 tombstones
-      // make a missing card an ordinary thing rather than a corrupt file.
       const report = mergeLocalFields(
         db as unknown as FieldsDb,
         [OJAD],
@@ -137,9 +112,6 @@ describe("merging the local-field seed", () => {
   });
 
   it("replaces a value ONLY while it still equals what the pipeline wrote before", () => {
-    // 2026-09-25: 辞書の裁定で 20 枚あまりの `型` が変わり、挿入のみでは一枚も
-    // 届かなかった。`was` は裁定前に OpenJTalk が書いたラベル。端末の値がそれと
-    // 一字一句同じなら彼の編集ではない — 置き換えてよいのはその値だけ。
     const db = fixture();
     try {
       mergeLocalFields(db as unknown as FieldsDb, [OJAD], []);
@@ -156,11 +128,9 @@ describe("merging the local-field seed", () => {
       ];
       const report = mergeLocalFields(db as unknown as FieldsDb, [OJAD], served, corrections);
       expect(valueOf(db, "c1", "ojad")).toBe("平板");
-      // c2 は 'HIS' — `was` と一致しないので、彼の編集として残る。
       expect(valueOf(db, "c2", "ojad")).toBe("HIS");
       expect(report).toMatchObject({ added: 0, corrected: 1, differs: 1 });
 
-      // もう一度走らせても何も起きない: c1 は一致、c2 は相変わらず彼のもの。
       const again = mergeLocalFields(db as unknown as FieldsDb, [OJAD], served, corrections);
       expect(again).toMatchObject({ added: 0, corrected: 0, differs: 1 });
     } finally {
@@ -169,8 +139,6 @@ describe("merging the local-field seed", () => {
   });
 
   it("ignores a correction that is not to the value being served", () => {
-    // 古いファイルの残りか、作り手の誤り。どちらにしても、配られていない値へ
-    // 書き換える根拠にはならない。
     const db = fixture();
     try {
       mergeLocalFields(db as unknown as FieldsDb, [OJAD], []);
@@ -191,8 +159,6 @@ describe("merging the local-field seed", () => {
   });
 
   it("re-corrects a value a sync merge carried back — and still never touches his edit", () => {
-    // 2026-10-10 実測：クラウドの mailbox の 6 枠のうち 5 枠が、訂正済みの `型` 22 件を
-    // 古い値で運んでいた。起動時の訂正の直後に同期のマージが戻していた。
     const db = fixture();
     try {
       mergeLocalFields(db as unknown as FieldsDb, [OJAD], []);
@@ -206,7 +172,6 @@ describe("merging the local-field seed", () => {
       expect(reapplyCorrections(db as unknown as FieldsDb, corrections)).toBe(1);
       expect(valueOf(db, "c1", "ojad")).toBe("平板");
       expect(valueOf(db, "c2", "ojad")).toBe("HIS");
-      // 冪等：二度目は何もしない。
       expect(reapplyCorrections(db as unknown as FieldsDb, corrections)).toBe(0);
     } finally {
       db.close();
@@ -217,9 +182,6 @@ describe("merging the local-field seed", () => {
     const db = fixture();
     try {
       mergeLocalFields(db as unknown as FieldsDb, [OJAD], []);
-      // The device holds ONE value the file does not, and is missing ONE it does.
-      // The totals match at 1 = 1, which is exactly the state the first cut of
-      // this skipped on — and 風潮's annotation was invisible for a whole boot.
       db.prepare(
         "INSERT INTO card_field_values (card_id, field_id, value) VALUES ('c1', 'ojad', 'OLD')",
       ).run();

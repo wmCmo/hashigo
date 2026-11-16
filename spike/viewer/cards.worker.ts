@@ -1,27 +1,3 @@
-/**
- * THROWAWAY (spike harness) — the viewer's dedicated Worker. Every SQL statement
- * in this slice runs here, because `opfs-sahpool` refuses to install anywhere
- * else (measured: spike/README.md, "Can it run on the main thread? No").
- *
- * Two databases, and the split is production's:
- *
- *   /hashigo.db                 the card database. Fetched once from
- *                               `/hashigo-bootstrap.db` (vite.config.ts serves it
- *                               from build/spike/) and imported into OPFS. It is
- *                               the SAME OPFS filename spike/ uses, so if the
- *                               stage-0.5 page has already run, this reattaches
- *                               in ~2 ms and downloads nothing.
- *   /hashigo-viewer-blobs.db    a real SqliteBlobStore holding the audio
- *                               payloads, built by make-viewer-db.ts. Separate
- *                               file because payloads are separate — decision 4.
- *
- * WHAT THIS WORKER WILL NOT DO: mint an object URL. `URL.createObjectURL` exists
- * here (measured in spike/audio: a URL minted in a worker does resolve in the
- * document), and it is still wrong — the worker cannot know when an `<audio>`
- * element is finished, so it cannot be the thing holding the handle. Bytes cross
- * as a transferred ArrayBuffer and the page owns the lease.
- */
-
 import payloadDatabaseUrl from "./hashigo-viewer-blobs.db?url";
 
 import { readBlob } from "../../src/blobs/db.js";
@@ -67,9 +43,7 @@ const n = (value: unknown): string => Number(value).toLocaleString("en-US");
 let cards: BrowserDb | null = null;
 let payloads: BrowserDb | null = null;
 let store: SqliteBlobStore | null = null;
-/** Every address this harness store holds. Built once; see the note in `open`. */
 let held = new Set<string>();
-/** The resolved deck list, built once: `card` needs a deck path per load. */
 let deckCache: DeckBrief[] | null = null;
 
 self.onmessage = (event: MessageEvent<ViewerRequest>): void => {
@@ -104,7 +78,6 @@ function db(): BrowserDb {
   return cards;
 }
 
-/** Fetch a prebuilt database into OPFS, unless OPFS already holds it. */
 async function ensureInOpfs(name: string, url: string, reimport: boolean, hint: string): Promise<void> {
   if ((await databaseFilesInOpfs()).includes(name) && !reimport) {
     log(`  ${name} is already in OPFS — not re-importing`);
@@ -173,9 +146,6 @@ async function open(id: number, reimport: boolean): Promise<void> {
       "FROM blobs b JOIN blob_refs r ON r.blob_hash = b.hash WHERE b.kind = 'speech'",
   );
   oracle.push(["speech blobs / cards", `${n(audio.blobs)} / ${n(audio.cards)}`]);
-  // `store.has()` per row would be 10,791 round trips through the OPFS handle —
-  // 9.2 s of blocked worker, measured on the first run of this harness. One pass
-  // over the store's own index and a Set intersection is 1,206 rows and ~5 ms.
   held = new Set(store.list());
   const present = db().prepare("SELECT hash FROM blobs WHERE kind = 'speech'").all() as {
     hash: string;
@@ -191,7 +161,6 @@ async function open(id: number, reimport: boolean): Promise<void> {
   post({ kind: "opened", id, facts, oracle, decks });
 }
 
-/** `親 / 子` paths, resolved in one pass so the deck select reads properly. */
 function deckList(): DeckBrief[] {
   if (deckCache !== null) return deckCache;
   const rows = db().prepare("SELECT id, parent_id, name FROM decks").all() as {
@@ -203,8 +172,6 @@ function deckList(): DeckBrief[] {
   const path = (id: string): string => {
     const parts: string[] = [];
     let at: string | undefined = id;
-    // Depth-bounded: a cycle would hang the worker, and the schema only CHECKs
-    // that a deck is not its own parent.
     for (let guard = 0; at !== undefined && guard < 16; guard += 1) {
       const row = byId.get(at);
       if (row === undefined) break;
@@ -256,8 +223,6 @@ function browse(id: number, deckId: string | null, limit: number): void {
 function card(id: number, cardId: string | null, deckId: string | null, withAudio: boolean): void {
   let target = cardId;
   if (target === null) {
-    // Random, honestly random: ORDER BY random() over the candidate set rather
-    // than an offset, so a deck's tail is as reachable as its head.
     const clauses = ["1 = 1"];
     const params: unknown[] = [];
     if (deckId !== null) {
@@ -396,15 +361,6 @@ function card(id: number, cardId: string | null, deckId: string | null, withAudi
   post({ kind: "card", id, card: bundle });
 }
 
-/**
- * Bytes for one address.
- *
- * `readBlob` looks inline first and only then asks the store, which is what makes
- * the 26,947 inline text generations free: they are already in the card database.
- * The bytes are re-hashed here, in the browser, so "these are the corpus's bytes"
- * is checked rather than asserted, and then TRANSFERRED — the worker keeps no
- * copy, and no object URL is minted on this side of the line.
- */
 function payload(id: number, hash: string): void {
   const readStart = performance.now();
   let bytes: Uint8Array;
@@ -426,9 +382,6 @@ function payload(id: number, hash: string): void {
   const readMs = performance.now() - readStart;
   const mime = (db().prepare("SELECT mime FROM blobs WHERE hash = ?").pluck().get(hash) as string) ?? "";
   const addressOk = sha256Hex(bytes) === hash;
-  // A fresh Uint8Array over its own buffer: better-sqlite3-shaped handles can
-  // hand back a view into a larger buffer, and transferring that would move more
-  // than the payload.
   const copy = bytes.slice();
   post({ kind: "payload", id, hash, bytes: copy, mime, readMs, addressOk }, [copy.buffer]);
 }

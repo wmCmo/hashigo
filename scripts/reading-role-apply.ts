@@ -1,27 +1,3 @@
-/**
- * DECLARE DECISION 29'S SWITCH BY ROLE — stage G of fields-as-modules, last.
- *
- *     npx vite-node scripts/reading-role-apply.ts -- --db build/hashigo.db [--apply]
- *
- * `src/review/mode.ts` used to find the field that decides the produce/identify
- * split by NAME and TYPE (`Reading`, boolean). It now asks for the
- * `hashigo-role: reading-switch` role first and keeps the name+type test as the
- * fallback. This writes the role — on the one field the fallback already picks,
- * on each template that runs the accent drill (declares an `accent` field), so
- * the two answers cannot disagree on the day it lands.
- *
- * ─── WHY THIS ONE WENT LAST ─────────────────────────────────────────────────
- *
- * The moment the role and the name disagree, 693 cards change which exercise
- * they run — autoplay on entry and the accent given away before he has produced
- * it, which is the defect decision 29 exists to prevent. So the role goes onto
- * exactly the field the name picks, `test/review.test.ts` pins that the two
- * lookups agree on every template, and the census must not move.
- *
- * Idempotent and quiet: a template whose switch already carries the role is
- * reported and not touched, so a re-run does not bump `updated_at` and hand a
- * sync a false "newer" row.
- */
 import { withRole, roleOf } from "../src/fields/index.js";
 import { openDatabase } from "../src/db/index.js";
 import { READING_FIELD } from "../src/review/index.js";
@@ -32,8 +8,6 @@ const apply = process.argv.includes("--apply");
 
 const db = openDatabase(path, { readOnly: !apply, applySchema: false });
 try {
-  // Declaration-time name lookup, and ONLY here — after this runs, the mode
-  // finds the field by the role this writes.
   const rows = db
     .prepare(
       `SELECT t.name AS template, f.template_id AS templateId, f.id AS id, f.options AS options

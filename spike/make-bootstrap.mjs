@@ -1,19 +1,3 @@
-/**
- * THROWAWAY (spike harness). Produce the prebuilt database the spike page fetches.
- *
- *   node spike/make-bootstrap.mjs [--db build/hashigo.db] [--out build/spike/hashigo-bootstrap.db]
- *
- * Why this exists at all: `build/hashigo.db` is in WAL mode (its header bytes 18
- * and 19 are both 2) and it has `-wal` / `-shm` sidecars. `opfs-sahpool` stores
- * one file per name, so a sidecar cannot be imported — anything still living only
- * in the `-wal` file would be silently missing in the browser. `VACUUM INTO`
- * reads through the WAL and writes one self-contained, checkpointed,
- * delete-journal file, which is exactly what `importDb()` wants.
- *
- * It opens the source READ-ONLY on purpose: other work in this repo uses
- * `build/hashigo.db` at the same time and a bootstrap step must not checkpoint,
- * relocate or otherwise touch it.
- */
 import { existsSync, mkdirSync, openSync, readSync, closeSync, statSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
@@ -36,7 +20,6 @@ if (!existsSync(source)) {
   process.exit(1);
 }
 
-/** Header bytes 18 and 19: 1 = rollback journal, 2 = WAL. */
 function journalHeader(file) {
   const fd = openSync(file, "r");
   try {
@@ -69,8 +52,6 @@ db.close();
 
 const after = journalHeader(target);
 if (after.write !== 1) {
-  // Belt and braces: VACUUM INTO is documented to emit a plain rollback-journal
-  // file, but if that ever changes, fix it here rather than in the browser.
   const fix = new Database(target);
   fix.pragma("journal_mode = delete");
   fix.close();

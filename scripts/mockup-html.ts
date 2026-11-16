@@ -1,20 +1,3 @@
-/**
- * Stage-7 mockups, step 2 of 2: four chromes over the cards step 1 extracted.
- *
- *   npx vite-node scripts/mockup-cards.ts     # first — writes cards.json
- *   npx vite-node scripts/mockup-html.ts      # then  — writes the pages
- *
- * A2 is the CHOSEN one (decision 23). A, B and C are kept because the decision was
- * made by comparing them, and a rejected option is part of the record.
- *
- * Everything on screen is real: sides from `src/render`, audio bytes out of the
- * 617.9 MiB store, accents from the `accents` table. Where a generator is still
- * pending in the corpus (furigana, ai) it is shown as a labelled chip rather than
- * faked, so nothing here reads as working when it is not.
- *
- * THE HARD RULE IS HONOURED: an audio element gets its `src` and its `play()`
- * only from `reveal()`. Nothing plays on card entry.
- */
 import { readFileSync, writeFileSync } from "node:fs";
 
 interface Card {
@@ -34,7 +17,6 @@ const cards: Card[] = JSON.parse(readFileSync("build/mock/out/cards.json", "utf-
 
 const JP = '"Hiragino Kaku Gothic ProN","Yu Gothic","Yu Gothic UI",Meiryo,"Noto Sans JP"';
 
-/** The derived contour as high/low mora blocks. 平板 (0) = low then high. */
 function contour(reading: string | null, pos: number | null): string {
   if (reading === null || pos === null) return "";
   const mora: string[] = [];
@@ -57,8 +39,6 @@ const SHARED_JS = [
   "  var s = screens[i];",
   "  if (!s) return;",
   "  s.dataset.state = 'prompt';",
-  // Entering a card must leave it silent AND unloaded: dropping the src is what
-  // makes re-entry incapable of playing without another reveal.
   "  s.querySelectorAll('audio').forEach(function (a) { a.pause(); a.removeAttribute('src'); });",
   "  document.querySelectorAll('.progress-now').forEach(function (e) { e.textContent = String(i + 1); });",
   "}",
@@ -95,8 +75,6 @@ const SHARED_JS = [
 
 function audioEl(c: Card, controls: boolean): string {
   if (c.audio === null) return '<span class="chip">no clip in the store for this card</span>';
-  // No `src` here on purpose — reveal() assigns it. `controls` only where the
-  // native player IS the control; direction C ships its own button instead.
   return '<audio data-clip="' + c.audio + '" preload="none" class="clip"' + (controls ? " controls" : "") + "></audio>";
 }
 
@@ -122,7 +100,6 @@ function realSides(c: Card): string {
     .join("");
 }
 
-/** 型. Decision 20 puts it on side 2, immediately above `<<Speech>>`. */
 function typeBadge(c: Card): string {
   if (c.accentType === null) return "";
   const pos = c.accentPos === null ? "" : ' <span class="pos">' + String(c.accentPos) + "</span>";
@@ -130,17 +107,12 @@ function typeBadge(c: Card): string {
 }
 
 const COMMON_CLOZE_CSS = [
-  // The mockup shows the revealed form, so the mask is out and the answer is in.
   ".hashigo-cloze-mask{display:none}",
   ".hashigo-cloze-answer{display:inline!important}",
   "ruby rt:empty::after{content:'—';opacity:.45}",
-  // The pending <<Speech>> element the renderer emits has no src in a mockup —
-  // the resolved clip is shown in the chrome above instead. A dead native player
-  // is worse than none, so it is hidden rather than left tappable.
   ".realside audio{display:none}",
 ].join("");
 
-// ─── A. TERMINAL ─────────────────────────────────────────────────────────────
 const A =
   '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
   "<title>Hashigo · A — terminal</title><style>" +
@@ -223,7 +195,6 @@ const A =
   SHARED_JS +
   "</script>";
 
-// ─── B. DOCUMENT ─────────────────────────────────────────────────────────────
 const B =
   '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
   "<title>Hashigo · B — document</title><style>" +
@@ -296,7 +267,6 @@ const B =
   SHARED_JS +
   "</script>";
 
-// ─── C. THUMB-FIRST ──────────────────────────────────────────────────────────
 const C =
   '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
   "<title>Hashigo · C — thumb</title><style>" +
@@ -377,22 +347,6 @@ const C =
   SHARED_JS +
   "</script>";
 
-// ─── A2. TERMINAL, RIGHT-HANDED ──────────────────────────────────────────────
-// A's look with C's hand. Four changes, each from a stated reason:
-//   1. The controls are pinned to the bottom edge. In A they sat wherever the
-//      content ended -- measured at y=894 on an 812px viewport, i.e. below the
-//      fold -- so grading meant scrolling first, ~100x a day.
-//   2. Replay is C's round button, bottom RIGHT, because the phone is held in a
-//      RIGHT hand. A native <audio controls> puts the play affordance at the far
-//      LEFT of a full-width strip, which is the worst corner for that thumb.
-//   3. The keycap hints render ONLY where a real pointer exists
-//      (`@media (hover: hover) and (pointer: fine)`). NOT behind a tooltip: a
-//      phone has no hover, which is decision 19's own argument.
-//   4. Contrast. A's side labels were 2.21:1 and its deck/meta 3.61:1; both now
-//      clear AA on #111214 (5.77:1 and 6.44:1, measured).
-// `remembered` stays on the RIGHT: over 103,110 corpus reviews retention is
-// 96.24%, so ~96 of every 100 taps are that button, and it belongs under the
-// thumb that is already there.
 const A2 =
   '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
   "<title>Hashigo &middot; A2 &mdash; terminal, right-handed</title><style>" +
@@ -405,8 +359,6 @@ const A2 =
   "position:sticky;top:0;background:#111214;z-index:4}" +
   "main{padding:24px 16px 132px;max-width:720px;margin:0 auto;width:100%}" +
   ".deck{color:#9298a0;font-size:12px;margin-bottom:22px}" +
-  // Decision 25. Ink + border, NOT the accent green: green means `remembered`
-  // and nothing else. A second near-green reads as a bug.
   ".newtag{display:inline-block;border:1px solid #4d5158;color:#e6e6e6;" +
   "font-size:10px;letter-spacing:.14em;text-transform:uppercase;padding:2px 7px;" +
   "margin-left:10px;vertical-align:1px}" +
@@ -421,8 +373,6 @@ const A2 =
   ".reading{font-family:" +
   JP +
   ",sans-serif;font-size:30px;color:#e2b714;margin:22px 0 6px;letter-spacing:.06em}" +
-  // Green belongs to `remembered` and nothing else: a second near-green reads as
-  // a bug. Zach's own one-accent rule, which this badge was breaking.
   ".kata{display:inline-block;border:1px solid #4d5158;color:#e6e6e6;padding:2px 8px;font-size:13px;" +
   "margin-left:10px;vertical-align:middle}" +
   ".kata .pos{color:#9298a0}" +
@@ -509,7 +459,6 @@ const A2 =
   SHARED_JS +
   "</script>";
 
-// A phone-sized chooser, so one tunnel URL reaches all three.
 const INDEX =
   '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
   "<title>Hashigo · stage-7 directions</title><style>" +

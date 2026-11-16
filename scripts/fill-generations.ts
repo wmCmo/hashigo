@@ -1,75 +1,3 @@
-/**
- * FILL EVERY GENERATION MOCHI NEVER MADE.
- *
- * ─── WHY THERE ARE ANY ──────────────────────────────────────────────────────
- *
- * Mochi generated LAZILY, on render. A card whose side he rarely reached never
- * had its content made, and the import carried the hole across. Measured over
- * the whole corpus on 2026-09-15:
- *
- *     kind         slots   missing      %   cards
- *     ai          10,322     1,182  11.5%   1,182     every one an EMOJI LINE
- *     speech      10,461       785   7.5%     627     576 sentences, 209 words
- *     furigana     3,377       350  10.4%     350     NOT FILLED HERE — see below
- *     translate    3,760       129   3.4%     129
- *     image             8         0   0.0%       0
- *     dictionary        0         —      —       —     no template declares one
- *
- * The lazy-render theory is supported rather than assumed: cards carrying a gap
- * average **7.5 reviews against 15.8** for cards with none. Exposure, not
- * corruption.
- *
- * **178 of the missing speech are head words on mode-2 cards**, where decision 29
- * makes the clip the QUESTION. Those cards currently ask nothing at all, and they
- * are the reason this script exists rather than waiting for him to tap 627 times.
- *
- * ─── WHAT THIS DELIBERATELY DOES NOT FILL ───────────────────────────────────
- *
- * **`furigana`.** 336 of the 340 with real input already have a reading derived
- * by the accent pipeline — OpenJTalk plus the UniDic cross-check, 33 adjudicated
- * against OJAD by hand, and 57 left disputed ON PURPOSE. A reading is the thing
- * being drilled on a `Reading = true` card, so asking a language model to guess
- * one where a measurement exists is exactly the trade decision 8 refuses: *a
- * wrong accent drilled is worse than no accent*. That fill is a different script
- * reading `accents.reading`, and it needs no network at all.
- *
- * `image` has no gaps. `dictionary` has no field.
- *
- * ─── A GENERATION IS PERMANENT, SO THE MODEL IS CHOSEN BEFORE THE RUN ───────
- *
- * There is no "regenerate anyway": the schema holds ONE payload per generation
- * identity, so overruling a cached answer means deleting a row that may be
- * referenced — a foreign key refuses, which is how that was found. Whatever runs
- * here is what those cards say from now on.
- *
- * Measured on his machine before choosing, on real corpus words:
- *
- *     word          qwen3:8b            gpt-oss:20b
- *     あれこれ       timed out / 💭×10   🗂️🔀🤷‍♂️
- *     のみならず     📘✨                 🌟➕💫
- *     舐める         👅👄💋              👅🍭
- *
- * qwen3:8b degenerates into repeated emoji on abstract words. **gpt-oss:20b is
- * the default here**, at ~8.2 s a call warm — about three hours for 1,311 text
- * gaps, free, on his own GPU.
- *
- * ─── IT IS RESUMABLE BY CONSTRUCTION, NOT BY BOOKKEEPING ────────────────────
- *
- * Every item is looked up again immediately before it is filled, so a run that is
- * interrupted — or run twice, or run while he fills one by hand from the phone —
- * simply skips what is already there. There is no progress file to go stale.
- *
- * SEQUENTIAL, deliberately, both halves. `respeak-cli` settled it for TTS (a 429
- * mid-run costs more than the wall clock saved) and the local model is one GPU:
- * parallel requests queue inside Ollama and return no faster.
- *
- *     npx vite-node scripts/fill-generations.ts -- --dry
- *     npx vite-node scripts/fill-generations.ts -- --kind ai --limit 5
- *     npx vite-node scripts/fill-generations.ts --
- *
- * NOTE FOR AN AGENT: the Bash tool here is network-sandboxed and cannot reach
- * `127.0.0.1:11434`. Run this from PowerShell.
- */
 import { existsSync } from "node:fs";
 
 import { synthesise } from "../src/accent/speech.js";
@@ -98,7 +26,6 @@ function arg(name: string, fallback: string): string {
 }
 const flag = (name: string): boolean => process.argv.includes(`--${name}`);
 
-/** One thing to make, with everything its identity is keyed on. */
 interface Gap {
   readonly kind: BlobKind;
   readonly text: string;
@@ -109,21 +36,11 @@ interface Gap {
   readonly cardName: string;
 }
 
-/**
- * Every unresolved generation, by identity.
- *
- * DEDUPED, because the identity is the unit of work and not the card: two cards
- * sharing a sentence share one generation, and filling it twice would be one
- * wasted call and — for speech — one wasted payment.
- */
 function sweep(db: Db, kinds: ReadonlySet<string>): Gap[] {
   const cards = db.prepare("SELECT id, name FROM cards WHERE archived = 0").all() as {
     id: string;
     name: string;
   }[];
-  // Per card through `cardGaps` — the same question the app now asks of one card
-  // when it is created — and deduped again ACROSS cards here, which is the half
-  // only a corpus sweep has.
   const seen = new Set<string>();
   const gaps: Gap[] = [];
   for (const card of cards) {
@@ -145,25 +62,6 @@ function sweep(db: Db, kinds: ReadonlySet<string>): Gap[] {
   return gaps;
 }
 
-/**
- * IS IT ALREADY THERE? ASKED THROUGH THE SHIPPING RESOLVER, NOT A COPY OF IT.
- *
- * ─── THE FIRST DRAFT GOT THIS WRONG AND THE DRY RUN CAUGHT IT ───────────────
- *
- * It looked speech up under `FILL_VOICE`, reasoning that this is where a filled
- * clip is stored. True, and useless as a presence test: **all 10,461 existing
- * clips are filed under Nanami**, so every one of them read as absent and the dry
- * run offered to synthesise 10,428 of them for $2.65 instead of 785 for $0.40.
- *
- * The rule that is actually wanted — ask under the voice the CARD requests, and
- * fall back to the fill voice — already exists, in `resolveAudioHash`, and is the
- * rule the review screen plays by. So this calls it rather than restating it. A
- * second copy of a fallback is how the batch and the screen come to disagree
- * about which cards are silent.
- *
- * `cardId` is a placeholder: it is read only for `attachment` addresses, and
- * every gap here is a generator slot.
- */
 function present(
   db: Db,
   request: { kind: BlobKind; text: string; voice: string | null; lang: string | null; options: Readonly<Record<string, string>> },
@@ -211,7 +109,6 @@ async function main(): Promise<number> {
   }
   const speechChars = all.filter((g) => g.kind === "speech").reduce((n, g) => n + g.text.length, 0);
   if (speechChars > 0) {
-    // SAID BEFORE THE MONEY, NOT AFTER — `respeak-cli`'s rule.
     console.log(
       `\n    speech: ${speechChars.toLocaleString()} characters ` +
         `· about $${((speechChars * 16) / 1e6).toFixed(2)} at Neural2 rates`,
@@ -247,9 +144,6 @@ async function main(): Promise<number> {
 
   try {
     for (const [index, gap] of todo.entries()) {
-      // RE-ASKED, every time. This is the whole resumability story: a run that
-      // was interrupted, run twice, or overlapped with him tapping the button on
-      // his phone simply finds the answer already there.
       if (present(db, gap)) {
         skipped += 1;
         continue;

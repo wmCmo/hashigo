@@ -1,23 +1,3 @@
-/**
- * THROWAWAY (spike harness) — `spike/persist/main.ts`.
- *
- * The main thread. Its jobs, in order of how much they matter:
- *
- *   1. Ask for storage persistence, because **only a Window can**. Report the
- *      answer in letters big enough to read at arm's length on a phone, and
- *      pass it into the worker, which cannot obtain it for itself.
- *   2. Show what the app must show when the answer is NO. That banner is the
- *      deliverable — a user who is never told is a user who finds out by losing
- *      1,317 days of review history.
- *   3. Coordinate tabs. `opfs-sahpool` is single-connection; a second tab is
- *      the failure mode most likely to be ugly, so this page detects it BEFORE
- *      touching the database (Web Locks) and also lets you provoke the raw
- *      failure on purpose.
- *
- * Everything is exposed on `window.__spike` so a CDP driver can run the same
- * steps a thumb would.
- */
-
 import { gib, mib, type PersistMessage, type PersistRequest, type StorageVerdict } from "./protocol.js";
 
 const LOCK_NAME = "hashigo-db-exclusive";
@@ -31,7 +11,6 @@ if (logElement === null || statsElement === null || bannerElement === null || ta
   throw new Error("page markup is missing");
 }
 
-/** This tab's identity, so the multi-tab log is readable. */
 const TAB_ID = `tab-${Math.random().toString(36).slice(2, 7)}`;
 document.title = `persist · ${TAB_ID}`;
 
@@ -60,8 +39,6 @@ function stat(key: string, value: string, level = "info"): void {
   dd.className = `stat-${level}`;
 }
 
-// -- the worker --------------------------------------------------------------
-
 const worker = new Worker(new URL("./db.worker.ts", import.meta.url), {
   type: "module",
   name: `hashigo-persist-${TAB_ID}`,
@@ -87,11 +64,6 @@ worker.onerror = (event: ErrorEvent): void => {
   write(`worker error: ${event.message} (${event.filename}:${event.lineno})`, "bad");
 };
 
-/**
- * A request minus its `id`. `Omit<Union, "id">` does NOT work here: it collapses
- * the union to the keys every member shares, which loses `reimport`,
- * `limitBytes`, `hold` and `paused`. The conditional type distributes instead.
- */
 type Unidentified<T> = T extends { readonly id: number } ? Omit<T, "id"> : never;
 
 function ask(request: Unidentified<PersistRequest>): Promise<boolean> {
@@ -103,14 +75,6 @@ function ask(request: Unidentified<PersistRequest>): Promise<boolean> {
   });
 }
 
-// -- 1. persistence: the only thread that may ask ----------------------------
-
-/**
- * The correct plumbing, in one function. Note the order: `persisted()` first so
- * the before/after is honest, `persist()` second, `persisted()` again because
- * **`persist()`'s return value is not the fact you want** — it is what the
- * browser decided this instant, and re-reading `persisted()` is the fact.
- */
 async function requestPersistence(): Promise<StorageVerdict> {
   write("", "info");
   write("MAIN THREAD — asking for storage persistence", "step");
@@ -138,10 +102,6 @@ async function requestPersistence(): Promise<StorageVerdict> {
   }
 }
 
-/**
- * What the app must do when the answer is NO. This is deliverable 1's second
- * half: a state the user cannot miss, not a console warning.
- */
 function showVerdict(verdict: StorageVerdict): void {
   stat("persisted()", String(verdict.persistedAfter), verdict.persistedAfter ? "good" : "bad");
   stat("persist() granted", String(verdict.granted), verdict.granted ? "good" : "bad");
@@ -159,15 +119,12 @@ function showVerdict(verdict: StorageVerdict): void {
       "together, without asking — when the device runs low on space. Keep an export.";
 }
 
-/** Chrome grants persistence far more readily to an installed PWA. */
 function installedDisplayMode(): string {
   for (const mode of ["standalone", "fullscreen", "minimal-ui", "window-controls-overlay"]) {
     if (matchMedia(`(display-mode: ${mode})`).matches) return `yes (${mode})`;
   }
   return "no (browser tab)";
 }
-
-// -- 3. tabs -----------------------------------------------------------------
 
 const channel = new BroadcastChannel(CHANNEL_NAME);
 const seen = new Map<string, string>();
@@ -192,17 +149,8 @@ function renderTabs(): void {
       : `${TAB_ID} (this tab) | ${others.join(" | ")}`;
 }
 
-/**
- * The mitigation, and the recommendation that falls out of this spike: take a
- * Web Lock BEFORE opening the database. Web Locks are per-origin and work
- * across tabs, so the second tab learns it is a follower **without** having to
- * provoke an OPFS failure first.
- */
 let lockHeld = false;
 async function takeLock(): Promise<boolean> {
-  // Re-entrant: this tab already owns it, and asking again would deadlock
-  // against itself (`ifAvailable` would answer null and the tab would decide it
-  // was a follower of itself).
   if (lockHeld) {
     write("  Web Lock already held by THIS tab", "good");
     return true;
@@ -224,7 +172,6 @@ async function takeLock(): Promise<boolean> {
       write("  Web Lock acquired — this tab owns the database.", "good");
       stat("this tab owns the DB", "yes (Web Lock held)", "good");
       resolve(true);
-      // Hold it for the tab's lifetime. Releasing means releasing ownership.
       await new Promise<void>((release) => {
         releaseLock = () => {
           lockHeld = false;
@@ -235,8 +182,6 @@ async function takeLock(): Promise<boolean> {
   });
 }
 let releaseLock: (() => void) | undefined;
-
-// -- the steps, also callable from a driver -----------------------------------
 
 async function stepEnvironment(): Promise<void> {
   logElement!.textContent = "";
@@ -271,7 +216,6 @@ async function stepOpen(reimport = false): Promise<boolean> {
   return ask({ kind: "open", reimport, verdict: lastVerdict });
 }
 
-/** Deliberately ignore the lock, to measure the raw sahpool failure. */
 async function stepForceOpen(): Promise<boolean> {
   write("", "info");
   write("FORCE OPEN — ignoring the Web Lock on purpose", "step");
@@ -292,13 +236,6 @@ const api = {
   write: () => ask({ kind: "write" }),
   handles: () => ask({ kind: "handles" }),
   retry: () => ask({ kind: "retry" }),
-  /**
-   * Kill the worker outright. This is precisely what the browser does to a
-   * dedicated worker when its tab closes, and it is the ONLY thing observed in
-   * this spike that reliably releases the OPFS sync access handles — see
-   * notes/archive/persistence.md. Also the mitigation a follower tab can rely on: the
-   * leader terminates its worker on `pagehide` and the follower can take over.
-   */
   terminate: (): boolean => {
     worker.terminate();
     releaseLock?.();
@@ -327,8 +264,6 @@ const api = {
 
 (window as unknown as { __spike: typeof api }).__spike = api;
 
-// -- buttons -----------------------------------------------------------------
-
 const wire: Record<string, () => unknown> = {
   "#env": stepEnvironment,
   "#open": () => stepOpen(false),
@@ -344,8 +279,6 @@ const wire: Record<string, () => unknown> = {
   "#recover": () => api.recover(),
   "#reload": () => location.reload(),
   "#newtab": () => window.open(location.href, "_blank"),
-  // Reading 40 numbers off a phone and typing them into a laptop is how a phone
-  // test stops getting run. One tap, then paste.
   "#copy": async () => {
     const stats = [...statNodes].map(([key, node]) => `${key}: ${node.textContent ?? ""}`).join("\n");
     const text = `${location.href}\n${navigator.userAgent}\n\n${stats}\n\n${api.transcript()}`;

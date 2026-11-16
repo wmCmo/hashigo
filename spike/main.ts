@@ -1,17 +1,3 @@
-/**
- * THROWAWAY (spike harness). The main thread's whole job:
- *
- *   * spawn the worker and render what it says,
- *   * call `navigator.storage.persist()`, which does not exist in a worker,
- *   * prove no COOP/COEP header is being served, by reading the page's own
- *     response headers,
- *   * offer one deliberate misuse — installing the VFS on the main thread — so
- *     the failure is measured rather than assumed.
- *
- * It never holds a database handle. That is the contract, and the reason this
- * file does not import anything from `src/db/browser.ts` except for the probe.
- */
-
 import { installPool } from "../src/db/browser.js";
 
 import type { SpikeMessage, SpikeRequest } from "./protocol.js";
@@ -77,8 +63,6 @@ async function pageFacts(): Promise<boolean> {
   fact("isSecureContext", String(isSecureContext));
   fact("SCHEMA_VERSION (from src/schema/index.ts, injected)", String(__SCHEMA_VERSION_FROM_NODE__));
 
-  // Same-origin: the browser lets us read our own response headers, which is a
-  // direct check that nothing is serving COOP/COEP rather than an inference.
   try {
     const response = await fetch(location.href, { cache: "no-store" });
     const interesting = [...response.headers]
@@ -89,7 +73,6 @@ async function pageFacts(): Promise<boolean> {
     fact("COOP/COEP response headers", `could not read (${String(error)})`);
   }
 
-  // persist() is main-thread only. The worker cannot ask.
   let persisted = false;
   try {
     persisted = await navigator.storage.persisted();
@@ -115,7 +98,6 @@ async function main(reimport: boolean): Promise<void> {
   worker.postMessage(request);
 }
 
-/** The misuse, measured: sahpool on the main thread, in its own directory. */
 async function mainThreadProbe(): Promise<void> {
   write("", "info");
   write("MAIN-THREAD PROBE — installing opfs-sahpool outside a worker", "step");

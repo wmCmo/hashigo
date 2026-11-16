@@ -1,43 +1,3 @@
-/**
- * Regenerate the head-word clips so the audio agrees with the `型` label.
- *
- * `./speech.ts` carries the finding, the survey and the trap; this file is the
- * orchestration over the database and the store. Read that header first.
- *
- * ─── THE TWO FIELDS, AND WHY ONLY THOSE TWO ─────────────────────────────────
- *
- * `template_fields` stores the voice PER FIELD. Ten fields are `type = speech`
- * and only two of them speak the head word of a card that carries an accent
- * label: `単語 / Speech` and `言葉 / Speech`, both sourced from the card name.
- * That is the same pair decision 29 scopes `identify` to, and it is not a
- * coincidence — they are the templates that declare an `accent` field.
- *
- * The others are deliberately untouched: `Audio` on both templates speaks the
- * EXAMPLE SENTENCE, which the pipeline never annotates (several accent phrases;
- * a boundary heuristic that fails silently on `に引き換え`), and 数字 / 基本情報 /
- * New Vocab are not accent-labelled decks at all.
- *
- * ─── THE ORDER IS LOAD-BEARING ──────────────────────────────────────────────
- *
- * The field's voice is flipped LAST, after every clip exists.
- *
- * A card resolves its clip through `lookupGeneration`, whose identity includes
- * the voice. So the moment the field says `ja-JP-Neural2-C`, every card on that
- * template asks for a Neural2-C clip — and any word not yet regenerated has
- * none. Flipping first would take 3,852 cards silent for the length of the run,
- * and a crash mid-run would leave them that way. `app/main.ts`'s own settings
- * note says the same thing about `voice.default`: a non-empty value "misses all
- * 10,791 speech lookups at once".
- *
- * ─── NOTHING IS DELETED ─────────────────────────────────────────────────────
- *
- * The new clip is a NEW generation identity, so the Nanami payload is untouched
- * and still addressable. `retargetBlobRef` moves each card's reference, which
- * drops the old blob's refcount and stamps `unreferenced_at`; `sweepUnreferenced`
- * owns deletion and only after its grace period. So this is reversible by
- * flipping the two fields back — which is the whole reason it is safe to run on
- * four years of audio.
- */
 import type { Db } from "../db/index.js";
 import { putBlobRecord, retargetBlobRef } from "../import/blobs.js";
 import { synthesise, VOICE, type SpeechRequest } from "./speech.js";
@@ -45,19 +5,6 @@ import { normaliseSourceText } from "../blobs/generation.js";
 import { sha256Hex, type BlobStore } from "../blobs/index.js";
 import { accentKey } from "./key.js";
 
-/**
- * THE FIELDS THAT SPEAK A HEAD WORD ON AN ACCENT-LABELLED TEMPLATE — by DATA
- * since stage G of fields-as-modules, where this was a list of names.
- *
- * A speech field is a word field when it reads the SAME source the template's
- * `accent` field reads: `型` follows `source_field_id` to the head word (the
- * pattern `src/accent/store.ts` has always used), so any speech field pointing
- * at that same field is speaking the word the label describes. On this corpus
- * that is exactly 単語/Speech and 言葉/Speech, as the list said — and New Vocab's
- * Pronunciation, which also reads its head word, stays out because its template
- * declares no accent. Honest framing: this is a CLI's scope, not a runtime
- * binding; nothing on the review path reads it.
- */
 const WORD_FIELDS_SQL = `
 SELECT tf.id AS fieldId, tf.template_id AS templateId, tf.source_field_id AS sourceId
   FROM template_fields tf
@@ -68,28 +15,10 @@ SELECT tf.id AS fieldId, tf.template_id AS templateId, tf.source_field_id AS sou
 
 export interface RespeakWord {
   readonly text: string;
-  /** Null when no accent was derived — synthesised plain. See `speech.ts`. */
   readonly request: SpeechRequest | null;
-  /**
-   * Cards whose reference must follow the new blob.
-   *
-   * `fieldId` IS NULL IN THIS CORPUS AND THAT IS NOT A BUG TO FIX. The importer
-   * records a generated clip as a card-CONTENT reference (`field_id = NULL`)
-   * with the attachment filename as its key, so a card carries two speech refs —
-   * the head word and the example sentence — told apart only by which blob they
-   * point at. Matching on `field_id` finds neither, which is how the first
-   * version of this moved 0 references while reporting success.
-   */
   readonly refs: readonly { cardId: string; fieldId: string | null; refKey: string }[];
 }
 
-/**
- * Every distinct head word on those fields, with its accent and its references.
- *
- * A word with no accent row, or whose reading is not kana, comes back with a
- * null request rather than being skipped: skipping it would leave it with no
- * Neural2-C clip, and the voice flip at the end would silence it.
- */
 export function respeakPlan(db: Db): RespeakWord[] {
   const fields = db.prepare(WORD_FIELDS_SQL).all() as {
     fieldId: string;
@@ -98,14 +27,6 @@ export function respeakPlan(db: Db): RespeakWord[] {
   }[];
   const templateIds = [...new Set(fields.map((field) => field.templateId))];
 
-  // TWO NORMALISATIONS, AND THEY ARE NOT THE SAME ONE. Measured on this corpus:
-  // six head words carry a U+200E between their characters (`準‎備`, `評‎価`,
-  // `田‎‎植え`), and the importer filed BOTH their clip and their accent row under
-  // the cleaned text. Joining on the raw column misses the accent AND files a
-  // new blob under a string the app never asks for — a silent double failure.
-  //
-  //   normaliseSourceText   the blob's identity (decision 7: the RENDERED text)
-  //   accentKey             the accent row's key (placeholders folded to `~`)
   const accents = new Map<string, { reading: string; accent: number }>();
   for (const row of db
     .prepare(
@@ -116,9 +37,6 @@ export function respeakPlan(db: Db): RespeakWord[] {
     if (!accents.has(row.text)) accents.set(row.text, { reading: row.reading, accent: row.accent });
   }
 
-  // Every speech reference on these templates, grouped by the text it speaks.
-  // Keyed by the BLOB's `source_text`, which is the only thing that separates a
-  // card's head-word clip from its example-sentence clip — see `RespeakWord.refs`.
   const refsByText = new Map<string, RespeakWord["refs"][number][]>();
   for (const row of db
     .prepare(
@@ -143,10 +61,6 @@ export function respeakPlan(db: Db): RespeakWord[] {
 
   const words = new Map<string, RespeakWord>();
   for (const { templateId, sourceId } of fields) {
-    // The value of the field the speech field READS (its `source_field_id`, the
-    // head word), NOT `cards.name`. 25 cards on these templates are titled
-    // "Untitled card" with an empty head word, and the column would have sent
-    // that English string to a Japanese TTS.
     const rows = db
       .prepare(
         `SELECT v.value AS text
@@ -169,16 +83,6 @@ export function respeakPlan(db: Db): RespeakWord[] {
   return [...words.values()];
 }
 
-/**
- * Words that would be synthesised to the SAME bytes as another word.
- *
- * Predictable before a single call is made: the audio is a function of
- * (reading, accent), so two words sharing both share a sha256 — and
- * `blobs.hash` is a PRIMARY KEY. See `respeakWord` for what that costs.
- *
- * Reported by `--dry` on purpose. The first full run found this the expensive
- * way: $0.15 spent, 3,850 clips made, 0 failures reported, and 161 cards silent.
- */
 export function collisions(plan: readonly RespeakWord[]): Map<string, string[]> {
   const groups = new Map<string, string[]>();
   for (const word of plan) {
@@ -195,7 +99,6 @@ export interface RespeakOptions {
   readonly store: BlobStore;
   readonly voice?: string;
   readonly fetch?: typeof globalThis.fetch;
-  /** Called after each word, for a progress line. */
   readonly onWord?: (text: string, outcome: "made" | "cached" | "failed", detail?: string) => void;
 }
 
@@ -209,14 +112,6 @@ export interface RespeakReport {
   readonly failures: string[];
 }
 
-/**
- * Synthesise and record one word. Returns the content address.
- *
- * RESUMABLE BY CONSTRUCTION. 3,852 calls is long enough to be interrupted, and
- * the generation identity is the cache: a word already regenerated is found by
- * `lookupGeneration` and costs nothing on a second run. That is why this asks
- * the database before it asks Google.
- */
 export async function respeakWord(
   db: Db,
   word: RespeakWord,
@@ -238,31 +133,8 @@ export async function respeakWord(
     voice,
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
   });
-  // PAYLOAD FIRST, THEN THE ROW, and the order is the crash-safety.
-  //
-  // A `blobs` row whose payload is missing is a card that resolves to silence,
-  // and `lookupGeneration` would keep returning that address for ever — a
-  // permanent cache hit on nothing. A payload with no row is invisible and
-  // costs a few KB until the next store audit. Interrupting 3,852 calls is
-  // likely enough that the failure mode has to be the harmless one.
   const address = sha256Hex(bytes);
 
-  // ─── HOMOPHONES COLLIDE, AND THE SCHEMA CANNOT HOLD THEM ───────────────────
-  //
-  // `blobs.hash` is a PRIMARY KEY, so one payload carries ONE generation
-  // identity — and `putBlobRecord` is `INSERT OR IGNORE`, so a second identity
-  // for the same bytes is dropped without a word.
-  //
-  // Azure never hit this: it synthesised from the KANJI, so 仮定 and 家庭 were
-  // different inputs and different audio. The kanji trap (see `speech.ts`)
-  // forces synthesis from the READING, and `カテー` at accent 0 is one sound
-  // however it is spelt. Measured on this corpus: 142 groups, 161 words that
-  // would lose their row — 仮定/課程/家庭/過程, 合う/会う/遭う, 高価/硬貨/効果.
-  //
-  // A dropped row is a SILENT CARD, because `lookupGeneration` keys on
-  // `source_text` and finds nothing. That is exactly what happened on the first
-  // full run: 3,850 clips reported made, 0 failures, and 161 cards mute. So this
-  // refuses rather than reporting a success it did not achieve.
   const clash = db
     .prepare(`SELECT source_text FROM blobs WHERE hash = ?`)
     .get(address) as { source_text: string | null } | undefined;
@@ -285,15 +157,7 @@ export async function respeakWord(
   return { hash, made: true };
 }
 
-/**
- * Flip the two fields onto the new voice.
- *
- * LAST. See the header: a card whose field asks for a voice it has no clip in
- * is a silent card, and that is the failure this ordering exists to prevent.
- */
 export function adoptVoice(db: Db, voice: string = VOICE): number {
-  // The SAME selection `respeakPlan` made — a flip that reached a different set
-  // of fields from the plan would silence whatever the plan did not regenerate.
   const words = db.prepare(WORD_FIELDS_SQL).all() as { fieldId: string; templateId: string }[];
   const readOptions = db.prepare(
     "SELECT options FROM template_fields WHERE template_id = ? AND id = ?",
@@ -316,7 +180,6 @@ export function adoptVoice(db: Db, voice: string = VOICE): number {
   return changed;
 }
 
-/** Move every card's reference onto the regenerated blob. */
 export function moveRefs(db: Db, word: RespeakWord, hash: string): number {
   let moved = 0;
   for (const ref of word.refs) {

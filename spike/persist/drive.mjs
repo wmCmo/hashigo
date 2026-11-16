@@ -1,32 +1,3 @@
-/**
- * THROWAWAY (spike harness) — spike/persist/drive.mjs
- *
- * Drives the page in real Chrome over the DevTools Protocol, with no browser
- * automation dependency at all: Node 22+ has a global `WebSocket`, and CDP is
- * JSON over one socket. Raw CDP rather than Playwright because two domains this
- * spike needs are not exposed by any automation wrapper:
- *
- *   * `Browser.grantPermissions(["durableStorage"])` — the ONLY way to observe
- *     the `persist() === true` branch on a desktop. Chrome never grants it to a
- *     fresh automated profile, so without this the "granted" path is untestable
- *     and the plumbing for it unproven.
- *   * `Storage.overrideQuotaForOrigin` — sets a small quota so the page can be
- *     driven INTO the limit in seconds instead of writing 10 GiB to Zach's disk.
- *
- * Usage (the vite dev server must already be running):
- *
- *   node spike/persist/drive.mjs <scenario> [--url http://localhost:5273/persist/] [--show]
- *
- *   deny      persist() with no permission granted  (the default state)
- *   grant     persist() with durableStorage granted (the PWA-like state)
- *   fill      open + write ~700 MB, quota before/after
- *   quota     override the quota to 800 MB, then overrun it on purpose
- *   multitab  two tabs on one origin: the failure, then the handover
- *   evict     wipe all OPFS, then time the recovery
- *
- * Every scenario uses its OWN fresh user-data-dir, so no scenario can inherit
- * another's OPFS or permissions.
- */
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -67,8 +38,6 @@ function launch() {
     "--window-size=520,900",
     "about:blank",
   ];
-  // Mirrors Android Chrome's chrome://flags/#unsafely-treat-insecure-origin-as-secure,
-  // which is the only cable-free way to get OPFS on a plain http:// LAN address.
   const insecure = flag("insecure-origin", "");
   if (insecure !== "") args.unshift(`--unsafely-treat-insecure-origin-as-secure=${insecure}`);
   if (!SHOW) args.unshift("--headless=new");
@@ -89,7 +58,6 @@ async function browserSocket() {
   throw new Error("chrome never opened its debugging port");
 }
 
-/** Minimal flat-protocol CDP client. */
 class Cdp {
   #ws;
   #next = 1;
@@ -130,7 +98,6 @@ class Cdp {
   }
 }
 
-/** One page, attached, with `eval` that awaits promises and surfaces throws. */
 async function openTab(cdp, url) {
   const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
   const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
@@ -183,7 +150,6 @@ async function openTab(cdp, url) {
           .eval("typeof window.__spike === 'object' && window.__spike !== null", 5000)
           .catch(() => false);
         if (ready === true) {
-          // main.ts kicks off stepEnvironment() itself; let it finish.
           await new Promise((r) => setTimeout(r, 400));
           return;
         }
@@ -211,8 +177,6 @@ function dumpStats(stats) {
     console.log(`  ${key.padEnd(26)} ${value}`);
   }
 }
-
-// -- scenarios ----------------------------------------------------------------
 
 const scenarios = {
   async deny(cdp, origin) {
@@ -261,9 +225,6 @@ const scenarios = {
   async quota(cdp, origin) {
     banner("SCENARIO quota — override the quota, then run past it on purpose");
     const OVERRIDE = Number(flag("quota", String(400 * 1024 * 1024)));
-    // The override must be applied on a PAGE session and only once the origin
-    // exists as far as the storage layer is concerned; sent on the browser
-    // session before any navigation it answers "Internal error (-32603)".
     const tab = await openTab(cdp, URL_BASE);
     await cdp.send("Storage.overrideQuotaForOrigin", { origin, quotaSize: OVERRIDE }, tab.sessionId);
     console.log(`Storage.overrideQuotaForOrigin ${origin} -> ${OVERRIDE.toLocaleString()} bytes`);
@@ -290,19 +251,11 @@ const scenarios = {
 
   async handles(cdp) {
     banner("SCENARIO handles — does close() give the OPFS file back?");
-    // handles() FIRST: calling open() beforehand leaves a file pinned and the
-    // baseline check can no longer tell us anything.
     const tab = await openTab(cdp, URL_BASE);
     await tab.eval("window.__spike.handles()");
     console.log(await tab.transcript());
   },
 
-  /**
-   * The scenario that can actually destroy the database WITHOUT an eviction:
-   * the origin is already over quota when Hashigo starts. sqlite-wasm's failure
-   * path for a pool install calls `removeVfs()`, which recursively deletes the
-   * pool directory — the database with it.
-   */
   async starve(cdp, origin) {
     banner("SCENARIO starve — already OVER quota at startup");
     const tab = await openTab(cdp, URL_BASE);
@@ -328,9 +281,6 @@ const scenarios = {
     banner("stats");
     dumpStats(await tab.stats());
 
-    // THE question. sqlite-wasm's install-failure path calls removeVfs(), which
-    // recursively deletes the pool directory. Did the 69 MB database survive a
-    // failed install, or did the failure destroy it?
     banner("LIFT the quota override, reload, and see if the database survived");
     await cdp.send("Storage.overrideQuotaForOrigin", { origin }, tab.sessionId);
     console.log("override removed");
@@ -395,8 +345,6 @@ const scenarios = {
     console.log(`--- TAB B forceOpen() after A paused: ${JSON.stringify(after)} ---`);
     console.log(await b.transcript());
 
-    // The path a real person has: close the other tab. That kills the worker,
-    // and a dead worker cannot hold a sync access handle.
     const workers = async (when) => {
       const all = await cdp.send("Target.getTargets", {});
       const w = all.targetInfos.filter((t) => t.type === "worker");
@@ -420,8 +368,6 @@ const scenarios = {
       afterTerminate = `driver caught: ${error.message}`;
     }
     console.log(`  TAB B forceOpen() after A terminated its worker -> ${JSON.stringify(afterTerminate)}`);
-    // --no-retry reproduces the pre-diagnosis behaviour: without the flagged
-    // retry, the cached rejection stands and the backoff loop below takes ~15 s.
     if (!argv.includes("--no-retry")) {
       console.log("  ... and now the same install WITH forceReinitIfPreviouslyFailed:");
       await b.eval("window.__spike.retry()");
@@ -432,13 +378,9 @@ const scenarios = {
 
     banner("NAVIGATING TAB A AWAY (destroys its document and its worker)");
     await workers("before");
-    // Navigation, not Target.closeTarget: closing a target over CDP left tab A's
-    // dedicated worker alive, which is not what a person closing a tab does.
     await cdp.send("Page.navigate", { url: "about:blank" }, a.sessionId);
     await new Promise((r) => setTimeout(r, 1500));
     await workers("after navigating tab A to about:blank");
-    // Retry with real waits. "Close the other tab" is the only instruction a
-    // person can act on, so how long it takes to work is the finding.
     for (const wait of [500, 1000, 2000, 4000, 8000]) {
       await new Promise((r) => setTimeout(r, wait));
       let attempt;
@@ -466,13 +408,10 @@ const scenarios = {
     );
     console.log(`usage/quota before the eviction: ${before}`);
 
-    // The page's own removeVfs() route, first: this is the button Zach taps.
     banner("in-page wipe (removeVfs) — the button on the phone");
     await tab.eval("window.__spike.evict()");
     console.log(await tab.transcript());
 
-    // Then the real thing, from outside: Storage.clearDataForOrigin is what an
-    // eviction actually does to the origin, and no page code can prevent it.
     banner("REAL eviction: Storage.clearDataForOrigin, then reload");
     await cdp.send(
       "Storage.clearDataForOrigin",
@@ -493,8 +432,6 @@ const scenarios = {
     dumpStats(await tab.stats());
   },
 };
-
-// -- main ---------------------------------------------------------------------
 
 const run = scenarios[scenario];
 if (run === undefined) {
@@ -520,7 +457,6 @@ try {
   try {
     cdp?.send("Browser.close").catch(() => {});
   } catch {
-    /* the socket may already be gone */
   }
   await new Promise((r) => setTimeout(r, 500));
   child.kill();

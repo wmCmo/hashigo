@@ -14,26 +14,8 @@ import {
   type SessionItem,
 } from "../src/session/index.js";
 
-/**
- * Stage 7's session layer — the plan, and decision 13's re-ask.
- *
- * THREE HALVES, and the teeth are in the third.
- *
- *   1. `interleaveTracks`, pure. The property that matters is TOTALITY: every
- *      input appears exactly once. A mixer that drops a card loses a review, and
- *      an off-by-one in the `spread` slot arithmetic is exactly how that happens.
- *   2. The plan against the real 74 MB corpus: the counts, that the due and new
- *      halves are DISJOINT, and that two builds agree.
- *   3. The state machine on a synthetic database, where grading is safe. Decision
- *      13 is the whole point: a forgotten card comes back and is **not graded**.
- *      The strong assertion is not "graded is false" — it is that the database is
- *      byte-for-byte unchanged by answering a re-ask.
- */
-
 const DB = "build/hashigo.db";
 const HAS_CORPUS = existsSync(DB);
-
-// ─── half one: the mixer, pure ───────────────────────────────────────────────
 
 function item(id: number, origin: "due" | "new"): SessionItem {
   return {
@@ -42,7 +24,6 @@ function item(id: number, origin: "due" | "new"): SessionItem {
     kind: "forward",
     origin,
     reask: false,
-    // The mixer never looks at `track`, so a minimal shape is honest here.
     track: { trackId: id } as SessionItem["track"],
   };
 }
@@ -67,12 +48,6 @@ describe("interleaveTracks", () => {
   });
 
   it("is TOTAL for every policy and every shape — nothing dropped, nothing doubled", () => {
-    // The property that protects a review from vanishing. Swept rather than
-    // spot-checked, and note what it does NOT catch: totality survives
-    // clustering, so this passed with the slot formula fully broken. The
-    // `spread is EVEN` test below is what owns the formula. (An earlier version
-    // of this comment claimed slot collisions occur when `fresh` is a large
-    // fraction of the total; a 90,000-pair sweep says they never occur at all.)
     for (const policy of ["new-first", "due-first", "spread"] as const) {
       for (let d = 0; d <= 12; d += 1) {
         for (let f = 0; f <= 12; f += 1) {
@@ -87,44 +62,28 @@ describe("interleaveTracks", () => {
   });
 
   it("spread lands all ten new cards inside the WINDOW, not across the whole plan", () => {
-    // THE POINT OF THE WINDOW, and the reason Zach's `spread` is usable at all.
-    // Across the whole 453-card plan the new cards are so far apart he never
-    // reaches them: he does ~69-78 reviews a day against a 443-card due queue.
     const out = interleaveTracks(due(443), fresh(10), "spread");
     const at = out.flatMap((i, n) => (i.origin === "new" ? [n] : []));
     expect(at).toHaveLength(10);
     expect(at.at(-1)).toBeLessThan(EXPECTED_SESSION_CARDS);
 
-    // Evenly, inside that window: step is 80/10 = 8.
     const gaps = at.slice(1).map((p, n) => p - at[n]!);
     expect(new Set(gaps)).toEqual(new Set([8]));
 
-    // And a warm-up: due cards come first, so the session does not open on a
-    // word he has never seen. floor(0.5 * 80 / 10) = 4.
     expect(at[0]).toBe(4);
   });
 
   it("the window is what makes the ten reachable — measured against the naive spread", () => {
-    // The comparison that justified windowing rather than spreading over the plan.
     const seenBy = (over: number, stop: number): number =>
       interleaveTracks(due(443), fresh(10), "spread", over)
         .slice(0, stop)
         .filter((i) => i.origin === "new").length;
 
-    // Naive: the whole plan as the window.
     expect([50, 80, 100, 150].map((s) => seenBy(453, s))).toEqual([1, 2, 2, 3]);
-    // Windowed, as shipped.
     expect([50, 80, 100, 150].map((s) => seenBy(80, s))).toEqual([6, 10, 10, 10]);
   });
 
   it("spread is EVEN: with due >= new, no two new cards are ever adjacent", () => {
-    // Pins CLUSTERING, and nothing else — this comment claimed more until a peer
-    // review checked it on 2026-08-23. Verified: dropping the `+ 0.5` leaves the
-    // minimum gap at 2, so THIS TEST STAYS GREEN and three others go red instead.
-    // What `+ 0.5` actually buys is the warm-up — first slot 4 rather than 0 — and
-    // the assertions that own that are `expect(at[0]).toBe(4)` above and
-    // `expect(plan[0]?.origin).toBe("due")` in the corpus test. What this test
-    // catches is a regression to `slots.add(i)`, which clusters. Minimum gap 2, swept.
     let worstGap = Number.POSITIVE_INFINITY;
     for (let d = 1; d <= 60; d += 1) {
       for (let f = 1; f <= Math.min(d, 60); f += 1) {
@@ -138,7 +97,6 @@ describe("interleaveTracks", () => {
         }
       }
     }
-    // Recorded because it is the tightest true bound: exactly 2, reached at 2/2.
     expect(worstGap).toBe(2);
   });
 
@@ -153,41 +111,9 @@ describe("interleaveTracks", () => {
   });
 });
 
-// ─── half two: the plan, against the real corpus ─────────────────────────────
-
 describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
-  // Fixed instant so the queue is a constant: the same date the scheduler tests
-  // and CLAUDE.md quote, which is what makes this a checkable number here.
   const NOW = "2026-08-22T12:00:00+09:00";
 
-  /**
-   * WAS 443, THEN 437, AND IS NOW 70. TWO DIFFERENT MECHANISMS MOVED IT.
-   *
-   * **443 -> 437, and the six that left are the point.**
-   * `scripts/reverse-dormant-apply.ts` marked six reverse tracks dormant on
-   * 2026-09-07 — cards the importer's do-not-orphan rule had forced `reverse = 'on'`
-   * on the strength of one or two stray reviews from years ago, which Zach never
-   * asked for and which sorted to the FRONT of his queue because that single review
-   * is old. Dormant retains the history and stops the scheduling, so `liveTrack`
-   * drops them and the due count falls by exactly six.
-   *
-   * The figure therefore depends on a documented post-import step, not on the export
-   * alone. That is why `scripts/rebuild.mjs` runs it and asserts it: a rebuild that
-   * skips it puts those six cards back in front of him.
-   *
-   * **437 -> 70, and it is NOT that the queue drained on its own.**
-   * `NOW` is a FIXED instant, 2026-08-22. The export of 2026-08-17 ended five days
-   * BEFORE it, so every track scheduled into that gap was still outstanding and the
-   * queue read 437. The export of 2026-09-05 contains the reviews he actually did in
-   * those five days, so the same instant now sees them already answered. The number
-   * fell because the HISTORY got longer, not because the plan changed — the identical
-   * mechanism `CLAUDE.md` warns about in the other direction, where a frozen history
-   * makes due counts grow every day they are not re-measured.
-   *
-   * So this constant is a function of the export's END DATE and the fixed `NOW`
-   * together, and it moves on every re-import. It is still worth pinning: it is
-   * exact, and a change in it that a re-import does NOT explain is a real defect.
-   */
   const DUE_AT_NOW = 70;
 
   it("is the due queue plus ten new tracks, and states its basis", () => {
@@ -195,8 +121,6 @@ describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
     try {
       const session = buildSession(db, { now: NOW });
       const p = session.progress();
-      // Basis, because three counts are available (decision 6): TRACKS, not
-      // cards, not reviews. See `DUE_AT_NOW` for why it is 70 and not 76.
       expect(p.dueCount).toBe(DUE_AT_NOW);
       expect(p.newCount).toBe(DEFAULT_NEW_LIMIT);
       expect(p.planned).toBe(DUE_AT_NOW + DEFAULT_NEW_LIMIT);
@@ -209,16 +133,12 @@ describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
   });
 
   it("never puts the same track in the plan twice — due and new are disjoint", () => {
-    // Disjoint by construction (`due_at IS NOT NULL` against `IS NULL`), which is
-    // exactly the kind of invariant that survives until someone widens a filter.
     const db = openDatabase(DB, { readOnly: true, applySchema: false });
     try {
       const plan = buildSession(db, { now: NOW }).planned();
       const ids = plan.map((i) => i.trackId);
       expect(new Set(ids).size).toBe(ids.length);
       const cards = new Set(plan.map((i) => i.cardId));
-      // Worth recording rather than asserting tightly: a card can contribute two
-      // tracks (forward and reverse), so cards < tracks is expected, not a fault.
       expect(cards.size).toBeLessThanOrEqual(ids.length);
     } finally {
       db.close();
@@ -231,7 +151,6 @@ describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
       const plan = buildSession(db, { now: NOW }).planned();
       const at = plan.flatMap((i, n) => (i.origin === "new" ? [n] : []));
       expect(at).toHaveLength(10);
-      // All reachable, none adjacent, and the session opens on a DUE card.
       expect(at.at(-1)).toBeLessThan(EXPECTED_SESSION_CARDS);
       expect(Math.min(...at.slice(1).map((p, n) => p - at[n]!))).toBeGreaterThan(1);
       expect(plan[0]?.origin).toBe("due");
@@ -241,8 +160,6 @@ describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
   });
 
   it("is DETERMINISTIC: two builds at the same instant give the same plan", () => {
-    // No `Math.random()` anywhere in the path. This is what makes a session
-    // resumable and is the same guarantee `dailyOrderKey` gives `newTracks`.
     const db = openDatabase(DB, { readOnly: true, applySchema: false });
     try {
       const a = buildSession(db, { now: NOW }).planned().map((i) => i.trackId);
@@ -273,9 +190,6 @@ describe.skipIf(!HAS_CORPUS)("the plan, over the real corpus", () => {
   });
 });
 
-// ─── half three: the state machine, where grading is safe ────────────────────
-
-/** `dueCount` due tracks (each with one Mochi review) and `newCount` unseen ones. */
 function fixture(dueCount: number, newCount: number): { db: Db; dueIds: number[]; newIds: number[] } {
   const db = openDatabase(MEMORY);
   db.prepare("INSERT INTO decks (id, name) VALUES ('d', '日本語')").run();
@@ -290,8 +204,6 @@ function fixture(dueCount: number, newCount: number): { db: Db; dueIds: number[]
         "INSERT INTO card_tracks (card_id, kind, scheduler) VALUES (?, 'forward', 'mochi') RETURNING id",
       )
       .get(card) as { id: number };
-    // One history row, so the lazy FSRS seed has something to replay — the
-    // realistic case for this corpus, where 9,085 tracks arrive state-less.
     const reviewedAt = "2026-08-01T09:00:00+09:00";
     const dueAt = dueInstant(reviewedAt, 5);
     db.prepare(
@@ -357,13 +269,11 @@ describe("the session state machine", () => {
       expect(r.queuedReask).toBe(true);
       expect(s.progress().reasksQueued).toBe(1);
 
-      // It is NOT next. The two remaining fresh cards come first.
       expect(s.current()!.trackId).not.toBe(failed);
       expect(s.current()!.reask).toBe(false);
       s.answer(true, { at: AT });
       s.answer(true, { at: AT });
 
-      // Now, and only now, the re-ask.
       const back = s.current();
       expect(back).not.toBeNull();
       expect(back!.trackId).toBe(failed);
@@ -375,9 +285,6 @@ describe("the session state machine", () => {
   });
 
   it("DECISION 13's other half: answering a re-ask changes NOTHING in the database", () => {
-    // The strong form. "graded === false" would pass on a function that wrote a
-    // review row and forgot to say so, so this asserts on the database: the
-    // review count, the track's whole scheduling state, and `updated_at`.
     const { db } = fixture(1, 0);
     try {
       const s = buildSession(db, { now: AT, newLimit: 0 });
@@ -409,13 +316,12 @@ describe("the session state machine", () => {
   });
 
   it("re-asks a track ONCE, so a card he cannot recall cannot stall the session", () => {
-    // Forced, not chosen: without it, failing the re-ask re-queues it forever.
     const { db } = fixture(1, 0);
     try {
       const s = buildSession(db, { now: AT, newLimit: 0 });
-      s.answer(false, { at: AT }); // fresh -> queues a re-ask
+      s.answer(false, { at: AT });
       expect(s.progress().reasksQueued).toBe(1);
-      s.answer(false, { at: AT }); // the re-ask, failed again -> NOT re-queued
+      s.answer(false, { at: AT });
       expect(s.progress().reasksQueued).toBe(1);
       expect(s.done).toBe(true);
       expect(() => s.answer(false, { at: AT })).toThrow(SessionCompleteError);
@@ -432,20 +338,18 @@ describe("the session state machine", () => {
 
       let graded = 0;
       let shown = 0;
-      // Fail every third card, so some re-asks exist.
       while (!s.done) {
         const before = s.current()!;
         const r = s.answer(shown % 3 !== 0, { at: AT });
         if (r.graded) graded += 1;
         expect(r.item.trackId).toBe(before.trackId);
         shown += 1;
-        expect(shown).toBeLessThan(50); // termination guard, not an assertion
+        expect(shown).toBeLessThan(50);
       }
       const p = s.progress();
       expect(p.done).toBe(true);
       expect(p.answered).toBe(7);
       expect(p.reasksRemaining).toBe(0);
-      // Exactly one review per FRESH card. Re-asks wrote nothing.
       expect(graded).toBe(7);
       expect(counts(db).local).toBe(7);
       expect(shown).toBe(7 + p.reasksQueued);
@@ -455,16 +359,13 @@ describe("the session state machine", () => {
   });
 
   it("reports a stable denominator: `planned` does not move as re-asks are added", () => {
-    // A progress bar over a queue that re-read the database would jitter. The
-    // plan is a snapshot, so `planned` is a constant and re-asks are their own
-    // count — which is also how the screen can say "3 to see again" honestly.
     const { db } = fixture(3, 0);
     try {
       const s = buildSession(db, { now: AT, newLimit: 0 });
       expect(s.progress().planned).toBe(3);
       s.answer(false, { at: AT });
       expect(s.progress().planned).toBe(3);
-      expect(s.progress().remaining).toBe(3); // 2 fresh + 1 re-ask
+      expect(s.progress().remaining).toBe(3);
       s.answer(false, { at: AT });
       expect(s.progress().planned).toBe(3);
       expect(s.progress().reasksQueued).toBe(2);
@@ -474,14 +375,6 @@ describe("the session state machine", () => {
   });
 
   it("does NOT advance past a card whose grade threw — no silent skip", () => {
-    // The property: `gradeTrack` is called BEFORE the cursor moves, so a track
-    // that has gone dormant under a long session leaves the SAME card current.
-    // NOTE what this test does NOT show: it recovers by un-dormanting the track,
-    // which an app cannot do. There is no `skip()`, so in the real world this
-    // hard-locks the session — see the note on `answer()`. If the cursor moved
-    // first, the
-    // card would be silently dropped from the session and its review lost — the
-    // failure mode you would never notice, because the queue just gets shorter.
     const { db, dueIds } = fixture(2, 0);
     try {
       const s = buildSession(db, { now: AT, newLimit: 0 });
@@ -489,12 +382,10 @@ describe("the session state machine", () => {
       db.prepare("UPDATE card_tracks SET dormant = 1 WHERE id = ?").run(stuck);
 
       expect(() => s.answer(true, { at: AT })).toThrow();
-      // Still here, still unanswered, and nothing was written.
       expect(s.current()?.trackId).toBe(stuck);
       expect(s.progress().answered).toBe(0);
       expect(counts(db).local).toBe(0);
 
-      // And it recovers: un-dormant it and the same call succeeds.
       db.prepare("UPDATE card_tracks SET dormant = 0 WHERE id = ?").run(stuck);
       expect(s.answer(true, { at: AT }).graded).toBe(true);
       expect(s.current()?.trackId).toBe(dueIds.find((id) => id !== stuck));
@@ -518,19 +409,6 @@ describe("the session state machine", () => {
   });
 });
 
-/**
- * Grading the card he is LOOKING at, not the one the cursor is on.
- *
- * Zach, 2026-09-12: *"in mochi, you can use arrows to go to next or previous
- * cards to review them, not stuck like this"*. The arrows moved a read-only peek
- * offset and grading was locked while it was non-zero, so arrowing forward meant
- * landing somewhere nothing worked.
- *
- * THE PROPERTY THAT MATTERS IS THE ONE THE MIXER HAS: TOTALITY. `answerAt` grades
- * out of order by SWAPPING the target into the cursor, and a swap that drops or
- * duplicates a card would lose a review — the same failure an off-by-one in
- * `interleaveTracks` causes, one layer up.
- */
 describe("answerAt — grading out of order", () => {
   it("grades the card he is reading, not the one at the cursor", () => {
     const { db } = fixture(5, 0);
@@ -544,7 +422,6 @@ describe("answerAt — grading out of order", () => {
     expect(result.graded).toBe(true);
     expect(result.item.trackId).toBe(target?.trackId);
 
-    // Exactly one review row, on the track he was reading.
     const rows = db
       .prepare("SELECT track_id FROM reviews WHERE source = 'local'")
       .all() as { track_id: number }[];
@@ -560,7 +437,6 @@ describe("answerAt — grading out of order", () => {
 
     session.answerAt(3, true, { at: AT });
 
-    // Walk the rest of the session out.
     const seen: number[] = [];
     let guard = 0;
     while (!session.done && guard < 50) {
@@ -571,7 +447,6 @@ describe("answerAt — grading out of order", () => {
       guard += 1;
     }
 
-    // Every track appears exactly once across the whole session.
     const graded = (
       db.prepare("SELECT track_id FROM reviews WHERE source = 'local'").all() as {
         track_id: number;
@@ -590,8 +465,6 @@ describe("answerAt — grading out of order", () => {
 
     const result = session.answerAt(-1, false, { at: AT });
     expect(result).toEqual({ refused: "already-answered" });
-    // A second row for one event is not a correction — it is two data points
-    // where one thing happened, and it feeds FSRS.
     expect(counts(db)).toEqual(after);
     db.close();
   });
@@ -599,27 +472,20 @@ describe("answerAt — grading out of order", () => {
   it("answers nothing past the end of the re-ask tail", () => {
     const { db } = fixture(2, 0);
     const session = buildSession(db, { now: AT, newLimit: 0 });
-    session.answerAt(0, false, { at: AT }); // forgotten -> queues a re-ask
-    session.answerAt(0, true, { at: AT }); // the other fresh card
+    session.answerAt(0, false, { at: AT });
+    session.answerAt(0, true, { at: AT });
 
-    // The cursor is on the one re-ask; nothing lies beyond it.
     const before = counts(db);
     expect(session.answerAt(1, true, { at: AT })).toEqual({ refused: "nothing-there" });
     expect(counts(db)).toEqual(before);
     db.close();
   });
 
-  /**
-   * Zach, 2026-11-11, grading ahead on the tablet: a re-ask at +3 answered both
-   * buttons with "this one is a re-ask — it is shown again but never graded", and
-   * the screen went nowhere — *"i can't click remember"*.
-   */
   it("DISMISSES a re-ask ahead — no review, the next card comes up, undo puts it back", () => {
     const { db } = fixture(4, 0);
     const session = buildSession(db, { now: AT, newLimit: 0 });
-    session.answerAt(0, false, { at: AT }); // queues re-ask #1
-    session.answerAt(0, false, { at: AT }); // queues re-ask #2
-    // Two fresh cards left at the cursor, then the two re-asks: re-ask #1 is at +2.
+    session.answerAt(0, false, { at: AT });
+    session.answerAt(0, false, { at: AT });
     const reask = session.peek(2);
     const after = session.peek(3);
     expect(reask?.reask).toBe(true);
@@ -630,7 +496,6 @@ describe("answerAt — grading out of order", () => {
       if ("refused" in result) throw new Error(`refused: ${result.refused}`);
       expect(result.graded).toBe(false);
       expect(result.item.trackId).toBe(reask?.trackId);
-      // Nothing written, nothing re-queued, and the same offset is the card after it.
       expect(counts(db)).toEqual(before);
       expect(session.peek(2)?.trackId).toBe(after?.trackId);
       expect(session.progress().reasksQueued).toBe(1);
@@ -654,28 +519,20 @@ describe("answerAt — grading out of order", () => {
 
     session.unanswer(result);
     expect(counts(db)).toEqual(before);
-    // And the card is back in front of him.
     expect(session.current()?.trackId).toBe(target?.trackId);
     db.close();
   });
 
   it("KEEPS GOING FORWARD — after grading at N, peek(N) is the card that followed it", () => {
-    // Zach, 2026-11-10: arrow forward, grade that card, and the screen *"jumps back
-    // to the orignal card before you went forward, it shouldn't have"*. The screen
-    // now keeps its offset after a grade, which is only right if the session puts
-    // the NEXT card in order there — and the skipped ones, in order, at the cursor.
     const { db } = fixture(6, 0);
     const session = buildSession(db, { now: AT, newLimit: 0 });
     const order = session.planned().map((i) => i.trackId);
 
-    // He is on order[0]; arrows forward twice to order[2] and grades it.
     session.answerAt(2, true, { at: AT });
     expect(session.peek(2)?.trackId).toBe(order[3]);
-    // The two he skipped wait at the cursor, in the order he passed them.
     expect(session.peek(0)?.trackId).toBe(order[0]);
     expect(session.peek(1)?.trackId).toBe(order[1]);
 
-    // Grade again from the same offset: still forward, never back.
     session.answerAt(2, false, { at: AT });
     expect(session.peek(2)?.trackId).toBe(order[4]);
     expect(session.peek(0)?.trackId).toBe(order[0]);
@@ -694,18 +551,6 @@ describe("answerAt — grading out of order", () => {
   });
 });
 
-/**
- * ─── THE DAY'S TALLY SURVIVES A RELOAD ───────────────────────────────────────
- *
- * Zach graded 転出 on his phone, reloaded, saw `0/715` where it had said `1/716`,
- * and reasonably concluded the review had not landed. It had — the plan was one
- * shorter BECAUSE it landed — but the numerator was session-scoped and a reload
- * destroys the session.
- *
- * These pin the repair as a FRACTION, not as two independent numbers: the point
- * is that rebuilding the session at the same instant reproduces what was on
- * screen before it, which is the only property he can actually see.
- */
 describe("the day's tally, not the session's", () => {
   it("a rebuilt session shows the SAME fraction — the reload he reported", () => {
     const { db } = fixture(4, 0);
@@ -716,13 +561,9 @@ describe("the day's tally, not the session's", () => {
       before.answer(true, { at: AT });
       const onScreen = before.progress();
       expect(onScreen).toMatchObject({ answeredToday: 1, plannedToday: 4 });
-      // The OLD numbers, kept here so the regression is legible: this is what a
-      // reload used to turn into `0/3`.
       expect(onScreen.answered).toBe(1);
       expect(onScreen.planned).toBe(4);
 
-      // The reload. A fresh plan at the same instant — one card shorter, because
-      // the graded track is no longer due.
       const after = buildSession(db, { now: AT, newLimit: 0 });
       expect(after.progress().planned).toBe(3);
       expect(after.progress().answered).toBe(0);
@@ -737,7 +578,6 @@ describe("the day's tally, not the session's", () => {
   it("counts grades made EARLIER today, including ones this device did not make", () => {
     const { db, dueIds } = fixture(3, 0);
     try {
-      // Stands in for a sync pull: a review dated today that no session here wrote.
       db.prepare(
         `INSERT INTO reviews (track_id, reviewed_at, tz_offset_minutes, time_unknown,
                               elapsed_days, scheduled_days, remembered, source)
@@ -754,9 +594,9 @@ describe("the day's tally, not the session's", () => {
     const { db, dueIds } = fixture(3, 0);
     try {
       const rows = [
-        ["2026-08-21T23:59:00+09:00", 0], // yesterday
-        ["2026-08-23T00:01:00+09:00", 0], // tomorrow
-        ["2026-08-22T23:00:00-05:00", 1], // still the 22nd where it was written
+        ["2026-08-21T23:59:00+09:00", 0],
+        ["2026-08-23T00:01:00+09:00", 0],
+        ["2026-08-22T23:00:00-05:00", 1],
       ] as const;
       for (const [at] of rows) {
         db.prepare(
@@ -776,13 +616,12 @@ describe("the day's tally, not the session's", () => {
     const { db } = fixture(3, 0);
     try {
       const s = buildSession(db, { now: AT, newLimit: 0 });
-      s.answer(false, { at: AT }); // writes a review AND queues the re-ask
+      s.answer(false, { at: AT });
       const afterForget = s.progress();
       expect(afterForget).toMatchObject({ answeredToday: 1, plannedToday: 3, reasksQueued: 1 });
 
       s.answer(true, { at: AT });
       s.answer(true, { at: AT });
-      // Now the re-ask itself. Decision 13: it writes no row.
       expect(s.current()?.reask).toBe(true);
       const beforeReask = s.progress().answeredToday;
       s.answer(true, { at: AT });
@@ -793,11 +632,6 @@ describe("the day's tally, not the session's", () => {
     }
   });
 
-  /**
-   * Zach, 2026-09-17: *"for missed/forgot card, we can actually make it visible on
-   * the progress bar, but maybe as a red bar? so the bar can now tell the
-   * proportion"*. The red is drawn from this number.
-   */
   it("counts the misses from the SAME rows as the day's tally", () => {
     const { db } = fixture(4, 0);
     try {
@@ -809,10 +643,6 @@ describe("the day's tally, not the session's", () => {
       s.answer(true, { at: AT });
       expect(s.progress()).toMatchObject({ answeredToday: 2, missedToday: 1 });
 
-      // IT SURVIVES THE RELOAD, which is the reason it is read from `reviews`
-      // rather than counted in the session. A tally kept in memory would come
-      // back 0 here while `answeredToday` came back 2, and the bar would then be
-      // contradicting itself.
       const reloaded = buildSession(db, { now: AT, newLimit: 0 }).progress();
       expect(reloaded).toMatchObject({ answeredToday: 2, missedToday: 1 });
     } finally {
@@ -829,7 +659,6 @@ describe("the day's tally, not the session's", () => {
       s.answer(true, { at: AT });
       expect(s.current()?.reask).toBe(true);
       const before = s.progress().missedToday;
-      // A re-ask writes no review, so neither number can move — including this one.
       s.answer(false, { at: AT });
       expect(s.progress().missedToday).toBe(before);
     } finally {

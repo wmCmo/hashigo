@@ -1,36 +1,4 @@
 /// <reference lib="webworker" />
-/**
- * The app's database side. Everything that touches SQLite happens here and
- * nowhere else.
- *
- * ─── WHY A WORKER AT ALL, AND WHY THE WHOLE DATABASE ────────────────────────
- *
- * `opfs-sahpool` needs `createSyncAccessHandle`, which the platform restricts to
- * dedicated workers. Hashigo deliberately sets no COOP/COEP headers — the VFS
- * needs neither `SharedArrayBuffer` nor cross-origin isolation, and `vite.config`
- * asserts `crossOriginIsolated === false` so that a header cannot quietly become
- * load-bearing. Between those two facts there is no way to reach a synchronous
- * `SqliteHandle` from the page, so this is not a performance choice. It is the
- * only place a query can run.
- *
- * ONE POOL PER WORKER. `installPool` refuses a second pool over the same
- * directory, because two pools over one directory is documented as unsupported
- * and the failure mode is corruption rather than an exception. So both databases
- * — the cards and the 617.9 MiB payload store — are two FILES in one pool.
- *
- * ─── WHAT IT DOES NOT DO ────────────────────────────────────────────────────
- *
- * It never renders, never mints an object URL and never plays anything. It hands
- * out `PreparedCard`s (`src/review`'s worker half) and, on request and only on
- * request, the bytes for one clip. `app/protocol.ts` explains why that makes the
- * message log itself evidence for the hard rule.
- *
- * It also does not request persistence: `navigator.storage.persist` is
- * **Window-only** and absent from `StorageManager.prototype` in a worker —
- * confirmed on Zach's own handset 2026-08-23, not merely on a desktop profile. So
- * `persisted()` and `estimate()` are readable here and the GRANT has to be asked
- * for by the page. That is an architectural constraint, not a detail.
- */
 
 import { SqliteBlobStore } from "../src/blobs/sqlite.js";
 import { count } from "./plural.js";
@@ -82,9 +50,6 @@ import {
   type ReviewSession,
 } from "../src/session/index.js";
 import { searchCards } from "../src/search/index.js";
-// After every write that changes what a card SAYS. The index view prefers
-// `cards.search_text` over the live fields, so a write that skips this leaves an
-// edited card findable only by its OLD text — see src/generate/search-text.ts.
 import { refreshSearchText } from "../src/generate/index.js";
 import { refreshCardTags } from "../src/cards/tags.js";
 import { collect, collectGlance, compareDeckPaths, renderDashboard } from "../src/dashboard/index.js";
@@ -96,10 +61,6 @@ import {
 } from "../src/template/index.js";
 import { positionKeys, FIELD_TYPES, type FieldType } from "../src/schema/index.js";
 import { effectiveRole, fieldKind, kindOf, ROLE_KEY, roleOf, withRole } from "../src/fields/index.js";
-// The SQL fragments for "live" and "due", from the module that owns them. This
-// query is why that module exists: it used to spell the due comparison with
-// `date()`, which converts an offset timestamp to UTC and made this count 704
-// where the scheduler counted 646.
 import { dueOnOrBefore, liveTrack } from "../src/scheduler/index.js";
 
 import {
@@ -196,21 +157,15 @@ import type {
   ReadingRequest,
 } from "./protocol.js";
 
-/**
- * Both files live in ONE pool. The names are absolute inside the pool, which is
- * not a filesystem path — the pool maps a name to an opaque slot.
- */
 const CARD_DB = "/hashigo.db";
 const STORE_DB = "/hashigo-blobs.db";
 const GEN_DB = "/hashigo-gen.db";
 const FIELDS_DB = "/hashigo-fields.db";
 
-/** Served by `vite.app.config.ts` middleware from `build/app/`. */
 const CARD_URL = "/hashigo-app.db";
 const STORE_URL = "/hashigo-app-blobs.db";
 const GEN_URL = "/hashigo-app-gen.db";
 const FIELDS_URL = "/hashigo-app-fields.db";
-/** A few hundred bytes describing the two above. See `seedManifest`. */
 const SEED_URL = "/hashigo-app.json";
 
 let cards: BrowserDb | null = null;
@@ -218,14 +173,6 @@ let payloads: BrowserDb | null = null;
 let store: SqliteBlobStore | null = null;
 let session: ReviewSession | null = null;
 
-/**
- * Every `AnswerResult` this session has produced, newest last.
- *
- * The undo of a grade needs the session's cursor and its decision-13 re-ask queue as
- * well as the two database rows, and the session lives here — so the stack does too,
- * and the page's undo entry carries nothing but its own intent. Cleared with the
- * session in `open`.
- */
 let answers: AnswerResult[] = [];
 
 function post(message: AppMessage): void {
@@ -236,42 +183,11 @@ function log(text: string, level: LogLevel = "info"): void {
   post({ kind: "log", level, text });
 }
 
-/**
- * Fetch one database and put it into the pool, unless the pool already has it.
- *
- * A WAL-mode file cannot be imported — `importDb` wants a single self-contained
- * checkpointed file, and anything living only in a `-wal` sidecar would be
- * silently missing. `scripts/app-bootstrap.ts` produces both files with
- * `VACUUM INTO`, which is what makes them importable; this only has to notice
- * when the fetch went wrong.
- */
-/**
- * Which file of how many, so the page can say "2 of 2" without knowing the plan.
- */
 interface FetchPlan {
   readonly index: number;
   readonly of: number;
 }
 
-/**
- * Read a response body to completion, reporting bytes as they arrive.
- *
- * `response.arrayBuffer()` is one await that resolves when the LAST byte lands,
- * so a 224 MB file over 5G is several silent minutes — measured on Zach's phone
- * 2026-09-08, and indistinguishable from a hang. Streaming the body costs one
- * loop and turns that into a progress bar.
- *
- * Chunks are collected and joined at the end rather than written incrementally
- * because `importDatabaseBrowser` takes one contiguous `Uint8Array`; this changes
- * what the user SEES, not how the import works.
- *
- * `Content-Length` is what the middleware sets (`vite.app.config.ts`), but a
- * proxy may drop it or re-encode — `tailscale serve` sits in front of this on the
- * phone. So `total` is `null` when it is absent or unparseable, and the page
- * renders an indeterminate bar instead of dividing by zero. A body with no
- * `getReader` (very old browsers, some test doubles) falls back to
- * `arrayBuffer()`, which is the old behaviour and still correct.
- */
 async function readWithProgress(
   response: Response,
   url: string,
@@ -289,8 +205,6 @@ async function readWithProgress(
 
   const chunks: Uint8Array[] = [];
   let received = 0;
-  // Throttled to ~10/s: one postMessage per 64 KB chunk is thousands of messages
-  // and repaints for a 224 MB file, which would make the bar itself the slow part.
   let lastPost = 0;
   post({ kind: "fetching", url, ...plan, received: 0, total, done: false });
   for (;;) {
@@ -335,23 +249,6 @@ async function ensureFile(
     );
   }
   const bytes = await readWithProgress(response, url, plan);
-  // The SQLite header is 16 bytes of magic; anything else here is an HTML error
-  // page with a 200, which `importDb` reports as an unhelpful malformed-database.
-  //
-  // ─── AND THE CAUSE IS ALMOST ALWAYS THE SAME ONE ──────────────────────────
-  //
-  // A single-page app's fallback answers an unknown route with `index.html` and
-  // a 200, on purpose — so `response.ok` cannot catch this and the header is the
-  // first thing that can. **The route is unknown because the SERVER is older
-  // than the client**: `vite.app.config.ts` builds its asset map once at
-  // startup, while the bundle is read from disk per request. A new seed file is
-  // therefore reachable by a page served from the same process that has never
-  // heard of it.
-  //
-  // The same shape came up for the sync mailbox (2026-09-13), `/generate/`
-  // (2026-09-15) and `/hashigo-app-gen.db` (2026-09-16), so the repair goes IN THE MESSAGE rather than in a comment he
-  // would have to be at a keyboard to read. `app/sync-client.ts` says the same
-  // sentence for the same reason.
   const magic = new TextDecoder("ascii").decode(bytes.subarray(0, 15));
   if (magic !== "SQLite format 3") {
     throw new Error(
@@ -366,56 +263,19 @@ async function ensureFile(
   return written;
 }
 
-/** What `scripts/app-bootstrap.ts` wrote beside the two databases. */
 interface SeedManifest {
   readonly generatedAt: string;
   readonly schemaVersion: number;
   readonly cards: number;
   readonly seedReviews: number;
   readonly payloads: number;
-  /**
-   * `blob_store_meta.created` of the audio file the server is serving. Absent on
-   * a manifest written before 2026-09-12, which is why every use is optional.
-   */
   readonly storeCreated?: string;
-  /**
-   * `gen_meta.created` of the TEXT GENERATION file the server is serving. Absent
-   * on a manifest written before 2026-09-16, which is why every use is optional
-   * — an older seed must keep working rather than re-fetching on every boot.
-   */
   readonly genCreated?: string;
   readonly generations?: number;
-  /**
-   * `field_meta.created` of the LOCAL FIELD file the server is serving. Absent on
-   * a manifest written before 2026-09-17, which is why every use is optional —
-   * an older seed must keep working rather than re-fetching on every boot.
-   */
   readonly fieldsCreated?: string;
   readonly fieldValues?: number;
 }
 
-/**
- * Is the database already in OPFS the one this server is serving?
- *
- * THE BUG THIS EXISTS FOR, seen 2026-09-08 on a real phone-shaped run.
- * `ensureFile` skips the fetch whenever OPFS already holds the file, which is
- * right — the whole point is that the app is local and offline after the first
- * load. But it made a re-import INVISIBLE: after the 2026-09-05 export landed,
- * the page went on reporting "102,020 reviews" from the August seed, and the only
- * way to notice was to read the boot log. On a phone that is a whole session
- * reviewed against stale due dates, and decision 16's final import would have
- * done it again, louder.
- *
- * **The comparison is on `seedReviews`, which counts rows that are NOT locally
- * graded.** That is the one number local reviewing cannot move, so this stays
- * correct once he is actually grading here — comparing `count(*)` would start
- * reporting a mismatch the moment he answered his first card, and "re-fetch"
- * would then mean "delete his grades".
- *
- * A manifest that is missing or unreadable returns null and changes nothing: an
- * older bootstrap, or a static host that only has the two databases, must keep
- * working rather than refusing to open.
- */
 async function seedManifest(): Promise<SeedManifest | null> {
   try {
     const response = await fetch(SEED_URL, { cache: "no-store" });
@@ -427,33 +287,6 @@ async function seedManifest(): Promise<SeedManifest | null> {
   }
 }
 
-/**
- * Copy the locally-authored fields from file 4 into the card database.
- *
- * ─── INSERT-ONLY, AND THAT IS THE WHOLE SAFETY ARGUMENT ─────────────────────
- *
- * `ON CONFLICT DO NOTHING` on both tables. A value this device already holds is
- * left exactly as it is, because **this device authors values too**: `setField`
- * is the card editor, and `flipReading` is decision 29's audit loop — the one he
- * uses constantly, the `Reading → true` button. Overwriting would take those
- * back, silently, on a boot that looked like a download.
- *
- * `Reading` is `local = 0` (Mochi owns it) so it is not in this file at all, and
- * that is belt as well as braces. `型` is `local = 1` and he CAN edit it here.
- *
- * ─── WHAT INSERT-ONLY DOES NOT SOLVE, STATED RATHER THAN HIDDEN ─────────────
- *
- * A value that CHANGED on the laptop does not cross. That is not an oversight
- * and it is not fixable here: the device may hold his edit of the same row, and
- * choosing between them needs a clock. `card_field_values` has none — decision
- * 33 named that gap and deferred it to a schema bump. So this delivers every
- * value the device has never seen, which is the reported case (the nine `ojad`
- * annotations of 2026-09-17 were absent, not stale), and stops exactly where
- * guessing would begin.
- *
- * Returns how many rows were new.
- */
-/** 種の `local_corrections`。起動時に読み、マージのたびに当て直す。 */
 let seedCorrections: readonly LocalCorrectionRow[] = [];
 
 async function applyLocalFields(): Promise<number> {
@@ -463,13 +296,9 @@ async function applyLocalFields(): Promise<number> {
   const seed = await openDatabaseBrowser({ filename: FIELDS_DB, applySchema: false });
   try {
     const { fields, values, corrections } = readSeedFields(seed);
-    // 同期のマージの後にも当て直すため、覚えておく（`reapplyCorrections`）。
     seedCorrections = corrections;
     if (values.length === 0) return 0;
     const have = Number((db.prepare(COUNT_HELD).get() as { n: number }).n);
-    // ONE TRANSACTION over both tables, so a boot that dies half way leaves
-    // nothing partial — and so a value can never land ahead of the field
-    // declaration that makes it render.
     const report = db.transaction(() => mergeLocalFields(db, fields, values, corrections))();
     log(
       `  local fields: ${have.toLocaleString()} here, ${values.length.toLocaleString()} served — ` +
@@ -484,12 +313,6 @@ async function applyLocalFields(): Promise<number> {
   }
 }
 
-/**
- * Copy the text generations from file 3 into `blobs`.
- *
- * Returns how many rows were new. See the call site for why a write into the
- * card database is safe here and what keeps it that way.
- */
 async function applyGenerations(fetched: boolean): Promise<number> {
   const db = cards;
   if (db === null) return 0;
@@ -500,8 +323,6 @@ async function applyGenerations(fetched: boolean): Promise<number> {
       (gen.prepare("SELECT count(*) AS n FROM generations").get() as { n: number }).n,
     );
     if (total === 0) return 0;
-    // A boot that did not re-fetch has already applied these; asking for the
-    // count is cheaper than 28,676 conflicting inserts.
     if (!fetched) {
       const have = Number(
         (
@@ -527,8 +348,6 @@ async function applyGenerations(fetched: boolean): Promise<number> {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (hash) DO NOTHING`,
     );
-    // Counted around the transaction rather than per row: `BrowserDb` exposes no
-    // `changes()`, and one COUNT either side is cheaper than 28,676 calls anyway.
     const countText = (): number =>
       Number(
         (
@@ -575,34 +394,14 @@ async function open(request: OpenRequest): Promise<void> {
   await installPool();
   log(`pool holds ${JSON.stringify(await databaseFilesInOpfs())}`);
 
-  // Asked BEFORE either fetch, because `ensureFile` is what changes the answer.
   const present = await databaseFilesInOpfs();
   const cardsWerePresent = present.includes(CARD_DB);
   const storeWasPresent = present.includes(STORE_DB);
 
-  // ── is what we already have still what the server is serving? ──
   let reimport = request.reimport;
-  // THE AUDIO FILE IS A SEPARATE QUESTION AND USED TO HAVE NO ANSWER AT ALL.
-  //
-  // Zach, 2026-09-12: *"the example sentence audio is not there"*. The clip was genuinely absent from the shipped subset — and a
-  // bigger `--speech-bytes` would not have reached him either, because the
-  // freshness check below is entirely about the CARD database. `seedReviews` is
-  // deliberately a property of that file (it is the one number local grading
-  // cannot move), so it does not move when only the audio changes, and
-  // `ensureFile` skips any file OPFS already holds. Both devices would have gone
-  // on playing the old subset for ever, with the boot log cheerfully saying
-  // "already in OPFS — not re-fetching".
-  //
-  // Replacing it destroys nothing: the store is content-addressed, the worker
-  // only ever READS it (`{ create: false }`), and no local grade or card lives in
-  // it. So this needs none of the refuse-loudly machinery the card database has.
   let refetchStore = request.reimport;
-  // One fetch, two questions. The card database and the audio file change for
-  // different reasons and are compared on different things.
   const manifest = reimport && refetchStore ? null : await seedManifest();
 
-  // `cards === null` as well: a second `open` in one session must not put a
-  // SECOND handle on the same pool file just to read two counts off it.
   if (cardsWerePresent && !reimport && cards === null) {
     if (manifest !== null) {
       const held = await openDatabaseBrowser({ filename: CARD_DB, applySchema: false });
@@ -612,7 +411,6 @@ async function open(request: OpenRequest): Promise<void> {
       const localReviews = count("SELECT count(*) AS n FROM reviews WHERE source = 'local'");
       if (heldSeed !== manifest.seedReviews) {
         if (localReviews === 0) {
-          // Nothing of his to lose: the local copy is purely a cached seed.
           held.close();
           reimport = true;
           log(
@@ -621,8 +419,6 @@ async function open(request: OpenRequest): Promise<void> {
             "step",
           );
         } else {
-          // REFUSE, LOUDLY. Re-importing would delete grades that exist nowhere
-          // else; reconciling them is stage 11's job, not this function's.
           log(
             `  the server has a NEWER seed (${manifest.seedReviews.toLocaleString()} reviews ` +
               `vs ${heldSeed.toLocaleString()} here) but this device holds ` +
@@ -638,11 +434,6 @@ async function open(request: OpenRequest): Promise<void> {
     }
   }
 
-  // ── and is the AUDIO still what the server is serving? ──
-  // Compared on `blob_store_meta.created`, one row, written fresh by the store's
-  // own DDL on every bootstrap — so it changes exactly when the file does.
-  // `count(*)` over `blob_payloads` answers the same question by walking every
-  // overflow page of a half-gigabyte file.
   if (storeWasPresent && !refetchStore && payloads === null && manifest !== null) {
     const serving = manifest.storeCreated ?? "";
     const held = await openDatabaseBrowser({ filename: STORE_DB, applySchema: false });
@@ -652,9 +443,6 @@ async function open(request: OpenRequest): Promise<void> {
           | { value: string }
           | undefined
       )?.value ?? "";
-    // The rule itself is in `./seed-freshness.ts`, with no imports, so `test/`
-    // can reach it — including the arm that must NOT fire (an older manifest
-    // with no such field), which otherwise re-downloads 640 MB on every boot.
     if (audioIsStale(serving, heldCreated)) {
       held.close();
       refetchStore = true;
@@ -668,26 +456,6 @@ async function open(request: OpenRequest): Promise<void> {
     }
   }
 
-  // ── and are the TEXT GENERATIONS still what the server is serving? ──
-  //
-  // ─── THE THIRD FILE, AND THE BUG THAT EARNED IT — 2026-09-16 ──────────────
-  //
-  // Zach filled 1,631 emoji, translations and furigana on 2026-09-15, rebuilt the
-  // seed, and got none of them. A text generation is a `blobs` row in the CARD
-  // database; the card database is re-fetched only when `seedReviews` differs;
-  // filling a generation moves `seedReviews` by exactly zero. So `ensureFile`
-  // said "already in OPFS — not re-fetching", in green, for ever.
-  //
-  // That is the audio bug of 2026-09-12 one layer up, and it would have been
-  // just as silent. **Re-fetching the card database is not the repair** — it is
-  // 74 MB and holds his grades, and the branch above refuses it outright while
-  // any local review exists, correctly. The content he was missing is 1.60 MiB.
-  //
-  // So it ships as its own file on the AUDIO's terms: content-addressed,
-  // read-only, no grade or card in it, therefore free to replace. Same staleness
-  // rule, same reason a COUNT would be wrong — he fills generations on the device
-  // from the card button, so a local count stops matching the server's and never
-  // recovers.
   let refetchGen = request.reimport;
   const genWasPresent = present.includes(GEN_DB);
   if (genWasPresent && !refetchGen && manifest !== null) {
@@ -710,12 +478,6 @@ async function open(request: OpenRequest): Promise<void> {
     }
   }
 
-  // ── AND THE LOCAL FIELDS (file 4), on the same rule ─────────────────────
-  //
-  // `ojad`, `型`, `読み`, `かな主流` — everything `template_fields.local = 1`.
-  // Zach, 2026-09-17: *"somehow ojad field is not here..."*. It had been fixed on
-  // the laptop an hour earlier and could not cross, because the card database is
-  // re-fetched only on `seedReviews` and a field value moves that by zero.
   let refetchFields = request.reimport;
   const fieldsWerePresent = present.includes(FIELDS_DB);
   if (fieldsWerePresent && !refetchFields && manifest !== null) {
@@ -744,36 +506,12 @@ async function open(request: OpenRequest): Promise<void> {
     (await ensureFile(FIELDS_DB, FIELDS_URL, refetchFields, { index: 3, of: 4 })) +
     (await ensureFile(STORE_DB, STORE_URL, refetchStore, { index: 4, of: 4 }));
 
-  // `applySchema: false` on all: these arrive fully formed. An empty pool plus a
-  // failed fetch must NOT quietly create a blank database and call it success.
   cards ??= await openDatabaseBrowser({ filename: CARD_DB, applySchema: false });
   payloads ??= await openDatabaseBrowser({ filename: STORE_DB, applySchema: false });
   store ??= new SqliteBlobStore(payloads, { create: false });
 
-  // ── FILE 3 INTO THE CARD DATABASE ───────────────────────────────────────
-  //
-  // The generations have to END UP in `blobs`, because that is where
-  // `resolveDescriptorText` looks and changing the read path would mean teaching
-  // every resolver about a second handle. So this is a write into the card
-  // database — the one file that holds his grades — and the safety is in how
-  // narrow it is:
-  //
-  //   · `INSERT ... ON CONFLICT (hash) DO NOTHING` and NOTHING ELSE. No UPDATE,
-  //     no DELETE, no other table touched. A generation he made on the device is
-  //     left exactly as it is; an identical one is a no-op by content address.
-  //   · `reviews`, `card_tracks` and `cards` are never named in this statement,
-  //     so no path here can move a grade or a due date.
-  //   · idempotent, so a boot that half-finished simply finishes.
-  //
-  // It runs on the boot that FETCHED the file. `hasGenerations` is asked first so
-  // an unchanged file costs one count rather than 28,676 no-op inserts.
   await applyGenerations(refetchGen);
-  // File 4, insert-only. See `applyLocalFields` for why it may never overwrite.
   await applyLocalFields();
-  // TAGS TYPED BEFORE TAGS WERE READ OFF THE TEXT (2026-11-05). `#Fishing` was
-  // typed on a card while nothing turned a typed `#` into a tag; edits and syncs
-  // do it now (`src/cards/tags.ts`), and this catches what is already on the
-  // device. Add-only and idempotent, and only over values carrying a `#`.
   try {
     const tagged = (
       cards.prepare("SELECT DISTINCT card_id FROM card_field_values WHERE instr(value, '#') > 0").all() as {
@@ -782,7 +520,6 @@ async function open(request: OpenRequest): Promise<void> {
     ).map((row) => row.card_id);
     refreshCardTags(cards, tagged);
   } catch (cause) {
-    // A tag that will not write must not cost him the review session.
     log(`tags: could not read #tags off the cards — ${(cause as Error).message}`);
   }
 
@@ -836,16 +573,6 @@ function requireCards(): BrowserDb {
   return cards;
 }
 
-/**
- * `pinned` and `archived` for one card, as booleans.
- *
- * Sent with every card and every preview so the screen's controls can label
- * themselves — "pin" or "unpin", "archive" or "unarchive". The page could remember
- * what it last did instead; it must not. Two surfaces act on the same card (the
- * gallery tile and the review bar), a duplicate lands unpinned while its original
- * is pinned, and an undo flips a row the page never touched. The row is the truth
- * and it is one join-free read.
- */
 function collectionState(db: BrowserDb, cardId: string): { pinned: boolean; archived: boolean } {
   const row = db.prepare("SELECT pinned, archived FROM cards WHERE id = ?").get(cardId) as
     | { pinned: number; archived: number }
@@ -856,7 +583,6 @@ function collectionState(db: BrowserDb, cardId: string): { pinned: boolean; arch
 function next(request: NextRequest): void {
   const active = requireSession();
   const db = requireCards();
-  // offset 0 is `current()`; anything else LOOKS without moving (his #9).
   const item = active.peek(request.offset ?? 0);
   if (item === null) {
     post({
@@ -891,31 +617,16 @@ function next(request: NextRequest): void {
     id: request.id,
     card,
     deckPath: card.loaded.deckPath,
-    // Decision 25: the label is per TRACK, and `origin` already is.
     isNew: item.origin === "new",
     reask: item.reask,
-    // The scheduler's own figure, counted in LOCAL DATES. Passed through rather
-    // than derived on the page — `app/overdue.ts` carries why those differ.
-    // A new track has no due date and `dueTracks` never yields it, so 0 here is
-    // "not late" and not a missing value.
     overdueDays: item.origin === "new" ? 0 : item.track.overdueDays,
     dueAt: item.track.dueAt,
-    // Null on a new track, which is a fact and not a missing value: there is
-    // no last time. `app/last-seen.ts` renders nothing for it.
     lastReviewedAt: item.track.lastReviewedAt,
     ...collectionState(db, item.cardId),
     progress: active.progress(),
   });
 }
 
-/**
- * Bytes for one clip.
- *
- * The resolver is built PER CARD on purpose — `cardAudioResolver` closes over the
- * card id, and a test in `src/cards` proves the same `ref_key` against another
- * card resolves to null. Passing the id in the message rather than remembering
- * "the current card" keeps that property across an out-of-order reply.
- */
 async function payload(request: PayloadRequest): Promise<void> {
   const db = requireCards();
   if (store === null) throw new Error("no payload store — send `open` first");
@@ -926,12 +637,7 @@ async function payload(request: PayloadRequest): Promise<void> {
 
 function answer(request: AnswerRequest): void {
   const active = requireSession();
-  // P1's second half: the per-grade OPFS write, measured where it happens rather
-  // than inferred from the page's round trip, which would include postMessage.
   const started = performance.now();
-  // `answerAt(0)` IS `answer()` — one path, so an out-of-order grade cannot drift
-  // from an in-order one. It swaps the target into the cursor and grades there,
-  // which is why undo needs no special case.
   const outcome = active.answerAt(request.offset, request.remembered, {
     ...(request.durationMs === null ? {} : { durationMs: request.durationMs }),
   });
@@ -970,13 +676,6 @@ function answer(request: AnswerRequest): void {
   });
 }
 
-/**
- * Undo the last grade — delete the review, restore the schedule, rewind the cursor.
- *
- * `ReviewSession.unanswer` does the database work first, so a refusal leaves the
- * session and the database still agreeing. `ungradeTrack` refuses anything but the
- * newest review on a track, which is why this pops rather than searching.
- */
 function ungrade(request: UngradeRequest): void {
   const active = requireSession();
   const last = answers.pop();
@@ -984,7 +683,6 @@ function ungrade(request: UngradeRequest): void {
   try {
     active.unanswer(last);
   } catch (cause) {
-    // Put it back: the undo did not happen, so the stack must still describe reality.
     answers.push(last);
     throw cause;
   }
@@ -999,21 +697,6 @@ function ungrade(request: UngradeRequest): void {
   });
 }
 
-/**
- * Decision 29's audit loop: flip `Reading` on the card in front of him.
- *
- * `cardMode` is what read this, and it insists on a BOOLEAN field named `Reading`
- * declared by the card's own template — 漢字 has a PLAIN field of the same name
- * over 1,662 cards. The same insistence is repeated here rather than trusted from
- * the page, because the page's `readingFieldId` came from a message and a write
- * that lands on 漢字's reading text would destroy data.
- */
-/**
- * The card's decision-29 switch, found EXACTLY as `cardMode` finds it —
- * `readingSwitch`, role first and name+type second. Two lookups that disagreed
- * would let this write a field the mode never reads, and the toggle would do
- * nothing on screen.
- */
 function readingFieldOf(db: BrowserDb, cardId: string): { id: string } | undefined {
   const rows = db
     .prepare(
@@ -1027,7 +710,6 @@ function readingFieldOf(db: BrowserDb, cardId: string): { id: string } | undefin
   );
 }
 
-/** Stamp a card as edited now — the clock sync's field-value rule compares. */
 function touchCard(db: ReturnType<typeof requireCards>, cardId: string): void {
   db.prepare("UPDATE cards SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(cardId);
 }
@@ -1052,15 +734,6 @@ function setReading(request: ReadingRequest): void {
   post({ kind: "reading", id: request.id, cardId: request.cardId, value: request.value });
 }
 
-/**
- * Throw away the whole pool.
- *
- * The order matters and each step is load-bearing: count the loss BEFORE
- * destroying it, `close()` both handles so no sync access handle is still open
- * (`WasmDb.close` finalizes every statement first, which upstream's own close does
- * not), then `removeVfs()`. A per-file `unlink()` would report success and free
- * nothing — measured at 0.0 MiB of 639.0 MiB.
- */
 async function reset(request: ResetRequest): Promise<void> {
   const localReviews =
     cards === null
@@ -1085,23 +758,6 @@ async function reset(request: ResetRequest): Promise<void> {
   post({ kind: "reset", id: request.id, removed, localReviews });
 }
 
-/**
- * One operation on one card — his #7 and #14, and every one of them was already
- * possible in the schema and unreachable from anywhere.
- *
- * `archive` is `cards.archived`, which the queue (`src/scheduler/queue.ts:139`),
- * the dashboard and the backtest all already honour — 234 imported cards prove the
- * machinery works. Nothing could SET it until now.
- *
- * `delete` is one statement, because every foreign key pointing at `cards` is
- * `ON DELETE CASCADE` (field values, tracks, tags, links, blob refs) and the FTS
- * index has triggers on all three of its sources. `blob_refs_ad` decrements the
- * refcount so the card's audio is released, and `blobs_no_delete_while_referenced`
- * stops a payload something else still uses from going with it.
- *
- * **`delete` is the one that cannot be undone**, and it says so rather than
- * offering a reversal it cannot honour: the reviews go with the card.
- */
 function cardOp(request: CardOpRequest): void {
   const db = requireCards();
   const card = db
@@ -1120,8 +776,6 @@ function cardOp(request: CardOpRequest): void {
 
   const name = card.name === "" ? card.id : card.name;
   let resultCardId = card.id;
-  // Taken from the MESSAGE type rather than restated, so a new field there cannot
-  // be added and forgotten here — the mistake `deckOp`'s `restoreArchive` made once.
   let undo: CardOpMessage["undo"] = null;
   let describe = "";
 
@@ -1136,13 +790,6 @@ function cardOp(request: CardOpRequest): void {
       undo = { op: "archive", cardId: card.id };
       describe = `unarchived ${name}`;
       break;
-    // PIN IS NOT ARCHIVE'S OPPOSITE and the two are deliberately independent.
-    // Archive means "stop scheduling this"; pin means "keep this in front of me".
-    // A card can be both — an archived card he is still looking at — so neither
-    // clears the other.
-    //
-    // It touches NO schedule and writes no review, which is why it is safe to hang
-    // on a bare keystroke in review.
     case "pin":
       db.prepare("UPDATE cards SET pinned = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(card.id);
       undo = { op: "unpin", cardId: card.id };
@@ -1154,24 +801,16 @@ function cardOp(request: CardOpRequest): void {
       describe = `unpinned ${name}`;
       break;
     case "setTemplate": {
-      // `templateId` is REQUIRED to be present, and `null` is a legal value meaning
-      // "no template" — so `undefined` is the error and `?? null` would hide it.
       if (!("templateId" in request)) throw new Error("setTemplate needs a templateId");
       const to = request.templateId ?? null;
       if (to !== null && db.prepare("SELECT 1 FROM templates WHERE id = ?").get(to) === undefined) {
         throw new Error(`no template ${to}`);
       }
       if (to === card.template_id) {
-        // Not an error, and not a write either: a picker that re-selects the current
-        // option must not put a no-op on the undo stack.
         describe = `${name} is already on that template`;
         undo = null;
         break;
       }
-      // NO VALUE IS DELETED. `card_field_values` is keyed `(card_id, field_id)` and
-      // is deliberately not foreign-keyed to `template_fields`, so this changes which
-      // values RENDER and nothing else — see `CardOp`'s `setTemplate` for the field-id
-      // overlap that makes the number worth saying out loud.
       const before = new Set(
         (
           db
@@ -1206,7 +845,6 @@ function cardOp(request: CardOpRequest): void {
       break;
     }
     case "delete":
-      // The cascades do the rest. Counted first so the message can say what went.
       {
         const reviews = Number(
           (
@@ -1219,8 +857,6 @@ function cardOp(request: CardOpRequest): void {
           ).n,
         );
         db.prepare("DELETE FROM cards WHERE id = ?").run(card.id);
-        // NO UNDO. The reviews went with it, and offering a reversal that
-        // silently loses them is worse than saying so.
         undo = null;
         describe = `deleted ${name} and ${count(reviews, "review")} — not undoable`;
       }
@@ -1230,15 +866,6 @@ function cardOp(request: CardOpRequest): void {
         const copyId = newCardId(db);
         db.transaction(() => {
           db.prepare(
-            // `reverse` and `voice` come with the copy: they describe the CARD, and
-            // dropping `reverse` silently gave the duplicate the deck's default —
-            // losing the override on the 14 cards that carry one, which for a card
-            // overridden to `on` means the copy has no reverse track at all.
-            // `pinned` and `archived` deliberately do NOT come: those describe a
-            // relationship with the collection, and a fresh copy has none yet.
-            // `local = 1` on the COPY whatever the original was: the duplicate exists
-            // only here, so it needs the same protection a created card does. The
-            // original's own flag is irrelevant to that.
             `INSERT INTO cards (id, deck_id, template_id, name, content, reverse, voice,
                                 archived, local)
              SELECT ?, deck_id, template_id, name, content, reverse, voice, 0, 1
@@ -1250,8 +877,6 @@ function cardOp(request: CardOpRequest): void {
           ).run(copyId, card.id);
           refreshSearchText(db, [copyId]);
           refreshCardTags(db, [copyId]);
-          // Fresh tracks, NOT the original's schedule: a duplicate is a new card
-          // he has never seen, and inheriting a 300-day interval would hide it.
           const reverse = db
             .prepare("SELECT reverse FROM card_reverse_resolved WHERE card_id = ?")
             .get(copyId) as { reverse: string } | undefined;
@@ -1269,9 +894,6 @@ function cardOp(request: CardOpRequest): void {
       }
       break;
   }
-  // If the operation took the card the session is SHOWING, move past it here rather
-  // than leaving the page holding a card whose track may no longer exist. `delete`
-  // cascades to `card_tracks`, so without this every later grade throws invisibly.
   let advanced = false;
   if (
     (request.op === "delete" || request.op === "archive") &&
@@ -1293,26 +915,9 @@ function cardOp(request: CardOpRequest): void {
   });
 }
 
-/**
- * Deck operations — his #14, and the ANSWER to his #8.
- *
- * `decks.archived` has existed in the schema since v1 and **nothing has ever read
- * or written it**. That is why his 数字 deck kept appearing: Mochi has no
- * deck-level archive flag at all (`src/import/entities.ts:326` writes `archived: 0`
- * unconditionally and says so), so a deck he archived in Mochi arrived here
- * unarchived and there was no way to say otherwise.
- *
- * Archiving a deck here marks the DECK. `queueRespectsDeckArchive` in the page is
- * not a thing — the queue filters on the CARD — so archiving a deck also archives
- * its cards, which is the honest reading of "stop reviewing this" and keeps one
- * predicate rather than two.
- */
 function deckOp(request: DeckOpRequest): void {
   const db = requireCards();
   let describe = "";
-  // Taken from the message type rather than restated, so a new DeckOp cannot be
-  // added here and forgotten there. The duplicated union is how `restoreArchive`
-  // first failed to compile.
   let undo: DeckOpMessage["undo"] = null;
   let deckId = request.deckId;
 
@@ -1333,14 +938,6 @@ function deckOp(request: DeckOpRequest): void {
       case "archive":
       case "unarchive": {
         const to = request.op === "archive" ? 1 : 0;
-        // The deck AND its cards, THROUGH THE WHOLE SUBTREE. The queue filters on
-        // the card, so marking only the deck would archive nothing he can see —
-        // two predicates that disagree is worse than one that is blunt.
-        //
-        // It used to say `WHERE deck_id = ?`, the deck's OWN cards only, while
-        // reporting "and its cards". Measured: 日本語 owns 3 of the 5,947 in its
-        // subtree and English owns 0 of 1,258, so archiving either did essentially
-        // nothing and said it worked. His #8 is exactly this operation.
         let result = { deckIds: [] as string[], changed: [] as string[] };
         db.transaction(() => {
           result = archiveSubtree(db, deckId, to);
@@ -1352,10 +949,6 @@ function deckOp(request: DeckOpRequest): void {
         break;
       }
       case "restoreArchive": {
-        // The undo of the two above. It puts back EXACTLY the rows that were flipped
-        // and nothing else, so a card he archived by hand inside the deck keeps its
-        // state. `archived` is read from the card itself, inverted per row, because
-        // one restore may span both directions after a mixed operation.
         const cardIds = request.cardIds ?? [];
         db.transaction(() => {
           restoreArchive(db, deckId, cardIds);
@@ -1370,18 +963,6 @@ function deckOp(request: DeckOpRequest): void {
         undo = { op: "rename", deckId, name: deck.name };
         break;
       case "move": {
-        // ─── THE CYCLE GUARD IS THE WHOLE OF THIS OPERATION ──────────────────
-        //
-        // `decks.parent_id` has no constraint that can stop a deck becoming its own
-        // ancestor, and the damage is not a bad row — it is `deck_ancestry`, a
-        // RECURSIVE view with no depth bound, which every path, count, reverse
-        // resolution and target-retention lookup goes through. One cycle and those
-        // queries do not return. The page has a cycle report in its tree walk for
-        // the same reason; this is the write side of it, and it is cheaper to
-        // refuse here than to detect there.
-        //
-        // `deck_ancestry` includes the deck itself at depth 0, so this one check
-        // covers both "into itself" and "into its own descendant".
         const target = request.parentId ?? null;
         if (target !== null) {
           const wouldCycle = db
@@ -1402,9 +983,6 @@ function deckOp(request: DeckOpRequest): void {
           parent_id: string | null;
         };
         db.prepare("UPDATE decks SET parent_id = ? WHERE id = ?").run(target, deckId);
-        // The NAME, not the id. `say()` puts this in front of him and an 8-character
-        // base62 id is not a place he can recognise — and it is the string the undo
-        // button then repeats back.
         const into =
           target === null
             ? "the top level"
@@ -1418,9 +996,6 @@ function deckOp(request: DeckOpRequest): void {
         break;
       }
       case "delete": {
-        // `cards.deck_id` is ON DELETE RESTRICT, deliberately: deleting a deck
-        // must never silently take its cards. So this refuses rather than
-        // cascading, and says how many are in the way.
         const held = Number(
           (db.prepare("SELECT count(*) AS n FROM cards WHERE deck_id = ?").get(deckId) as {
             n: number;
@@ -1456,25 +1031,8 @@ function newDeckId(db: BrowserDb): string {
   throw new Error("could not find a free deck id");
 }
 
-/**
- * A card id: `newCardId` in `src/cards/create.ts`, eight base62 characters in
- * Mochi's shape. **Deliberately NOT namespaced** — he never imports a single
- * card, and after decision 16's final import no Mochi id ever arrives again, so
- * uniqueness inside this database is the whole requirement. This alphabet is
- * shared with the deck and field ids minted here.
- */
 const ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-/**
- * Make a card — `createCard` in `src/cards/create.ts`, which opens its tracks and
- * writes any values in the same transaction, and refuses a second card of the
- * same name on the same template unless `allowDuplicate` says so. That refusal is
- * a REPLY here, not an error: the form offers to open the card that exists.
- *
- * The session was built before this card existed, so it will not appear until
- * the next one. Said in the reply rather than silently rebuilt: rebuilding
- * mid-session would reshuffle the queue under him.
- */
 function createCard(request: CreateCardRequest): void {
   const db = requireCards();
   let created;
@@ -1512,14 +1070,6 @@ function createCard(request: CreateCardRequest): void {
   });
 }
 
-/**
- * The deck tree with counts. 39 rows, one query, sent once.
- *
- * `due` uses the SAME predicate the queue does — `dormant = 0 AND archived = 0`
- * — so the sidebar cannot disagree with the session about what is waiting. 234
- * archived cards carrying 451 live tracks are excluded from `due` and INCLUDED in
- * `cards`, because archiving means "stop reviewing", not "stop existing".
- */
 function decks(request: DecksRequest): void {
   const db = requireCards();
   const rows = db
@@ -1546,10 +1096,6 @@ function decks(request: DecksRequest): void {
   post({
     kind: "decks",
     id: request.id,
-    // EVERY deck now, not just non-empty ones: the sidebar nests (his #2/#5) and
-            // a parent with no cards of its own is still a node its children hang from.
-    // Natural order, not `ORDER BY path` — see `compareDeckPaths`. The tree keeps the
-    // order of this list (`treeChildrenOf`), so sorting here is the whole fix.
     decks: rows
       .map((row) => ({ ...row, archived: row.archived === 1 }))
       .sort((a, b) => compareDeckPaths(a.path, b.path)),
@@ -1569,27 +1115,6 @@ function decks(request: DecksRequest): void {
   });
 }
 
-/**
- * Search, or list a deck.
- *
- * The query path is `src/search`, untouched — it already answers the thing that
- * is easy to get wrong here: a 1-2 character query. `card_fts` uses FTS5's
- * trigram tokeniser and CANNOT serve one, and two characters is the commonest
- * search unit in Japanese (意味, する, ない all return 0 from MATCH and 3, 228 and
- * 74 from the ranked scan). It routes and reports which path ran.
- *
- * With no query it depends on WHO ASKED. For the gallery (`suggest` false) it is a
- * deck listing ordered by name — a browse, not a ranking, so imposing a relevance
- * order on it would be a lie. For Ctrl+K and the `@` picker (`suggest` true) the
- * alphabet is not neutral, it is noise, and `suggestCards` answers instead: pinned,
- * then opened here, then recently edited. See `app/recent.ts`.
- */
-/**
- * The gallery's second line for each of `cardIds` — see `app/gist.ts` for which
- * field and why. One query for the page (at most 300 ids), not one per tile.
- * Ordered by the field's preference, so a card that somehow carries both names
- * gets the first one; `Map#set` only on the first sighting keeps it.
- */
 function gistsFor(db: BrowserDb, cardIds: readonly string[]): Map<string, string> {
   const out = new Map<string, string>();
   if (cardIds.length === 0) return out;
@@ -1618,15 +1143,7 @@ function browse(request: BrowseRequest): void {
   const db = requireCards();
   const started = performance.now();
 
-  // THE DECK SCOPE IS THE SUBTREE, because the badge beside the deck is a subtree
-  // total. It used to be `c.deck_id = ?`, an exact match, so clicking a parent
-  // opened a gallery that disagreed with the number he clicked: English showed
-  // "1258" and listed 0 cards, 日本語 showed "5947" and listed 3. Every deck with
-  // children was affected, which is every deck he actually navigates through.
   const deckScope = scopeToSubtree(db, request.deckId);
-  // Both scopes AND together, so a tag tapped inside a deck gallery narrows
-  // rather than replaces. Nothing sends both today; writing it as an `and` costs
-  // one line and removes the question.
   const tagScope =
     request.tagPath === undefined || request.tagPath === null
       ? { sql: "1 = 1", args: [] as string[] }
@@ -1680,8 +1197,6 @@ function browse(request: BrowseRequest): void {
     return;
   }
 
-  // Scoped IN THE QUERY, not after it. Filtering the page under-reported: the top
-  // 300 matches across 7,716 cards can hold almost none from the deck he is in.
   const result = searchCards(db, request.query, {
     limit: request.limit,
     includeArchived,
@@ -1694,14 +1209,7 @@ function browse(request: BrowseRequest): void {
       path: string;
     }[]).map((row) => [row.deck_id, row.path]),
   );
-  // No post-filter any more — `searchCards` did the scoping, so `result.total` is the
-  // real number of matches INSIDE the deck rather than across the collection.
   const filtered = result.hits;
-  // The whole pinned set, not a lookup per hit. `cards_pinned` is a PARTIAL index
-  // (`WHERE pinned = 1`) so this reads exactly the pinned rows — and pinning is a
-  // hand operation, so the set is the size of his attention, not of the corpus.
-  // `searchCards` deliberately does not carry it: pinning is a property of the
-  // collection, not of the match.
   const pinnedIds = new Set(
     (db.prepare("SELECT id FROM cards WHERE pinned = 1").all() as { id: string }[]).map(
       (row) => row.id,
@@ -1725,38 +1233,8 @@ function browse(request: BrowseRequest): void {
   });
 }
 
-/**
- * Field types whose STORED VALUE is the content, and so may be edited.
- *
- * The exclusions are not caution, they are measured: `speech`, `translate` and
- * `ai` have **zero non-empty values across the entire corpus** (10 + 5 + 4 fields,
- * 0 values). Mochi keeps generated output in `component-cache`, addressed by
- * generation identity — the field's own value has always been the empty string.
- * Writing one would change nothing on screen and would put a value somewhere the
- * renderer treats as a marker, so the editor shows them read-only instead.
- *
- *     plain    79,739 fields   79,549 non-empty
- *     accent    7,660           7,660     (derived, but LOCAL — decision 9)
- *     text      7,390           7,377
- *     boolean   1,635           1,611
- *     number       90              90
- *     speech/translate/ai          0      <- these
- */
 const EDITABLE_TYPES = new Set(["plain", "boolean", "number", "accent"]);
 
-/**
- * Write one field value.
- *
- * **Validated here rather than trusted from the page**, for the same reason the
- * `Reading` toggle is: the page's field id arrived in a message, and a write that
- * lands on the wrong field destroys data with no error. Two checks, and both have
- * a real case behind them:
- *
- *   1. the field must be DECLARED on this card's own template — otherwise an edit
- *      creates one of the 235 orphan values this corpus already carries, invisible
- *      because nothing renders it;
- *   2. the type must be one whose stored value is the content (see above).
- */
 function setField(request: SetFieldRequest): void {
   const db = requireCards();
   const field = db
@@ -1779,16 +1257,12 @@ function setField(request: SetFieldRequest): void {
         `the empty string. Refusing to write.`,
     );
   }
-  // Read BEFORE the write — this is the whole of what makes an edit undoable, and
-  // the page cannot supply it: its copy is whatever it last rendered.
   const before = db
     .prepare("SELECT value FROM card_field_values WHERE card_id = ? AND field_id = ?")
     .get(request.cardId, request.fieldId) as { value: string } | undefined;
   const existed = before !== undefined;
 
   if (request.value === null) {
-    // Undoing an edit that CREATED the row: remove it rather than writing "". A
-    // present-but-empty value is not the same thing — `<<#field>>` gates on presence.
     db.prepare("DELETE FROM card_field_values WHERE card_id = ? AND field_id = ?").run(
       request.cardId,
       request.fieldId,
@@ -1800,13 +1274,6 @@ function setField(request: SetFieldRequest): void {
        ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value`,
     ).run(request.cardId, request.fieldId, request.value);
   }
-  // DERIVED FIELDS FOLLOW THEIR WORD (decision 61). The helper fills only EMPTY
-  // values, so a 読み / 型 / OJAD made for the old word would stay for ever once
-  // 単語 changed — while 例文 and the audio, keyed by their input, move on their
-  // own. So an edit that CHANGES a field empties every derived field downstream
-  // of it (through generators too: 単語 → 例文 → OJAD), for the helper to fill
-  // again. Emptied to "", never deleted: a deleted row does not travel, and the
-  // other device's payload would put the old value straight back.
   const changed = (before?.value ?? null) !== request.value;
   const cleared: { fieldId: string; name: string; previous: string | null }[] = [];
   if (changed) {
@@ -1823,12 +1290,8 @@ function setField(request: SetFieldRequest): void {
       cleared.push({ fieldId: target.id, name: target.name, previous: row.value });
     }
   }
-  // THE EDIT'S CLOCK. Sync keeps field values by card clock (`src/sync/merge.ts`);
-  // without this stamp an edit is indistinguishable from the stale copy every
-  // other device still uploads, and the last payload merged decides.
   touchCard(db, request.cardId);
   refreshSearchText(db, [request.cardId]);
-  // A `#tag` he typed becomes a tag (`src/cards/tags.ts`) — "the tagging is not working".
   refreshCardTags(db, [request.cardId]);
   post({
     kind: "setField",
@@ -1842,27 +1305,6 @@ function setField(request: SetFieldRequest): void {
   });
 }
 
-/**
- * One card by id, for a preview layer.
- *
- * A missing card is a REPLY, not an error: this corpus carries 8,958 tombstones,
- * so a wiki-link into a card Mochi deleted is expected rather than exceptional and
- * the page should say "that card is gone" rather than fail a boot.
- *
- * Always `forward`. A preview shows every side at once (decision 30), so the
- * direction only permutes an order the reader can see all of anyway — and the
- * AUTHORED order is the one that reads correctly.
- */
-/**
- * What moving THIS card to each template would cost.
- *
- * Computed per card rather than per template pair, because the answer depends on
- * which fields the card actually has a value for — a 単語 card with only its head
- * word filled in loses nothing by moving, and one with seven values loses six.
- *
- * Only NON-EMPTY values count. An empty row is not authored text and reporting it
- * as something at risk would inflate every number here.
- */
 function templateChoices(db: BrowserDb, cardId: string): TemplateChoice[] {
   const card = db.prepare("SELECT template_id FROM cards WHERE id = ?").get(cardId) as
     | { template_id: string | null }
@@ -1920,19 +1362,7 @@ function preview(request: PreviewRequest): void {
   });
 }
 
-/**
- * WHAT LINKS HERE — Zach, 2026-09-14.
- *
- * The rule, the SQL and the measurements are in `src/cards/backlinks.ts`, not
- * here. This file holds no SQL of its own anywhere else and should not start now:
- * a query in the worker is a query `test/` cannot reach, and every reason this
- * one is shaped the way it is (the `DISTINCT`, the self-link, the inner join)
- * is a claim about his corpus that wants measuring rather than asserting.
- */
 function backlinks(request: BacklinksRequest): void {
-  // Links written since the import live only in the TEXT until this runs —
-  // `src/cards/link-index.ts`. Lazily, here, because this is the one reader; ~60 ms
-  // over the whole corpus, and only after something may have written a value.
   if (linksStale) {
     try {
       const { cards, rows } = reconcileCardLinks(requireCards());
@@ -1950,46 +1380,26 @@ function backlinks(request: BacklinksRequest): void {
   });
 }
 
-/** Decision 17's archive. Read-only; the page turns it into a file. */
-/**
- * Stage 11, the worker half. Two verbs, and neither knows about the network.
- *
- * `syncExport` reads this device's database into a payload; `syncMerge` applies a
- * peer's. Which device, and how the two met, is the page's business — decision
- * 33 chose a mailbox on the laptop's Vite server, and this file would not change
- * if that choice did.
- */
 function syncExport(request: SyncExportRequest): void {
   const db = requireCards();
-  // 印は書き出しと同じ瞬間に読む — ワーカーは一つずつ処理するので、間に採点は入らない。
   const mark = maxLocalReviewId(db);
   const payload = exportSync(db, new Date().toISOString());
-  // The fingerprint of exactly this payload (decision 64). Same export, so the
-  // page can never keep a fingerprint of something it did not send.
   const index = JSON.stringify(indexPayload(payload));
   const json = request.indexOnly === true ? "" : JSON.stringify(payload);
   post({
     kind: "syncExport",
     id: request.id,
     json,
-    // UTF-8 bytes, not `.length` — decision 6, name the basis. This payload is
-    // mostly Japanese and `.length` counts UTF-16 code units.
     bytes: new TextEncoder().encode(json).length,
     mark,
     index,
   });
 }
 
-/**
- * 印より後の採点だけ。`src/sync/delta.ts`。With `sent`, the edits since that
- * fingerprint as well (decision 64, `exportEditDelta`).
- */
 function syncDelta(request: SyncDeltaRequest): void {
   const db = requireCards();
   const sent = request.sent === undefined ? null : parseSentIndex(request.sent);
   if (request.sent !== undefined && sent === null) {
-    // The page checks this before asking; a fingerprint that does not parse here
-    // would make every group look new, which is a full payload in a delta's clothes.
     throw new Error("syncDelta: the sent fingerprint is not readable — send the full payload");
   }
   const edit = sent === null ? null : exportEditDelta(db, request.after, sent, new Date().toISOString());
@@ -2007,10 +1417,6 @@ function syncDelta(request: SyncDeltaRequest): void {
   });
 }
 
-/**
- * `open` が組んだ計画を、起動時の同期の後に組み直す。`ReplanRequest` 参照。
- * 採点が一つでもあれば拒む — ページ側の約束を、ここでも守らせる。
- */
 function replan(request: ReplanRequest): void {
   const db = requireCards();
   if (answers.length > 0) {
@@ -2020,14 +1426,6 @@ function replan(request: ReplanRequest): void {
   post({ kind: "replan", id: request.id, planned: session.progress().planned });
 }
 
-/**
- * 計画を絞る。`FocusRequest` 参照。
- *
- * `replan` と違って採点の後でも受ける — 電車で声が出せなくなるのは、セッションの
- * 途中だから。答えたカードは due が先へ動いているので、新しい計画には戻らない。
- * 新しいカードの上限は日ごとに数える仕組みが無く（`buildSession` は `open` ごとに
- * 10 を配る）、それは今日までのリロードと同じ振る舞い。
- */
 function focus(request: FocusRequest): void {
   const db = requireCards();
   session = buildSession(db, {
@@ -2063,33 +1461,9 @@ function syncMerge(request: SyncMergeRequest): void {
     }
   ).n;
   const markBefore = maxLocalReviewId(db);
-  // 差分なら、review と状態だけの普通の payload に包む — 規則は全体と同じ
-  // `mergeSync`（`src/sync/delta.ts` の `deltaPayload`）。
   const payload = isDelta(request.payload)
     ? deltaPayload(request.payload, new Date().toISOString())
     : request.payload;
-  // ─── ONE TRANSACTION, AND ITS ABSENCE COST HIM A DAY ───────────────────────
-  //
-  // `applyLocalArchive`'s own header says it: *"The caller owns the
-  // transaction."* `src/backup/cli.ts` opens one and says why — *"a foreign-key
-  // surprise must not leave a half restore"* — and this, the OTHER caller, never
-  // did. Two consequences, and both were observed rather than reasoned about:
-  //
-  //   * **A half merge.** Zach, 2026-09-13: *"but i still can't see ojad
-  //     field...? both on desktop and mobile"*. His phone's own payload showed
-  //     the `ojad` FIELD on 4 templates and all 3,718 VALUES applied, and the
-  //     template BODIES not applied — one merge, partly done, left standing.
-  //     With no transaction each statement autocommits, so an interrupted merge
-  //     keeps whatever it had already written.
-  //   * **The speed that interrupts it.** A payload is now 7,566 field values,
-  //     7,716 card flags and 244 card-state rows; four peers is ~30,000 upserts,
-  //     each its own implicit transaction and its own OPFS flush. Measured in
-  //     the browser pane: a single sync ran over SEVEN MINUTES and had still not
-  //     pushed. On a phone that is a tab the system is free to suspend, which is
-  //     how the half merge above happens in the first place.
-  //
-  // So the fix is the same line for both faults.
-  // 訂正の当て直しも同じトランザクションの中 — 戻された値が一瞬でも確定しない。
   const report = db.transaction(() => {
     const merged = mergeSync(db, payload as never);
     const fixed = reapplyCorrections(db, seedCorrections);
@@ -2104,9 +1478,6 @@ function syncMerge(request: SyncMergeRequest): void {
   post({
     kind: "syncMerge",
     id: request.id,
-    // Counted from the table rather than taken from the apply report, because
-    // "how many of my grades arrived" is the number he would check, and it is
-    // the one a bug in the union would move.
     reviewsAdded: after - before,
     flagsTaken: report.flagsTaken,
     trackStateTaken: report.trackStateTaken,
@@ -2116,15 +1487,8 @@ function syncMerge(request: SyncMergeRequest): void {
   });
 }
 
-/**
- * The text for a card's empty generator slots — see `src/review/text.ts`.
- *
- * Resolution only. This reads `blobs` and writes nothing, and it cannot reach a
- * media element: the page only sends slots whose mount has no `MediaMount`.
- */
 function generatedText(request: GeneratedTextRequest): void {
   const db = requireCards();
-  // Looked up once, and only if some furigana comes back empty — see below.
   let yomi: string | null | undefined;
   const texts = request.slots.map((slot) => {
     const stored = resolveDescriptorText(db, {
@@ -2134,29 +1498,19 @@ function generatedText(request: GeneratedTextRequest): void {
       voice: slot.voice,
       options: slot.options,
     });
-    // CLEANED ON THE WAY OUT, not only on the way in. 2026-10-23: 左遷's emoji
-    // still showed `<thinking_mode>…<reasoning_effort>…` on his phone a day after
-    // b8c20f3, because that fix cleaned the Worker and its cache — and the phone
-    // had filed its own copy on 10-21, which nothing ever re-reads from the cloud.
-    // Stripping here fixes every device's existing copy without a write.
     if (stored !== null) return stripThinking(stored);
     if (slot.kind !== "furigana" || request.cardId === undefined) return stored;
-    // A reading nothing generated: the card's own `読み`, or still nothing. A plain
-    // reading is what `readingOf` passes through untouched, so the page's ruby
-    // alignment treats it exactly as it treats an unwrapped Mochi annotation.
     if (yomi === undefined) yomi = readingOverride(db, request.cardId);
     return yomi;
   });
   post({ kind: "generatedText", id: request.id, texts });
 }
 
-/** `src/accent/fill.ts`'s first half. Read-only. */
 function accentPlan(request: AccentPlanRequest): void {
   const db = requireCards() as unknown as Db;
   post({ kind: "accentPlan", id: request.id, items: planAccentFill(db, request.cardIds) });
 }
 
-/** Its second half: the helper's answers, written into empty fields only. */
 function accentFill(request: AccentFillRequest): void {
   const db = requireCards() as unknown as Db;
   const report = applyAccentFill(db, request.items, new Map(request.derived), request.lines);
@@ -2166,21 +1520,15 @@ function accentFill(request: AccentFillRequest): void {
   post({ kind: "accentFill", id: request.id, report });
 }
 
-/** See `CardGapsRequest`. Read-only: it renders the card and looks things up. */
 function cardGapsFor(request: CardGapsRequest): void {
   const db = requireCards();
   const row = db.prepare("SELECT local FROM cards WHERE id = ?").get(request.cardId) as
     | { local: number }
     | undefined;
   const local = row?.local === 1;
-  // EVERY CARD'S GAPS since 2026-11-05 (decision 62), not only a card made here:
-  // *"if we can see the button it means something is not generated, and we might
-  // as well generate them right now"*. `local` is still reported, for the reader.
   post({ kind: "cardGaps", id: request.id, local, gaps: cardGaps(db, request.cardId) });
 }
 
-/** See `FieldOutputsRequest`. Read-only. Text cleaned the way `generatedText` cleans it. */
-/** See `RecordFoundInRequest`. Stamps the card so the 出典 travels by sync. */
 function recordFoundInFor(request: RecordFoundInRequest): void {
   const db = requireCards();
   const outcome = recordFoundIn(db, request.cardId, { cardId: request.sourceCardId, sentence: request.sentence });
@@ -2198,20 +1546,6 @@ function fieldOutputsFor(request: FieldOutputsRequest): void {
   post({ kind: "fieldOutputs", id: request.id, outputs });
 }
 
-/**
- * CACHE A GENERATION THE LAPTOP JUST MADE — Zach, 2026-09-14.
- *
- * `vite.generate.ts` owns the API key and has already written this into
- * `build/hashigo.db`, which is the copy that survives a seed rebuild. This is the
- * device's own copy, so the card is still filled the next time he opens it.
- *
- * IT NEVER GENERATES AND NEVER FETCHES. It is handed finished text and files it
- * under the identity `resolveDescriptorText` will look it up by —
- * `storeDescriptorText` derives that identity itself rather than taking one, so
- * the round trip is closed by construction. A non-text kind throws there; this
- * reports the throw as `hash: null` rather than failing the request, because a
- * cache that could not write is not a reason to lose the text already on screen.
- */
 function storeGeneration(request: StoreGenerationRequest): void {
   const db = requireCards();
   let hash: string | null = null;
@@ -2230,29 +1564,10 @@ function storeGeneration(request: StoreGenerationRequest): void {
   } catch (cause) {
     log(`could not cache the generation: ${(cause as Error).message}`, "bad");
   }
-  // The card this was filled FROM, when the page says. A generation is keyed by
-  // its own text and not owned by a card, but a fill made from the review screen
-  // has one in front of it — so its sentence is searchable at once, not at the
-  // next rebuild.
   if (hash !== null && request.cardId !== undefined) refreshSearchText(db, [request.cardId]);
   post({ kind: "storeGeneration", id: request.id, hash });
 }
 
-/**
- * CACHE A CLIP THE LAPTOP JUST MADE — Zach, 2026-09-15.
- *
- * The sibling of `storeGeneration`, and the differences are all consequences of
- * audio not being text. The bytes arrive base64 (they crossed HTTP that way and
- * decoding once here keeps them off the page), and they go to the PAYLOAD store
- * rather than inline into `blobs.bytes` — two handles, which this worker already
- * holds and the page never will.
- *
- * IT NEVER SYNTHESISES AND NEVER FETCHES. `vite.generate.ts` owns the Google key
- * and has already written this into `build/hashigo.db`, the copy that survives a
- * seed rebuild. A failure to cache is logged rather than thrown: the clip is
- * already playing from the response he asked for, and losing it at the next boot
- * is a smaller harm than failing the request he can see.
- */
 function storeClip(request: StoreClipRequest): void {
   const db = requireCards();
   let hash: string | null = null;
@@ -2261,29 +1576,16 @@ function storeClip(request: StoreClipRequest): void {
     const binary = atob(request.audio);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    // Retire FIRST, so the card stops finding the old clip whatever happens next.
     if (request.retire !== undefined) retireBlob(db, request.retire);
     hash = storeGeneratedSpeech(db, store, request.slot, bytes);
   } catch (cause) {
     log(`could not cache the clip: ${(cause as Error).message}`, "bad");
   }
-  // Google answered with the very clip being discarded: put it back rather than
-  // leave the card with nothing, and say so.
   const same = request.retire !== undefined && hash === request.retire;
   if (same && hash !== null) unretireBlob(db, hash);
   post({ kind: "storeClip", id: request.id, hash, ...(same ? { same: true } : {}) });
 }
 
-/**
- * What a redo needs — see `RedoInfoRequest`.
- *
- * The HASH is the first candidate the card would actually play: the same list
- * `audioHashCandidates` builds for a mount, filtered to rows whose payload is on
- * this device. The READING is the card's own: `読み` when it has one (decision
- * 10: an explicit reading beats the head word), else the derived accent's
- * reading of the head word, which is what the `ojad` line already used — it read
- * 日向 as ひなた where Google did not.
- */
 function redoInfo(request: RedoInfoRequest): void {
   const db = requireCards();
   const candidates = audioHashCandidates(db, request.cardId, {
@@ -2297,7 +1599,6 @@ function redoInfo(request: RedoInfoRequest): void {
       : ((db.prepare("SELECT voice FROM blobs WHERE hash = ?").get(present) as { voice: string | null } | undefined)
           ?.voice ?? null);
 
-  // The head word: whatever the template's accent field reads, else `name`.
   const head = db
     .prepare(
       `SELECT v.value AS value FROM cards c
@@ -2315,7 +1616,6 @@ function redoInfo(request: RedoInfoRequest): void {
     alias = row?.reading ?? "";
   }
   const readings = base !== "" && alias !== "" && base !== alias ? [{ base, alias }] : [];
-  // Decision 67: a redone word clip is made from 読み + 型, like a new one.
   const word = wordPronunciation(db, request.cardId, request.request.text);
   const pronounce = word !== null && word.waiting === false ? (word.pronounce ?? null) : null;
   post({ kind: "redoInfo", id: request.id, hash: present, voice, readings, pronounce });
@@ -2340,30 +1640,11 @@ function backup(request: BackupRequest): void {
     kind: "backup",
     id: request.id,
     json,
-    // UTF-8 bytes, not `json.length`: `.length` counts UTF-16 code units and
-    // under-reports this mostly-Japanese archive by 15,402 on the real corpus.
-    // Decision 6 — name the basis.
     bytes: new TextEncoder().encode(json).length,
     counts: archive.counts,
   });
 }
 
-/**
- * His #12, read side. Every `settings` row, what the session will resolve them to,
- * and the three things he would open a settings screen to check that are not rows.
- *
- * ─── THE AUDIO NUMBER IS MEASURED, NOT REMEMBERED ───────────────────────────
- *
- * `scripts/app-bootstrap.ts` prints a coverage figure when it builds the subset
- * ("5,607 of 5,708 cards with speech can play something"), and quoting that here
- * would be quoting a build-time constant as a device fact. The subset is bounded by
- * `--speech-bytes`, the store is a SEPARATE database in the same pool, and a
- * re-import replaces it — so the honest answer is a join across the two, now.
- *
- * It is two queries and a set rather than one join because the card database and
- * the payload store cannot see each other: they are two files in one pool, opened
- * as two handles. That is the same boundary `app-bootstrap` crosses in Node.
- */
 async function settings(request: SettingsRequest): Promise<void> {
   const db = requireCards();
   if (payloads === null) throw new Error("no payload store — send `open` first");
@@ -2396,9 +1677,6 @@ async function settings(request: SettingsRequest): Promise<void> {
     if (held.has(row.hash)) playable.add(row.card);
   }
 
-  // `persisted()` is READABLE in a worker even though `persist()` is not — the
-  // grant has to be asked for by the page (see this file's header), but the answer
-  // can be read here. `estimate()` is likewise fine.
   let persisted = false;
   let usageBytes: number | null = null;
   let quotaBytes: number | null = null;
@@ -2408,7 +1686,6 @@ async function settings(request: SettingsRequest): Promise<void> {
     usageBytes = estimate.usage ?? null;
     quotaBytes = estimate.quota ?? null;
   } catch {
-    /* a browser that refuses to say leaves the screen saying "unknown" */
   }
 
   post({
@@ -2439,19 +1716,6 @@ async function settings(request: SettingsRequest): Promise<void> {
   });
 }
 
-/**
- * Write one setting.
- *
- * **It does NOT rebuild the session, and that is the decision.** `new.limit` and
- * `session.interleave` are read by `buildSession`, which runs once per `open`;
- * rebuilding here would reshuffle the plan underneath a card he is halfway through
- * — the same reason `createCard` says a new card does not appear until the next
- * session. The page says "takes effect next session" rather than pretending.
- *
- * `target_retention.default` is different and needs no rebuild at all: it is read
- * per card at grade time through `deck_target_retention_resolved`, so it applies to
- * the very next grade.
- */
 function setSetting(request: SetSettingRequest): void {
   const db = requireCards();
   const previous = writeSetting(db, request.key, request.value);
@@ -2468,26 +1732,6 @@ function setSetting(request: SetSettingRequest): void {
   });
 }
 
-
-// ─── his #11: templates and their fields ────────────────────────────────────
-
-/**
- * One template, everything the editor needs to make an informed change.
- *
- * The three derived numbers per field are the point. Each one answers a question
- * the editor would otherwise have to ask him:
- *
- *   `values`      how many cards carry a value for it. `card_field_values` is
- *                 deliberately NOT foreign-keyed to `template_fields` — a value
- *                 must survive its field being deleted (schema.sql says losing four
- *                 years of authored text is worse than an orphan row) — so a delete
- *                 hides text rather than destroying it, and the count is how much.
- *   `references`  how many `<<Field>>` tokens in the body name it. A rename rewrites
- *                 exactly these, and 0 means the field renders nowhere.
- *   `dependents`  fields whose `source_field_id` is this one. The composite FK is
- *                 ON DELETE SET NULL, so deleting a source SILENTLY unbinds every
- *                 generator that fed on it. That is refused, not warned about.
- */
 function templateDetail(db: BrowserDb, templateId: string): TemplateDetail | null {
   const row = db.prepare("SELECT id, name, content FROM templates WHERE id = ?").get(templateId) as
     | { id: string; name: string; content: string }
@@ -2517,11 +1761,6 @@ function templateDetail(db: BrowserDb, templateId: string): TemplateDetail | nul
     values_: number;
   }[];
 
-  // BOTH kinds of dependency. The column is one of them; the other lives inside
-  // an `ai` field's prompt, which names its input BY NAME (`src/generate/fields.ts`
-  // substitutes `<<Field>>` markers there). Building this from the column alone is
-  // why the editor never said that `単語` feeds `例文` — and `schema.sql` calls that
-  // out as the reason `source_field_id` is legitimately NULL on four fields.
   const byName = new Map(fields.map((field) => [field.name.trim(), field.id]));
   const dependentsOf = new Map<string, string[]>();
   const dependsOn = (targetId: string, consumer: string): void => {
@@ -2535,9 +1774,6 @@ function templateDetail(db: BrowserDb, templateId: string): TemplateDetail | nul
     if (typeof prompt !== "string") continue;
     for (const name of promptDependencies(prompt)) {
       const targetId = byName.get(name.trim());
-      // A marker naming no field of this template resolves to nothing — silently,
-      // which is the trap this whole line of work exists to surface. It is shown
-      // by the body's own unknown-marker check, not invented as a dependency here.
       if (targetId !== undefined && targetId !== field.id) dependsOn(targetId, field.name);
     }
   }
@@ -2573,7 +1809,6 @@ function templateDetail(db: BrowserDb, templateId: string): TemplateDetail | nul
   };
 }
 
-/** Every card on a template, re-indexed. After a change that moves resolved text. */
 function refreshTemplateSearch(db: BrowserDb, templateId: string): void {
   const ids = (db.prepare("SELECT id FROM cards WHERE template_id = ?").all(templateId) as {
     id: string;
@@ -2581,16 +1816,6 @@ function refreshTemplateSearch(db: BrowserDb, templateId: string): void {
   refreshSearchText(db, ids);
 }
 
-/**
- * A voice override on a card or a deck, priced and optionally written. See
- * `VoiceRequest` in `./protocol.ts`.
- *
- * `after` is MEASURED, not predicted: the write is made inside a savepoint, every
- * covered card's resolved voice is read back through `card_voice_resolved`, and
- * the savepoint is rolled back. So clearing a deck's override is priced as
- * whatever its parent then supplies, which is the inheritance rule the view owns
- * and this does not re-implement.
- */
 function voiceOp(request: VoiceRequest): void {
   const db = requireCards();
   if (request.voice !== null && !isCatalogueVoice(request.voice)) {
@@ -2654,7 +1879,6 @@ function voiceOp(request: VoiceRequest): void {
   });
 }
 
-/** What a proposed field change costs. Writes nothing — see `app/field-ops.ts`. */
 function priceField(request: PriceFieldRequest): void {
   const db = requireCards();
   const started = performance.now();
@@ -2679,7 +1903,6 @@ function template(request: TemplateRequest): void {
   });
 }
 
-/** A field id that cannot collide with Mochi's, and says where it came from. */
 function newFieldId(db: BrowserDb, templateId: string): string {
   const taken = db.prepare("SELECT 1 FROM template_fields WHERE template_id = ? AND id = ?");
   for (let attempt = 0; attempt < 32; attempt += 1) {
@@ -2691,33 +1914,6 @@ function newFieldId(db: BrowserDb, templateId: string): string {
   throw new Error("could not mint a field id in 32 attempts");
 }
 
-/**
- * Every template and field edit, each one atomic and each one undoable.
- *
- * ─── WHAT THIS DELIBERATELY REFUSES ─────────────────────────────────────────
- *
- * **Changing a field's TYPE.** `template_fields.type` decides how the resolver
- * reads a value and how the renderer draws it, and the stored text does not
- * change with it: a `boolean` holds `"true"`, a `number` holds digits, and a
- * `speech` field's value has always been EMPTY because Mochi keeps generated output
- * in `component-cache` addressed by generation identity (measured: 19 generated
- * fields, zero non-empty values). Flipping a type reinterprets every existing value
- * at once, which is a migration and not a form control. Add a field and move the
- * values if that is what he wants — that is a decision with a diff.
- *
- * **Deleting a field another field generates from.** The composite foreign key is
- * ON DELETE SET NULL, so it would succeed and quietly leave `Speech` with no input.
- *
- * **Settings and inputs ARE writable, since stage C** — `setFieldOptions` and
- * `setFieldSource`, checked by `app/field-ops.ts` (only editable declared keys,
- * no loops) and priced by the page before it asks.
- *
- * ─── AND WHAT IT ALLOWS THAT LOOKS RISKIER THAN IT IS ───────────────────────
- *
- * Deleting a field does not delete its values, by schema design. So a delete is
- * recoverable: `restoreField` puts the row back and the values are still under it.
- * That is why delete here has an undo and card `delete` does not.
- */
 function templateOp(request: TemplateOpRequest): void {
   const db = requireCards();
   const before = templateDetail(db, request.templateId);
@@ -2732,30 +1928,9 @@ function templateOp(request: TemplateOpRequest): void {
     return found;
   };
 
-  /**
-   * ─── ONE FIELD IS LOAD-BEARING BY NAME, IN CODE ─────────────────────────────
-   *
-   * Found by running this editor rather than by reading it. `src/review/mode.ts`
-   * decides decision 29's two modes with `READING_FIELD = "Reading"` — a NAME
-   * comparison, against a field that must also be `boolean`. So renaming or
-   * removing it on an accent-drill template does not break a render; it flips all
-   * **692** `produce` cards to `identify`, which means autoplay on entry and the
-   * accent given away before he has produced it. That is the exact defect decision
-   * 29 exists to prevent, arriving from a text box, with no error anywhere.
-   *
-   * The body rewrite makes it MORE dangerous, not less: `<<#Reading>>` follows the
-   * rename perfectly, so the template still renders and only the mode is wrong.
-   *
-   * Refused rather than warned. Making it work needs a code change (the constant),
-   * and a UI that lets him do half of a two-part change is a UI that breaks the
-   * app on his behalf. Scoped to templates that actually run the drill, so 漢字 —
-   * which declares a PLAIN field called `Reading` holding コウ / ショウ on 1,662
-   * cards — is untouched, and so is any template of his own.
-   */
   const guardReadingField = (target: TemplateFieldRow, verb: string): void => {
     const drills = before.fields.some((entry) => entry.type === ACCENT_FIELD_TYPE);
     if (!drills) return;
-    // The SAME lookup the mode uses, over this template's rows.
     const switchField = readingSwitch(
       before.fields.map((entry) => ({ ...entry, options: decodeFieldOptions(entry.options) })),
     );
@@ -2781,12 +1956,6 @@ function templateOp(request: TemplateOpRequest): void {
 
     case "body": {
       const content = request.content ?? "";
-      // NO PARSE CHECK, and that is deliberate rather than an omission. `parseTemplate`
-      // accepts essentially any text — an unknown `<<X>>` resolves to nothing and a
-      // stray `---` makes a side — so "does it parse" would pass everything and read
-      // as a validation that happened. What the editor shows instead is which field
-      // names the new body references and which of them do not exist, which is the
-      // question a body edit can actually get wrong.
       db.prepare("UPDATE templates SET content = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").run(content, before.id);
       describe = `edited ${before.name}'s body (${before.cards.toLocaleString()} cards render it)`;
       undo = { op: "body", templateId: before.id, content: before.content };
@@ -2795,9 +1964,6 @@ function templateOp(request: TemplateOpRequest): void {
 
     case "addField": {
       const name = (request.name ?? "").trim();
-      // A KIND, which is a stored type for most and a role for `reading` (decision
-      // 61). A Reading and a Pitch accent read from the head word — the first Text
-      // field with no role — so a new one is filled by the helper from day one.
       const asked = request.fieldType ?? "plain";
       const type = asked === "reading" ? "plain" : asked;
       const options = asked === "reading" ? JSON.stringify({ [ROLE_KEY]: "reading" }) : "{}";
@@ -2815,8 +1981,6 @@ function templateOp(request: TemplateOpRequest): void {
       }
       if (name === "") throw new Error("a field needs a name");
       if (before.fields.some((entry) => entry.name === name)) {
-        // The resolver binds by name and takes the FIRST match, so a duplicate name
-        // makes the second field unreachable rather than ambiguous.
         throw new Error(`${before.name} already has a field called ${name}`);
       }
       if (!(FIELD_TYPES as readonly string[]).includes(type)) {
@@ -2826,10 +1990,6 @@ function templateOp(request: TemplateOpRequest): void {
       const keys = positionKeys(before.fields.length + 1);
       db.transaction(() => {
         db.prepare(
-          // `local = 1` is decision 9, and it is not cosmetic: `pruneFieldValues`
-          // deletes any `card_field_values` row the export does not carry, which is
-          // right for a field Mochi DELETED and catastrophic for one Mochi never
-          // had. Without it a re-import silently threw away 3,454 型 labels.
           `INSERT INTO template_fields (template_id, id, name, type, source_field_id,
                                         options, pos, local)
            VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
@@ -2853,9 +2013,6 @@ function templateOp(request: TemplateOpRequest): void {
       if (name !== target.name && before.fields.some((entry) => entry.name === name)) {
         throw new Error(`${before.name} already has a field called ${name}`);
       }
-      // THE BODY AND THE PROMPTS GO WITH IT, IN ONE TRANSACTION. See this file's
-      // header and `src/template/rename.ts`: the resolver binds by name, so leaving
-      // the body alone unbinds every marker silently.
       const rewritten = renameFieldEverywhere(
         before.content,
         before.fields.map((entry) => ({ fieldId: entry.id, options: entry.options })),
@@ -2945,8 +2102,6 @@ function templateOp(request: TemplateOpRequest): void {
       const fields = templateFields(db, before.id);
       db.transaction(() => {
         writeFieldOptions(db, before.id, target.id, options);
-        // `search_text` holds resolved ai/translate text, so re-addressing one of
-        // those changes what these cards are found by.
         if (searchReach(fields, target.id)) refreshTemplateSearch(db, before.id);
       })();
       describe = `changed ${target.name}'s settings on ${before.name}`;
@@ -2961,8 +2116,6 @@ function templateOp(request: TemplateOpRequest): void {
       const refusal = sourceRefusal(fields, target.id, sourceId);
       if (refusal !== null) throw new Error(refusal);
       if (sourceId === target.sourceFieldId) throw new Error(`${target.name} already reads from that`);
-      // A `読み` that is a Reading by its NAME alone gets the role written with its
-      // first input, so picking the input is also what makes the kind explicit.
       const targetOptions = decodeFieldOptions(target.options);
       const pinRole = effectiveRole({ ...target, options: targetOptions }) === "reading" && roleOf({ options: targetOptions }) === null;
       db.transaction(() => {
@@ -2983,11 +2136,6 @@ function templateOp(request: TemplateOpRequest): void {
     }
 
     case "setFieldType": {
-      // STAGE G, and only the FREE conversions — today that is plain <-> text,
-      // which differ as an editor affordance and nothing else: both store the same
-      // string and render it the same way. Everything the registry prices or
-      // refuses stays refused here, for the reason in this function's header —
-      // a type change reinterprets every stored value at once.
       const target = field(request.fieldId ?? "");
       const to = request.fieldType ?? "";
       const cost = kindOf(target.type)?.convertsTo[to as FieldType];
@@ -3009,9 +2157,6 @@ function templateOp(request: TemplateOpRequest): void {
     }
 
     case "setFieldKind": {
-      // TEXT ⇄ READING (`kindChange`): the role and the input, never a value. Its
-      // undo arrives as the raw options and source it replaced, and is held to the
-      // same bound — a plain field whose options differ from now by the role alone.
       const target = field(request.fieldId ?? "");
       const fields = templateFields(db, before.id);
       let change: KindChange | string;
@@ -3054,8 +2199,6 @@ function templateOp(request: TemplateOpRequest): void {
       const order = request.order ?? [];
       const known = new Set(before.fields.map((entry) => entry.id));
       if (order.length !== known.size || order.some((id) => !known.has(id))) {
-        // A partial order would renumber some rows and leave others, which sorts
-        // into an arrangement nobody asked for. Refuse rather than approximate.
         throw new Error(
           `the order must name all ${known.size} field(s) of ${before.name}, once each`,
         );
@@ -3083,18 +2226,8 @@ function templateOp(request: TemplateOpRequest): void {
   });
 }
 
-/**
- * Rewrite every `pos` in a template from an explicit order.
- *
- * The whole template, not one row: `src/schema/order.ts` explains why renumbering
- * beats a fractional insert for 11 rows edited from one screen. The caller owns the
- * transaction — a half-renumbered template sorts into an arrangement nobody chose.
- */
 function renumber(db: BrowserDb, templateId: string, order: readonly string[]): void {
   const keys = positionKeys(order.length);
-  // The clock moves only on rows whose position actually changed — decision 33's
-  // field merge is whole-row LWW, and bumping every row on a reorder would let a
-  // move on one device take back a setting edited on the other.
   const update = db.prepare(
     `UPDATE template_fields SET pos = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
       WHERE template_id = ? AND id = ? AND pos IS NOT ?`,
@@ -3104,25 +2237,6 @@ function renumber(db: BrowserDb, templateId: string, order: readonly string[]): 
   });
 }
 
-/**
- * His #1. The whole dashboard, computed here and handed over as one string.
- *
- * ─── WHY THIS IS NOT STREAMED, PAGED, OR CACHED ─────────────────────────────
- *
- * It is one pass over 103,110 reviews and it produces a document with no script in
- * it, so there is nothing to stream INTO and nothing to update afterwards. The
- * elapsed time comes back with it rather than being guessed at: if it turns out to
- * cost more than a card mount on his handset, that is a measurement to act on, not
- * a reason to build a cache before anyone has felt it slow.
- *
- * `source` says where the numbers came from, because the standalone file names a
- * path and this one cannot — the database is a slot in an OPFS pool.
- */
-/**
- * The daily numbers. Every query here is bounded by a date window or an index —
- * see `src/dashboard/glance.ts`, which also records why the full report's "obvious"
- * optimisation was measured and found to be five times SLOWER.
- */
 function glance(request: GlanceRequest): void {
   const started = performance.now();
   const result = collectGlance(requireCards());
@@ -3148,12 +2262,6 @@ function dashboard(request: DashboardRequest): void {
   });
 }
 
-/**
- * Whether `card_links` may trail the text. True at boot, so the first backlink
- * list after a sync — or after an app version that never indexed — is current.
- * Any request outside `LINK_SAFE` may have written a value (the editor, a merge,
- * a restore, a local field), so it sets the flag again.
- */
 let linksStale = true;
 const LINK_SAFE: ReadonlySet<string> = new Set([
   "next",

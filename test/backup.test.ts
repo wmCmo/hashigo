@@ -14,29 +14,10 @@ import {
   type LocalArchive,
 } from "../src/backup/index.js";
 
-/**
- * Decision 17's local archive.
- *
- * THE TEST THAT MATTERS is "survives a rebuild that renumbers the tracks". The
- * archive's whole design rests on `(card_id, kind)` being the identity and
- * `card_tracks.id` being an accident of insert order, and the failure mode if that
- * is wrong is the worst kind: the restore succeeds, reports every row applied, and
- * silently attaches his review history to the wrong cards. So the destination
- * database here is built with the cards inserted in the OPPOSITE order, which
- * genuinely swaps the ids, and the assertions are on which CARD ended up with which
- * review.
- */
-
 const DB = "build/hashigo.db";
 const HAS_CORPUS = existsSync(DB);
 const AT = "2026-08-23T02:00:00+09:00";
 
-/**
- * A database with two cards, forward tracks for each, and optional local data.
- *
- * `order` flips the insertion order, which is what makes the track ids differ
- * between two otherwise identical databases.
- */
 function fixture(options: { order?: "ab" | "ba"; withLocal?: boolean } = {}): Db {
   const db = openDatabase(MEMORY);
   const ids = options.order === "ba" ? ["cardB", "cardA"] : ["cardA", "cardB"];
@@ -51,7 +32,6 @@ function fixture(options: { order?: "ab" | "ba"; withLocal?: boolean } = {}): Db
   }
 
   if (options.withLocal === true) {
-    // A local field, a value on it, a local review on cardA only, and state.
     db.prepare(
       `INSERT INTO template_fields (template_id, id, name, type, pos, local)
        VALUES ('tpl', 'local-yomi', '読み', 'plain', 'ab', 1)`,
@@ -91,7 +71,6 @@ describe("the local archive", () => {
       const a = exportLocalArchive(db, AT);
       expect(a.archiveVersion).toBe(ARCHIVE_VERSION);
       expect(a.createdAt).toBe(AT);
-      // One local review, one track's state, one local field, one value.
       expect(a.reviews).toHaveLength(1);
       expect(a.reviews[0]).toMatchObject({ cardId: "cardA", kind: "forward", remembered: 1 });
       expect(a.trackState).toHaveLength(1);
@@ -100,17 +79,11 @@ describe("the local archive", () => {
         scheduler: "fsrs6",
         schedulerState: '{"s":4.2,"d":5.1}',
       });
-      // ALL fields now, not only `local = 1` — the template editor made a body and
-      // its field names one fact (see the module header). The fixture's template has
-      // the local 読み and nothing else, so the count is unchanged here; the corpus
-      // test below is where the change shows.
       expect(a.localFields).toHaveLength(1);
       expect(a.localFields[0]).toMatchObject({ id: "local-yomi", local: true });
       expect(a.fieldValues).toEqual([
         { cardId: "cardA", fieldId: "local-yomi", value: "はし" },
       ]);
-      // No track_id anywhere in the archive. Grep the serialised form, because a
-      // stray id is the defect this design exists to prevent.
       expect(JSON.stringify(a)).not.toMatch(/"trackId"/);
     } finally {
       db.close();
@@ -121,8 +94,6 @@ describe("the local archive", () => {
     const source = fixture({ withLocal: true });
     const target = fixture({ withLocal: true });
     try {
-      // The shape `createCard` writes: `local = 1`, a value on the primary field,
-      // and one fresh track.
       source
         .prepare(
           `INSERT INTO cards (id, deck_id, template_id, name, content, archived, local)
@@ -154,21 +125,16 @@ describe("the local archive", () => {
           tracks: ["forward"],
         },
       ]);
-      // The 7,716 imported cards are NOT in here — that is the whole design.
       expect(a.localCards).toHaveLength(1);
 
       const report = applyLocalArchive(target, a);
       expect(report.localCardsInserted).toBe(1);
       expect(report.localCardsOrphaned).toBe(0);
-      // THE TRACK CAME WITH IT. Without one the card is restored and never
-      // scheduled — present and permanently invisible, the worst of the three
-      // possible outcomes.
       expect(
         (target
           .prepare("SELECT count(*) AS n FROM card_tracks WHERE card_id = 'mine'")
           .get() as { n: number }).n,
       ).toBe(1);
-      // And its value, which no export holds either.
       expect(
         (target
           .prepare("SELECT value FROM card_field_values WHERE card_id = 'mine'")
@@ -181,9 +147,6 @@ describe("the local archive", () => {
   });
 
   it("SKIPS a card that is already here rather than overwriting it", () => {
-    // A card id is unique, so a card that is already present is the SAME card.
-    // Restoring over it would replace whatever he has done since the backup with
-    // the older copy. The archive is a floor, not a snapshot to revert to.
     const source = fixture({ withLocal: true });
     const target = fixture({ withLocal: true });
     try {
@@ -221,8 +184,6 @@ describe("the local archive", () => {
       const report = applyLocalArchive(target, exportLocalArchive(source, AT));
       expect(report.localCardsOrphaned).toBe(1);
       expect(report.localCardsInserted).toBe(0);
-      // Reported, never fatal — and the deck is NOT created, because putting his
-      // cards somewhere he did not choose is worse than telling him one is missing.
       expect(target.prepare("SELECT 1 FROM decks WHERE id = 'gone'").get()).toBeUndefined();
     } finally {
       source.close();
@@ -231,9 +192,6 @@ describe("the local archive", () => {
   });
 
   it("does not DOUBLE-COUNT a local field's value on a local card", () => {
-    // The value qualifies twice — the field is `local = 1` and so is the card —
-    // and a duplicate row would fail `verifyLocalArchive`'s own count check on a
-    // file that is perfectly good.
     const db = fixture({ withLocal: true });
     try {
       db.prepare(
@@ -261,9 +219,6 @@ describe("the local archive", () => {
         .prepare("UPDATE templates SET content = ?, name = ? WHERE id = 'tpl'")
         .run("<<読み>>\n---\n<<単語>>", "単語v2");
       const a = exportLocalArchive(source, AT);
-      // `updatedAt` came with the template CLOCK — see `mergeSync`, where a
-      // stale peer's body must not beat a newer one. A restore ignores it; it is
-      // carried so a MERGE can tell whose body is newer.
       expect(a.templates).toEqual([
         {
           id: "tpl",
@@ -286,10 +241,6 @@ describe("the local archive", () => {
   });
 
   it("RESTORES A MOCHI FIELD WITHOUT MARKING IT LOCAL — that would leak values forever", () => {
-    // `local` used to be the literal 1 in the UPSERT, because the SELECT only ever
-    // produced local rows. Now that every field is archived, writing 1 for all of
-    // them would tell `pruneFieldValues` never to clean up a field Mochi genuinely
-    // deleted — a backup that turns into a slow leak.
     const source = fixture({ withLocal: true });
     const target = fixture({ withLocal: true });
     try {
@@ -320,8 +271,6 @@ describe("the local archive", () => {
     try {
       const a = exportLocalArchive(source, AT);
       const old = JSON.parse(JSON.stringify(a)) as Record<string, unknown>;
-      // Exactly the shape a pre-templates archive has: no `local` on the rows, and
-      // no `templates` key at all.
       for (const field of old["localFields"] as Record<string, unknown>[]) {
         delete field["local"];
       }
@@ -348,13 +297,11 @@ describe("the local archive", () => {
       source.prepare("UPDATE cards SET archived = 1 WHERE id = 'cardA'").run();
       source.prepare("UPDATE cards SET pinned = 1 WHERE id = 'cardB'").run();
       const a = exportLocalArchive(source, AT);
-      // Only the two non-default rows, not one per card.
       expect(a.cardState).toEqual([
         { cardId: "cardA", archived: true, pinned: false },
         { cardId: "cardB", archived: false, pinned: true },
       ]);
 
-      // `target` is what a rebuild produces: the import wrote both flags back to 0.
       const flags = (db: typeof target): Record<string, string> =>
         Object.fromEntries(
           (db.prepare("SELECT id, archived, pinned FROM cards ORDER BY id").all() as {
@@ -376,16 +323,11 @@ describe("the local archive", () => {
   });
 
   it("NEVER CLEARS A FLAG THE ARCHIVE DOES NOT HOLD — a restore must not undo work", () => {
-    // The archive stores non-default rows only, so "absent" means "was 0 when the
-    // backup ran". Clearing on that basis would make restoring an OLD backup delete
-    // an archive he made after it. A backup that misses some work is survivable; a
-    // backup that removes work is not.
     const source = fixture();
     const target = fixture();
     try {
       source.prepare("UPDATE cards SET archived = 1 WHERE id = 'cardA'").run();
       const a = exportLocalArchive(source, AT);
-      // Done AFTER the backup was taken, and it must survive the restore.
       target.prepare("UPDATE cards SET pinned = 1 WHERE id = 'cardB'").run();
       applyLocalArchive(target, a);
       const row = target
@@ -399,10 +341,6 @@ describe("the local archive", () => {
   });
 
   it("READS AN ARCHIVE WRITTEN BEFORE `cardState` EXISTED — the version is not bumped", () => {
-    // `ARCHIVE_VERSION` is documented as bumped "only for a change no reader could
-    // otherwise survive". A reader survives this one by defaulting to []. Bumping
-    // would have rejected every backup he had already taken, at the one moment
-    // those files are the only copy — so the old shape has to keep working.
     const source = fixture({ withLocal: true });
     const target = fixture({ withLocal: true });
     try {
@@ -422,9 +360,8 @@ describe("the local archive", () => {
 
   it("SURVIVES A REBUILD THAT RENUMBERS THE TRACKS — the whole design, tested", () => {
     const source = fixture({ order: "ab", withLocal: true });
-    const rebuilt = fixture({ order: "ba" }); // cards inserted the other way round
+    const rebuilt = fixture({ order: "ba" });
     try {
-      // The ids really do differ, or this test proves nothing.
       const before = trackIds(source);
       const after = trackIds(rebuilt);
       expect(before["cardA"]).not.toBe(after["cardA"]);
@@ -436,8 +373,6 @@ describe("the local archive", () => {
       expect(report.reviewsOrphaned).toBe(0);
       expect(report.trackStateApplied).toBe(1);
 
-      // THE ASSERTION: the review is attached to cardA, not to whichever track
-      // happens to hold cardA's old id.
       const landed = rebuilt
         .prepare(
           `SELECT t.card_id AS card_id, r.remembered, r.reviewed_at
@@ -449,7 +384,6 @@ describe("the local archive", () => {
         { card_id: "cardA", remembered: 1, reviewed_at: "2026-08-22T09:00:00+09:00" },
       ]);
 
-      // And so is the state, and the local field value.
       const state = rebuilt
         .prepare(
           "SELECT card_id, scheduler, scheduler_state FROM card_tracks WHERE scheduler_state IS NOT NULL",
@@ -478,8 +412,6 @@ describe("the local archive", () => {
       const second = applyLocalArchive(target, archive);
       expect(second).toMatchObject({ reviewsInserted: 0, reviewsSkipped: 1, noop: true });
 
-      // And exactly one review row exists, not two. `reviews` is append-only with
-      // a BEFORE UPDATE trigger, so a duplicate could not be cleaned up later.
       expect(
         target.prepare("SELECT count(*) AS n FROM reviews").get(),
       ).toEqual({ n: 1 });
@@ -496,7 +428,6 @@ describe("the local archive", () => {
       const first = exportLocalArchive(source, AT);
       applyLocalArchive(target, first);
       const second = exportLocalArchive(target, AT);
-      // The strong form: the whole archive, not a count.
       expect(second).toEqual(first);
     } finally {
       source.close();
@@ -505,9 +436,6 @@ describe("the local archive", () => {
   });
 
   it("REPORTS a row whose card is gone rather than dropping or throwing", () => {
-    // 8,958 tombstones in this corpus, so restoring into a database rebuilt from a
-    // newer export will meet a deleted card eventually. That is not an error, but
-    // it must not be silent either.
     const source = fixture({ withLocal: true });
     const target = fixture();
     try {
@@ -516,9 +444,6 @@ describe("the local archive", () => {
       expect(report.reviewsOrphaned).toBe(1);
       expect(report.reviewsInserted).toBe(0);
       expect(report.trackStateOrphaned).toBe(1);
-      // The one that actually threw before the guard existed: card_field_values
-      // has a foreign key to cards, so a single deleted card aborted the whole
-      // restore. Now it is counted and the rest of the archive still lands.
       expect(report.fieldValuesOrphaned).toBe(1);
       expect(report.fieldValuesUpserted).toBe(0);
       expect(report.fieldsUpserted).toBe(1);
@@ -535,7 +460,6 @@ describe("the local archive", () => {
       const good = exportLocalArchive(db, AT);
       expect(() => verifyLocalArchive(good)).not.toThrow();
 
-      // What a half-written file looks like: the counts still claim one review.
       const truncated = { ...good, reviews: [] } as unknown as LocalArchive;
       expect(() => verifyLocalArchive(truncated)).toThrow(ArchiveError);
       expect(() => applyLocalArchive(db, truncated)).toThrow(/truncated or edited/);
@@ -551,8 +475,6 @@ describe("the local archive", () => {
     const db = fixture();
     try {
       const a = exportLocalArchive(db, AT);
-      // Read via PRAGMA rather than imported from src/schema, which cannot be
-      // loaded in a browser — and this is the value actually stamped on the file.
       expect(a.schemaVersion).toBeGreaterThan(0);
       const pragma = db.prepare("PRAGMA user_version").get() as { user_version: number };
       expect(a.schemaVersion).toBe(pragma.user_version);
@@ -567,73 +489,19 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
     const db = openDatabase(DB, { readOnly: true, applySchema: false });
     try {
       const a = exportLocalArchive(db, AT);
-      // Today: no local grades yet, but the local FIELDS and their values are real
-      // and already unreconstructible from exports/ (decision 9).
-      //
-      // 6 local fields is 読み, かな主流 and 型 across 単語 and 言葉 — 型 landed
-      // 2026-08-23 with D3. THE COMPOSITION IS WORTH KNOWING: of the 3,848 values,
-      // **3,830 are derived** 型 labels that `accent/cli.ts write` regenerates from
-      // the `accents` table, and only 18 are hand-authored (12 読み + 6 かな主流).
-      // They are kept anyway, deliberately: 309 KB is still instant to export, and
-      // including them makes a restore a single apply rather than "restore, then
-      // rebuild the 1.4 GB Python venv, then re-derive". Excluding them is one
-      // WHERE clause if that ever stops being the right trade.
       expect(a.counts).toEqual({
         reviews: 0,
         trackState: 0,
-        // WAS 6 — the six `local = 1` rows. It is every field now: a rename
-        // rewrites the body's `<<Field>>` markers, so restoring a body without the
-        // field NAMES gives back a body whose every marker resolves to nothing.
-        // WAS 47. `scripts/number-field-apply.ts` deleted 数字's second number
-        // field on 2026-09-07 — the comma'd duplicate Mochi forced — so the
-        // template declares one fewer. Its 90 VALUES are still archived under
-        // `fieldValues` below, which is the point: `card_field_values` is not
-        // foreign-keyed to `template_fields`, so deleting a field hides its text
-        // and never destroys it.
-        // WAS 46, then 50. Decision 43 declared `ojad` on the four templates
-        // with an example sentence; Zach scoped it to 単語 and 言葉 alone on
-        // 2026-09-13, which is the accent drill and where he asked for it.
         localFields: 48,
         localCards: 0,
         templates: 10,
-        // WAS 3,848. +3,710 `ojad` annotations — one per card whose example
-        // sentence the analyser could read, on 単語 and 言葉. See decision 43.
-        // WAS 7,558, +9 on 2026-09-17. Zach, over a 風潮 card: *"somehow ojad
-        // field is not here..."*. `cleanSentence` refused any sentence still
-        // holding latin, and all ten it was refusing are legitimate Japanese
-        // carrying a loan acronym — SNS, PDF, ABC, Tシャツ, CSV, K-pop. Reading
-        // those a letter at a time is the CORRECT reading (`SNS` -> `えすえぬえ*す`,
-        // measured), and the gloss the rule existed for is caught by the
-        // analyser's own mora count. Nine now annotate; K-pop still fails the
-        // count check, correctly. The other 3,710 values are byte-identical.
-        // WAS 7,567, +1 on 2026-09-25: 嗤う (アーカイブ済みの一枚) に初めて `型` が
-        // 付いた。OpenJTalk は拒否していて、辞書の裁定 (笑う の項) で 平板 になった。
-        // WAS 7,568 — local fields and app-made cards only. EVERY value since
-        // 2026-10-24: sync is built on this archive, and an edit to a Mochi field
-        // of an imported card (意味, Reading …) never left the device it was made
-        // on. Every value in the database, so this is now `card_field_values` itself.
-        // WAS 29,893, +2 on 2026-10-25: さあ and なおざり got their first `型`
-        // from jpdb.io — OpenJTalk had refused both.
         fieldValues: 29_895,
         settings: 4,
-        // The 244 individually archived cards. They LOOK like something the export
-        // rebuilds and they are not: `UPSERT_CARD` writes `archived` from Mochi, and
-        // Mochi has no deck-level archive at all, so decision 16's final import
-        // returns every one of them to 0. Zero pinned — his export carries none, so
-        // every pin from here on is one he made in Hashigo.
         cardState: 244,
       });
-      // 103,110 imported reviews are NOT in here — that is the point.
       const bytes = JSON.stringify(a).length;
       // eslint-disable-next-line no-console
       console.log(`local archive over the real corpus: ${bytes} bytes JSON`);
-      // Still three orders of magnitude under the 74 MB database it protects.
-      // WAS 400,000. The sentence annotations are the bulk of the archive now —
-      // a 30-mora reading is ~90 bytes and there are 3,718 of them. Still three
-      // orders of magnitude under the 74 MB database, which is the property that
-      // matters: an export he can take in a second, at any time.
-      // WAS 1,200,000, before the archive carried every field value (2026-10-24):
-      // 29,893 values, 2.7 MB of JSON. Still under a twentieth of the database.
       expect(bytes).toBeLessThan(4_000_000);
       expect(verifyLocalArchive(a)).toBeUndefined();
     } finally {
@@ -642,14 +510,6 @@ describe.skipIf(!HAS_CORPUS)("the local archive over the real corpus", () => {
   });
 });
 
-/**
- * A SYNCED EDIT IS SEARCHABLE BY ITS NEW TEXT.
- *
- * Zach, 2026-09-24. Sync and restore both land through `applyLocalArchive`, and
- * the search index prefers `cards.search_text` over the live fields — so a card
- * he edited on the laptop used to arrive on the phone with the edit in its fields
- * and the OLD text in its index.
- */
 describe("apply refreshes the search index", () => {
   it("finds a created card by the value the sync brought", () => {
     const source = fixture({ withLocal: true });
@@ -668,7 +528,6 @@ describe("apply refreshes the search index", () => {
       }
       source.prepare(`INSERT INTO card_field_values (card_id, field_id, value) VALUES ('mine', 'meaning', 'laptop wording pqzr')`).run();
       target.prepare(`INSERT INTO card_field_values (card_id, field_id, value) VALUES ('mine', 'meaning', 'phone wording mbxw')`).run();
-      // The phone's index is populated with ITS old text, as it would be.
       refreshSearchText(target, ["mine"]);
 
       applyLocalArchive(target, exportLocalArchive(source, AT));

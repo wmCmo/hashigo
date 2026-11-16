@@ -1,7 +1,3 @@
-/**
- * "generate" under an English example sentence (`app/example-sentence.ts`).
- * The fields are New Vocab's and 文法's as they stand in `build/hashigo.db`.
- */
 import { describe, expect, it } from "vitest";
 
 import { exampleSentencePrompt, isEnglishSentenceField, type SentenceField } from "../app/example-sentence.js";

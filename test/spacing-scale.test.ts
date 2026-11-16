@@ -1,16 +1,3 @@
-/**
- * THE SPACING SCALE IS ENFORCED — the same rule as `./type-scale.test.ts`, for
- * padding, margin and gap.
- *
- * Measured 2026-10-29: 31 distinct px values across ~400 declarations (6, 7, 9,
- * 10, 11, 13, 14, 15, 17, 18 …) while `design-system/tokens.json` named eight
- * steps. They now name `--space-N`; this stops the 32nd.
- *
- * What may stay a raw px, and why: 0; 1-3px, which are optical nudges (a chip's
- * 2px padding — snapping it to 4 makes every chip taller); a negative margin,
- * which is a deliberate offset; and 100px or more, which is a layout reserve (the
- * room left under the review screen for its controls), not spacing.
- */
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";

@@ -1,51 +1,7 @@
-/**
- * THE SYNC MAILBOX, ON CLOUDFLARE — the same four requests `syncMailbox()` in
- * `vite.app.config.ts` answers, stored in Workers KV instead of `build/sync/`.
- *
- * Zach, 2026-09-26, after an evening proving his apartment wifi drops every
- * tunnel packet over ~1,208 bytes: *"then can we do the move while im
- * reviewing? … let's just do it for me (for now), let's make it work first"*.
- * Decision 49 had already retired "no cloud" as a principle; this is the move.
- *
- * ─── WHAT IT KEEPS FROM THE LAPTOP MAILBOX, ON PURPOSE ──────────────────────
- *
- * Everything the client depends on: `GET /sync/` lists peers with their size
- * and time, `GET /sync/<id>` returns one payload byte for byte, `PUT /sync/<id>`
- * replaces it, and the id pattern and the refusal of a non-JSON body are the
- * same. It still has NO opinion about any payload — the merge happens in each
- * device's own worker (`src/sync/merge.ts`), because this side never sees a
- * database. Swapping one mailbox for the other changes where the files live and
- * nothing about what they mean.
- *
- * ─── WHAT IT ADDS, BECAUSE THIS ONE IS ON THE OPEN INTERNET ─────────────────
- *
- * A bearer token on every request. The laptop mailbox needed none: the tailnet
- * was the lock. Here anyone who knows the URL could read his whole review
- * history or overwrite a device's payload, so the token is the lock. It is
- * compared in constant time, and a missing or wrong one is a 401 that says
- * nothing about what exists.
- *
- * CORS for the origins the app is actually served from, because the app still
- * comes from the laptop (`node.tailed819e.ts.net`) and this answers from
- * `*.workers.dev`.
- *
- * ─── ONE KNOWN LIMIT, NAMED ─────────────────────────────────────────────────
- *
- * KV is eventually consistent across Cloudflare's edge — a write can take up to
- * ~60 s to be visible from ANOTHER location. Both his devices resolve to Tokyo,
- * and the merge rules are idempotent (a peer read a little late is merged again
- * next time, never wrongly), so this costs at most one sync of delay.
- *
- * Free tier, measured against his use: 100,000 reads and 1,000 writes a day. A
- * push is one write, debounced to one per 30 s of grading, so a long session is
- * tens of writes.
- */
-
 import { GEN_PREFIX, generate, parse, type GenerateEnv } from "./generate.js";
 
 export interface KvLike {
   get(key: string, type: "text"): Promise<string | null>;
-  /** The value AND its metadata from one entry — so a hash in the metadata describes these bytes. */
   getWithMetadata(key: string, type: "text"): Promise<{ value: string | null; metadata: unknown }>;
   put(key: string, value: string, options?: { metadata?: unknown }): Promise<void>;
   delete(key: string): Promise<void>;
@@ -59,35 +15,17 @@ export interface KvLike {
 export interface Env extends GenerateEnv {
   readonly MAILBOX: KvLike;
   readonly MAILBOX_TOKEN: string;
-  /** Comma-separated origins allowed to call this from a browser. */
   readonly ALLOWED_ORIGINS: string;
 }
 
-/** Same pattern as the laptop mailbox's `SYNC_ID`. */
 const SYNC_ID = /^[a-z0-9][a-z0-9-]{5,63}$/;
 
-/** KV's own value cap is 25 MiB; his payload is ~1.8 MB. */
 const MAX_BYTES = 24 * 1024 * 1024;
 
 const PREFIX = "payload:";
 
-/**
- * 差分 — 2026-10-10。`payload:<id>~delta` に、その端末が全体を最後に上げた後の
- * 採点を `SyncDelta` の配列として積む（`src/sync/delta.ts`）。
- *
- * 同じ接頭辞の下に置くのは、一覧が KV の `list` 一回で済むように（無料枠は一日
- * 1,000 回）。`~` は端末 id の文字集合に無いので、どの端末の名前とも衝突しない。
- *
- * 全体の PUT が `X-Covers-Mark` で「ここまでは全体に入っている」と言えば、それ
- * 以下の差分は捨てる。差分の側は、送った端末が自分の印を名乗るだけで、ここは
- * 印の意味を知らない — 比べるだけ。
- */
 const DELTA_SUFFIX = "~delta";
 
-/**
- * 差分の積み上げの上限。超えたら 413 — 端末は全体を送り、全体の PUT がここを
- * 空にする。一枚 ~400 B として ~1,300 枚、一日の復習より多い。
- */
 const MAX_DELTA_BYTES = 512 * 1024;
 
 interface DeltaEntry {
@@ -134,12 +72,6 @@ async function writeDeltas(env: Env, id: string, entries: readonly unknown[]): P
 interface PayloadMeta {
   readonly bytes: number;
   readonly updatedAt: string;
-  /**
-   * sha256 of the stored JSON, hex — 2026-09-29. A device merges a peer only when
-   * this differs from the hash it last merged, so an unchanged peer costs a line of
-   * the listing instead of a 1.9 MB download. Absent on payloads written before
-   * then, and absent means "download it".
-   */
   readonly sha?: string;
 }
 
@@ -148,14 +80,6 @@ async function sha256Hex(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/**
- * The request body as text — gunzipped when the device says it compressed it.
- *
- * `X-Payload-Encoding`, not `Content-Encoding`: whether the runtime decodes a
- * request body on its own is not something this code wants to depend on, and a
- * header of our own means the decode happens exactly once, here. A payload
- * gzips 1.9 MB → ~0.33 MB, and the upload is the half nothing else compressed.
- */
 async function requestText(request: Request): Promise<string> {
   if ((request.headers.get("X-Payload-Encoding") ?? "").toLowerCase() !== "gzip") return request.text();
   if (request.body === null) return "";
@@ -188,7 +112,6 @@ function json(status: number, body: unknown, cors: Record<string, string>): Resp
   });
 }
 
-/** Constant-time string comparison, so the token cannot be guessed by timing. */
 function sameSecret(a: string, b: string): boolean {
   const left = new TextEncoder().encode(a);
   const right = new TextEncoder().encode(b);
@@ -210,7 +133,6 @@ interface PeerListing {
   bytes: number;
   updatedAt: string;
   sha?: string;
-  /** 全体がまだ無く、差分だけがある（全体が消された端末）。 */
   noPayload?: true;
   delta?: { bytes: number; updatedAt: string; sha?: string };
 }
@@ -252,19 +174,12 @@ async function listPeers(env: Env): Promise<PeerListing[]> {
   return [...peers.values()];
 }
 
-/**
- * `preAuthorised` is for the app Worker (`cloud/app/`), which serves this from
- * its own origin and has already checked the unlock cookie. The bearer token
- * still works either way.
- */
 export async function handle(request: Request, env: Env, preAuthorised = false): Promise<Response> {
   const cors = corsHeaders(request, env);
   const url = new URL(request.url);
 
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   if (url.pathname === "/" || url.pathname === "/ping") {
-    // Unauthenticated and content-free, so "is the mailbox up" can be asked
-    // from any browser without a token.
     return new Response("hashigo mailbox is up\n", {
       headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", ...cors },
     });
@@ -276,7 +191,6 @@ export async function handle(request: Request, env: Env, preAuthorised = false):
   if (!known) return json(404, { error: "not found" }, cors);
   if (!preAuthorised && !authorised(request, env)) return json(401, { error: "unauthorised" }, cors);
 
-  // ── generation (./generate.ts) ─────────────────────────────────────────────
   if (url.pathname === "/generate/") {
     if (request.method.toUpperCase() !== "POST") return json(405, { error: "POST only" }, cors);
     const text = await request.text();
@@ -293,12 +207,10 @@ export async function handle(request: Request, env: Env, preAuthorised = false):
       const [status, body] = await generate(parsed, env);
       return json(status, body, cors);
     } catch (cause) {
-      // The message, not the stack: it reaches a phone as one line of status.
       return json(502, { error: (cause as Error).message }, cors);
     }
   }
 
-  // ── what was generated here, for the laptop to file (scripts/cloud-generated-pull.ts)
   if (url.pathname === "/generated/") {
     const keys: string[] = [];
     let cursor: string | undefined;
@@ -324,7 +236,6 @@ export async function handle(request: Request, env: Env, preAuthorised = false):
 
   if (rest === "" && method === "GET") return json(200, { peers: await listPeers(env) }, cors);
 
-  // ── 差分：/sync/<id>/delta ────────────────────────────────────────────────
   if (rest.endsWith("/delta")) {
     const id = rest.slice(0, -"/delta".length);
     if (!SYNC_ID.test(id)) {
@@ -344,7 +255,6 @@ export async function handle(request: Request, env: Env, preAuthorised = false):
       });
     }
     if (method === "POST") {
-      // 差分は小さい（`keepalive` の 64 KB に収めるために作った）ので、上限も小さく。
       if (Number(request.headers.get("Content-Length") ?? "0") > 64 * 1024) {
         return json(413, { error: "a delta is at most 64 KB — send the full payload" }, cors);
       }
@@ -356,12 +266,6 @@ export async function handle(request: Request, env: Env, preAuthorised = false):
       }
       if (!isDeltaEntry(incoming)) return json(400, { error: "body is not a sync delta" }, cors);
       const held = await readDeltas(env, id);
-      // 同じ差分をもう一度（keepalive と再送が両方届いた）は積まない。マージは冪等
-      // なので積んでも壊れないが、場所の無駄。
-      //
-      // The SAME BODY, not the same mark — decision 64, 2026-11-10. An edit delta
-      // made with no new grade carries the mark of the last grade delta; matched
-      // on the mark it was answered "duplicate" and dropped, and the edit with it.
       const body = JSON.stringify(incoming);
       if (held.some((entry) => JSON.stringify(entry) === body)) {
         return json(200, { deviceId: id, entries: held.length, duplicate: true }, cors);
@@ -412,8 +316,6 @@ export async function handle(request: Request, env: Env, preAuthorised = false):
     }
     const meta: PayloadMeta = { bytes, updatedAt: new Date().toISOString(), sha: await sha256Hex(body) };
     await env.MAILBOX.put(`${PREFIX}${rest}`, body, { metadata: meta });
-    // 全体が覆った差分を捨てる。印が無い PUT（古い端末）は差分に触らない —
-    // 何を覆ったか言えない全体で、まだ要るかもしれない差分を消してはいけない。
     const covers = Number(request.headers.get("X-Covers-Mark") ?? "NaN");
     if (Number.isFinite(covers)) {
       const held = await readDeltas(env, rest);

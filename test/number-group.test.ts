@@ -1,17 +1,3 @@
-/**
- * Thousands separators as PRESENTATION — Zach, 2026-09-07: *"we can just have no
- * comma field, and the template let me choose a display type of rendering comma"*.
- *
- * The formatting lives at SUBSTITUTION (`src/template/resolve.ts`) and not in the
- * renderer, for the reason decision 20 taught the hard way: a resolved plain field is
- * substituted to text before the render, so nothing downstream knows where it came
- * from. Two consequences are tested here because both are load-bearing:
- *
- *   * the card body shows the grouped form;
- *   * a GENERATOR's input is the grouped form too (decision 7), which is what keeps
- *     数字's 89 existing clips on their original generation key.
- */
-
 import { existsSync } from "node:fs";
 
 import Database from "better-sqlite3";
@@ -22,26 +8,16 @@ import { groupDigits, resolveCard } from "../src/template/index.js";
 
 const DB = "build/hashigo.db";
 
-/**
- * THE MIGRATION MADE `data-expect` THE GROUPED FORM, so the answer check now has to
- * accept the bare digits he will actually type.
- *
- * `<input value=<<Number>>>` goes through the SAME substitution as the body — proven
- * by rendering a real card — so the expected answer arrives as `662,928,912`. That is
- * only safe because `normaliseAnswer` strips separators before comparing, and this is
- * where that becomes load-bearing rather than a convenience: without it the migration
- * would have made every 数字 card impossible to answer.
- */
 describe("the answer check after the merge", () => {
   const expected = "662,928,912";
 
   it("accepts every form he can type", () => {
     for (const typed of [
-      "662928912", // bare, which is what a numeric keypad gives
-      "662,928,912", // as displayed
-      "６６２９２８９１２", // full-width, straight out of an IME
-      "６６２，９２８，９１２", // full-width with full-width commas
-      "662 928 912", // spaced
+      "662928912",
+      "662,928,912",
+      "６６２９２８９１２",
+      "６６２，９２８，９１２",
+      "662 928 912",
     ]) {
       expect(checkAnswer(expected, typed, { foldKana: true }).ok, typed).toBe(true);
     }
@@ -62,15 +38,12 @@ describe("groupDigits", () => {
   });
 
   it("groups only the INTEGER part", () => {
-    // `1,234.567,8` is the bug this pins. The fraction is never grouped.
     expect(groupDigits("1234.5678", ",")).toBe("1,234.5678");
     expect(groupDigits("-1234567.5", ",")).toBe("-1,234,567.5");
     expect(groupDigits("+1000", ",")).toBe("+1,000");
   });
 
   it("LEAVES ANYTHING THAT IS NOT A NUMBER ALONE", () => {
-    // A `number` field is TEXT in the column, so it can hold whatever was typed.
-    // Mangling `n/a` into something else would be worse than not formatting it.
     for (const text of ["", "n/a", "約100", "1,000", "1e6", "12 34", "١٢٣"]) {
       expect(groupDigits(text, ","), text).toBe(text);
     }
@@ -82,8 +55,6 @@ describe("groupDigits", () => {
   });
 
   it("is IDEMPOTENT on already-grouped text, by refusing it", () => {
-    // Guards the case where the migration runs twice, or where a value still holds
-    // the old comma'd form: the regex rejects it, so nothing doubles up.
     expect(groupDigits("124,652,706", ",")).toBe("124,652,706");
   });
 });
@@ -106,8 +77,6 @@ describe("a number field with `group`", () => {
   });
 
   it("renders BARE when `group` is absent or none — it is opt-in", () => {
-    // Not automatic for every `number`: "render 1999 as 1,999" is wrong for a year,
-    // and he asked to choose it in the template.
     for (const options of [{}, { group: "none" }, { group: "" }]) {
       const plain = {
         ...template,
@@ -142,8 +111,6 @@ describe("against the real 数字 corpus", () => {
           "SELECT id FROM template_fields WHERE template_id = ? AND type = 'number' AND id <> 'name'",
         )
         .get(template.id) as { id: string } | undefined;
-      // After the migration has been applied the second field is gone, and that is
-      // the healthy state — not a reason to fail.
       if (second === undefined) {
         const primary = db
           .prepare("SELECT type, options FROM template_fields WHERE template_id = ? AND id = 'name'")

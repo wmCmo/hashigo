@@ -1,16 +1,3 @@
-/**
- * Stage 11's merge, over two databases that diverged.
- *
- * THE PROPERTY THAT MATTERS IS THAT A GRADE CANNOT BE LOST. That is the whole
- * reason the review log is append-only per track, and it is the thing Zach would
- * discover weeks later and could never reconstruct. Every other rule here is
- * about the two devices AGREEING; this one is about his history surviving.
- *
- * The second property is CONVERGENCE: merge both ways and the two databases hold
- * the same reviews, the same schedule and the same flags. A merge that is not
- * symmetric is a merge that needs a "primary" device, which is the thing sync
- * exists to remove.
- */
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
@@ -19,12 +6,8 @@ import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
 import { gradeTrack } from "../src/scheduler/index.js";
 import { exportSync, mergeSync, SYNC_VERSION } from "../src/sync/index.js";
 
-/** Two cards, one forward track each, no history — the smallest divergence. */
 function device(cards = 3): { db: Db; trackIds: number[] } {
   const db = openDatabase(MEMORY);
-  // Clocks are pinned, never defaulted: these tests compare an incoming
-  // timestamp against the local row's, and a `strftime('now')` default makes
-  // the result depend on what time the suite runs. Found the hard way.
   db.prepare("INSERT INTO decks (id, name, updated_at) VALUES ('d', '日本語', ?)").run(EPOCH);
   const trackIds: number[] = [];
   for (let i = 0; i < cards; i += 1) {
@@ -63,7 +46,6 @@ const flagsOf = (db: Db, cardId: string): { archived: number; pinned: number } =
     pinned: number;
   };
 
-/** Every locally-seeded row starts here, so every incoming clock is newer. */
 const EPOCH = "2020-01-01T00:00:00.000Z";
 const NOW = "2026-09-12T12:00:00.000Z";
 
@@ -72,7 +54,6 @@ describe("a grade can never be lost by a merge", () => {
     const laptop = device();
     const phone = device();
 
-    // Different cards, same session window — the ordinary case.
     gradeTrack(laptop.db, {
       trackId: laptop.trackIds[0] as number,
       remembered: 1,
@@ -87,7 +68,6 @@ describe("a grade can never be lost by a merge", () => {
     mergeSync(laptop.db, exportSync(phone.db, NOW));
     mergeSync(phone.db, exportSync(laptop.db, NOW));
 
-    // Both devices hold both grades, and they agree.
     expect(reviewsOf(laptop.db)).toHaveLength(2);
     expect(reviewsOf(laptop.db)).toEqual(reviewsOf(phone.db));
     laptop.db.close();
@@ -111,8 +91,6 @@ describe("a grade can never be lost by a merge", () => {
 
     mergeSync(laptop.db, exportSync(phone.db, NOW));
 
-    // Two rows for one track. Neither device's history was discarded, which is
-    // the append-only guarantee doing its job.
     const rows = reviewsOf(laptop.db).filter((r) => r.card === "c0");
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.remembered)).toEqual([1, 0]);
@@ -144,9 +122,6 @@ describe("scheduler state follows the LAST REVIEW, not the last write", () => {
     const laptop = device();
     const phone = device();
 
-    // The phone graded LATER. The laptop is the one running the merge, so a
-    // naive last-write-wins would keep the laptop's state — the log and the
-    // schedule would then disagree.
     gradeTrack(laptop.db, {
       trackId: laptop.trackIds[0] as number,
       remembered: 1,
@@ -188,7 +163,6 @@ describe("scheduler state follows the LAST REVIEW, not the last write", () => {
 
     expect(report.trackStateKept).toBeGreaterThan(0);
     expect(stateOf(laptop.db, "c0")).toEqual(before);
-    // …and the phone's grade is still in the log. Kept state, kept history.
     expect(reviewsOf(laptop.db).filter((r) => r.card === "c0")).toHaveLength(2);
     laptop.db.close();
     phone.db.close();
@@ -208,7 +182,6 @@ describe("scheduler state follows the LAST REVIEW, not the last write", () => {
       reviewedAt: "2026-09-12T11:00:00.000Z",
     });
 
-    // Exchange both ways, as a real sync does.
     const fromPhone = exportSync(phone.db, NOW);
     const fromLaptop = exportSync(laptop.db, NOW);
     mergeSync(laptop.db, fromPhone);
@@ -236,9 +209,6 @@ describe("collection flags merge by clock, and CAN clear", () => {
   });
 
   it("AN UNARCHIVE REACHES THE OTHER TOO — the case a backup cannot express", () => {
-    // `applyLocalArchive` is additive by design: it uses `max(archived, ?)` and
-    // only exports raised flags, so on its own it can set a flag and never clear
-    // one. Merged with that alone, Zach could archive 数字 once and never undo it.
     const laptop = device();
     const phone = device();
     for (const db of [laptop.db, phone.db]) {
@@ -246,7 +216,6 @@ describe("collection flags merge by clock, and CAN clear", () => {
         "2026-09-12T09:00:00.000Z",
       );
     }
-    // Later, on the phone, he changes his mind.
     phone.db
       .prepare("UPDATE cards SET archived = 0, updated_at = ? WHERE id = 'c1'")
       .run("2026-09-12T11:00:00.000Z");
@@ -275,8 +244,6 @@ describe("collection flags merge by clock, and CAN clear", () => {
   });
 
   it("a NEWER local unarchive survives a stale peer that still has it archived", () => {
-    // The backup apply runs `max(archived, ?)` before any merge rule looks, so
-    // until 2026-10-22 the "kept" branch kept the clock and lost the flag.
     const laptop = device();
     const phone = device();
     laptop.db.prepare("UPDATE cards SET archived = 0, updated_at = ? WHERE id = 'c1'").run("2026-10-22T08:00:00.000Z");
@@ -314,13 +281,6 @@ describe("the payload refuses what it cannot merge", () => {
   });
 });
 
-/**
- * The case that prompted sync: he archived the 数字 DECK on his phone.
- *
- * `deckOp` archives the deck AND its cards, so a payload carrying only card
- * flags moves half the change — the cards go quiet and the tree still shows the
- * deck open. Half a change is worse than none, because nothing looks wrong.
- */
 describe("a deck archive crosses too, not just its cards", () => {
   const deckArchivedOn = (db: Db, id: string): number =>
     (db.prepare("SELECT archived FROM decks WHERE id = ?").get(id) as { archived: number })
@@ -329,7 +289,6 @@ describe("a deck archive crosses too, not just its cards", () => {
   it("carries decks.archived, which decision 17's backup does not", () => {
     const laptop = device();
     const phone = device();
-    // As `deckOp` does it: the deck and its cards together.
     phone.db
       .prepare("UPDATE decks SET archived = 1, updated_at = ? WHERE id = 'd'")
       .run("2026-09-12T10:00:00.000Z");
@@ -341,7 +300,6 @@ describe("a deck archive crosses too, not just its cards", () => {
 
     expect(report.deckFlagsTaken).toBe(1);
     expect(deckArchivedOn(laptop.db, "d")).toBe(1);
-    // …and the cards with it, so the two halves agree.
     expect(flagsOf(laptop.db, "c0").archived).toBe(1);
     laptop.db.close();
     phone.db.close();
@@ -366,7 +324,6 @@ describe("a deck archive crosses too, not just its cards", () => {
   });
 
   it("a payload from before deck flags existed still merges", () => {
-    // `deckFlags` is optional so an older peer's payload is not a crash.
     const laptop = device();
     const phone = device();
     const payload = exportSync(phone.db, NOW);
@@ -377,23 +334,6 @@ describe("a deck archive crosses too, not just its cards", () => {
   });
 });
 
-/**
- * ─── A STALE PEER MUST NOT REVERT A TEMPLATE BODY ───────────────────────────
- *
- * Zach, 2026-09-13: *"but i still can't see ojad field...? both on desktop and
- * mobile"*. His phone had the `ojad` FIELD on all four templates and all 3,718
- * annotations, and template bodies with no `<ojad>` in them.
- *
- * `applyLocalArchive` writes every template WHOLESALE — right for a restore,
- * where the archive is the only truth, and wrong for a merge. `syncNow` merges
- * each peer in turn, so with no clock **the last peer in the mailbox wins, not
- * the newest**. Reproduced in the browser pane: a test payload from 2026-09-12
- * sat alphabetically last in the mailbox and undid the change on every sync.
- *
- * The FIELD survived because fields and values are upserted per row and a
- * payload that lacks them deletes nothing. Only the bodies, replaced whole, were
- * lost — which is why the symptom was "the data is there and nothing renders".
- */
 describe("a template body merges by clock, not by peer order", () => {
   function withTemplate(db: Db, content: string, updatedAt: string): void {
     db.prepare(
@@ -409,7 +349,6 @@ describe("a template body merges by clock, not by peer order", () => {
     const local = device().db;
     const stale = device().db;
     try {
-      // The stale peer is the 2026-09-12 payload; this device has today's.
       withTemplate(stale, "><< 例文 >>", "2026-09-12T09:00:00.000Z");
       withTemplate(local, "><< 例文 >>\n><ojad></ojad>", "2026-09-13T18:00:00.000Z");
 
@@ -446,7 +385,6 @@ describe("a template body merges by clock, not by peer order", () => {
       withTemplate(local, "><< 例文 >>\n><ojad></ojad>", "2026-09-13T18:00:00.000Z");
       withTemplate(remote, "><< 例文 >>", "2026-09-12T09:00:00.000Z");
       const payload = exportSync(remote, NOW);
-      // An older build: it carried bodies but no `updated_at` for them.
       const older = {
         ...payload,
         archive: {
@@ -468,37 +406,10 @@ describe("a template body merges by clock, not by peer order", () => {
   });
 });
 
-// ─── the clock the merge rules stand on (Zach, 2026-09-14) ───────────────────
-
-/**
- * *"if i edit the template on my phone, like changing stroke color to white,
- * would it get synced?"*
- *
- * The answer was NO, and the reason was not in the merge — it was that nothing
- * ever moved the clock the merge reads.
- *
- * `templates.updated_at` and `cards.updated_at` are DEFAULTs on INSERT. There is
- * no `AFTER UPDATE` trigger maintaining either (`schema.sql` has fourteen
- * triggers and every one is FTS or blob refcounts), so a row written at import
- * time keeps its import clock for ever. `app/db.worker.ts` then edited bodies and
- * flags with bare `SET content = ?` / `SET archived = 1`.
- *
- * Both LWW rules below are STRICT — `isNewer` is `a > b` — so two devices whose
- * clocks are both the import timestamp compare EQUAL, and equal means "keep
- * mine". The peer's edit is dropped, silently, and the report counts it as
- * `templatesKept` / `flagsKept` as though a decision had been made.
- *
- * That is decision 33's own failure case arriving from the other direction, and
- * the same shape as the bug Zach reported before it — *"i archived 数字 on my
- * phone twice before realising the desktop had never heard about it"*.
- */
 describe("the clock every LWW rule stands on", () => {
   const EQUAL = "2026-09-08T00:00:00.000Z";
 
   it("LOSES a template edit when both clocks are the import timestamp", () => {
-    // The bug, pinned as behaviour so the fix below has something to be the fix
-    // OF. Two devices imported together; the phone edited the body and did not
-    // touch the clock.
     const laptop = device().db;
     const phone = device().db;
     try {
@@ -508,8 +419,6 @@ describe("the clock every LWW rule stands on", () => {
         ).run(content, EQUAL);
       };
       put(laptop, '<draw height="400px"/>');
-      // What a bare `UPDATE templates SET content = ?` does: body moves, clock
-      // does not.
       put(phone, '<draw height="400px" brushColor="#ffffff"/>');
 
       const report = mergeSync(laptop, exportSync(phone, NOW));
@@ -536,7 +445,6 @@ describe("the clock every LWW rule stands on", () => {
       phone
         .prepare("INSERT INTO templates (id, name, content, updated_at) VALUES ('t', '漢字', ?, ?)")
         .run('<draw height="400px" brushColor="#ffffff"/>', EQUAL);
-      // The fix, in the shape `templateOp` now writes it.
       phone
         .prepare(
           "UPDATE templates SET content = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = 't'",
@@ -557,8 +465,6 @@ describe("the clock every LWW rule stands on", () => {
   });
 
   it("loses and then carries a card ARCHIVE by exactly the same mechanism", () => {
-    // Not a second bug — the same one. Worth its own test because this is the
-    // one he has already been bitten by, on 数字.
     const stale = device().db;
     const fresh = device().db;
     try {
@@ -585,18 +491,6 @@ describe("the clock every LWW rule stands on", () => {
   });
 });
 
-/**
- * THE GUARD, and it reads the SOURCE rather than the behaviour.
- *
- * `app/db.worker.ts` cannot be imported here — the root `tsconfig.json` excludes
- * `app/` on purpose — and the bug was not in any rule, it was in a statement
- * somebody wrote without a clock. So this walks the statements.
- *
- * It has teeth in the direction that matters: a NEW mutation added later, to a
- * table whose rows are merged by clock, fails here until it carries one. Both
- * previous instances of this defect (数字's archive, the `<ojad>` templates) were
- * written exactly that way — by adding a statement, not by changing a rule.
- */
 describe("every synced mutation moves its row's clock", () => {
   it("no UPDATE of cards or templates in the worker omits updated_at", () => {
     const source = readFileSync(
@@ -604,9 +498,6 @@ describe("every synced mutation moves its row's clock", () => {
       "utf8",
     );
     const offenders: string[] = [];
-    // Statement text up to the closing quote. Both tables are merged by clock:
-    // `cards.updated_at` carries archived/pinned, `templates.updated_at` carries
-    // the body and the name.
     for (const match of source.matchAll(/"UPDATE (cards|templates) SET [^"]*"/g)) {
       if (!match[0].includes("updated_at")) offenders.push(match[0]);
     }
@@ -616,22 +507,10 @@ describe("every synced mutation moves its row's clock", () => {
         "strict — a mutation that leaves the clock alone is an edit the peer " +
         "silently discards. Add `updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`.",
     ).toEqual([]);
-    // The scan must actually be finding statements, or an empty list means
-    // nothing. Both tables are mutated by the card and template editors.
     expect(source.match(/"UPDATE (cards|templates) SET [^"]*"/g)?.length ?? 0).toBeGreaterThan(5);
   });
 });
 
-// ─── a field VALUE merges by its card's clock (2026-10-22) ───────────────────
-
-/**
- * Until 2026-10-22 the apply upserted every incoming value and no edit moved
- * `cards.updated_at`, so a value ended up as whichever payload merged LAST. Seven
- * Reference links made on the laptop reached the phone, and the phone's next
- * upload carried all seven back unlinked from a stale slot. These pin the rule
- * that replaced that: newer card clock wins, older or equal keeps the local value,
- * and an edit stamps the clock.
- */
 describe("a field value merges by its card's clock, not by peer order", () => {
   function withValue(db: Db, value: string, cardClock: string): void {
     db.prepare(
@@ -695,7 +574,7 @@ describe("a field value merges by its card's clock, not by peer order", () => {
       const fromLaptop = exportSync(laptop, NOW);
       const fromPhone = exportSync(phone, NOW);
       mergeSync(phone, fromLaptop);
-      mergeSync(phone, fromPhone); // its own stale upload, merged back after
+      mergeSync(phone, fromPhone);
       mergeSync(laptop, fromPhone);
       expect(valueOf(phone)).toBe(LINKED);
       expect(valueOf(laptop)).toBe(LINKED);
@@ -706,9 +585,6 @@ describe("a field value merges by its card's clock, not by peer order", () => {
   });
 
   it("an edit to a MOCHI field on an IMPORTED card reaches the other device", () => {
-    // 2026-10-24: the archive carried values only for local fields and for cards
-    // made in the app, so flipping `Reading` on one of his ~7,700 imported cards
-    // never left the device. Neither the card nor the field here is local.
     const laptop = device().db;
     const phone = device().db;
     try {
@@ -757,16 +633,6 @@ describe("a field value merges by its card's clock, not by peer order", () => {
   });
 });
 
-// ─── a field's settings merge by clock too (2026-09-25) ──────────────────────
-
-/**
- * Stage C of fields-as-modules made a field's options editable. Before it,
- * `UPSERT_FIELD` overwrote every field row wholesale and stamped `now`, so the
- * last peer merged won — harmless while nothing could change a setting, and the
- * body bug of 2026-09-13 in a new place the moment something could. These pin the
- * same three properties the bodies have: newer wins, older loses, no clock never
- * wins.
- */
 describe("a field row merges by clock, not by peer order", () => {
   function withField(db: Db, options: string, updatedAt: string): void {
     db.prepare(
@@ -817,8 +683,6 @@ describe("a field row merges by clock, not by peer order", () => {
       withField(laptop, SET, "2026-09-25T10:00:00.000Z");
       const report = mergeSync(phone, exportSync(laptop, NOW));
       expect(optionsOf(phone)).toBe(SET);
-      // Not `now`: a merge that re-stamps makes this device claim authorship and
-      // win the next sync against an edit made after this one.
       expect(clockOf(phone)).toBe("2026-09-25T10:00:00.000Z");
       expect(report.fieldsTaken).toBe(1);
     } finally {
@@ -894,7 +758,6 @@ describe("a voice override travels with the card's clock (stage E)", () => {
       const { voicesCarried: _dropped, ...older } = exportSync(laptop, NOW);
       mergeSync(phone, older as never);
       expect(voiceOf(phone, "c0")).toBe("ja-JP-Neural2-B");
-      // …while the flag it DID carry still lands.
       expect((phone.prepare("SELECT archived FROM cards WHERE id = 'c0'").get() as { archived: number }).archived).toBe(1);
     } finally {
       laptop.close();

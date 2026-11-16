@@ -1,20 +1,3 @@
-/**
- * THROWAWAY (spike harness). The dedicated Worker: everything that touches
- * SQLite happens here and nowhere else.
- *
- * What it proves, in order:
- *
- *   1. `@sqlite.org/sqlite-wasm` loads from a Vite BUNDLE (dev and built), with
- *      no COOP/COEP headers and no cross-origin isolation.
- *   2. `src/schema/schema.sql` and `src/schema/views.sql`, imported as text by the
- *      bundler and byte-for-byte unmodified, create the whole schema in a fresh
- *      OPFS database — and the table/view/trigger counts say so.
- *   3. What `PRAGMA journal_mode = WAL` actually does on `opfs-sahpool`. This is
- *      the claim `src/db/open.ts` used to make and nobody had tested.
- *   4. The real 7,716-card database, imported into OPFS once, reproduces the
- *      oracle — and reproduces it again after a reload with no re-import.
- */
-
 import schemaSql from "../src/schema/schema.sql?raw";
 import viewsSql from "../src/schema/views.sql?raw";
 
@@ -52,7 +35,6 @@ const bad = (text: string): void => post({ kind: "log", level: "bad", text });
 const ms = (from: number): string => `${(performance.now() - from).toFixed(1)}ms`;
 const n = (value: unknown): string => Number(value).toLocaleString("en-US");
 
-/** The schema version vite.config.ts parsed out of src/schema/index.ts. */
 declare const __SCHEMA_VERSION_FROM_NODE__: number;
 
 self.onmessage = (event: MessageEvent<SpikeRequest>): void => {
@@ -68,11 +50,6 @@ self.onmessage = (event: MessageEvent<SpikeRequest>): void => {
   void run(request);
 };
 
-/**
- * How does a pool that has run out of slots fail? This is the question
- * POOL_INITIAL_CAPACITY exists to answer, and the answer decides whether a
- * second (blob) database is safe.
- */
 async function exhaustPool(id: number): Promise<void> {
   const opened: BrowserDb[] = [];
   const names: string[] = [];
@@ -85,7 +62,6 @@ async function exhaustPool(id: number): Promise<void> {
       const db = await openDatabaseBrowser({ filename: name, applySchema: false });
       opened.push(db);
       names.push(name);
-      // A write forces a rollback journal, which needs a slot of its own.
       db.exec("CREATE TABLE IF NOT EXISTS t (x)");
       db.transaction(() => db.prepare("INSERT INTO t (x) VALUES (1)").run())();
       log(`  opened and wrote ${name}; files now ${pool.getFileCount()}`);
@@ -99,7 +75,6 @@ async function exhaustPool(id: number): Promise<void> {
       try {
         db.close();
       } catch {
-        // best effort
       }
     }
     for (const name of names) await deleteDatabaseBrowser(name);
@@ -125,7 +100,6 @@ async function runQuery(id: number, sql: string): Promise<void> {
 async function run(request: SpikeRequest & { kind: "run" }): Promise<void> {
   const oracle: Record<string, string | number> = {};
   try {
-    // ── 1. where are we ────────────────────────────────────────────────────
     step("1. environment");
     log(`  inDedicatedWorker()      ${inDedicatedWorker()}`);
     log(`  isSecureContext          ${self.isSecureContext}`);
@@ -137,7 +111,6 @@ async function run(request: SpikeRequest & { kind: "run" }): Promise<void> {
       bad("  crossOriginIsolated is TRUE — something set COOP/COEP. The point of sahpool is that it need not be set.");
     }
 
-    // ── 2. the wasm build ─────────────────────────────────────────────────
     step("2. sqlite-wasm, loaded through the bundler");
     const t0 = performance.now();
     const api = await sqlite3();
@@ -152,7 +125,6 @@ async function run(request: SpikeRequest & { kind: "run" }): Promise<void> {
       (present ? good : bad)(`  compile option ${option}: ${present ? "present" : "MISSING"}`);
     }
 
-    // ── 3. the pool ───────────────────────────────────────────────────────
     step("3. opfs-sahpool");
     const tInstall = performance.now();
     const pool = await installPool();
@@ -163,7 +135,6 @@ async function run(request: SpikeRequest & { kind: "run" }): Promise<void> {
     );
     log(`  files: ${JSON.stringify(pool.getFileNames())}`);
 
-    // ── 4. the real schema, unmodified, into a fresh OPFS database ────────
     step("4. src/schema/*.sql -> a fresh OPFS database");
     log(`  schema.sql ${n(schemaSql.length)} chars, views.sql ${n(viewsSql.length)} chars (bundled as ?raw text)`);
     await deleteDatabaseBrowser(FRESH_DATABASE);
@@ -207,7 +178,6 @@ async function run(request: SpikeRequest & { kind: "run" }): Promise<void> {
       );
       oracle["schema version"] = version;
 
-      // The claim src/db/open.ts used to make, tested.
       const before = String(fresh.pragma("journal_mode", { simple: true }));
       const asked = String(fresh.pragma("journal_mode = WAL", { simple: true }));
       const after = String(fresh.pragma("journal_mode", { simple: true }));
@@ -224,14 +194,12 @@ async function run(request: SpikeRequest & { kind: "run" }): Promise<void> {
         `  integrity_check + foreign_key_check: ${problems.length === 0 ? "ok" : problems.join("; ")}`,
       );
 
-      // applySchema is idempotent — the same guarantee open.ts makes.
       applySchema(fresh, [{ name: "schema.sql", sql: "SELECT 'not reached'" }]);
       good("  applySchema on an already-stamped database applied nothing");
     } finally {
       fresh.close();
     }
 
-    // ── 5. the real database ─────────────────────────────────────────────
     step("5. the real 7,716-card database in OPFS");
     const held = await databaseFilesInOpfs();
     const alreadyThere = held.includes(DEFAULT_DATABASE);
@@ -266,7 +234,6 @@ async function run(request: SpikeRequest & { kind: "run" }): Promise<void> {
       db.close();
     }
 
-    // ── 6. pool and quota afterwards ─────────────────────────────────────
     step("6. pool and quota");
     log(`  capacity ${n(pool.getCapacity())}, files ${n(pool.getFileCount())}: ${JSON.stringify(pool.getFileNames())}`);
     const estimate = await navigator.storage.estimate();
@@ -290,7 +257,6 @@ async function run(request: SpikeRequest & { kind: "run" }): Promise<void> {
   }
 }
 
-/** The oracle, from the OPFS-backed database. Numbers that must not move. */
 function reportOracle(db: BrowserDb, oracle: Record<string, string | number>): void {
   const timings: string[] = [];
   const timed = <T,>(label: string, run: () => T): T => {
@@ -321,8 +287,6 @@ function reportOracle(db: BrowserDb, oracle: Record<string, string | number>): v
     timed(label, () => Number(db.prepare(sql).pluck().get()));
   const decks = one("decks", "SELECT count(*) FROM decks");
   const tagRows = one("tags", "SELECT count(*) FROM tags");
-  // cards_direct, not cards_subtree: the oracle's 19 is tags that are on a card
-  // themselves. The 20th row is a parent path that only its children use.
   const tagsWithCards = one("tag_usage", "SELECT count(*) FROM tag_usage WHERE cards_direct > 0");
   const links = one("card_links", "SELECT count(*) FROM card_links");
   const templates = one("templates", "SELECT count(*) FROM templates");
@@ -378,15 +342,10 @@ function reportOracle(db: BrowserDb, oracle: Record<string, string | number>): v
   oracle["active days"] = totals.study_days;
   oracle["study hours"] = totals.hours.toFixed(1);
 
-  // Every figure above, timed individually. The dashboard's collect() takes ~7s
-  // in Node over the same data, so these are the numbers stage 7 has to live
-  // with, and study_totals (which reads all 102,020 rows through review_log) is
-  // the one that matters.
   log(`  query times: ${timings.join(" | ")}`);
   oracle["study_totals ms"] = timings[0] ?? "";
 }
 
-/** Write, commit, and report what the previous run left behind. */
 function probeDurability(db: BrowserDb): void {
   const previous = db
     .prepare("SELECT value FROM settings WHERE key = ?")
@@ -410,7 +369,6 @@ function probeDurability(db: BrowserDb): void {
   log(`  wrote probe ${stamp} (${changes} row) and committed in ${ms(t0)}`);
 }
 
-/** FTS5 trigram over the real corpus, from OPFS. What Ctrl+K depends on. */
 function searchProbe(db: BrowserDb): void {
   const fts = db.prepare("SELECT count(*) FROM card_fts WHERE card_fts MATCH ?").pluck();
   for (const query of ["気持ち", "ありがとう", "勉強"]) {

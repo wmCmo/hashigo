@@ -1,21 +1,6 @@
-/**
- * THE SMALL PIECES OF CHROME EVERY FEATURE USES — the one-line status strip and
- * the two dialogs. (The element lookup is `./dom.ts`.)
- *
- * Moved out of `main.ts` on 2026-09-25 with the layer stack, because every feature
- * module extracted after it needs these and none of these needs a feature.
- */
-
 import { el, setTextWithCode } from "./dom.js";
 import { bareLayer, closeIfTop, pushLayer } from "./layers.js";
 
-/**
- * Append a line to the boot log.
- *
- * Here rather than in `main.ts` because the backup and eviction checks write to it
- * too, and the boot log is what he diagnosed three faults with in one week — every
- * part of the app that can explain itself there should be able to.
- */
 export function line(text: string, level = "info"): void {
   const log = el("bootlog");
   const row = document.createElement("div");
@@ -25,20 +10,16 @@ export function line(text: string, level = "info"): void {
   log.scrollTop = log.scrollHeight;
 }
 
-/** MiB to one decimal — the only unit worth showing for a ~300 MB download. */
 export function mib(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-/** One place the app says what just happened, on every surface. */
 export function say(text: string, bad = false, stay = false): void {
   const strip = el("say");
   strip.textContent = text;
   strip.classList.toggle("bad", bad);
   strip.hidden = false;
   window.clearTimeout(sayTimer);
-  // `stay`：続きのある知らせ（同期の進み具合）。マージは 8 秒ほど何も言わない
-  // ので、4 秒で消すと待っている途中で画面から消える。次の `say` が片付ける。
   if (stay) return;
   sayTimer = window.setTimeout(() => {
     strip.hidden = true;
@@ -87,15 +68,6 @@ export function openConfirm(
   cancel.focus();
 }
 
-/**
- * A one-field dialog: a name, a button, Enter and Escape.
- *
- * `window.prompt()` is what this replaces and it is not usable here. It blocks the
- * event loop (so the worker's replies queue behind it), it cannot be styled, and on
- * a phone it is a system sheet that reads as the browser interrupting rather than
- * the app asking. It also cannot say WHY it is asking, and every use of this one
- * has a consequence worth a sentence.
- */
 export function openPrompt(
   title: string,
   body: string,
@@ -140,8 +112,6 @@ export function openPrompt(
   go.textContent = "ok";
   const submit = (): void => {
     const value = input.value.trim();
-    // An empty name is refused rather than accepted-and-defaulted: a deck called
-    // "new deck" that he meant to name something is a deck he has to find again.
     if (value === "") {
       input.focus();
       return;

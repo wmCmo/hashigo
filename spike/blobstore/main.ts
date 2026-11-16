@@ -1,20 +1,8 @@
-/**
- * THROWAWAY (spike harness). The main thread: spawn the worker, render what it
- * says, and call `navigator.storage.persist()` — which does not exist in a
- * worker, so the page has to ask and pass the answer in.
- *
- * It never holds a database handle or a blob store. That is the contract.
- */
-
 import { readPack } from "./pack.js";
 import type { SpikeMessage, SpikeRequest } from "./protocol.js";
 
-// Vite dev turns this into a `/@fs/…` URL for a file outside the Vite root. It
-// is never bundled: `vite build` only has the root index.html as an input, so a
-// 625 MiB asset import cannot end up in the output.
 import packUrl from "../../build/spike/blob-corpus.pack?url";
 
-/** Served by the middleware in vite.config.ts, in dev and in preview both. */
 const BOOTSTRAP_URL = "/hashigo-bootstrap.db";
 
 const logElement = document.querySelector<HTMLPreElement>("#log");
@@ -111,12 +99,6 @@ function main(fresh: boolean): void {
     });
 }
 
-/**
- * The pack, parsed on the MAIN thread and thrown away. Nothing to do with the
- * store — it is here because "is the 625 MiB file the page is about to fetch
- * actually the corpus" is a question worth being able to answer without a
- * database in the way.
- */
 async function checkPack(): Promise<void> {
   write("checking the pack (no database involved)…", "step");
   let count = 0;

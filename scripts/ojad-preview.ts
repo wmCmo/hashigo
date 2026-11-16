@@ -1,28 +1,3 @@
-/**
- * A look at `<ojad>` on REAL cards, before it reaches any device.
- *
- *     npx vite-node scripts/ojad-preview.ts -- --db build/hashigo.db --out build/ojad-preview.html
- *
- * ─── WHY THIS EXISTS, AND IT IS NOT A MOCKUP ────────────────────────────────
- *
- * Zach, 2026-09-13: *"let's generate first, it won't reach my phone, that means
- * i can view it on pc, and if i say okay, then you can make it reach my phone
- * correct?"* — and the premise needed one correction. **His laptop browser is in
- * exactly the same position as his phone**: both hold their own OPFS copy and
- * both are gated by the same `seedReviews` freshness check, so neither shows a
- * template change until something delivers it. There is no "PC first" state.
- *
- * So this renders the cards through the SHIPPING path — `mountTrack` ->
- * `mountPrepared` -> `renderSides` with the real supports — and writes the
- * result to a file he can open. No device is touched, nothing is synced, and
- * what he sees is what the review screen would draw.
- *
- * **It is emphatically NOT `build/mock/out/`.** CLAUDE.md is explicit that those
- * are hand-authored by `scripts/mockup-html.ts` and that the real render
- * produces none of their structure. This produces exactly the real structure,
- * because it calls the real renderer; the only thing it adds is a page to hold
- * the cards and a `<link>` to `app/style.css`.
- */
 import { readFileSync, writeFileSync } from "node:fs";
 
 import { defaultStoreDatabase, openBlobStoreDatabase } from "../src/blobs/index.js";
@@ -42,14 +17,6 @@ const { store } = openBlobStoreDatabase(defaultStoreDatabase(DB), {
   create: false,
 });
 
-/**
- * Cards chosen for VARIETY, not for looking good.
- *
- * A preview built from the first N rows would be twelve near-identical 単語
- * cards, and the cases worth seeing are the ones that stress the notation: many
- * accent phrases, several devoiced morae, and at least one sentence long enough
- * to wrap. Ordered so the widest spread comes first.
- */
 const rows = db
   .prepare(
     `SELECT v.card_id   AS cardId,
@@ -91,11 +58,6 @@ for (const row of rows) {
   if (card === null) continue;
   rendered += 1;
 
-  // THE GENERATED TEXT, FILLED. Without this the example sentence renders EMPTY:
-  // `例文` is an `ai` field whose text lives in the blob store and arrives through
-  // `fillText`, which the app does from its worker. A preview that skipped it
-  // would show the reading with no sentence above it — which is exactly what the
-  // first run of this script produced, and it looked like a bug in the feature.
   card.fillText(
     card.textSlots.map((slot) =>
       resolveDescriptorText(db, {
@@ -108,9 +70,6 @@ for (const row of rows) {
     ),
   );
 
-  // EVERY SIDE, UNMASKED — this is decision 30's preview mode, not review mode.
-  // A masked preview would hide the sentence side behind a reveal he cannot
-  // click in a static file.
   const sides = card.result.sides
     .filter((side) => !side.empty)
     .map((side) => serialise(side.element))
@@ -239,16 +198,6 @@ writeFileSync(OUT, page, "utf8");
 console.log(`${rendered} card(s) -> ${OUT}`);
 db.close();
 
-/**
- * One face, embedded.
- *
- * `@font-face` with a RELATIVE url is silently inert in a file:// snapshot — no
- * error, no fallback warning, the text simply renders in whatever the system
- * offers for those codepoints. That is not a hypothetical: the first version of
- * this preview linked `app/style.css` relatively, the whole stylesheet failed to
- * load, and Zach read the result as the app's own design being worse than a page
- * that had no design at all. Embedding costs ~2 MB and removes the entire class.
- */
 function fontFace(family: string, path: string): string {
   const base64 = readFileSync(path).toString("base64");
   return `@font-face { font-family: "${family}"; font-weight: 400 700; font-display: block;

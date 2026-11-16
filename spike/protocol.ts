@@ -1,20 +1,8 @@
-/**
- * THROWAWAY (spike harness) — but the shape here is the shape the PWA shell
- * needs, so it is written as if it mattered.
- *
- * The main thread owns the DOM and owns `navigator.storage.persist()`. The worker
- * owns the database and is the ONLY place a `sqlite3` object exists. Nothing
- * crosses that line except structured-cloneable messages.
- */
-
 export interface RunRequest {
   readonly kind: "run";
   readonly id: number;
-  /** Re-import the prebuilt database even if OPFS already holds one. */
   readonly reimport: boolean;
-  /** `SCHEMA_VERSION` as vite.config.ts read it out of src/schema/index.ts. */
   readonly schemaVersionFromNode: number;
-  /** Whether the page believes storage is persistent. Main-thread-only fact. */
   readonly persisted: boolean;
 }
 
@@ -24,7 +12,6 @@ export interface QueryRequest {
   readonly sql: string;
 }
 
-/** Open databases in the pool until it refuses, to see how it refuses. */
 export interface ExhaustRequest {
   readonly kind: "exhaust";
   readonly id: number;

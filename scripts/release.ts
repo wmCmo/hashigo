@@ -1,16 +1,3 @@
-/**
- * MAKE A RELEASE — decisions 59 and 65. Every deploy is one.
- *
- *     npm run release -- patch                       # fixes and small features
- *     npm run release -- minor "what he can now do"  # a milestone
- *     npm run release -- patch --dry                 # say what it would do
- *
- * Bumps `package.json` and `package-lock.json`, commits `release: vX.Y.Z`, and
- * makes an annotated tag whose message lists every commit since the last release
- * (`scripts/release-rules.ts` has the rules and the reasons). It does not push and
- * does not deploy; it prints both commands. `npm run app:build:cloud` refuses any
- * commit that is not a release, so the version in Settings is always one of these.
- */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -28,7 +15,6 @@ import {
 const git = (...args: string[]): string =>
   execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
-// vite-node may pass the `--` npm puts before the arguments through; it is not one.
 const args = process.argv.slice(2).filter((arg) => arg !== "--");
 const bump = args[0] as Bump | undefined;
 const dry = args.includes("--dry");
@@ -85,7 +71,6 @@ if (dry) {
   process.exit(0);
 }
 
-// The version line only, so the files keep their formatting.
 const swap = (file: string, count: number): void => {
   let text = readFileSync(file, "utf8");
   for (let i = 0; i < count; i += 1) {
@@ -94,7 +79,7 @@ const swap = (file: string, count: number): void => {
   writeFileSync(file, text);
 };
 swap("package.json", 1);
-swap("package-lock.json", 2); // the root and `packages[""]`
+swap("package-lock.json", 2);
 
 git("add", "package.json", "package-lock.json");
 git("commit", "-m", `release: v${version}${summary.trim() === "" ? "" : ` — ${summary.trim()}`}`);

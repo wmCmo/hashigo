@@ -10,32 +10,9 @@ import {
   type ReverseInheritance,
 } from "../src/schema/index.js";
 
-/**
- * ONE RULE, TWO RUNTIMES, PINNED TO AGREE.
- *
- * `views.sql` resolves `inherit` up the deck tree in SQL (`deck_reverse_resolved`)
- * and says beside the neighbouring voice view why that should be the only definition:
- * *"so there is one definition of the inheritance rather than a SQL one and a
- * TypeScript one that drift"*.
- *
- * It had three. `src/import/entities.ts` matched the view; `src/import/reviews.ts`
- * walked PAST an explicit `off` looking for an `on` above it. Both are adapters over
- * `resolveReverseInheritance` now, which removes the TypeScript-vs-TypeScript drift —
- * but it cannot remove the TypeScript-vs-SQL drift, because SQLite is where the view
- * lives and no amount of shared code reaches inside it.
- *
- * So that half is pinned here instead: the same question asked of both, over the real
- * 7,716-card collection, and required to give the same answer for every card. It is
- * the only check that catches the view and the function drifting apart, and drifting
- * apart is what a reverse track being present or absent decides — which is what the
- * scheduler schedules.
- */
-
 const ROOT = resolve(import.meta.dirname, "..");
 const EXPORT_DIRS = ["日本語", "English", "基本情報"].map((n) => join(ROOT, "exports", n));
 const HAVE_EXPORTS = EXPORT_DIRS.every((dir) => existsSync(join(dir, "data.json")));
-
-// ── the rule on its own, where every branch is reachable ─────────────────────
 
 function nodes(...rows: readonly [string, string | null, "inherit" | "on" | "off"][]) {
   const map = new Map<string, ReverseInheritance>();
@@ -45,9 +22,6 @@ function nodes(...rows: readonly [string, string | null, "inherit" | "on" | "off
 
 describe("resolveReverseInheritance", () => {
   it("takes the NEAREST explicit ancestor, whichever way it points", () => {
-    // The divergence, as a test. `reviews.ts` used to walk past the `off` and answer
-    // `on` from the grandparent — a deck deliberately excepted under an enabled
-    // parent silently got reverse tracks anyway.
     const tree = nodes(["root", null, "on"], ["mid", "root", "off"], ["leaf", "mid", "inherit"]);
     expect(resolveReverseInheritance(tree, "leaf")).toBe("off");
     expect(resolveReverseInheritance(tree, "mid")).toBe("off");
@@ -79,13 +53,10 @@ describe("resolveReverseInheritance", () => {
   });
 
   it("stops at a parent that is not in the map rather than throwing", () => {
-    // A filtered deck list — one subtree — must resolve rather than crash.
     const orphan = nodes(["leaf", "gone", "inherit"]);
     expect(resolveReverseInheritance(orphan, "leaf", "on")).toBe("on");
   });
 });
-
-// ── the same rule, against SQL, over the real corpus ─────────────────────────
 
 describe.skipIf(!HAVE_EXPORTS)("the TypeScript rule and the SQL view agree", () => {
   it("gives the same answer as `deck_reverse_resolved` for every deck", () => {
@@ -122,10 +93,6 @@ describe.skipIf(!HAVE_EXPORTS)("the TypeScript rule and the SQL view agree", () 
   });
 
   it("agrees per CARD too, which is where the track count comes from", () => {
-    // `card_reverse_resolved` adds one hop: a card's own explicit value beats its
-    // deck's. That hop has no TypeScript twin, so this checks the composition rather
-    // than only the deck half — 7,716 cards, and the answer decides whether each has
-    // a reverse track at all.
     const db = openDatabase(":memory:");
     importExports(db, EXPORT_DIRS.map(readSource), { blobs: false });
 
@@ -168,7 +135,6 @@ describe.skipIf(!HAVE_EXPORTS)("the TypeScript rule and the SQL view agree", () 
     expect(checked).toBe(7716);
     expect(disagreements.slice(0, 10), `${disagreements.length} cards disagree`).toEqual([]);
 
-    // And the total is the documented one: 5,676 tracks resolve reverse ON.
     const on = [...fromSql.values()].filter((r) => r === "on").length;
     expect(on).toBe(5677);
     db.close();

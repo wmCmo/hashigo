@@ -1,12 +1,3 @@
-/**
- * Making a card — `src/cards/create.ts`, the code the app's worker and
- * `scripts/cards-add.ts` both call.
- *
- * Two defects found while adding a 漢検 batch on 2026-10-29: a card and its
- * values were written in separate steps, so a fill that lost the race left a card
- * with EMPTY fields (簿 was made that way); and nothing stopped a second card of
- * a name that already existed. Both are pinned here.
- */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -54,14 +45,12 @@ describe("createCard", () => {
       values: { imi: "stagnation", reading: "false" },
     });
     expect(made.tracks).toEqual(["forward"]);
-    // The head word comes from the title when the values do not give it.
     expect(valuesOf(d, made.cardId)).toEqual({ name: "停滞", imi: "stagnation", reading: "false" });
     const row = d.prepare("SELECT name, local, archived FROM cards WHERE id = ?").get(made.cardId);
     expect(row).toEqual({ name: "停滞", local: 1, archived: 0 });
     const track = d
       .prepare("SELECT due_at, reps FROM card_tracks WHERE card_id = ? AND kind = 'forward'")
       .get(made.cardId);
-    // New, not overdue: decision 12's limit decides when it is first shown.
     expect(track).toEqual({ due_at: null, reps: 0 });
   });
 
@@ -142,7 +131,6 @@ describe("createTemplate", () => {
     });
     const rendered = loadRenderedCard(d, card.cardId, "forward");
     expect(rendered?.sides.length).toBe(2);
-    // Both markers resolve: the title went into the head field, the value into Back.
     expect(JSON.stringify(rendered?.sides[0])).toContain("没頭");
     expect(JSON.stringify(rendered?.sides[1])).toContain("専念");
     expect(rendered?.warnings).toEqual([]);
@@ -155,9 +143,6 @@ describe("createTemplate", () => {
   });
 
   it("reaches the other device with its fields, its body and the cards on it", () => {
-    // 2026-10-30: the merge counted a template it did not have as ORPHANED and
-    // skipped it, so a template made on the laptop never reached the phone and
-    // every card on it arrived with no fields.
     const laptop = db();
     const phone = db();
     const made = createTemplate(laptop, "対義語");
@@ -178,7 +163,6 @@ describe("createTemplate", () => {
     expect(
       phone.prepare("SELECT count(*) AS n FROM card_tracks WHERE card_id = ?").get(card.cardId),
     ).toEqual({ n: 1 });
-    // And a second merge of the same payload changes nothing.
     expect(mergeSync(phone, exportSync(laptop, "2026-10-30T00:00:01.000Z")).applied.templatesInserted).toBe(0);
   });
 });

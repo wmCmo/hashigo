@@ -1,37 +1,3 @@
-/**
- * Generator-typed FIELDS — the binding that made the app silent.
- *
- * Mochi keeps generated content in `component-cache`, keyed by the generator's
- * INPUT TEXT, and never in `fields[].value`. So all 19 generator-typed fields
- * across the 11 templates hold zero values, `<<Speech>>` resolves to the empty
- * string, and 3,456 単語 cards that own a clip render no `<audio>` at all.
- *
- * This module is the missing half: it turns a valueless generator field back
- * into a generation REQUEST, so the same on-demand `lookupGeneration` path the
- * inline `<speech>` tags use can find the blob that already exists.
- *
- * THREE THINGS HERE WERE MEASURED, NOT REASONED. Each one is a silent
- * whole-template failure if guessed wrong, and each was found by reconstructing
- * a key and checking it against the store over all 7,346 templated cards:
- *
- *   1. THE INPUT IS THE *RENDERED* TEXT, NOT THE STORED VALUE. 基本情報's cache
- *      key is `データ` where the field value is `{{データ}}` — cloze braces come
- *      off, wiki-links reduce to their display text, invisible marks go. Getting
- *      this wrong cost 基本情報 all 471 of its cards (0 hits) and moved the
- *      corpus-wide hit rate from 92.29% to 95.35%.
- *   2. ONLY SOME OPTIONS ARE PART OF THE KEY. Mochi's cache key carries
- *      `ai-task` / `gender` / `from` / `to` / `language`, and never
- *      `ai-custom-prompt` or `randomize`. Measured from the blob census: no blob
- *      in the corpus has a prompt in its `options`.
- *   3. THE PROMPT SUBSTITUTION TOLERATES SPACES. Polysemy's prompt is
- *      `Funny or weird sentence using << 言葉 >> in Japanese` — with spaces
- *      inside the marker. An anchored `<<(\w+)>>` finds nothing there.
- *
- * WHAT IS NOT HERE: no HTTP, no generation, no playback. This builds requests
- * and expands AST; `./store.ts` looks them up. Nothing in this file can start
- * audio, which is the point — see `src/render/reveal.ts`.
- */
-
 import { NON_KEY_OPTIONS } from "../fields/identity.js";
 import { FIELD_TYPE_BLOB_KIND, GENERATOR_FIELD_TYPES, type BlobKind } from "../schema/index.js";
 import { groupDigits } from "../template/resolve.js";
@@ -46,21 +12,12 @@ import {
   type Side,
 } from "../template/index.js";
 
-// ─── which field types generate ──────────────────────────────────────────────
-
-/**
- * Re-exported, not redefined. `src/schema/index.ts` owns the table because
- * `src/template/resolve.ts` needs the same one to tell "pending" from "blank",
- * and two copies is how those two come to disagree.
- */
 export { FIELD_TYPE_BLOB_KIND, GENERATOR_FIELD_TYPES } from "../schema/index.js";
 
-/** Does this `template_fields.type` produce content rather than hold it? */
 export function isGeneratorType(type: string | undefined): boolean {
   return type !== undefined && GENERATOR_FIELD_TYPES.has(type);
 }
 
-/** The element name a generator field expands to, for the renderer's benefit. */
 const KIND_ELEMENT: Readonly<Record<BlobKind, string>> = {
   speech: "speech",
   ai: "ai",
@@ -71,117 +28,49 @@ const KIND_ELEMENT: Readonly<Record<BlobKind, string>> = {
   file: "ai",
 };
 
-// ─── the generation input ────────────────────────────────────────────────────
-
-/**
- * `{{…}}` with its braces removed and its contents kept.
- *
- * Not a general cloze parser: `src/template/parse.ts` owns that. This is the
- * narrow transform Mochi applied before hashing, and the inner pattern excludes
- * braces so a nested form cannot swallow a neighbour.
- */
 const CLOZE_BRACES = /\{\{(?:\d+::)?([^{}]*)\}\}/g;
 
-/**
- * A stored field value -> the text the generator was actually given.
- *
- * `renderPlainText` is the same transform `cards.search_text` uses, so there is
- * one definition of "what this card says" rather than two that drift. Cloze
- * braces are stripped on top of it, which search does not need to do because a
- * brace is not a trigram anyone types.
- *
- * NFC and whitespace collapsing are deliberately NOT done here —
- * `normaliseSourceText` in `src/import/blobs.ts` owns those, and doing them
- * twice in two places is how two spellings of one key appear.
- */
 export function generationInput(value: string): string {
   return renderPlainText(value).replace(CLOZE_BRACES, "$1");
 }
 
-// ─── building a request from a field ─────────────────────────────────────────
-
-/** A `template_fields` row, as much of it as this module needs. */
 export interface GeneratorField {
   readonly id: string;
   readonly name: string;
   readonly type: string;
-  /** `template_fields.source_field_id`. Null is legitimate — see the schema. */
   readonly sourceFieldId?: string | null;
-  /** `template_fields.options`, decoded. */
   readonly options?: Readonly<Record<string, unknown>>;
 }
 
-/** Everything a request needs that does not come from the field itself. */
 export interface FieldContext {
-  /** Every field on the template, so a source pointer and a prompt can resolve. */
   readonly fields: readonly GeneratorField[];
-  /** field id -> stored value. Generator fields are absent or empty here. */
   readonly values: ReadonlyMap<string, string>;
-  /**
-   * The text an UPSTREAM generator produced, for the 3,467 cards where 単語's
-   * `Audio` reads the sentence `例文` generated. Returns null when it is not
-   * available, and the request is then unbuildable rather than wrong.
-   */
   readonly resolveGenerated?: (request: FieldGenerationRequest) => string | null;
-  /**
-   * The card's inherited voice override (`card_voice_resolved`), or null/absent
-   * for "the field's own". Stage E of fields-as-modules.
-   *
-   * Applied to SPEECH only, and only to a field of the SAME LANGUAGE as the
-   * voice: a card on New Vocab carries an English field, and a Japanese override
-   * set on its parent deck must not re-voice it — the 130-clip defect again,
-   * arriving by inheritance. A field with no language is left alone for the same
-   * reason: nothing can say the override fits it.
-   */
   readonly voiceOverride?: string | null;
 }
 
-/** `en-US-Neural2-J` and `en` → true. Compares the language, not the region. */
 function sameLanguage(voice: string, lang: string | null): boolean {
   if (lang === null || lang === "") return false;
   return voice.slice(0, 2).toLowerCase() === lang.slice(0, 2).toLowerCase();
 }
 
-/** A request in the shape `generationIdentity` takes, plus its provenance. */
 export interface FieldGenerationRequest {
   readonly kind: BlobKind;
-  /** RAW input text. `generationIdentity` normalises; this must not. */
   readonly text: string;
   readonly voice: string | null;
   readonly lang: string | null;
   readonly options: Readonly<Record<string, string>>;
-  /** Which field this is for, so a diagnostic can name it. */
   readonly fieldId: string;
   readonly fieldName: string;
 }
 
-/**
- * Options that are NOT part of Mochi's cache key.
- *
- * MOVED to `src/fields/identity.ts` so the field registry can DESCRIBE this rule
- * without becoming a second copy of it, and re-exported here because this file is
- * where the rule is APPLIED — `keyOptions` below is still the only thing that
- * decides what is hashed. The direction is the point: a registry that decided
- * would let a cache key move as a side effect of documenting it, and a moved key
- * orphans every blob it addressed.
- *
- * Measured, not assumed: across 42,569 blob identities not one carries
- * `ai-custom-prompt` or `randomize`. `lang` and `voice` are excluded because
- * `generationIdentity` gives them their own slots — leaving them in would hash
- * them twice. The set also excludes every `hashigo-` key by rule, so a locally
- * added one cannot silently re-address a field.
- */
 export { NON_KEY_OPTIONS };
 
-/** `<<Field>>`, `<< Field >>`. Polysemy's prompt really has the spaces. */
 const PROMPT_MARKER = /<<\s*([^<>]+?)\s*>>/g;
 
 function keyOptions(options: Readonly<Record<string, unknown>>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [name, value] of Object.entries(options)) {
-    // `null` is not the same as absent to JSON but IS the same to Mochi: `New
-    // Vocab`'s Pronunciation carries `"gender": null` and its blobs carry no
-    // gender at all.
     if (NON_KEY_OPTIONS.has(name) || value === null || value === undefined) continue;
     out[name] = String(value);
   }
@@ -190,16 +79,6 @@ function keyOptions(options: Readonly<Record<string, unknown>>): Record<string, 
 
 const MAX_DEPTH = 4;
 
-/**
- * The generation request for one generator-typed field, or null when its input
- * cannot be resolved.
- *
- * Null is a real answer and is counted, not swallowed: 159 of the corpus's
- * 18,356 field slots have no resolvable input — an empty source value, or an
- * upstream generation that is itself unavailable. A request built on empty text
- * would hash to a key nothing can ever match, so refusing to build one is what
- * keeps the miss diagnostic meaningful.
- */
 export function fieldGenerationRequest(
   field: GeneratorField,
   context: FieldContext,
@@ -232,13 +111,6 @@ export function fieldGenerationRequest(
   };
 }
 
-/**
- * An `ai` field's input is its rendered PROMPT, not a source field.
- *
- * Four of the 19 fields have `source_field_id = NULL` for exactly this reason —
- * their dependency is named only inside the prompt text, which is why the schema
- * warns that a DAG built from `source_field_id` alone is incomplete.
- */
 function promptText(
   options: Readonly<Record<string, unknown>>,
   context: FieldContext,
@@ -259,15 +131,6 @@ function promptText(
   return resolved ? text : null;
 }
 
-/** A non-`ai` generator reads the field its `source_field_id` names. */
-/**
- * A stored value as the template RENDERS it — the one place storage and display
- * diverge today.
- *
- * `groupDigits` is imported rather than reimplemented: the resolver applies exactly
- * this to `<<Number>>`, and a second copy here would be a generation key that drifts
- * from the text on screen. `src/template/resolve.ts` carries the reasoning.
- */
 function renderedValue(field: GeneratorField, stored: string): string {
   if (field.type !== "number") return stored;
   const group = field.options?.["group"];
@@ -286,38 +149,9 @@ function sourceText(
   return source === undefined ? null : fieldText(source, context, depth);
 }
 
-/**
- * A field's text, following the generation DAG.
- *
- * 単語's `Audio` reads `例文`, which is itself an `ai` field with no value, so
- * the sentence has to come back out of the store before the speech request can
- * be built. Depth-limited because `source_field_id` is only guaranteed acyclic
- * by a CHECK against self-reference, not against a longer cycle.
- */
-/** An inline text generator inside a stored VALUE: `<ai>…</ai>`, `<translate …>…</translate>`. */
 const INLINE_GENERATOR = /<(ai|translate)(\s[^>]*)?>([\s\S]*?)<\/\1>/g;
 const INLINE_ATTRIBUTE = /([A-Za-z-]+)\s*=\s*"([^"]*)"/g;
 
-/**
- * A stored value with its inline generators replaced by what they GENERATED —
- * the text the card shows. Null when one of them has not been generated.
- *
- * Zach, 2026-09-25, on New Vocab's `snare`: *"why the error 😭"* — "generate
- * audio" under a sentence he could read answered "there is nothing to speak
- * here". The card's `Example Sentence` is a PLAIN field whose value is the
- * element `<ai>Example sentence of snare</ai>`; the renderer resolves it on
- * screen, but this function handed the RAW value to the speech field reading
- * it, so the request's text was the tag. `speakableText` strips unfilled tags,
- * found nothing left, and the server refused. **28 New Vocab cards**, and each
- * one's sentence WAS generated (2026-09-08) — only the audio path never looked.
- * It is also where the 30 clips that recite `<ai>Example sentence of
- * plectrum</ai>` came from: an earlier fill spoke the tag itself.
- *
- * The descriptor is built exactly as `generationDescriptor` in
- * `src/render/nodes.ts` builds it for the same element — kind from the tag,
- * `lang`/`voice` lifted out, every other attribute an option, the inner text
- * raw — so it resolves to the generation the screen is showing, not a near miss.
- */
 function resolveInlineGenerators(stored: string, context: FieldContext): string | null {
   if (!stored.includes("<ai") && !stored.includes("<translate")) return stored;
   if (context.resolveGenerated === undefined) return null;
@@ -354,17 +188,6 @@ function fieldText(field: GeneratorField, context: FieldContext, depth: number):
   const raw = context.values.get(field.id);
   const stored = raw === undefined || raw === "" ? raw : resolveInlineGenerators(raw, context);
   if (stored === null) return null;
-  // DECISION 7 SAYS "THE RENDERED TEXT", AND THIS LINE USED TO SAY "THE STORED
-  // VALUE". For every field in the corpus those were the same string, so the
-  // difference was invisible until a field gained a display rule.
-  //
-  // 数字's merge (2026-09-07) made them differ: the number is stored bare and
-  // rendered grouped. The 89 existing clips were generated from `143,710,122` and
-  // the stored value became `143710122`, so the generation identity moved and every
-  // clip stopped resolving — measured, 78 cards asked on entry and played NOTHING.
-  //
-  // Formatting here is what makes the decision true rather than nearly true. The
-  // blast radius is exactly the fields that have a display rule: one, today.
   if (stored !== undefined && stored !== "") return generationInput(renderedValue(field, stored));
   if (depth >= MAX_DEPTH || !isGeneratorType(field.type)) return null;
   if (context.resolveGenerated === undefined) return null;
@@ -374,38 +197,12 @@ function fieldText(field: GeneratorField, context: FieldContext, depth: number):
   return produced === null || produced === "" ? null : produced;
 }
 
-// ─── expanding the AST ───────────────────────────────────────────────────────
-
-/**
- * A `field` node for a valueless generator field -> a synthetic generator
- * ELEMENT node, so the renderer's existing `<speech>` path renders it.
- *
- * Built as an AST node, never as a string. Splicing `<speech>…</speech>` into
- * resolved text would put a field value through the lexer, and a value
- * containing `<` could then forge markup — the one thing `src/render/dom.ts`
- * exists to make impossible. This route cannot: the input text becomes a `text`
- * node, and `sanitiseElement` still vets the attributes.
- *
- * Reusing the element path is also what keeps the no-autoplay guarantee intact
- * for free. The `<audio>` these produce is the same one `renderGenerator`
- * builds: no `src`, no `autoplay`, `preload="none"`.
- */
 export function expandGeneratorFields(
   sides: readonly Side[],
   context: FieldContext,
 ): {
   readonly sides: readonly Side[];
   readonly expanded: readonly FieldGenerationRequest[];
-  /**
-   * Key options the element allowlist will not carry, as `field/option`.
-   *
-   * These are the ONE way this module can go quietly wrong: an option that is
-   * part of the identity but cannot ride on the synthetic element makes the
-   * renderer's own `GenerationDescriptor` hash to a different key than the
-   * request beside it, and the two would disagree with nothing to show for it.
-   * Zero over the reference corpus — no field carries `language`, the only key
-   * option no generator element allows — and pinned by a test that says so.
-   */
   readonly divergent: readonly string[];
 } {
   const expanded: FieldGenerationRequest[] = [];
@@ -433,14 +230,6 @@ export function expandGeneratorFields(
   return { sides: out, expanded, divergent };
 }
 
-/**
- * The synthetic node. `role: "generator"` matches what `parse.ts` assigns.
- *
- * Attributes are filtered through the SAME allowlist the sanitiser applies, so
- * the element carries exactly what survives and produces no `attribute-dropped`
- * diagnostic. A dropped one would read as a defect in the card rather than as a
- * deliberate omission here — so anything genuinely lost is returned instead.
- */
 function generatorElement(request: FieldGenerationRequest): {
   readonly element: ElementNode;
   readonly dropped: readonly string[];
@@ -473,11 +262,6 @@ function generatorElement(request: FieldGenerationRequest): {
   };
 }
 
-/**
- * Rebuild a node with its children mapped. Returns the node itself when nothing
- * changed, so an untouched card's AST is reference-identical and a caller can
- * tell expansion happened without diffing.
- */
 function mapChildren(node: Node, map: (child: Node) => Node): Node {
   const record = node as unknown as Record<string, unknown>;
   const children = record["children"];

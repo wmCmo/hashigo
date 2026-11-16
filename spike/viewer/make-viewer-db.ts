@@ -1,39 +1,3 @@
-/**
- * THROWAWAY (spike harness) — the one prerequisite for spike/viewer/.
- *
- *   npx vite-node spike/viewer/make-viewer-db.ts
- *     [--db build/hashigo.db] [--store build/hashigo.db.blobs.db]
- *     [--out spike/viewer] [--speech-bytes 25165824] [--cards id,id,...]
- *
- * WHY IT EXISTS AT ALL. The card database is already served to the browser by
- * vite.config.ts's middleware as `/hashigo-bootstrap.db` (69 MB, made by
- * `npm run spike:bootstrap`), and every TEXT generation — 15,958 ai, 7,749
- * translate, 3,233 furigana, 7 dictionary — is stored INLINE in `blobs.bytes`,
- * so it rides along for free. What does not ride along is audio: 10,791 speech
- * payloads, 647,952,288 bytes, which live in the separate payload store because
- * of locked decision 4. Nobody downloads 618 MiB to look at one card.
- *
- * So this writes ONE file: a real `SqliteBlobStore` (src/blobs/sqlite.ts, the
- * production class — a harness must not hand-roll the store's DDL) holding a
- * BOUNDED SUBSET of the speech payloads, plus the image/file uploads.
- *
- * THE SELECTION RULE, stated because a subset with an unstated rule is a lie:
- *
- *   1. every blob referenced by the pinned demo cards, whatever its kind;
- *   2. every `image` and `file` blob — the only non-audio payloads not inline;
- *   3. `speech` payloads in ASCENDING SIZE ORDER until `--speech-bytes` is spent.
- *
- * Rule 3 is not arbitrary. A speech blob's size tracks the length of the text it
- * says, so smallest-first buys single WORDS — which is exactly the 高低アクセント
- * clip the drill needs — at ~30 KB each instead of sentences at ~120 KB. It also
- * maximises how many distinct cards have playable audio per byte downloaded, and
- * the run prints that coverage rather than implying it.
- *
- * Payloads are re-hashed on the way in, so the browser plays bytes that provably
- * still match the address the card database refers to, and the header is checked:
- * a WAL-mode file cannot be imported into OPFS (measured, spike/README.md).
- */
-
 import { closeSync, existsSync, mkdirSync, openSync, readSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -43,10 +7,6 @@ import { readBlob } from "../../src/blobs/db.js";
 import { SQLITE_STORE_VERSION, SqliteBlobStore } from "../../src/blobs/sqlite.js";
 import { contentAddress } from "../../src/import/blobs.js";
 
-/**
- * The pinned cards, and why each one is pinned. Anything here is guaranteed a
- * payload, so the pass condition never depends on the size budget.
- */
 const DEMO_CARDS: readonly (readonly [string, string])[] = [
   ["29thh3wW", "単語 · Reading=false · the cloze form of the drill"],
   ["ChtBgqLJ", "単語 · Reading=true  · the same template, scaffolding shown"],
@@ -89,7 +49,6 @@ for (const [what, path] of [
 const n = (value: number): string => value.toLocaleString("en-US");
 const mib = (bytes: number): string => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 
-/** Header bytes 18/19: 1 = rollback journal, 2 = WAL. Only 1 imports into OPFS. */
 function journalHeader(file: string): { write: number; read: number } {
   const fd = openSync(file, "r");
   try {
@@ -120,7 +79,6 @@ interface Row {
 
 const wanted = new Map<string, Row>();
 
-// -- 1. the pinned demo cards, every kind -------------------------------------
 const byCard = cards.prepare<[string], Row>(
   `SELECT DISTINCT b.hash AS hash, b.kind AS kind, b.byte_size AS byte_size,
           (b.bytes IS NOT NULL) AS inline
@@ -135,7 +93,7 @@ for (const id of pinned) {
     continue;
   }
   for (const row of byCard.all(id)) {
-    if (row.inline === 1) continue; // already in the card database
+    if (row.inline === 1) continue;
     wanted.set(row.hash, row);
   }
 }
@@ -145,7 +103,6 @@ console.log(
     `${wanted.size} payload(s), ${n(pinnedBytes)} bytes`,
 );
 
-// -- 2. every image and file upload -------------------------------------------
 let uploads = 0;
 let uploadBytes = 0;
 for (const row of cards
@@ -162,7 +119,6 @@ for (const row of cards
 }
 console.log(`2. image/file uploads ${uploads} payload(s), ${n(uploadBytes)} bytes`);
 
-// -- 3. speech, smallest first, until the budget is spent ---------------------
 let speech = 0;
 let speechBytes = pinnedBytes;
 let skipped = 0;
@@ -186,7 +142,6 @@ console.log(
     `${n(speechBytes)} bytes of speech in total`,
 );
 
-// -- write, re-hashing on the way in ------------------------------------------
 mkdirSync(outDir, { recursive: true });
 for (const suffix of ["", "-wal", "-shm", "-journal"]) {
   if (existsSync(outFile + suffix)) rmSync(outFile + suffix, { force: true });
@@ -219,7 +174,6 @@ out.batch(() => {
 const writeMs = performance.now() - writeStart;
 if (mismatched > 0) process.exit(2);
 
-// The store's own invariant, checked here so the browser is not the first to try.
 let verified = 0;
 for (const hash of wanted.keys()) if (out.has(hash) && out.verify(hash)) verified += 1;
 const stats = out.stats();
@@ -234,8 +188,6 @@ for (const row of wanted.values()) {
   kinds.set(row.kind, entry);
 }
 
-// How many cards end up with playable audio, and how many do not: the honest
-// version of "a subset" — the number Zach will feel when he hits Random.
 const hashList = [...wanted.keys()];
 const placeholders = hashList.map(() => "?").join(",");
 const covered = cards

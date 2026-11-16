@@ -1,22 +1,3 @@
-/**
- * Stage 5 — the two floors. SPEC.html asks for "a naive fixed-multiplier as a
- * sanity floor. If a candidate cannot beat this, something is wrong with your
- * harness." There are two different floors worth having, and they fail in
- * different directions:
- *
- *   * fixedMultiplier — an interval scheduler with no memory model beyond
- *     "×2.5 when you pass, back to 1 day when you fail". It has the same shape
- *     as SM-2 with the ease frozen, so beating it means the ease adjustment is
- *     doing work.
- *   * constantRate — predicts one number for every review, forever: the base
- *     rate. It uses no history, no interval and no state, so it is the floor
- *     that says whether a candidate has learned anything at all. This is the
- *     harder floor, and it is the one a log-loss comparison most often fails to
- *     clear on a corpus this skewed — 96.24% of reviews are passes, so
- *     "always say 96%" is already a good prediction. Any candidate that cannot
- *     beat it is not a scheduler, it is noise with extra steps.
- */
-
 import { exponentialInterval, exponentialRecall, type ReviewObservation, type Scheduler } from "./index.js";
 
 export const FIXED_MULTIPLIER_DEFAULTS = {
@@ -68,12 +49,6 @@ export function fixedMultiplier(options: FixedMultiplierOptions = {}): Scheduler
   };
 }
 
-/**
- * Predict `rate` for every review. The rate MUST come from the training window
- * only — using the whole corpus's base rate would leak the answer into the
- * held-out score, which is the exact mistake this baseline exists to expose in
- * others.
- */
 export function constantRate(rate: number, label = "Constant base rate"): Scheduler<null> {
   return {
     id: "constant",

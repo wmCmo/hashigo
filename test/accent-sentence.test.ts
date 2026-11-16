@@ -20,18 +20,6 @@ import { accentMarkSupport } from "../src/render/accent-marks.js";
 import { renderSides } from "../src/render/index.js";
 import { parseContent } from "../src/template/index.js";
 
-/**
- * Stage 12 — the per-mora accent annotation for an example sentence.
- *
- * Zach, 2026-09-13: *"do you think it's possible that we can add field type
- * called OJAD? … we will feed in the example sentence, which will get turned
- * into all ひらがな, and for each hiragana, if it's accented … then 開 would be
- * in our red, and if it's devoiced … し would be blue, or gray"*.
- *
- * THE ONE THING THESE MUST PROTECT is that a mark never lands on the wrong mora.
- * Every other failure is visible; that one looks exactly like a correct card.
- */
-
 describe("the notation", () => {
   it("round-trips through format and parse", () => {
     const marks = "わたしわ|かれーを|たべ*るときに|い*つも|おなかが|おどりま*す_";
@@ -55,8 +43,6 @@ describe("the notation", () => {
   });
 
   it("keeps a small kana with its mora — きょ is ONE mora, not two", () => {
-    // ぎょ is ONE mora and ー is its own — 企業が is 4 morae, which is exactly
-    // what the analyser reported for it (きぎょーが, phrase length 4).
     expect(splitMorae("きぎょーが")).toEqual(["き", "ぎょ", "ー", "が"]);
     expect(splitMorae("きょう")).toEqual(["きょ", "う"]);
     const [phrase] = parseAnnotation("きょ*うと");
@@ -64,11 +50,6 @@ describe("the notation", () => {
     expect(phrase?.morae[0]?.head).toBe(true);
   });
 
-  /**
-   * STRICT ON PURPOSE. This is parsed on his phone at render time, and the
-   * alternative to refusing is painting a plausible WRONG contour — decision 8's
-   * "a wrong accent drilled is worse than no accent" in its display form.
-   */
   it("refuses every malformed shape rather than guessing", () => {
     for (const [value, why] of [
       ["*かな", "a mark before any mora"],
@@ -88,8 +69,6 @@ describe("the notation", () => {
   });
 
   it("converts katakana to hiragana and LEAVES ー alone", () => {
-    // ー has no hiragana form, and guessing `い` would be one kana pretending to
-    // be one mora. See `toHiragana`.
     expect(toHiragana("ケーキノ")).toBe("けーきの");
     expect(toHiragana("キギョーガ")).toBe("きぎょーが");
   });
@@ -100,12 +79,6 @@ describe("cleaning the generated sentence", () => {
     expect(cleanSentence("彼は本を読んでいます。")).toBe("彼は本を読んでいます。");
   });
 
-  /**
-   * OPENJTALK READS LATIN LETTERS OUT ONE AT A TIME, so an unstripped gloss does
-   * not fail — it appends ティー アール エー … to the reading and every mark after
-   * the sentence lands on a letter name. Measured: that is where 581 "alignment
-   * failures" came from in the first probe, and none of them were the analyser.
-   */
   it("strips a latin parenthetical, which is a gloss and not the sentence", () => {
     expect(cleanSentence("私は猫が好きです。(Watashi wa neko ga suki desu.)")).toBe(
       "私は猫が好きです。",
@@ -120,53 +93,33 @@ describe("cleaning the generated sentence", () => {
     expect(cleanSentence("")).toBeNull();
   });
 
-  /**
-   * Zach, 2026-09-17, over a 風潮 card: *"somehow ojad field is not here..."*.
-   *
-   * It was refused for containing `SNS`. All TEN sentences the old blanket rule
-   * refused are legitimate Japanese carrying a loan acronym — K-pop, Tシャツ,
-   * SNS ×4, ABC, CSV, PDF — and reading those a letter at a time is the CORRECT
-   * reading, not the failure: `SNS` -> `えすえぬえ*す`, measured.
-   */
   it("keeps a sentence whose latin is a loan acronym, which is most of them", () => {
     const sns = "最近の若者の間で、SNSでの情報共有が主流となり、新しい風潮が生まれています。";
     expect(cleanSentence(sns)).toBe(sns);
     expect(cleanSentence("このファイルをPDF形式に変換してください。")).toBe(
       "このファイルをPDF形式に変換してください。",
     );
-    // A woven romaji gloss still reaches the analyser — and the analyser refuses
-    // it on its own mora count (`53 kana morae vs 65 from labels`), which is a
-    // check that can SEE the problem rather than a proxy that cannot tell an
-    // acronym from a translation. This function no longer guesses.
     expect(cleanSentence("彼は秘密を持っている Kare wa himitsu wo motte iru")).not.toBeNull();
   });
 
   it("unwraps quote furniture only when it wraps the WHOLE line", () => {
     expect(cleanSentence("「私は猫が好きです。」")).toBe("私は猫が好きです。");
-    // 「」 inside a sentence is dialogue and belongs to the reading.
     expect(cleanSentence("彼は「おはよう」と言った。")).toBe("彼は「おはよう」と言った。");
   });
 });
 
 describe("reading overrides, applied before the analyser", () => {
   it("rewrites the volitional 助けよう, which OpenJTalk reads すけよう", () => {
-    // 殉職's line read `す_けよ*ーとし_て`, 2026-10-31. The sentence on screen keeps
-    // its kanji; only the analyser's input changes.
     expect(applyReadingOverrides("住民を助けようとして殉職した。")).toBe("住民をたすけようとして殉職した。");
   });
 
   it("rewrites 数日, which OpenJTalk reads すうにち, as すうじつ", () => {
-    // 鎮圧's line read `す*ーにちで`, 2026-11-14, and 復旧's `す*ーにち_`. Before で
-    // and 後 hiragana splits the word, so those take the katakana-with-ー
-    // spelling; everywhere else the katakana swallows the next verb.
     expect(applyReadingOverrides("暴動をわずか数日で鎮圧した。")).toBe("暴動をわずかスージツで鎮圧した。");
     expect(applyReadingOverrides("数日後に連絡します。")).toBe("スージツ後に連絡します。");
     expect(applyReadingOverrides("電力の復旧には数日かかりました。")).toBe("電力の復旧にはすうじつかかりました。");
   });
 
   it("leaves the forms the analyser already reads right", () => {
-    // 助ける → たす_け*る and 助けて → たす*けて, measured. A key of 助け would
-    // have rewritten them for nothing.
     for (const right of ["人を助ける仕事だ。", "頼む、助けてください！", "彼女の怒りっぷり"]) {
       expect(applyReadingOverrides(right)).toBe(right);
     }
@@ -188,8 +141,6 @@ describe("<ojad> renders", () => {
   }
 
   it("leaves the sentence alone — the marks are BESIDE it, never instead of it", () => {
-    // The sentence is its own field and renders as it always has. `<ojad>` adds
-    // a reading line and nothing else; with no annotation it adds nothing at all.
     const { result, marks } = render("彼は本を読んでいます。\n<ojad></ojad>");
     const text = result.sides[0]?.element.textContent ?? "";
     expect(text).toContain("彼は本を読んでいます。");
@@ -220,7 +171,6 @@ describe("<ojad> renders", () => {
     marks.annotateAll("はなが|たか*い");
     const morae = [...findAll(result.sides[0]!.element, "hashigo-mora")];
     const marked = morae.filter((m) => className(m).includes("hashigo-mora-head"));
-    // はなが is 平板: the drop is on the NEXT phrase, so nothing inside it is red.
     expect(marked.map((m) => m.textContent)).toEqual(["か"]);
   });
 
@@ -229,15 +179,9 @@ describe("<ojad> renders", () => {
     expect(marks.annotateAll("か**な")).toBe(0);
     expect([...findAll(result.sides[0]!.element, "hashigo-mora")]).toHaveLength(0);
     expect(marks.mounts[0]?.element.getAttribute("data-state")).toBe("missing");
-    // And the sentence is still there.
     expect(result.sides[0]?.element.textContent).toContain("私は猫が好きです。");
   });
 
-  /**
-   * COMPOSITION, because `furiganaSupport` overrides the same renderer and a 単語
-   * card has both on it. If the chain is wrong the inner support's elements stop
-   * rendering silently — the base text survives, so the card still looks fine.
-   */
   it("delegates everything that is not an <ojad> to the fallback", () => {
     let delegated = 0;
     const marks = accentMarkSupport<MemoryElement>({
@@ -256,7 +200,6 @@ describe("<ojad> renders", () => {
   });
 });
 
-/** The real corpus, when it is present. */
 const DB = "build/hashigo.db";
 describe.runIf(existsSync(DB))("over the real corpus", () => {
   it("every stored annotation parses, and none marks two drops in a phrase", () => {
@@ -265,8 +208,6 @@ describe.runIf(existsSync(DB))("over the real corpus", () => {
       const rows = db
         .prepare("SELECT card_id AS cardId, value FROM card_field_values WHERE field_id = ?")
         .all(MARKS_FIELD.id) as { cardId: string; value: string }[];
-      // The load path parses before it stores; this asserts the database agrees,
-      // because the two could drift through any other writer.
       expect(rows.length).toBeGreaterThan(3000);
       let morae = 0;
       let heads = 0;
@@ -279,10 +220,6 @@ describe.runIf(existsSync(DB))("over the real corpus", () => {
         morae += flat.length;
         heads += flat.filter((m) => m.head).length;
       }
-      // THE PHANTOM-尾高 GUARD. Marking the last mora of every phrase (the naive
-      // rule, and the one CLAUDE.md records as drilling 2,065 phantom 尾高)
-      // produced 21.1%; the correct rule gives 13.8%. A regression would show up
-      // here as the rate climbing back toward a fifth of every mora.
       const rate = (100 * heads) / morae;
       expect(rate).toBeGreaterThan(10);
       expect(rate).toBeLessThan(18);
@@ -309,17 +246,6 @@ function isElement(node: unknown): node is MemoryElement {
   return typeof node === "object" && node !== null && "children" in node && "getAttribute" in node;
 }
 
-/**
- * ─── A RE-RUN THAT CHANGES NOTHING MUST SAY SO ──────────────────────────────
- *
- * `loadMarks`'s report is the only thing standing between "the analyser is
- * deterministic" and "the analyser quietly changed its mind about 3,710
- * sentences". On 2026-09-17 it could not tell those apart: SQLite counts an
- * UPDATE that writes the identical string as a change, so `written` was the
- * whole corpus on every run and `skipped` was structurally zero. Confirming that
- * nothing had drifted meant diffing every value against the last shipped seed by
- * hand.
- */
 describe("loading the annotations is idempotent, and says so", () => {
   function fixture() {
     const db = openDatabase(MEMORY);
@@ -346,7 +272,6 @@ describe("loading the annotations is idempotent, and says so", () => {
       const first = loadMarks(db, lines, rows);
       expect(first).toMatchObject({ written: 1, skipped: 0, malformed: 0, unannotated: 0 });
 
-      // THE PROPERTY. Same input, same database: nothing to write.
       const second = loadMarks(db, lines, rows);
       expect(second).toMatchObject({ written: 0, skipped: 1 });
 
@@ -371,24 +296,17 @@ describe("loading the annotations is idempotent, and says so", () => {
   });
 });
 
-// ─── stage F: the pipeline follows a role, not a name ────────────────────────
-
 import Database from "better-sqlite3";
 import { declareField, extractSentences } from "../src/accent/marks.js";
 import type { Db } from "../src/db/index.js";
 
-/**
- * The defect fields-as-modules exists for, in its clearest instance: rename
- * `例文` and `marks` reported `0 written`, which read as success. Over a COPY of
- * the real database, because the property is about his 3,700 sentences.
- */
 describe("the ojad pipeline survives a rename once it is declared", () => {
   function corpusCopy(): Database.Database | null {
     try {
       const source = new Database("build/hashigo.db", { readonly: true, fileMustExist: true });
       const bytes = source.serialize();
       source.close();
-      bytes[18] = 1; // WAL → rollback journal, or a deserialised buffer will not open
+      bytes[18] = 1;
       bytes[19] = 1;
       return new Database(bytes);
     } catch {
@@ -413,7 +331,6 @@ describe("the ojad pipeline survives a rename once it is declared", () => {
       expect(rows.map((row) => `${row.template}→${row.source}`)).toEqual(["単語→例文", "言葉→Example"]);
       for (const row of rows) expect(JSON.parse(row.options)).toMatchObject({ "hashigo-role": "ojad" });
 
-      // A re-run moves nothing — including the clock a sync compares.
       declareField(db as unknown as Db);
       const again = db
         .prepare("SELECT updated_at AS clock FROM template_fields WHERE id = 'ojad' ORDER BY template_id")
@@ -433,7 +350,6 @@ describe("the ojad pipeline survives a rename once it is declared", () => {
       expect(before.clean.length).toBeGreaterThan(3000);
       db.prepare("UPDATE template_fields SET name = '文例' WHERE name = '例文'").run();
       const after = extractSentences(db as unknown as Db);
-      // The old code found its input by name and would report ZERO here.
       expect(after.clean.length).toBe(before.clean.length);
     } finally {
       db.close();

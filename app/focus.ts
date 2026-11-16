@@ -1,20 +1,3 @@
-/**
- * REVIEW ONE DECK, OR ONLY THE SILENT CARDS — Zach, 2026-10-16:
- *
- * *"sometimes when im outside i may not be able to speak or do shadowing, so i
- * need a mode that i can review all the cards that has no audio … maybe a mode
- * that once im inside a deck, i can click review by deck"*.
- *
- * Both are ONE request (`focus`) that rebuilds today's plan with a deck and/or the
- * silent filter, and both are undone the same way: `focus(null, false)`. The plan
- * is still the scheduler's — due first by its own order, today's new cards dealt
- * the same way — only narrowed. Nothing is written.
- *
- * **The scope has to stay visible.** A narrowed plan that looks like the whole one
- * is how he would finish "today" with 1,400 cards untouched, so the header carries
- * a chip naming it for as long as it holds, and the chip is also the way out.
- */
-
 import type { FocusCount } from "./protocol.js";
 import { el } from "./dom.js";
 import { prependIcon } from "./icons.js";
@@ -31,7 +14,6 @@ interface Focus {
 const WHOLE: Focus = { deckId: null, deckName: null, silent: false };
 let current: Focus = WHOLE;
 
-/** A deck or silent focus is on — the plan on screen is not the whole day. */
 export function isFocused(): boolean {
   return current.deckId !== null || current.silent;
 }
@@ -39,7 +21,6 @@ export function isFocused(): boolean {
 const chip = el<HTMLButtonElement>("focuschip");
 const clear = el<HTMLButtonElement>("focusclear");
 
-/** What the chip says: `漢字 · silent`, `漢字`, `silent`, or null for the whole plan. */
 function focusLabel(deckName: string | null, silent: boolean): string | null {
   const parts = [deckName, silent ? "silent" : null].filter((p): p is string => p !== null);
   return parts.length === 0 ? null : parts.join(" · ");
@@ -70,10 +51,6 @@ export async function startFocus(
   say(`${scope}: ${reply.dueCount} due, ${reply.newCount} new`);
 }
 
-/**
- * The two buttons at the top of a deck's page. "everything" (deckId null) has no
- * plain review button — that is the plan he already has — only the silent one.
- */
 export async function paintDeckReview(
   host: HTMLElement,
   deckId: string | null,

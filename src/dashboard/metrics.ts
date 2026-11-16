@@ -1,64 +1,9 @@
-/**
- * Stage 2 — every number the dashboard shows, computed in SQL over the review
- * log and nowhere else.
- *
- * WHY THIS EXISTS BEFORE THE SCHEDULER.  SPEC.html, build order: "Dashboard,
- * read-only.  Reproduce Mochi's figures from the imported data.  This is the
- * import's acceptance test — matching numbers means the import is right."  So
- * this module is a test instrument first and a UI second, and every function
- * here is a pure query: give it a database and a window, get numbers back.
- *
- * DEFINITIONS ARE PART OF THE OUTPUT.  Mochi's own dashboard agrees with us
- * exactly on active days (211) and retention (95%) for calendar 2026 and is
- * 8.2% below us on the review count (13,240 vs 14,420).  Eight candidate
- * definitions were ruled out in notes/dashboard-reconciliation.md; the leading
- * hypothesis (one review per card per day, 13,258) misses by 18.  We do not
- * tune toward an undocumented number.  Instead each metric is defined once,
- * here, and the definition is rendered next to the figure:
- *
- *   reviews       grading events, all tracks (forward + reverse + cloze)
- *   cardsStudied  distinct cards with >= 1 grading event in the window
- *   activeDays    distinct local dates with >= 1 grading event
- *   daysElapsed   inclusive of both endpoints, clamped to `asOf`
- *   retention     passed / total grading events
- *   hours         sum(duration_ms); 9,931 reviews carry no duration at all
- *
- * `cardDays` is carried alongside `reviews` because it is the leading
- * hypothesis for what Mochi counts, not because we believe it: labelling it is
- * how the 8.2% stays characterised instead of hidden.
- *
- * BUCKETING BY LOCAL DATE, NEVER UTC.  review_log already does this, using each
- * review's own tz_offset_minutes, and every imported review is flagged
- * time_unknown so it stays out of the hour-of-day view.  Nothing here
- * recomputes a date or an hour; that logic lives in views.sql exactly once.
- *
- * WHAT THE 2026 MATCH DOES *NOT* PROVE.  It is tempting to read "211 active days
- * and 95% retention agree with Mochi" as proof that the JST bucketing is right.
- * It is not, and that was measured rather than assumed: every review in the
- * corpus carries 15:00:00Z, so the UTC date is uniformly one day behind the JST
- * date, and there is no review on 2026-01-01 JST or on 2025-12-31 JST.  Bucket
- * calendar 2026 by UTC instead and you still get 14,420 reviews over 211 days at
- * 95.10% -- every published 2026 figure is bucketing-invariant.  What actually
- * pins the timezone is the all-time span: firstDate 2022-06-28 and lastDate
- * 2026-08-18 both shift by a day under UTC.  test/dashboard.test.ts asserts the
- * invariance explicitly so that nobody re-derives the wrong conclusion.
- */
-
-// `SqliteHandle`, not better-sqlite3's `Db`: the dashboard runs in the OPFS worker
-// now (his #1), and everything in this file uses `prepare`, `get`, `all` and one
-// `pragma` — the four members both handles share. A type-only import, so nothing
-// here reaches a `node:` module at runtime.
 import type { SqliteHandle } from "../db/browser.js";
 import { INTERVAL_BASES, type IntervalBasis } from "../schema/index.js";
 import { queueCounts, reviewForecast } from "../scheduler/queue.js";
 
-// ─── windows ────────────────────────────────────────────────────────────────
-
-/** Inclusive local-date range. Dates are 'YYYY-MM-DD', compared as strings. */
 export interface DateWindow {
-  /** Stable id, for tests and CLI output. */
   readonly id: string;
-  /** Display label, Japanese, as the tiles are titled. */
   readonly label: string;
   readonly from: string;
   readonly to: string;
@@ -74,7 +19,6 @@ export const ALL_TIME: DateWindow = {
   to: MAX_DATE,
 };
 
-/** The window Mochi's dashboard was screenshotted over: one calendar year. */
 export function calendarYear(year: number): DateWindow {
   if (!Number.isInteger(year) || year < 1 || year > 9999) {
     throw new RangeError(`calendar year out of range: ${year}`);
@@ -82,8 +26,6 @@ export function calendarYear(year: number): DateWindow {
   const y = String(year).padStart(4, "0");
   return { id: y, label: `${y}年`, from: `${y}-01-01`, to: `${y}-12-31` };
 }
-
-// ─── row helpers ────────────────────────────────────────────────────────────
 
 type Params = Record<string, string | number | null>;
 
@@ -103,24 +45,17 @@ function ratio(passed: number, total: number): number | null {
   return total === 0 ? null : passed / total;
 }
 
-// ─── totals: 復習数 / 定着率 / 復習時間 / 学習カード数 ────────────────────────
-
 export interface Totals {
   readonly window: DateWindow;
-  /** Grading events, all tracks. */
   readonly reviews: number;
   readonly passed: number;
   readonly lapses: number;
-  /** passed / reviews, or null on an empty window. */
   readonly retention: number | null;
-  /** Distinct cards with at least one grading event. */
   readonly cardsStudied: number;
-  /** Distinct (card, day) pairs — the leading hypothesis for Mochi's count. */
   readonly cardDays: number;
   readonly activeDays: number;
   readonly firstDate: string | null;
   readonly lastDate: string | null;
-  /** Both endpoints inclusive, clamped to `asOf`. */
   readonly daysElapsed: number;
   readonly windowStart: string | null;
   readonly windowEnd: string | null;
@@ -129,11 +64,9 @@ export interface Totals {
   readonly medianSeconds: number | null;
   readonly meanSeconds: number | null;
   readonly reviewsPerActiveDay: number | null;
-  /** Imported history is date-only, so no hour-of-day analysis is possible. */
   readonly reviewsTimeUnknown: number;
   readonly forwardReviews: number;
   readonly reverseReviews: number;
-  /** Anything that is neither: cloze tracks. Zero in this corpus. */
   readonly otherReviews: number;
 }
 
@@ -207,12 +140,6 @@ SELECT window_start,
 `;
 
 export interface TotalsOptions {
-  /**
-   * "Today" for the elapsed-days count. Defaults to the last review date in the
-   * whole log, which keeps the figure a property of the data rather than of the
-   * clock. Mochi's 231日 for 2026 is this count taken on 2026-08-19; the same
-   * window taken on our last review date (2026-08-18) is 230.
-   */
   readonly asOf?: string | null;
 }
 
@@ -253,9 +180,6 @@ export function totals(db: SqliteHandle, window: DateWindow, options: TotalsOpti
   };
 }
 
-// ─── 活動 heatmap / 学習カード数 / 累計 ──────────────────────────────────────
-
-/** One local date. `newCards` counts cards first seen *within this window*. */
 export interface DayActivity {
   readonly date: string;
   readonly reviews: number;
@@ -264,7 +188,6 @@ export interface DayActivity {
   readonly retention: number;
   readonly minutes: number;
   readonly newCards: number;
-  /** Running total of newCards — 累計. Ends at Totals.cardsStudied. */
   readonly cumulativeCards: number;
 }
 
@@ -436,38 +359,17 @@ export function activityByYear(db: SqliteHandle, window: DateWindow = ALL_TIME):
   }));
 }
 
-/**
- * Shared heatmap bins, so one year strip is comparable to the next. Cut at the
- * quartiles of *active* days — a day with no reviews is its own bin, not the
- * bottom of the ramp, because "did not study" is a different fact from
- * "studied once".
- */
 export function heatThresholds(days: readonly DayActivity[]): readonly [number, number, number] {
   const counts = days.map((d) => d.reviews).sort((a, b) => a - b);
   if (counts.length === 0) return [1, 2, 3];
   const at = (q: number): number =>
     counts[Math.min(counts.length - 1, Math.floor(counts.length * q))] ?? 1;
-  // Strictly increasing, so four bins always exist even on a flat corpus.
   const t1 = Math.max(1, at(0.25));
   const t2 = Math.max(t1 + 1, at(0.5));
   const t3 = Math.max(t2 + 1, at(0.75));
   return [t1, t2, t3];
 }
 
-// --- BUCKETS -------------------------------------------------------------
-
-/**
- * The bucket boundaries live in views.sql (review_log_bucketed) so they are
- * defined exactly once, and views.sql applies them TWICE -- once per basis.
- * This list only names them, in order, so that a bucket with NO reviews still
- * gets a row.  That empty row is the whole point of the tile: under the
- * `scheduled` basis nothing in four years was ever PLANNED past a year, and
- * under `elapsed` 3,009 reviews actually HAPPENED past one.  An absent row
- * would hide whichever fact you were not looking for.
- *
- * test/dashboard.test.ts asserts these labels against the view's own output,
- * for BOTH bases, so the three cannot drift apart silently.
- */
 export const INTERVAL_BUCKETS: readonly { readonly bucket: number; readonly label: string }[] = [
   { bucket: 0, label: "unknown" },
   { bucket: 1, label: "<= 1d" },
@@ -480,27 +382,19 @@ export const INTERVAL_BUCKETS: readonly { readonly bucket: number; readonly labe
   { bucket: 8, label: "> 365d" },
 ];
 
-/** The label of the bucket every long-interval argument turns on. */
 export const BEYOND_YEAR_LABEL = "> 365d";
 
 export interface IntervalBucket {
-  /** Which definition of "interval" produced this row.  Never implicit. */
   readonly basis: IntervalBasis;
   readonly bucket: number;
   readonly label: string;
   readonly reviews: number;
   readonly lapses: number;
-  /** null when the bucket has no observations at all. */
   readonly retention: number | null;
   readonly meanIntervalDays: number | null;
   readonly hours: number;
 }
 
-/**
- * One query per basis, built from one piece of text so the two can never
- * diverge in anything but the column prefix.  `basis` is a closed union and is
- * checked against it before interpolation.
- */
 function intervalsSql(basis: IntervalBasis): string {
   if (!INTERVAL_BASES.includes(basis)) throw new RangeError(`unknown interval basis: ${basis}`);
   return `
@@ -533,21 +427,11 @@ interface IntervalRow {
   hours: number;
 }
 
-/**
- * Retention by interval, on ONE named basis.  There is no default: the two
- * answers differ in every bucket and disagree completely in the last one, and
- * a caller that never said which it meant is the exact bug this signature
- * exists to prevent.
- */
 export function retentionByInterval(
   db: SqliteHandle,
   window: DateWindow,
   basis: IntervalBasis,
 ): IntervalBucket[] {
-  // Checked here and not only where the SQL is built: the two statements are
-  // prepared once at module load, so an unknown basis would otherwise reach
-  // better-sqlite3 as `undefined` and fail with a message about arguments
-  // rather than about the mistake.
   if (!INTERVAL_BASES.includes(basis)) throw new RangeError(`unknown interval basis: ${basis}`);
   const found = new Map<number, IntervalBucket>();
   for (const r of all<IntervalRow>(db, INTERVALS_SQL[basis], scope(window))) {
@@ -577,7 +461,6 @@ export function retentionByInterval(
   );
 }
 
-/** Both bases at once, which is the only honest way to render the tile. */
 export interface IntervalsByBasis {
   readonly elapsed: readonly IntervalBucket[];
   readonly scheduled: readonly IntervalBucket[];
@@ -590,79 +473,29 @@ export function retentionByIntervalBothBases(db: SqliteHandle, window: DateWindo
   };
 }
 
-/** The `> 365d` row of a bucket list, which several callers want by name. */
 export function beyondYear(buckets: readonly IntervalBucket[]): IntervalBucket {
   const row = buckets.find((b) => b.label === BEYOND_YEAR_LABEL);
   if (row === undefined) throw new Error(`no ${BEYOND_YEAR_LABEL} bucket in the list`);
   return row;
 }
 
-// --- THE YEAR BOUNDARY ---------------------------------------------------
-
-/**
- * Everything the page needs to say about intervals longer than a year, and the
- * reason the two bases disagree completely there.
- *
- * WHY THE PLANNED BASIS SHOWS ZERO PAST A YEAR, measured rather than asserted.
- * It is not that Mochi never planned past a year -- it did so 1,356 times.  It
- * is that `reviews.scheduled_days` is the PRECEDING review's
- * `next_scheduled_days`, so a plan only becomes a `scheduled_days` once the
- * review it scheduled has actually been taken.  Every one of those 1,356 plans
- * is the last review of its track and not one has come due (the earliest falls
- * 2027-03-16), so the planned basis structurally cannot see them yet.  That is
- * a censoring artefact, not a fact about memory, and it is why this page
- * reports the ELAPSED basis as the observation.
- *
- * THE CAP, WITH ITS DATE.  A 365-day ceiling was in force from the first review
- * until it was lifted; `capLiftedOn` is the first local date on which any
- * review planned beyond a year -- found, not assumed.  "Mochi caps at 365"
- * without that date implies a constraint that has stopped operating.
- */
 export interface LongIntervalOutlook {
-  /** Reviews whose MEASURED gap exceeded a year. */
   readonly observedBeyondYear: number;
   readonly observedRetention: number | null;
-  /** Longest gap any review was actually taken at, in days. */
   readonly maxObservedElapsedDays: number | null;
-  /** Reviews that PLANNED beyond a year.  None of them has come due. */
   readonly plannedBeyondYear: number;
-  /** Longest interval ever planned, in days. */
   readonly maxPlannedDays: number | null;
-  /** First local date on which a review planned beyond a year, or null. */
   readonly capLiftedOn: string | null;
-  /** LIVE tracks whose current plan is beyond a year. */
   readonly tracksBeyondYear: number;
-  /** LIVE tracks whose current plan is exactly the old cap. */
   readonly tracksAtCap: number;
-  /**
-   * The denominator for `tracksAtCap`, and it is the LIVE population -- not
-   * dormant, not on an archived card, with at least one review and a plan.
-   * This is character for character the population `measureScheduleCap` in
-   * src/scheduler/backtest.ts counts, so that the page and BACKTEST.md quote
-   * the same 3,874 of 8,956 rather than two defensible different numbers.
-   */
   readonly tracksWithPlan: number;
-  /**
-   * Tracks sitting on exactly the old cap whose LAST REVIEW predates the lift:
-   * parked on a stale plan that post-lift Mochi would not have chosen.  This is
-   * the constraint that is still real, and it is narrower than the headline
-   * "43% of tracks are capped", which includes tracks re-scheduled since.
-   */
   readonly tracksOnStaleCap: number;
   readonly firstDueAt: string | null;
   readonly lastDueAt: string | null;
 }
 
-/** The old ceiling, named once rather than as a literal in six queries. */
 export const MOCHI_INTERVAL_CAP_DAYS = 365;
 
-/**
- * REVIEW-level figures count every review, so they reconcile with the bucket
- * table above (3,009 here is the same 3,009 as the `> 365d` row).  TRACK-level
- * figures count the LIVE population only -- the same filter
- * `measureScheduleCap` applies in the backtest -- so the two artefacts quote
- * one denominator between them.
- */
 const LIVE_TRACKS = `
     FROM card_tracks t
     JOIN cards c ON c.id = t.card_id
@@ -735,15 +568,6 @@ export function longIntervalOutlook(db: SqliteHandle): LongIntervalOutlook {
   };
 }
 
-// ─── デッキ別定着率 — the other tile Mochi lacks ────────────────────────────
-
-/**
- * Per deck, twice over: `reviews` rolls the whole subtree up (so 日本語 has a
- * number even though it holds no cards directly) and `direct*` counts only the
- * deck's own cards (so the two can never be added together by accident).
- * Forward and reverse are split because that is where the variation lives —
- * 漢字 reverse lapses 1,027 times against forward's 304.
- */
 export interface DeckRetention {
   readonly deckId: string;
   readonly path: string;
@@ -755,16 +579,10 @@ export interface DeckRetention {
   readonly directReviews: number;
   readonly directLapses: number;
   readonly directRetention: number | null;
-  /** Subtree. */
   readonly forwardReviews: number;
   readonly forwardRetention: number | null;
   readonly reverseReviews: number;
   readonly reverseRetention: number | null;
-  /**
-   * The deck's own cards only. The chart plots these, never the subtree pair:
-   * 日本語/言葉 has 1,948 direct reviews but 2,379 in its subtree, and mixing
-   * the two bases in one row is how a chart ends up quietly lying.
-   */
   readonly directForwardReviews: number;
   readonly directForwardRetention: number | null;
   readonly directReverseReviews: number;
@@ -860,9 +678,6 @@ export function retentionByDeck(db: SqliteHandle, window: DateWindow): DeckReten
   }));
 }
 
-// ─── デッキの進捗 ───────────────────────────────────────────────────────────
-
-/** Track counts, not card counts: a card with reverse on is two tracks. */
 export interface DeckProgress {
   readonly deckId: string;
   readonly path: string;
@@ -962,50 +777,20 @@ export function deckProgress(db: SqliteHandle): DeckProgress[] {
   }));
 }
 
-// ─── 復習予測 ────────────────────────────────────────────────────────────────
-
-/**
- * The forecast tile. SPEC deferred it until the scheduler existed; stage 6
- * landed 2026-08-22 and this is it.
- *
- * WHAT IT IS HONESTLY A CHART OF, which is the whole reason the tile was blank
- * rather than approximated. The old `FORECAST_UNAVAILABLE` text said: due dates
- * could be plotted from `card_tracks.due_at` today, "and it would be a chart of
- * Mochi's scheduling decisions wearing Hashigo's label". THAT IS STILL TRUE OF
- * MOST OF THE ROWS. Having a scheduler did not retroactively reschedule
- * anything: a track keeps the due date Mochi gave it until it is graded here
- * (deliberately — see `src/scheduler/README.md` note 1), so on the day this
- * shipped essentially every bar was Mochi's.
- *
- * So the tile counts the two provenances and prints them, instead of choosing
- * between a blank panel and a mislabelled one. `card_tracks.scheduler` is the
- * discriminator: `'mochi'` for an imported plan, `'fsrs6'` for one this app
- * issued. The mix moves toward Hashigo one card per review, and the tile shows
- * the mix rather than implying an answer.
- */
 export interface ForecastDayCount {
-  /** Local date, `2026-08-22`. */
   readonly date: string;
   readonly tracks: number;
 }
 
 export interface ForecastReport {
-  /** The local date the forecast was taken against. */
   readonly asOf: string;
-  /** Days AFTER `asOf`, one entry each, zeroes included. */
   readonly days: readonly ForecastDayCount[];
   readonly horizonDays: number;
-  /** Due on or before `asOf` — the backlog, deliberately not the first bar. */
   readonly backlog: number;
-  /** Of the backlog, due strictly before `asOf`. */
   readonly overdue: number;
-  /** Never reviewed. Not scheduled, so not in any bar. */
   readonly fresh: number;
-  /** Scheduled and not yet due, in total — the window shows part of this. */
   readonly scheduled: number;
-  /** Whose plan the bars are: an imported Mochi due date, or one we issued. */
   readonly provenance: { readonly mochi: number; readonly hashigo: number };
-  /** The busiest day in the window, for the callout. */
   readonly peak: ForecastDayCount | null;
 }
 
@@ -1018,26 +803,17 @@ SELECT sum(CASE WHEN t.scheduler = 'fsrs6' THEN 1 ELSE 0 END) AS hashigo,
  WHERE ${liveTrack()} AND t.due_at IS NOT NULL
    AND ${dueAfter("t", ":as_of")}`;
 
-/**
- * `asOf` resolves the same way every other figure on the page does — the last
- * review date in the log, not the wall clock — so `dashboard.html` is
- * reproducible and its byte-identity test means something.
- */
 export function resolveAsOf(db: SqliteHandle, asOf: string | null = null): string {
   const row = one<{ as_of: string | null }>(
     db,
     `SELECT coalesce(:as_of, max(local_date)) AS as_of FROM review_log`,
     { as_of: asOf },
   );
-  // An empty review log leaves max(local_date) NULL, which is a real state — a
-  // database imported with cards and no history. MIN_DATE then means "nothing
-  // has happened yet", and every count below comes out zero rather than throwing.
   return row?.as_of ?? asOf ?? MIN_DATE;
 }
 
 export function forecast(db: SqliteHandle, asOf: string | null = null, horizonDays = 30): ForecastReport {
   const on = resolveAsOf(db, asOf);
-  // Only the local DATE of this instant is read; see src/scheduler/queue.ts.
   const now = `${on}T00:00:00Z`;
   const counts = queueCounts(db, { now });
   const days = reviewForecast(db, { now, days: horizonDays }).map((day) => ({
@@ -1064,20 +840,10 @@ export function forecast(db: SqliteHandle, asOf: string | null = null, horizonDa
   };
 }
 
-// ─── Mochi's own figures, for the acceptance test ───────────────────────────
-
-/**
- * Read off the user's Mochi dashboard for calendar 2026 (see
- * notes/dashboard-reconciliation.md). These are the only hard-coded numbers in
- * this module and they are *reference* data: the page shows them beside ours
- * and states where the definitions part company. Nothing here is tuned to make
- * them agree.
- */
 export interface MochiReference {
   readonly key: "reviews" | "daysElapsed" | "activeDays" | "retention" | "cardsStudied";
   readonly label: string;
   readonly mochi: number;
-  /** How to read ours against theirs. */
   readonly note: string;
 }
 
@@ -1086,51 +852,21 @@ export const MOCHI_2026: readonly MochiReference[] = [
   { key: "daysElapsed", label: "日数", mochi: 231, note: "両端を含む数え方。2026-08-19 時点で一致" },
   { key: "activeDays", label: "活動日数", mochi: 211, note: "完全一致" },
   { key: "retention", label: "定着率", mochi: 95, note: "完全一致（表示桁で）" },
-  // The GAP is the 差 column's job. This used to open with "−68" and the
-  // 2026-09-05 re-import made it read "−68" beside a printed +141.
   { key: "cardsStudied", label: "累計学習カード数", mochi: 5_250, note: "窓内で学習した実カード数" },
 ];
 
-/**
- * The year the reference screenshot covers, and the last day of data behind it.
- *
- * MOCHI_2026 IS A PHOTOGRAPH, SO ITS WINDOW HAS AN END, AND SAYING SO IS A BUG FIX.
- *
- * The screenshot was taken 2026-08-19 and the export of the day before ended on the
- * 18th, so "calendar 2026" and "everything Mochi could have counted" were the same
- * rows — and the comparison table compared like with like by accident. The
- * 2026-09-05 export runs 19 days further and broke that silently: the table went on
- * printing the verdict `完全一致` beside `211 | 227 | +16`, because the verdicts are
- * authored strings and nothing checked them against the numbers underneath.
- *
- * Bounding the window is the honest repair. Moving the reference to match our own
- * output would not be — a reference you edit to agree with you has stopped being
- * one, which is what "こちらの数字を Mochi に合わせて調整はしていない" promises the
- * reader two lines above the table.
- *
- * `asOf` cannot do this: it clamps `daysElapsed` — that is where Mochi's 231 comes
- * from — and does not decide which reviews fall inside the window.
- */
 export const MOCHI_REFERENCE_YEAR = 2026;
 export const MOCHI_DATA_THROUGH = "2026-08-18";
 
-/** Calendar `year`, cut at the screenshot for the year the reference covers. */
 export function mochiComparisonWindow(year: number): DateWindow {
   const window = calendarYear(year);
   return year === MOCHI_REFERENCE_YEAR ? { ...window, to: MOCHI_DATA_THROUGH } : window;
 }
 
-// ─── the whole page's data in one call ──────────────────────────────────────
-
 export interface WindowReport {
   readonly totals: Totals;
   readonly days: readonly DayActivity[];
   readonly months: readonly MonthActivity[];
-  /**
-   * Both interval bases, never one.  `elapsed` is what happened and is what the
-   * page plots; `scheduled` is what Mochi planned and is kept beside it because
-   * the difference between them is the finding, not a footnote.
-   */
   readonly intervals: IntervalsByBasis;
   readonly decks: readonly DeckRetention[];
 }
@@ -1139,25 +875,19 @@ export interface DashboardData {
   readonly generatedAt: string;
   readonly source: string;
   readonly schemaVersion: number;
-  /** All-time, the page's headline. */
   readonly primary: WindowReport;
-  /** The calendar year Mochi's dashboard covered. */
   readonly comparison: WindowReport;
   readonly years: readonly YearSummary[];
   readonly heat: readonly [number, number, number];
   readonly progress: readonly DeckProgress[];
   readonly longIntervals: LongIntervalOutlook;
   readonly mochi: readonly MochiReference[];
-  /** Stage 6 made this real. See `forecast`. */
   readonly forecast: ForecastReport;
 }
 
 export interface CollectOptions extends TotalsOptions {
-  /** Calendar year for the Mochi comparison section. Default 2026. */
   readonly comparisonYear?: number;
-  /** Shown in the page header; better-sqlite3 does not expose the path. */
   readonly source?: string;
-  /** Frozen timestamp, for reproducible output. */
   readonly generatedAt?: string;
 }
 

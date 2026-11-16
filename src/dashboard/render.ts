@@ -1,39 +1,3 @@
-/**
- * Stage 2 — the dashboard as one self-contained HTML file.
- *
- * NO SCRIPT, NO REQUESTS, ON PURPOSE.  SPEC.html's first problem statement is
- * battery drain: "no polling, no sockets, precomputed renders".  So this is a
- * precomputed render — every figure is baked in at generation time, charts are
- * inline SVG, hover text is native <title>, and the page makes zero network
- * requests.  It opens from a file:// URL on the phone with the radio off.
- *
- * COLOUR IS BY ROLE, VALIDATED, NOT PICKED BY EYE.  Tokens on :root, redefined
- * for dark under both prefers-color-scheme and an explicit [data-theme] stamp,
- * with an explicit background on body.  The four palettes in use were run
- * through the data-viz validator rather than eyeballed:
- *
- *   categorical 2 (forward / reverse)  #2a78d6 #eb6834  light  ALL PASS
- *                                      #3987e5 #d95926  dark   ALL PASS
- *   heatmap ramp, 4 bins               #86b6ef #3987e5 #1c5cab #0d366b  light
- *                                      #b7d3f6 #6da7ec #2a78d6 #184f95  dark
- *   ordinal 3 (new / young / mature)   #86b6ef #2a78d6 #104281  light
- *                                      #9ec5f4 #3987e5 #184f95  dark
- *
- * Both ramps run light-to-dark on the light surface and dark-to-light on the
- * dark one, so "more" always means "more ink" rather than flipping meaning
- * between themes.
- *
- * NO DUAL AXES.  Retention and volume are two different scales, so they are two
- * charts sharing one category axis, never one plot with two y-axes.
- *
- * EVERY VALUE HAS A TABLE, AS OF 2026-08-22.  Every aggregate chart has a table
- * twin under a <details>, and so now does each activity-heatmap year strip --
- * one row per day that has reviews, which is where the last hover-only numbers
- * were.  Zero-review days are the one thing with no row, because their tooltip
- * carries no number: it says 学習なし and stops.  Say it that way.  "No value is
- * hover-only" is the claim to make; "no cell is hover-only" is still false.
- */
-
 import { TARGET_RETENTION as TARGET_RETENTION_SETTING } from "../scheduler/policy.js";
 import { LOCALES, type Labels, type Locale } from "./labels.js";
 import {
@@ -50,8 +14,6 @@ import {
   type Totals,
 } from "./metrics.js";
 
-// ─── formatting ─────────────────────────────────────────────────────────────
-
 const DASH = "—";
 
 function esc(value: string): string {
@@ -62,7 +24,6 @@ function esc(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** Thousands separators without Intl, so output is byte-identical anywhere. */
 function group(digits: string): string {
   let out = "";
   for (let i = 0; i < digits.length; i += 1) {
@@ -96,8 +57,6 @@ function signed(value: number, digits = 0): string {
   return (value > 0 ? "+" : "") + dec(value, digits);
 }
 
-// ─── geometry ───────────────────────────────────────────────────────────────
-
 const DAY_MS = 86_400_000;
 
 function dayMs(date: string): number {
@@ -119,18 +78,14 @@ function linear(d0: number, d1: number, r0: number, r1: number): Scale {
   return (value) => r0 + ((value - d0) / span) * (r1 - r0);
 }
 
-/** Two decimals is plenty for SVG coordinates and keeps the file small. */
 function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
-
-// ─── 活動 heatmap ───────────────────────────────────────────────────────────
 
 const CELL = 10;
 const PITCH = 13;
 const HEAT_GUTTER = 26;
 const MONTH_BAND = 14;
-
 
 function heatBin(reviews: number, thresholds: readonly [number, number, number]): number {
   if (reviews <= 0) return 0;
@@ -196,15 +151,6 @@ function heatmapYear(
   );
 }
 
-/**
- * The table twin for one year's heatmap strip.
- *
- * The strip's per-day values were hover-only until 2026-08-22, and there is no
- * hover on a phone -- which is the device this page is FOR.  So every day that
- * carries a value gets a row.  Days with no reviews are deliberately absent:
- * their tooltip says 学習なし and nothing else, so a row for them would add
- * length without adding a value.  That is the whole of what stays hover-only.
- */
 function heatmapYearTable(year: string, byDate: Map<string, DayActivity>, lab: Labels): string {
   const rows = [...byDate.values()]
     .filter((d) => d.date.startsWith(`${year}-`) && d.reviews > 0)
@@ -233,8 +179,6 @@ function heatLegend(thresholds: readonly [number, number, number], lab: Labels):
     .join("");
   return `<div class="heat-legend"><span>${esc(lab.heatLegendTitle)}</span>${swatches}</div>`;
 }
-
-// ─── 累計学習カード数 ────────────────────────────────────────────────────────
 
 function cumulativeChart(days: readonly DayActivity[], lab: Labels): string {
   if (days.length === 0) return `<p class="def">${esc(lab.noData)}</p>`;
@@ -363,36 +307,10 @@ function monthlyCardsChart(months: readonly MonthActivity[], lab: Labels): strin
   );
 }
 
-// ─── 定着率 × 復習間隔 ───────────────────────────────────────────────────────
-
-/**
- * SETTLED by Zach: 0.90, revised down from 0.95 on 2026-08-19 after measuring the
- * daily load under the 365-day cap -- 0.95 projects 130-204 reviews/day against a
- * realised 69.2, where 0.90 projects 62-97.  Imported rather than written here so
- * the page and the scheduler cannot disagree about what the app is aiming at --
- * see src/scheduler/policy.ts and scripts/capped-load.ts.
- *
- * Where this line sits changes what the page SAYS, so the copy below reads the
- * data rather than repeating a slogan: three of the nine elapsed bands (21-60d,
- * 60-180d, 180-365d) sit between 90% and 95%, so they clear a 0.90 target and
- * miss a 0.95 one.
- */
 const TARGET_RETENTION = TARGET_RETENTION_SETTING;
 
-/** e.g. "95%" -- one place, so no label can drift from the line it names. */
 const TARGET_LABEL = `${Math.round(TARGET_RETENTION * 100)}%`;
 
-/**
- * Retention against interval, BOTH BASES on one pair of axes.
- *
- * The elapsed series is drawn solid because it is what happened; the scheduled
- * series is drawn hollow and dashed because it is what was intended.  Drawing
- * only one of them is what produced the contradiction this chart exists to
- * close: the page used to bucket by the PLANNED interval and print "観測なし"
- * over `> 365d`, while BACKTEST.md scored the same corpus by ELAPSED time and
- * reported 3,009 observations there at 96.88%.  Both were reading real columns.
- * Neither said which.
- */
 function intervalRetentionChart(
   buckets: readonly IntervalBucket[],
   scheduled: readonly IntervalBucket[],
@@ -435,7 +353,6 @@ function intervalRetentionChart(
     if (worst && (b.retention ?? 1) < (worst.retention ?? 1)) worst = b;
   }
 
-  // The planned series first, so the measured one draws on top of it.
   const planned: string[] = [];
   scheduled.forEach((b, i) => {
     if (b.retention === null) return;
@@ -563,9 +480,6 @@ function intervalVolumeChart(
   );
 }
 
-// ─── デッキ別定着率 ─────────────────────────────────────────────────────────
-
-/** Below this many reviews a retention figure is drawn hollow, not solid. */
 export const SMALL_SAMPLE = 100;
 
 function deckRetentionChart(decks: readonly DeckRetention[], lab: Labels): string {
@@ -577,9 +491,6 @@ function deckRetentionChart(decks: readonly DeckRetention[], lab: Labels): strin
   const T = 18;
   const H = T + decks.length * ROW + 14;
 
-  // Direct figures only, matching how the rows were selected. Mixing a deck's
-  // own reviews with its subtree's in one row would put two different
-  // denominators on the same dot.
   interface Dot {
     readonly row: number;
     readonly value: number;
@@ -625,10 +536,6 @@ function deckRetentionChart(decks: readonly DeckRetention[], lab: Labels): strin
     );
   }
 
-  // Label the two extremes, not every dot and not an arbitrary row: at this
-  // scale two dots on the same row sit ~28px apart and their labels collide.
-  // Ties go to the bigger sample, so the labelled dot is the one worth reading:
-  // 日本語/数字 is 100% over 688 reviews, English/Vocabulary reverse over 48.
   let hi = dots[0];
   let lo = dots[0];
   for (const dot of dots) {
@@ -686,13 +593,6 @@ function deckRetentionChart(decks: readonly DeckRetention[], lab: Labels): strin
   );
 }
 
-// ─── デッキの進捗 ───────────────────────────────────────────────────────────
-
-/**
- * The three track states, in order. The NAME comes from the locale, so this is a
- * function rather than a constant — the key and the colour token are structural,
- * the label is not.
- */
 function progressSegments(
   lab: Labels,
 ): readonly (readonly [keyof DeckProgress, string, string])[] {
@@ -703,12 +603,6 @@ function progressSegments(
   ];
 }
 
-/**
- * Proportional bars, not absolute ones. 単語 has 7,404 tracks and 基本情報/第10章
- * has 40; on a shared absolute scale every deck but the first two collapses to a
- * sliver and the tile answers nothing. The question here is "how far along is
- * this deck", which is a share — the absolute total is printed at the row end.
- */
 function deckProgressChart(decks: readonly DeckProgress[], lab: Labels): string {
   if (decks.length === 0) return `<p class="def">${esc(lab.noData)}</p>`;
   const W = 720;
@@ -733,7 +627,6 @@ function deckProgressChart(decks: readonly DeckProgress[], lab: Labels): string 
       if (value <= 0) continue;
       const left = x0 + (cursor / total) * span;
       const right = x0 + ((cursor + value) / total) * span;
-      // 2px surface gap between segments, never a stroke around them.
       const w = Math.max(1.5, right - left - 2);
       parts.push(
         `<rect x="${round(left)}" y="${y}" width="${round(w)}" height="${BAR}" rx="2" ` +
@@ -760,8 +653,6 @@ function deckProgressChart(decks: readonly DeckProgress[], lab: Labels): string 
   );
 }
 
-// ─── tiles and tables ───────────────────────────────────────────────────────
-
 interface Tile {
   readonly key: string;
   readonly latin: string;
@@ -770,24 +661,6 @@ interface Tile {
   readonly sub: string;
 }
 
-// ─── 復習予測 ────────────────────────────────────────────────────────────────
-
-/**
- * The forecast, as bars over the coming `horizonDays`.
- *
- * THREE THINGS IT REFUSES TO DO, each of which would make it read better and
- * say less:
- *
- *   * It does not put the BACKLOG in the first bar. 443 cards due today or
- *     earlier is a fact about the past; folding it into "tomorrow" draws a spike
- *     that no scheduler planned. It is called out beside the chart instead.
- *   * It does not drop empty days. A quiet fortnight compressed out of the axis
- *     shows a workload that does not exist.
- *   * It does not claim the bars are Hashigo's plan. Most of them are Mochi's,
- *     because a track keeps its imported due date until it is graded here — the
- *     provenance line under the chart counts both, and the ratio moves one card
- *     per review.
- */
 function forecastChart(report: ForecastReport, lab: Labels): string {
   const days = report.days;
   if (days.length === 0) return `<p class="def">${esc(lab.noData)}</p>`;
@@ -815,8 +688,6 @@ function forecastChart(report: ForecastReport, lab: Labels): string {
     const h = H - B - y(day.tracks);
     const title = lab.forecastTip(day.date, int(day.tracks));
     if (day.tracks === 0) {
-      // Drawn as a baseline stub rather than nothing: an empty day is a fact,
-      // and a gap in a bar row reads as missing data instead of as zero.
       return (
         `<rect x="${round(cx - barW / 2)}" y="${H - B - 1}" width="${round(barW)}" height="1" ` +
         `fill="var(--muted)" fill-opacity="0.45"><title>${esc(title)}</title></rect>`
@@ -829,7 +700,6 @@ function forecastChart(report: ForecastReport, lab: Labels): string {
     );
   });
 
-  // Weekly date labels only; thirty of them would collide at this width.
   const labels = days
     .map((day, i) =>
       i % 7 === 0
@@ -856,8 +726,6 @@ function forecastChart(report: ForecastReport, lab: Labels): string {
 
 function tile(t: Tile, lab: Labels): string {
   return (
-    // `section` RETURNS MARKUP, so the escaping goes on its inputs — wrapping the
-    // result escaped the <span> itself and printed it as text.
     `<div class="tile"><div class="k">${lab.section(esc(t.key), esc(t.latin))}</div>` +
     `<div class="v">${esc(t.value)}${t.unit ? `<span class="u">${esc(t.unit)}</span>` : ""}</div>` +
     `<div class="s">${esc(t.sub)}</div></div>`
@@ -945,8 +813,6 @@ function table(head: readonly string[], rows: readonly (readonly string[])[]): s
 function details(summary: string, body: string): string {
   return `<details><summary>${esc(summary)}</summary>${body}</details>`;
 }
-
-// ─── the page ───────────────────────────────────────────────────────────────
 
 const STYLE = `
 :root {
@@ -1092,13 +958,6 @@ footer ul { padding-left: 18px; margin: 6px 0; }
 footer code { font-size: 11.5px; }
 `;
 
-/**
- * `lang` MUST FOLLOW THE LOCALE. It was hardcoded `ja`, so the English page
- * declared itself Japanese — not cosmetic: a screen reader picks its voice from
- * this attribute, and it is also what CSS `:lang()` and the browser's own font
- * fallback key off. Caught by a test asserting the English headings, whose
- * failure message printed `<html lang="ja">`.
- */
 function head(title: string, locale: Locale): string {
   return (
     `<!doctype html>\n<html lang="${locale}">\n<head>\n<meta charset="utf-8">\n` +
@@ -1114,19 +973,8 @@ function head(title: string, locale: Locale): string {
 }
 
 export interface RenderOptions {
-  /** Minimum direct reviews for a deck to appear in the retention chart. */
   readonly deckChartMinReviews?: number;
-  /** Minimum tracks for a deck to appear in the progress chart. */
   readonly progressChartMinTracks?: number;
-  /**
-   * Which language the page is written in. Default `en` — Zach's decision.
-   *
-   * `ja` is not a legacy path, it is the PROOF: every Japanese string in
-   * `./labels.ts` is a byte-identical copy of what this renderer emitted before
-   * the extraction, so rendering with `ja` and diffing against
-   * `test/fixtures/dashboard/ja.golden.html` is what shows nothing was mangled on
-   * the way into the table. Deleting it would delete the check.
-   */
   readonly locale?: Locale;
 }
 
@@ -1140,15 +988,6 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
   const lastDate = totalsAll.lastDate ?? isoDate(Date.now());
   const deckMin = options.deckChartMinReviews ?? 300;
   const progressMin = options.progressChartMinTracks ?? 40;
-  // ENGLISH BY DEFAULT — Zach's decision. `ja` is not a legacy path: rendering
-  // with it must stay byte-identical to test/fixtures/dashboard/ja.golden.html,
-  // captured before these strings moved into ./labels.ts. That check is what says
-  // the extraction lost nothing across all 460 KB, and it is why the Japanese is
-  // kept rather than deleted.
-  //
-  // Named `lab`, not `L`: every chart helper below already uses `const L = 46`
-  // for its left margin, and shadowing that would be a silent layout bug rather
-  // than a compile error in the ones that only read it.
   const lab = LOCALES[options.locale ?? "en"];
 
   const chartDecks = primary.decks
@@ -1161,7 +1000,6 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
   const out: string[] = [];
   out.push(head(lab.pageTitle, lab.locale));
 
-  // ── header
   out.push(
     `<p class="eyebrow">${esc(lab.eyebrow)}</p>`,
     `<h1>${esc(lab.h1)}</h1>`,
@@ -1177,7 +1015,6 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
       `</dl>`,
   );
 
-  // ── totals
   out.push(
     `<section class="card"><h2>${lab.section("全期間の合計", "all time")}</h2>`,
     `<p class="def">${lab.totalsDef(
@@ -1195,7 +1032,6 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     `</section>`,
   );
 
-  // ── activity heatmap
   const yearStrips = data.years
     .map(
       (y) =>
@@ -1237,7 +1073,6 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     `</section>`,
   );
 
-  // ── cards studied / cumulative
   out.push(
     `<section class="card"><h2>${lab.section(
       "学習カード数と累計",
@@ -1269,15 +1104,6 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     `</section>`,
   );
 
-  // ── retention x interval — the tile Mochi lacks, and the one that was wrong
-  //
-  // THIS TILE USED TO CONTRADICT BACKTEST.md.  It bucketed by the PLANNED
-  // interval, found nothing past a year, and printed "> 365d 観測なし" — while
-  // the backtest bucketed the same 102,020 reviews by ELAPSED time and reported
-  // 3,009 observations there at 96.88%.  Both numbers were real; neither
-  // artefact named its basis.  Now both name it, both use the schema's own
-  // column names, and test/dashboard.test.ts asserts that the number rendered
-  // here is the number written in BACKTEST.md.
   const elapsed = primary.intervals.elapsed;
   const scheduled = primary.intervals.scheduled;
   const longest = [...elapsed].reverse().find((b) => b.retention !== null);
@@ -1347,7 +1173,6 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     `</section>`,
   );
 
-  // ── per-deck retention — the other tile Mochi lacks
   const spreadDecks = primary.decks.filter(
     (d) => d.directReviews >= 500 && d.directRetention !== null,
   );
@@ -1397,7 +1222,6 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     `</section>`,
   );
 
-  // ── deck progress
   const rootProgress = data.progress.filter((d) => d.depth === 0);
   const tracksTotal = rootProgress.reduce((sum, d) => sum + d.tracks, 0);
   const dormantTotal = rootProgress.reduce((sum, d) => sum + d.dormantTracks, 0);
@@ -1429,7 +1253,6 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     `</section>`,
   );
 
-  // ── 復習予測
   const fc = data.forecast;
   const fcTotal = fc.days.reduce((sum, day) => sum + day.tracks, 0);
   const fcOwn = fc.provenance.mochi + fc.provenance.hashigo;
@@ -1460,7 +1283,6 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     `</section>`,
   );
 
-  // ── Mochi reconciliation
   const ours: Record<string, number | null> = {
     reviews: comparison.totals.reviews,
     daysElapsed: comparison.totals.daysElapsed,
@@ -1483,9 +1305,6 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
       exact ? lab.match : esc(lab.mochiRowNote(ref.key)),
     ];
   });
-  // Mochi's review count comes from data.mochi, never a second literal: the
-  // reference figure must have exactly one home or the prose and the table can
-  // drift apart without any test noticing.
   const mochiReviews = data.mochi.find((r) => r.key === "reviews")?.mochi ?? null;
   const reviewGap = mochiReviews === null ? null : comparison.totals.reviews - mochiReviews;
   const cardDayGap = mochiReviews === null ? null : comparison.totals.cardDays - mochiReviews;
@@ -1515,7 +1334,6 @@ export function renderDashboard(data: DashboardData, options: RenderOptions = {}
     `</section>`,
   );
 
-  // ── footer
   out.push(
     `<footer>`,
     `<h2>${esc(lab.glossaryHeading)}</h2>`,

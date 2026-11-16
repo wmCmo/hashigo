@@ -1,30 +1,3 @@
-/**
- * Stage 1 — opening a Hashigo database.
- *
- * One entry point, `openDatabase`, which applies the schema, turns foreign keys
- * on and puts the journal in WAL. All three matter:
- *
- *   * foreign keys are OFF by default in SQLite, and this schema leans on them
- *     hard — the tag tree's every-prefix-exists guarantee and the "a referenced
- *     blob cannot be deleted" guarantee are both foreign keys.
- *   * WAL keeps a long import from blocking readers. It is a NODE-ONLY choice:
- *     an earlier version of this comment claimed WAL "is the mode the OPFS build
- *     will use too", and that is wrong. Measured 2026-08-19 in Chromium on the
- *     `opfs-sahpool` VFS: `PRAGMA journal_mode = WAL` reports `delete` and the
- *     mode does not change, because WAL needs a `-shm` shared-memory file and
- *     that VFS implements no shared memory. `importDb()` even rewrites the
- *     header of an imported file to force WAL off. So the browser half runs on
- *     the rollback journal, and anything that hands a prebuilt `.db` to the
- *     browser must checkpoint it first — the `-wal` sidecar cannot be imported,
- *     and an uncheckpointed commit would be lost silently. See
- *     `src/db/browser.ts` and `spike/README.md`.
- *   * the schema is applied inside a transaction, so a half-created database is
- *     not a state this code can produce.
- *
- * Node only (better-sqlite3): the importer, the backtest and the tests. The
- * browser/OPFS half is `src/db/browser.ts`, over the same surface.
- */
-
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
@@ -35,24 +8,14 @@ import { SCHEMA_SOURCES } from "../schema/sources.js";
 
 export type Db = Database.Database;
 
-/** In-memory database name, for tests and dry runs. */
 export const MEMORY = ":memory:";
 
 export interface OpenOptions {
-  /** Open read-only. Implies no schema application. */
   readonly readOnly?: boolean;
-  /** Apply the schema to a fresh database. Default true. */
   readonly applySchema?: boolean;
-  /** Statement logger, passed straight to better-sqlite3. */
   readonly verbose?: (message?: unknown, ...rest: unknown[]) => void;
 }
 
-/**
- * Open (creating if needed) a Hashigo database at `file`, or in memory.
- *
- * Idempotent: opening an already-populated database applies nothing and returns
- * it with the same pragmas set.
- */
 export function openDatabase(file: string = MEMORY, options: OpenOptions = {}): Db {
   const readOnly = options.readOnly === true;
   const inMemory = file === MEMORY || file === "" || file.startsWith("file::memory:");
@@ -66,8 +29,6 @@ export function openDatabase(file: string = MEMORY, options: OpenOptions = {}): 
     ...(options.verbose ? { verbose: options.verbose } : {}),
   });
 
-  // WAL is unavailable in memory (the pragma reports "memory" there, which is
-  // correct and not an error) and is a no-op on a read-only handle.
   if (!readOnly && !inMemory) {
     db.pragma("journal_mode = WAL");
     db.pragma("synchronous = NORMAL");
@@ -87,29 +48,10 @@ export function openDatabase(file: string = MEMORY, options: OpenOptions = {}): 
   return db;
 }
 
-/** `PRAGMA user_version`: 0 on a database this code has never touched. */
 export function schemaVersion(db: Db): number {
   return pragmaNumber(db, "user_version");
 }
 
-/**
- * Create every table, index, trigger and view, then stamp the version. Applies
- * nothing when the database is already at `SCHEMA_VERSION`.
- *
- * There is no migration path, at any version — the schema is at `SCHEMA_VERSION`
- * (9 today, and this sentence deliberately does not restate it) and a database at
- * any other version can only have been written by code newer or stranger than
- * this. Refusing is better than half-migrating a review history.
- *
- * **THE ESCAPE HATCH BEHIND THAT REFUSAL CLOSED ON 2026-09-13 — decision 41.**
- * Refusing was cheap while "a schema bump means RE-IMPORT" was lossless: every
- * row came from `exports/` and a rebuild cost fifteen seconds. The final import
- * has now happened, so a rebuild keeps the 103,110 imported reviews and DISCARDS
- * every grade Hashigo has made since. Refusing is still right — this function
- * must not half-migrate — but the caller can no longer answer a refusal with
- * `rm`. `src/backup` and `src/sync` are what carry the local history across a
- * bump, and both stamp `archive.schemaVersion` for exactly that reason.
- */
 export function applySchema(db: Db): void {
   const current = schemaVersion(db);
   if (current === SCHEMA_VERSION) return;
@@ -132,7 +74,6 @@ export function applySchema(db: Db): void {
   })();
 }
 
-/** `PRAGMA integrity_check` plus `PRAGMA foreign_key_check`. Empty = healthy. */
 export function checkIntegrity(db: Db): readonly string[] {
   const problems: string[] = [];
   const integrity = db.pragma("integrity_check") as { integrity_check: string }[];

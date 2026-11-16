@@ -2,14 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { planAudioGc, type AudioReach, type AudioRow } from "../src/review/audio-reach.js";
 
-/**
- * 2026-09-28 の片付けの規則。どこからも届かない音声だけが消え、次の四つは残る:
- * どれかの端末で届く（再生でも代替でも）、retire 済み、猶予期間内に作られた。
- *
- * 一つ目の「どれかの端末で」が要: ノートPCの行だけで測ると、スマホで編集した
- * `**Exponent**` の一枚が今鳴らしているクリップを消していた。
- */
-
 const NOW = new Date("2026-09-28T00:00:00.000Z");
 const OLD = "2026-09-08T00:47:53.614Z";
 

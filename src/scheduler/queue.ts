@@ -1,52 +1,3 @@
-/**
- * Stage 6 — what to review, and how much of it is left.
- *
- * The queue reader. It does not render anything, does not decide how new cards
- * interleave with due ones, and does not hold a session — those are stage 7's,
- * and two of them are Zach's taste rather than a measurement. What it does is
- * answer the four questions any review screen has to ask: what is due, what is
- * new, how many of each, and what is coming.
- *
- * DUE IS COMPARED BY LOCAL DATE, NOT BY INSTANT, and the SQL says so:
- * `substr(due_at, 1, 10) <= :today`. Two reasons, and the second is the one
- * that would have bitten.
- *
- *   * A due date is local midnight by construction (`./day.ts`), and the first
- *     ten characters of an RFC 3339 timestamp ARE its local date — that is what
- *     writing the offset out means. `loadHistory` in the backtest already reads
- *     `reviewed_at.slice(0, 10)` the same way.
- *   * Comparing instants across offsets needs `julianday()` on both sides, and
- *     comparing the raw strings lexically is WRONG the moment two offsets are in
- *     play: `2026-08-22T00:00:00+09:00` sorts after `2026-08-22T00:00:00Z`
- *     although it is nine hours earlier. Every due date in the corpus carries
- *     +09:00 today, so a lexical comparison would work until the first review
- *     taken abroad and then quietly misjudge a day's worth of cards.
- *
- * The cost of that is a scan of `card_tracks` instead of a seek on
- * `card_tracks_due`. MEASURED against the real 74 MB database, 13,393 tracks,
- * median of seven runs each — the reason this is a footnote and not a problem:
- *
- *     queueCounts               9.2 ms      one scan, five counts
- *     dueTracks, all 443 rows   3.1 ms
- *     dueTracks, limit 1        0.2 ms      what the review screen actually calls
- *     reviewForecast, 30 days   3.6 ms
- *     dueTracks, one deck      10.1 ms      the deck_ancestry subquery, 3x
- *
- * Node and better-sqlite3; the browser figure is not this one and is not yet
- * measured — `notes/archive/browser-feasibility.md` has the OPFS read numbers this would
- * sit on. The index stays right for anything that wants a date RANGE, which is
- * what `reviewForecast` would use if 3.6 ms ever mattered.
- *
- * NEW IS `due_at IS NULL AND reps = 0`, which is SPEC's rule ("derives `new?`
- * from an empty track rather than storing it") and describes 4,308 of the 13,393
- * imported tracks — 3,907 once archived cards are excluded — cards he has added
- * in Mochi and not yet studied.
- * They are returned SEPARATELY from due cards, deliberately: how many new cards
- * a session should introduce, and whether they come first or mixed in, changes
- * what studying feels like, and it is not a question this file can answer from
- * the data.
- */
-
 import type { SqliteHandle } from "../db/browser.js";
 
 import { dueAfter, dueBefore, dueOnOrBefore, liveTrack } from "./predicates.js";
@@ -63,7 +14,6 @@ import {
   type ExamTarget,
 } from "./kanken.js";
 
-/** One row of the queue: a track, with everything the UI needs to name it. */
 export interface QueuedTrack {
   readonly trackId: number;
   readonly cardId: string;
@@ -73,48 +23,20 @@ export interface QueuedTrack {
   readonly deckId: string;
   readonly deckPath: string;
   readonly dueAt: string | null;
-  /** Whole days late. 0 when due today; negative is impossible in this queue. */
   readonly overdueDays: number;
-  /**
-   * When this track was last graded, RFC 3339 with its offset — `null` on a new
-   * one. Straight from `card_tracks.last_reviewed_at`.
-   *
-   * **ONLY ITS DATE IS A FACT.** Every imported review carries `time_unknown = 1`
-   * and the corpus holds exactly ONE distinct time-of-day across all 103,110 rows
-   * (measured 2026-09-23) — Mochi truncated to the date and the importer writes
-   * local midnight. So a consumer may render the date and must not render a
-   * clock time; decision 6, name the basis.
-   *
-   * Checked rather than assumed: it is non-null on exactly the 9,085 tracks with
-   * `reps > 0`, null on all 4,308 new ones, and agrees with
-   * `max(reviews.reviewed_at)` on all 9,085 with zero disagreements.
-   */
   readonly lastReviewedAt: string | null;
   readonly scheduledDays: number | null;
   readonly reps: number;
   readonly lapses: number;
-  /** The per-track leech flag — three parallel flags in the export. */
   readonly needsRereview: 0 | 1;
 }
 
 export interface QueueOptions {
-  /**
-   * The instant "now" is taken to be, RFC 3339 with an offset. Defaults to now
-   * in the host's offset. Only its LOCAL DATE is used.
-   */
   readonly now?: string;
-  /** Restrict to one deck. */
   readonly deckId?: string;
-  /** Include the deck's descendants. Default true — a deck means its subtree. */
   readonly includeSubdecks?: boolean;
-  /** Restrict to `forward`, `reverse`, or a cloze kind. */
   readonly kinds?: readonly string[];
-  /** Cap the rows returned. Counts are unaffected; `queueCounts` has no cap. */
   readonly limit?: number;
-  /**
-   * Only cards that cannot sound — `./silent.ts`. The value is the AUDIBLE
-   * template ids from `audibleTemplateIds`; absent means every card.
-   */
   readonly silentExcept?: readonly string[];
 }
 
@@ -152,25 +74,6 @@ interface RawQueueRow {
   needs_rereview: number;
 }
 
-/**
- * The clause every query here shares: a live card, a scheduled track.
- *
- * NEITHER HALF IS DECORATIVE, and I checked rather than assuming. Measured on
- * the real export at 2026-08-22:
- *
- *   * `c.archived = 0` removes 234 archived cards carrying 451 tracks — 386
- *     never reviewed, 65 with a due date, **33 of them due today or earlier**.
- *     Without this clause today's queue would be 476 rather than 443, a tenth of
- *     it cards he archived deliberately.
- *   * `t.dormant = 0` removes nothing today: zero tracks are dormant, because
- *     the importer only reaches dormant for a disabled reverse track that has
- *     history and the invariant holds across the corpus. It is here so that
- *     turning a card's reverse off stops scheduling it without destroying its
- *     history — SPEC: "No scheduling toggle should ever destroy four years."
- */
-// The live-track predicate, from `./predicates.js` — which exists because this
-// exact rule and the due comparison below were re-derived by hand at every call
-// site, and `app/db.worker.ts` re-derived the due half DIFFERENTLY.
 const LIVE = liveTrack();
 
 interface Filter {
@@ -231,14 +134,6 @@ function toQueued(row: RawQueueRow, today: number): QueuedTrack {
   };
 }
 
-/**
- * Everything due on or before `now`'s local date, most overdue first.
- *
- * Ordering: `due_at` ascending, then `t.id`, so the queue is deterministic and
- * the oldest debt is paid first. `t.id` rather than the card's `pos` because two
- * tracks of the same card must not tie — the forward and reverse of one card
- * both being due is the commonest case in this corpus.
- */
 export function dueTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedTrack[] {
   const now = options.now ?? nowInHostOffset();
   const today = localDate(now);
@@ -256,71 +151,8 @@ export function dueTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
   return rows.map((row) => toQueued(row, todayNumber));
 }
 
-/**
- * Tracks that have never been reviewed — SPEC's `new?`, derived rather than
- * stored. Returned in a RANDOM but STABLE order, and `limit` is applied to that
- * order rather than in SQL.
- *
- * DECISION 15, AND THE TRAP IT CLOSES. Zach wants 10 new TRACKS a day, picked at
- * random, with a card's forward and reverse not paired: "both forward and reverse
- * doesn't have to be studied on the same day because it's random from the cards i
- * haven't learned".
- *
- * This used to order by `c.pos, c.id, t.id` — authoring order — and its docstring
- * said shuffling was "a choice the review screen can make later". **That is false
- * the moment a `limit` exists.** A `LIMIT 10` on a sorted query has already chosen
- * WHICH ten; the caller can only permute what it was handed. Taking the first ten
- * of an authored list and shuffling them is not taking ten at random from 3,980.
- *
- * WHAT THE OLD BEHAVIOUR ACTUALLY DID, measured rather than reasoned: it returned
- * track ids `1, 2, 3, 8, 12, 20, 26, 28, 30, 34` — the literal front of the list —
- * and **the same ten every single day**, so the backlog would have been worked in
- * authoring order forever. An earlier version of this comment also claimed it
- * delivered "~5 cards as forward/reverse pairs". That was wrong: measured, those
- * ten tracks span ten DISTINCT cards, because a card's two tracks are rarely both
- * new. The pairing risk decision 15 rules out does not occur in this corpus; the
- * no-randomness defect is the whole of the real bug.
- *
- * So the order is decided HERE, and the limit is applied after it. The key is
- * `dailyOrderKey(localDay, trackId)`, not `Math.random()`: one day gives one
- * order, so re-reading the queue mid-session does not reshuffle it, and a new day
- * deals a new hand. Same reasoning as interval fuzz being keyed rather than
- * random.
- *
- * THE COST, MEASURED, because the limit no longer reaches the database. Against
- * the real 74 MB corpus, 3,980 unlearned tracks, Node and better-sqlite3, median
- * of seven runs:
- *
- *     unlimited (3,980 rows)   14.8 ms
- *     limit 10                 13.9 ms
- *     limit 1                  12.2 ms      was 0.2 ms when LIMIT was in SQL
- *
- * The limit barely matters now, which is the point: the whole set is read and
- * ordered either way. 13.9 ms once per session for a day's new cards is paid
- * where it does not matter. If it ever does, the fix is a keyed order expression
- * in SQL — but that means reimplementing `hash32` in two dialects and keeping
- * them identical, which is a worse trade than 14 ms.
- */
-/**
- * THE `優先` FIELD — a new card he wants to learn NOW, ahead of the random pool.
- *
- * Zach, 2026-10-21, with the 漢検準2級 CBT on 6 Feb 2027: the cards his tutor
- * session hands over are his misses, and at 10 a day from a 3,736-track pool a
- * given track waits ~374 days on average — measured odds of ~23% that one
- * surfaces before the exam. *"make the priority feature, that from now on, the
- * queue will select my priority first"*. Decision 53.
- *
- * A LOCAL BOOLEAN FIELD, NOT A COLUMN: decision 41 made a schema bump expensive,
- * and a `local = 1` field and its values already travel in decision 33's sync
- * payload, the way `かな主流` does — so a card flagged on the laptop is flagged on
- * the phone. Matched by NAME and TYPE across templates, so any template that
- * declares the field takes part; a template without it simply has no priority
- * cards. The value is the importer's "true", trimmed and case-folded the way the
- * `Reading` switch reads booleans.
- */
 export const PRIORITY_FIELD = "優先";
 
-/** Cards whose `優先` is true. One read per plan, and the set is the size of his attention. */
 export function priorityCardIds(db: SqliteHandle): Set<string> {
   const rows = db
     .prepare(
@@ -334,29 +166,8 @@ export function priorityCardIds(db: SqliteHandle): Set<string> {
   return new Set(rows.map((row) => row.card_id));
 }
 
-/**
- * DECISION 53's SECOND TIER: a word in the 日本語 deck that contains a kanji at the
- * EXAM TARGET's levels (`./kanken.ts` — the 協会's FY2020 table, and the target is
- * the `queue.exam-target` setting, 準2級 → 3級 + 準2級 unless he changes it).
- * Measured on the 2026-09-08 laptop copy at 準2級: 501 of 3,907 unlearned tracks —
- * about 50 days at ten a day, inside the ~108 before the exam.
- *
- * The WORD is `cards.name`, which for 単語 / 言葉 is the head word and for 漢字 the
- * kanji itself. The DECK is the 日本語 subtree, by path: without it seven 基本情報
- * sentences matched on a stray 準2級 character and would have jumped the queue as
- * "exam vocabulary".
- *
- * What a kanji cannot tell: a word whose kanji are all ≤4級 but whose READING is a
- * 高校 one is still a 準2級 question — the 協会 tests 高校で習う読み from 準2級 up.
- * Those stay in the random pool; `優先` is the way to pull one forward.
- */
 export const EXAM_TIER_DECK = "日本語";
 
-/**
- * The stored exam target, or the default — never a throw. A missing `settings`
- * table, an absent row and a value that is not one of `EXAM_TARGETS` all mean
- * 準2級, which is what the queue did before the target was a setting.
- */
 export function examTarget(db: SqliteHandle): ExamTarget {
   try {
     const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(EXAM_TARGET_KEY) as
@@ -375,23 +186,8 @@ function examTier(row: RawQueueRow, levels: ReadonlySet<string>): boolean {
   return inDeck && hasExamTierKanji(row.card_name, levels);
 }
 
-/**
- * KANJI BEFORE THE WORDS THAT USE THEM. Zach, 2026-10-25: *"no matter what the
- * priority is, if the 単語 cards are containing kanjis that i have not learned, it
- * will swap out that word from the learning queue and let me learn the kanji
- * first"*. Decision 54.
- *
- * A kanji is UNLEARNED when it has a live card on the `漢字` template and no track
- * of any such card has been reviewed. A kanji with no card at all blocks nothing —
- * there is nothing to learn first (248 word tracks, measured 2026-10-25).
- */
 export const KANJI_TEMPLATE = "漢字";
 
-/**
- * Kanji (the card name) → whether any live `漢字` card for it has been reviewed,
- * plus the ids of those cards — a 単語 card named `疎` is a WORD and is gated by
- * the kanji 疎, so "is this a kanji card" is asked of the template, not the name.
- */
 function kanjiLearnedState(db: SqliteHandle): { learned: Map<string, boolean>; cards: Set<string> } {
   const rows = db
     .prepare(
@@ -404,24 +200,10 @@ function kanjiLearnedState(db: SqliteHandle): { learned: Map<string, boolean>; c
     )
     .all(KANJI_TEMPLATE) as { id: string; name: string; learned: number }[];
   const learned = new Map<string, boolean>();
-  // Two cards for one kanji (彼, 私 exist twice): learned if EITHER is.
   for (const row of rows) learned.set(row.name, learned.get(row.name) === true || row.learned === 1);
   return { learned, cards: new Set(rows.map((row) => row.id)) };
 }
 
-/**
- * Walks the tiered order and swaps each 日本語 word that contains an unlearned
- * kanji for that kanji's own new track, at the word's place — so the kanji
- * inherits the word's tier, and a `優先` word pulls its kanji to the front. The
- * word waits: it is eligible again once the kanji has had one review, which at
- * the earliest is tomorrow's plan.
- *
- * The swap uses only tracks already in `rows`, so a deck-scoped or audio-only
- * session (no `漢字` cards in scope) cannot inject a card from outside its scope;
- * there the word stays, because hiding it with nothing offered instead would
- * empty the session rather than reorder it. Forward is preferred — kanji to
- * reading is the direction that teaches it.
- */
 function kanjiFirst<T extends { row: RawQueueRow }>(ordered: readonly T[], db: SqliteHandle): T[] {
   const { learned, cards } = kanjiLearnedState(db);
   const substitute = new Map<string, T>();
@@ -470,19 +252,9 @@ export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
   const shuffled = rows
     .map((row) => ({
       row,
-      // Tier first (decision 53): `優先` cards, then words with 3級 / 準2級 kanji,
-      // then the rest — at random WITHIN each tier, still inside the day's limit.
-      // Priority picks WHICH ten, never how many.
-      // `優先` pulls the FORWARD track only. Zach, 2026-10-26 ("sounds good", to
-      // option (a)): his 漢検 misses are drilled on the forward track — reading
-      // misses with Reading on, writing misses with it off — so a flagged card's
-      // reverse track took one of the ten slots and drilled nothing he missed.
-      // The reverse keeps the place it would have without the flag.
       tier: priority.has(row.card_id) && row.kind === "forward" ? 0 : examTier(row, levels) ? 1 : 2,
       key: dailyOrderKey(todayNumber, row.track_id),
     }))
-    // `key` collisions are possible over 32 bits; `track_id` breaks the tie so
-    // the order is total and reproducible rather than dependent on sort stability.
     .sort((a, b) => a.tier - b.tier || a.key - b.key || a.row.track_id - b.row.track_id);
   const ordered = kanjiFirst(shuffled, db);
   const limited =
@@ -491,29 +263,14 @@ export function newTracks(db: SqliteHandle, options: QueueOptions = {}): QueuedT
 }
 
 export interface QueueCounts {
-  /** Due on or before today's local date. */
   readonly due: number;
-  /** Of those, due strictly before today — the backlog. */
   readonly overdue: number;
-  /** Never reviewed. */
   readonly fresh: number;
-  /** Scheduled, not yet due. */
   readonly scheduled: number;
-  /** Retained but not scheduled. Reported rather than hidden. */
   readonly dormant: number;
-  /** The local date the counts were taken against. */
   readonly asOf: string;
 }
 
-// Positional parameters throughout, and `?` for today three times rather than a
-// named `:today` once: better-sqlite3 refuses to mix named and anonymous
-// parameters in one statement, and the deck and kind filters below are built
-// positionally. One binding style is worth three repeated arguments.
-//
-// ONE SCAN, including the dormant count. `dormant` used to be a second
-// statement, and the pair measured 15.5 ms median against the real database
-// where this measures 7.9 — the count is a `CASE` over the same rows, so asking
-// twice was paying twice for nothing.
 const COUNTS = `
 SELECT sum(CASE WHEN t.dormant = 0 AND t.due_at IS NOT NULL
                  AND ${dueOnOrBefore()} THEN 1 ELSE 0 END)   AS due,
@@ -528,13 +285,6 @@ SELECT sum(CASE WHEN t.dormant = 0 AND t.due_at IS NOT NULL
   JOIN cards c ON c.id = t.card_id
  WHERE c.archived = 0`;
 
-/**
- * The numbers the review screen and the dashboard both want. One scan.
- *
- * `due + overdue` is not a total — overdue is a SUBSET of due, named separately
- * because "42 due" and "42 due, 38 of them from before today" are different
- * facts about a morning, and the second is the one that says he took a week off.
- */
 export function queueCounts(db: SqliteHandle, options: QueueOptions = {}): QueueCounts {
   const now = options.now ?? nowInHostOffset();
   const today = localDate(now);
@@ -560,9 +310,7 @@ export function queueCounts(db: SqliteHandle, options: QueueOptions = {}): Queue
 }
 
 export interface ForecastDay {
-  /** Local date, `2026-08-22`. */
   readonly date: string;
-  /** Tracks falling due that day. */
   readonly count: number;
 }
 
@@ -575,17 +323,6 @@ SELECT substr(t.due_at, 1, 10) AS date, count(*) AS count
    AND ${dueAfter()}
    AND ${dueOnOrBefore()}`;
 
-/**
- * 復習予測 — the one dashboard tile SPEC defers until the scheduler exists.
- *
- * Everything due on or before today is already in `queueCounts().due` and is
- * deliberately NOT folded in here: a forecast that silently includes a backlog
- * of 3,000 overdue cards on its first bar is a chart about the past.
- *
- * A day with nothing due IS RETURNED, with count 0. A bar chart that omits its
- * empty days compresses a quiet fortnight into a dense one and shows a workload
- * that does not exist.
- */
 export function reviewForecast(
   db: SqliteHandle,
   options: QueueOptions & { readonly days?: number } = {},

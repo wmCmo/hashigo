@@ -1,43 +1,3 @@
-/**
- * CHANGING WHAT A FIELD CARRIES — its settings and its input — AND WHAT THAT COSTS.
- *
- * Zach, 2026-09-17, his third call on the field editor: *"allow type change and
- * source repointing, with the cost shown"*. Stage B showed every setting read-only;
- * this is the write half, and the price is the half that makes it safe.
- *
- * ─── WHY THE PRICE IS NOT A NICETY ──────────────────────────────────────────
- *
- * A generated clip is addressed by the identity of the request that made it —
- * text, voice, language, the keyed options. Change any of those on the field and
- * every card asks for a DIFFERENT address, and the clip it used to play is still
- * in the store under the old one, unreachable. `src/cards/audio.ts` refuses to
- * paper over that with an "any voice" fallback, on purpose: a silenced card is
- * how a bad voice migration gets noticed. So the only honest place to say
- * "7,409 clips stop playing" is BEFORE the save, and this computes it.
- *
- * It has happened already, with nobody told: 数字's `group` formatting moved 78
- * clips' identity and those cards asked on entry and played nothing. `group` is
- * not in 数字/Number's own identity at all — it changes the TEXT the speech field
- * downstream hashes. So the price follows the field's consumers too, by both
- * kinds of dependency: `source_field_id`, and `<<Field>>` markers in a prompt.
- *
- * ─── WHAT "RESOLVES" MEANS HERE ─────────────────────────────────────────────
- *
- * What the card would actually PLAY or SHOW, per consumer, and not a looser
- * question. Speech follows `audioHashCandidates`: the asked voice, then the
- * per-language fill voice, never any voice. Text kinds follow the store's text
- * resolver, which does accept another voice (a text blob has none that matters).
- * Measuring either more generously would print a price that is lower than the
- * silence he then hears.
- *
- * ─── A SEAM, NOT A CONVENIENCE ──────────────────────────────────────────────
- *
- * Import-free of the worker, over `SqliteHandle`, for `app/deck-scope.ts`'s
- * reason: `test/` cannot import `app/db.worker.ts`, and worker SQL nobody could
- * test is how the deck archive shipped inverted. An options write is the second
- * most destructive thing in this app after that one.
- */
-
 import { generationIdentity, lookupGeneration } from "../src/blobs/generation.js";
 import { resolveAudioHash } from "../src/cards/audio.js";
 import type { BlobKind } from "../src/schema/index.js";
@@ -56,57 +16,37 @@ import {
 } from "../src/generate/index.js";
 import { promptDependencies } from "../src/template/index.js";
 
-/** A field as the price and the checks need it. */
 export interface FieldState {
   readonly id: string;
   readonly name: string;
   readonly type: string;
   readonly sourceFieldId: string | null;
-  /** The raw column, so an unchanged field compares byte for byte. */
   readonly options: string;
 }
 
-/** What is being proposed. Absent means "unchanged". */
 export interface FieldProposal {
   readonly options?: string;
   readonly sourceFieldId?: string | null;
 }
 
-/** One generator field's before/after, over the cards that were looked at. */
 export interface PriceLine {
   readonly fieldId: string;
   readonly fieldName: string;
-  /** True for the field being edited; false for a consumer that moves with it. */
   readonly own: boolean;
   readonly resolvesNow: number;
   readonly resolvesAfter: number;
-  /** Played or showed something before, will not after. The number that matters. */
   readonly silenced: number;
-  /** Did not before, will after — a repoint onto a field that has clips. */
   readonly gained: number;
-  /** Cards whose request cannot be built at all after the change. */
   readonly unbuildableAfter: number;
-  /**
-   * Text kinds only: matched exactly before, and after the change only by input
-   * text — so the card keeps showing what the OLD settings made. Not silent, and
-   * not the change either.
-   */
   readonly stale: number;
 }
 
 export interface FieldPrice {
   readonly templateId: string;
   readonly fieldId: string;
-  /** Cards on the template. */
   readonly cards: number;
-  /** Cards actually priced. Equal to `cards` unless the template is large. */
   readonly checked: number;
   readonly lines: readonly PriceLine[];
-  /**
-   * Cards with no stored value for this field, when the change touches a
-   * boolean's `boolean-default` — those are the cards the default decides.
-   * Null when the change has nothing to do with a default.
-   */
   readonly defaulted: number | null;
 }
 
@@ -118,7 +58,6 @@ const CARD_IDS = `SELECT id FROM cards WHERE template_id = ? ORDER BY id`;
 
 const VALUES = `SELECT field_id, value FROM card_field_values WHERE card_id = ?`;
 
-/** Every field on a template, in display order. */
 export function templateFields(db: SqliteHandle, templateId: string): FieldState[] {
   return (
     db.prepare(FIELDS).all(templateId) as {
@@ -147,13 +86,6 @@ function asGenerator(field: FieldState): GeneratorField {
   };
 }
 
-/**
- * The fields that consume `fieldId`, transitively, by BOTH kinds of dependency.
- *
- * The prompt kind is the one a column-only walk misses, and it is the one that
- * matters most on this corpus: 単語 feeds 例文 through a `<<単語>>` marker, and
- * 例文 feeds `Audio` through the column.
- */
 export function consumersOf(fields: readonly FieldState[], fieldId: string): FieldState[] {
   const found: FieldState[] = [];
   const seen = new Set<string>([fieldId]);
@@ -178,30 +110,12 @@ export function consumersOf(fields: readonly FieldState[], fieldId: string): Fie
   return found;
 }
 
-/**
- * The DERIVED fields an edit of `fieldId` makes stale — decision 61.
- *
- * Every derived kind (Reading, Pitch accent, Accent marks) downstream of it, by
- * either kind of dependency, so editing 単語 reaches OJAD through 例文's prompt.
- * Generated fields are not here: their input is part of their cache key, so a new
- * input is already a new lookup and nothing has to be cleared.
- */
 export function staleDerived(fields: readonly FieldState[], fieldId: string): FieldState[] {
   return consumersOf(fields, fieldId).filter(
     (field) => fieldKind({ ...field, options: decodeFieldOptions(field.options) }).derived,
   );
 }
 
-/**
- * Would the card actually play or show this, and how exactly? See the header.
- *
- * `loose` is the text kinds' second answer and the reason this is not a boolean.
- * The store's text resolver falls back to ANY generation of the same kind over
- * the same input, ignoring the keyed options — so after a translation's `to`
- * changes, the card keeps showing the old translation rather than going blank.
- * That is "nothing went silent", and it is also "the change did not take effect",
- * and the price has to say the second half or it reads as free.
- */
 type Resolution = "exact" | "loose" | "none";
 
 function resolution(db: SqliteHandle, request: FieldGenerationRequest | null): Resolution {
@@ -224,10 +138,6 @@ function resolution(db: SqliteHandle, request: FieldGenerationRequest | null): R
     : "none";
 }
 
-/**
- * Evenly spaced, deterministic. A price over 600 of 単語's 3,742 cards is a
- * sampled number labelled as one, and costs a fifth of the time.
- */
 function sample<T>(items: readonly T[], limit: number): T[] {
   if (items.length <= limit) return [...items];
   const step = items.length / limit;
@@ -238,7 +148,6 @@ function sample<T>(items: readonly T[], limit: number): T[] {
   return out;
 }
 
-/** The template's fields as they WOULD stand after the proposal. */
 export function proposedFields(
   fields: readonly FieldState[],
   fieldId: string,
@@ -256,12 +165,6 @@ export function proposedFields(
   );
 }
 
-/**
- * What a proposed change to one field does to every card that renders it.
- *
- * Writes nothing. It is not a `TemplateOp` for that reason: a read on the undo
- * channel puts a no-op on the undo stack.
- */
 export function priceFieldChange(
   db: SqliteHandle,
   templateId: string,
@@ -365,15 +268,11 @@ export function priceFieldChange(
   return { templateId, fieldId, cards: allCards.length, checked: cards.length, lines, defaulted };
 }
 
-/** The price as sentences, for the confirm dialog. Pure, so a test can read it. */
 export function describePrice(price: FieldPrice): string[] {
   const out: string[] = [];
   const scale = price.checked === price.cards ? "" : ` (sampled ${price.checked} of ${price.cards.toLocaleString()} cards)`;
   for (const line of price.lines) {
     const who = line.own ? line.fieldName : `${line.fieldName}, which reads from it`;
-    // Said whenever it is true, silent or not: "nothing went blank" and "the
-    // change took effect" are different claims, and the text kinds make the
-    // first one without the second.
     const stale =
       line.stale === 0
         ? null
@@ -406,13 +305,6 @@ export function describePrice(price: FieldPrice): string[] {
   return out;
 }
 
-/**
- * Merge a patch into a field's options, keeping key order and every key the
- * patch does not name. `null` deletes. Returns the new JSON text.
- *
- * Key order is kept because the column is compared byte for byte elsewhere, and
- * a save that reorders keys would read as a change nobody made.
- */
 export function patchOptions(
   raw: string,
   patch: Readonly<Record<string, string | boolean | null>>,
@@ -434,15 +326,6 @@ export function patchOptions(
   return JSON.stringify(out);
 }
 
-/**
- * Why a proposed options value may not be written, or null when it may.
- *
- * The rule is narrow on purpose: a save may change only keys its kind declares
- * as editable. Read-only keys (`gender`, `lang`, `randomize`, `language`) are
- * history that addresses real clips, and undeclared keys are carried through
- * untouched — they survived an import and a sync, and are more likely real than
- * wrong.
- */
 export function optionsRefusal(type: string, raw: string, proposed: string): string | null {
   let next: Record<string, unknown>;
   try {
@@ -473,11 +356,6 @@ export function optionsRefusal(type: string, raw: string, proposed: string): str
     if (spec.control === "language" && !/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(String(value))) {
       return `${String(value)} is not a language code (ja, en, en-US …)`;
     }
-    // A voice is a NAME SHAPE check, not a catalogue check, on purpose. The picker
-    // offers only catalogue voices, but UNDO writes the previous options back —
-    // which is an Azure name Mochi stored — and refusing it would make every voice
-    // change irreversible. An off-catalogue name is harmless where it lands:
-    // `synthesisVoice` makes new clips in the fill voice for it, as before stage D.
     if (spec.control === "voice" && !/^[a-z]{2,3}-[A-Z]{2}-[A-Za-z0-9-]+$/.test(String(value))) {
       return `${String(value)} is not a voice name (ja-JP-Neural2-C …)`;
     }
@@ -485,13 +363,6 @@ export function optionsRefusal(type: string, raw: string, proposed: string): str
   return null;
 }
 
-/**
- * Why a field may not read from `sourceId`, or null when it may.
- *
- * A cycle is refused here and not only by the schema: the schema's CHECK stops a
- * field reading ITSELF and nothing longer, and `fieldText` would walk a longer
- * loop until its depth limit and then return nothing — silence, in green.
- */
 export function sourceRefusal(
   fields: readonly FieldState[],
   fieldId: string,
@@ -499,8 +370,6 @@ export function sourceRefusal(
 ): string | null {
   const target = fields.find((field) => field.id === fieldId);
   if (target === undefined) return `no field ${fieldId}`;
-  // THE KIND, not the stored type: `読み` and OJAD are stored as plain text and
-  // read from a field because their role says so (`fieldKind`).
   const kind = fieldKind({ ...target, options: decodeFieldOptions(target.options) });
   if (!kind.readsSource) {
     return `a ${kind.label} field does not read from another field`;
@@ -519,19 +388,12 @@ export function sourceRefusal(
   return null;
 }
 
-/** Fields `fieldId` may read from, in display order. For the picker. */
 export function sourceChoices(fields: readonly FieldState[], fieldId: string): FieldState[] {
   return fields.filter((field) => sourceRefusal(fields, fieldId, field.id) === null);
 }
 
 const NOW = `strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
 
-/**
- * Write a field's options. The caller owns the transaction and the refusal check.
- *
- * `updated_at` moves with it because decision 33's merge compares that clock — a
- * voice set on the laptop must not be taken back by the phone's older row.
- */
 export function writeFieldOptions(
   db: SqliteHandle,
   templateId: string,
@@ -543,7 +405,6 @@ export function writeFieldOptions(
   ).run(options, templateId, fieldId);
 }
 
-/** Write a field's input. Same contract as `writeFieldOptions`. */
 export function writeFieldSource(
   db: SqliteHandle,
   templateId: string,
@@ -555,26 +416,13 @@ export function writeFieldSource(
   ).run(sourceId, templateId, fieldId);
 }
 
-/** The two kinds a plain field may be switched between from the settings screen. */
 export type PlainKind = "plain" | "reading";
 
-/** What a kind switch writes: the whole options string and the source. */
 export interface KindChange {
   readonly options: string;
   readonly sourceFieldId: string | null;
 }
 
-/**
- * TEXT ⇄ READING, the one kind switch the settings screen offers (2026-11-05).
- *
- * Both are `type = plain`, so the switch moves no stored value: it writes or
- * removes the `reading` role and the field's input. Becoming a Reading keeps an
- * input already chosen, else takes the template's first plain field — the head
- * word on every template he has. Becoming Text clears the input, because a Text
- * field reading from another is a pipe nothing follows.
- *
- * A refusal is a string, the worker's convention. Pure, so `test/` runs it.
- */
 export function kindChange(
   fields: readonly FieldState[],
   fieldId: string,
@@ -588,8 +436,6 @@ export function kindChange(
   if (role !== null && role !== "reading") return `${target.name} is ${fieldKind({ ...target, options }).label}, not Text`;
   const stored = options[ROLE_KEY] === "reading";
   if (to === "reading") {
-    // `fields` arrives in template order (`FIELDS` sorts by pos), so the first
-    // plain field with no role is the head word.
     const source =
       target.sourceFieldId ??
       fields.find(
@@ -604,14 +450,11 @@ export function kindChange(
     return { options: JSON.stringify({ ...options, [ROLE_KEY]: "reading" }), sourceFieldId: source };
   }
   if (role === null) return `${target.name} is already Text`;
-  // A Reading by NAME alone stays one whatever its options say (`effectiveRole`),
-  // so removing a role it does not carry would report a change that never shows.
   if (!stored) return `${target.name} is a Reading because of its name — rename it to make it Text`;
   const { [ROLE_KEY]: _dropped, ...rest } = options;
   return { options: JSON.stringify(rest), sourceFieldId: null };
 }
 
-/** True when two options strings differ, if at all, only in the role key. */
 export function sameExceptRole(current: string, proposed: string): boolean {
   let next: unknown;
   try {
@@ -627,12 +470,6 @@ export function sameExceptRole(current: string, proposed: string): boolean {
   return strip(decodeFieldOptions(current)) === strip(next as Record<string, unknown>);
 }
 
-/**
- * Card ids whose SEARCH TEXT can move with this change, or empty.
- *
- * `cards.search_text` holds the resolved text of `ai` and `translate` fields, so
- * a change that re-addresses one of those changes what a card is found by.
- */
 export function searchReach(
   fields: readonly FieldState[],
   fieldId: string,
@@ -642,15 +479,9 @@ export function searchReach(
   return reached.some((field) => field.type === "ai" || field.type === "translate");
 }
 
-// ─── stage E: a voice override on a card or a deck ───────────────────────────
-
-/** What moving these cards to another voice costs, over their speech fields. */
 export interface VoicePrice {
-  /** Cards the override would cover. */
   readonly cards: number;
-  /** Cards actually priced (sampled above the limit). */
   readonly checked: number;
-  /** Speech mounts on the checked cards whose language the voice matches. */
   readonly mounts: number;
   readonly resolvesNow: number;
   readonly resolvesAfter: number;
@@ -661,7 +492,6 @@ export interface VoicePrice {
 const CARD_TEMPLATE = `SELECT template_id FROM cards WHERE id = ?`;
 const CARD_VOICE = `SELECT voice FROM card_voice_resolved WHERE card_id = ?`;
 
-/** The voice each card resolves to through the views, right now. */
 export function resolvedVoices(db: SqliteHandle, cardIds: readonly string[]): Map<string, string | null> {
   const read = db.prepare(CARD_VOICE);
   const out = new Map<string, string | null>();
@@ -672,17 +502,6 @@ export function resolvedVoices(db: SqliteHandle, cardIds: readonly string[]): Ma
   return out;
 }
 
-/**
- * What an override costs, before it is set. `before` and `after` are the voice
- * each card RESOLVES to through the inheritance views on either side of the
- * change — the worker measures `after` by making the write inside a savepoint and
- * rolling it back, so a clear that lets a grandparent deck's voice through is
- * priced as exactly that.
- *
- * A clip is addressed by the voice that made it, so moving a card's speech to a
- * new voice silences every clip it has in the old one until each is generated
- * again — deliberately, see `src/cards/audio.ts`. This counts that first.
- */
 export function priceVoiceChange(
   db: SqliteHandle,
   cardIds: readonly string[],
@@ -724,7 +543,7 @@ export function priceVoiceChange(
     for (const field of speech) {
       const requestBefore = fieldGenerationRequest(field, beforeContext);
       const requestAfter = fieldGenerationRequest(field, afterContext);
-      if (requestBefore?.voice === requestAfter?.voice) continue; // the override does not reach it
+      if (requestBefore?.voice === requestAfter?.voice) continue;
       mounts += 1;
       const wasOk = resolution(db, requestBefore) !== "none";
       const isOk = resolution(db, requestAfter) !== "none";
@@ -745,7 +564,6 @@ export function priceVoiceChange(
   };
 }
 
-/** The voice price as sentences. Pure, so a test can read it. */
 export function describeVoicePrice(price: VoicePrice, voice: string | null): string[] {
   const scale =
     price.checked === price.cards ? "" : ` (sampled ${price.checked} of ${price.cards.toLocaleString()} cards)`;
@@ -771,17 +589,10 @@ export function describeVoicePrice(price: VoicePrice, voice: string | null): str
   return lines;
 }
 
-/** What one generated field holds on one card — for the card editor (decision 61). */
 export interface FieldOutput {
   readonly fieldId: string;
-  /** The field(s) it is made from, by name: its input, or the prompt's markers. */
   readonly from: readonly string[];
-  /** A text kind's stored output, or null when nothing is made yet. */
   readonly text: string | null;
-  /**
-   * A speech field's clip, as the address the review screen plays it by, or null
-   * when no clip is on this device.
-   */
   readonly audio: {
     readonly kind: BlobKind;
     readonly text: string;
@@ -791,16 +602,6 @@ export interface FieldOutput {
   } | null;
 }
 
-/**
- * EVERY GENERATED FIELD'S OUTPUT ON ONE CARD, so the editor can say "filled from
- * 例文 — <the sentence>" instead of "its content lives in the generation cache".
- *
- * Zach, 2026-11-05: *"Filled for you, read-only, and Generated … are basically the
- * same thing"* — to him they are, so the editor shows them the same way. Read
- * through the shipping resolvers (`fieldGenerationRequest`, `resolveDescriptorText`,
- * `resolveAudioHash` with the card's voice first), never a copy of them.
- * Read-only: writes nothing.
- */
 export function fieldOutputs(db: SqliteHandle, cardId: string): FieldOutput[] {
   const templateId = (db.prepare(CARD_TEMPLATE).get(cardId) as { template_id: string | null } | undefined)
     ?.template_id;

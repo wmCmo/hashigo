@@ -1,18 +1,3 @@
-/**
- * Stage 2 — write dashboard.html from an imported database.
- *
- *   npx vite-node src/dashboard/cli.ts -- --db build/hashigo.db --out dashboard.html
- *
- * vite-node rather than plain node for the same reason scripts/import.ts uses
- * it: every module in src/ imports with a ".js" specifier that resolves to a
- * ".ts" file, and node's type stripping does not do that resolution.
- *
- * Output on stdout is ASCII only. The Windows console this project runs on is
- * cp932, so printing deck paths here would mojibake the one thing you would
- * want to copy out of it; the Japanese lives in the HTML, which is UTF-8 with a
- * charset declaration.
- */
-
 import { writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 
@@ -81,8 +66,6 @@ function parse(argv: readonly string[]): Args {
         break;
       case "--locale": {
         const value = next();
-        // Refused rather than silently defaulted: a typo in a locale flag would
-        // otherwise write the wrong language and say nothing.
         if (value !== "en" && value !== "ja") {
           throw new Error(`--locale must be en or ja, got ${JSON.stringify(value)}`);
         }
@@ -118,8 +101,6 @@ function main(argv: readonly string[]): void {
   try {
     const started = Date.now();
     const data = collect(db, {
-      // basename only: provenance is useful, the absolute path is not — and
-      // echoing it verbatim leaked a temp dir into a regenerated dashboard.
       source: basename(args.db),
       comparisonYear: args.year,
       asOf: args.asOf,

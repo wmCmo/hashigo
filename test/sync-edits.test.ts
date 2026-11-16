@@ -1,17 +1,3 @@
-/**
- * EDITS AS A DELTA — decision 64, `src/sync/sent.ts`. 2026-11-10.
- *
- * One card made on the laptop used to send the laptop's whole base (5.31 MB of
- * JSON, measured that day), and every other device downloaded and merged all of
- * it. Now the delta carries the groups that changed since the fingerprint of what
- * the laptop last sent.
- *
- * The property that matters is the one decision 33 already promises: NO MERGE CAN
- * LOSE A GRADE OR AN EDIT. The test of that here is EQUIVALENCE — a phone that
- * merges the base and then the edit delta ends up byte-for-byte where a phone that
- * merged the new full base would have. The delta is a subset of the full payload,
- * and these tests are what say the subset is enough.
- */
 import { describe, expect, it } from "vitest";
 
 import { createCard } from "../src/cards/index.js";
@@ -33,11 +19,6 @@ const NOW = "2026-11-10T12:00:00.000Z";
 const LATER = "2026-11-10T13:00:00.000Z";
 const CARDS = 200;
 
-/**
- * A small copy of his corpus's shape: one deck, the 単語 template with a few
- * fields, CARDS imported cards with values. Every clock pinned (see sync.test.ts
- * on why a `now` default makes these comparisons depend on when the suite runs).
- */
 function device(): Db {
   const db = openDatabase(MEMORY);
   db.prepare("INSERT INTO decks (id, name, updated_at) VALUES ('d', '日本語', ?)").run(EPOCH);
@@ -70,7 +51,6 @@ function device(): Db {
   return db;
 }
 
-/** Everything a merge can move, in a form two databases can be compared by. */
 function dump(db: Db): unknown {
   const all = (sql: string): unknown[] => db.prepare(sql).all();
   return {
@@ -88,7 +68,6 @@ function dump(db: Db): unknown {
          FROM reviews r JOIN card_tracks t ON t.id = r.track_id ORDER BY 1, 2, 3`,
     ),
     templates: all("SELECT id, name, content, updated_at FROM templates ORDER BY id"),
-    // Not `created_at`: each copy of the phone is built at its own instant.
     fields: all(
       `SELECT template_id, id, name, type, source_field_id, options, pos, local, updated_at
          FROM template_fields ORDER BY template_id, id`,
@@ -100,10 +79,6 @@ function dump(db: Db): unknown {
 
 const bytes = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).length;
 
-/**
- * The laptop has pushed its full base (fingerprint kept), and the phone has
- * merged it. Returns both, the base and the fingerprint.
- */
 function synced(): { laptop: Db; phone: Db; base: SyncPayload; sent: Record<string, string> } {
   const laptop = device();
   const phone = device();
@@ -112,10 +87,6 @@ function synced(): { laptop: Db; phone: Db; base: SyncPayload; sent: Record<stri
   return { laptop, phone, base, sent: indexPayload(base) };
 }
 
-/**
- * Merge the laptop's edit delta into one copy of the phone and the laptop's full
- * payload into another, and say whether they agree. Returns the delta.
- */
 function equivalent(laptop: Db, phone: () => Db, sent: Record<string, string>): SyncDelta {
   const { delta } = exportEditDelta(laptop, 0, sent, NOW);
   const byDelta = phone();
@@ -126,7 +97,6 @@ function equivalent(laptop: Db, phone: () => Db, sent: Record<string, string>): 
   return delta;
 }
 
-/** A fresh phone that already merged `base`, optionally with its own edits after. */
 const phoneFrom =
   (base: SyncPayload, after: (db: Db) => void = () => {}) =>
   (): Db => {
@@ -154,7 +124,6 @@ describe("an edit travels as a delta, not as the whole base", () => {
     expect(delta.edits?.localFields).toEqual([]);
     expect(delta.edits?.deckFlags).toEqual([]);
     expect(delta.edits?.settings).toEqual([]);
-    // The point of it: a card is a KB, the base is the whole collection.
     expect(bytes(delta)).toBeLessThan(2_000);
     expect(bytes(exportSync(laptop, NOW))).toBeGreaterThan(40 * bytes(delta));
   });
@@ -175,8 +144,6 @@ describe("an edit travels as a delta, not as the whole base", () => {
     laptop.prepare("UPDATE cards SET updated_at = ? WHERE id = 'imp0042'").run(NOW);
     const delta = equivalent(laptop, phoneFrom(base), sent);
     expect(delta.edits?.cardFlags.map((f) => f.cardId)).toEqual(["imp0042"]);
-    // The flag row rides with the values: the merge keeps or takes a value by
-    // its CARD's clock, and a value sent without it would always lose.
     expect(delta.edits?.fieldValues.map((v) => v.fieldId).sort()).toEqual(["imi", "name", "reading"]);
   });
 
@@ -206,7 +173,6 @@ describe("an edit travels as a delta, not as the whole base", () => {
   it("an archive with its cardState row never travels without the flag row (the 2026-10-22 re-archive)", () => {
     const { laptop, base, sent } = synced();
     laptop.prepare("UPDATE cards SET archived = 1, updated_at = ? WHERE id = 'imp0099'").run(NOW);
-    // The phone un-archived something else meanwhile; the delta must not touch it.
     const phoneEdited = phoneFrom(base, (db) => {
       db.prepare("UPDATE cards SET archived = 0, updated_at = ? WHERE id = 'imp0007'").run(LATER);
     });
@@ -234,7 +200,6 @@ describe("an edit travels as a delta, not as the whole base", () => {
     createCard(laptop, { deckId: "d", templateId: "tango", name: "停滞" });
     const { delta } = exportEditDelta(laptop, 0, sent, NOW);
     expect(delta.reviews).toHaveLength(1);
-    // A grade writes `card_tracks`, never the card: imp0001 is NOT an edit.
     expect(delta.edits?.cardFlags.map((f) => f.cardId)).not.toContain("imp0001");
     mergeSync(phone, deltaPayload(delta, NOW));
     expect(phone.prepare("SELECT reps FROM card_tracks WHERE card_id = 'imp0001'").get()).toEqual({ reps: 1 });
@@ -244,9 +209,6 @@ describe("an edit travels as a delta, not as the whole base", () => {
 
 describe("the fingerprint, not a clock, decides what changed", () => {
   it("a write that forgot to stamp the card clock is still SENT", () => {
-    // Why a fingerprint: a `cards.updated_at` watermark would trust every writer
-    // to stamp it, and one that forgot would never leave the device. (The phone
-    // still applies it by the card-clock rule — exactly what the full base does.)
     const { laptop, sent } = synced();
     laptop.prepare("UPDATE card_field_values SET value = 'unstamped' WHERE card_id = 'imp0003' AND field_id = 'imi'").run();
     const { delta } = exportEditDelta(laptop, 0, sent, NOW);
@@ -274,8 +236,6 @@ describe("the fingerprint, not a clock, decides what changed", () => {
   });
 
   it("an empty fingerprint makes every group new — the caller must never pass one for a real send", () => {
-    // `pushGradesNow` sends the FULL payload when it holds no fingerprint; this
-    // pins what would happen otherwise, so the guard stays.
     const { laptop } = synced();
     const { rows } = exportEditDelta(laptop, 0, {}, NOW);
     expect(rows).toBeGreaterThan(CARDS);
@@ -325,13 +285,7 @@ describe("SYNC_VERSION 3", () => {
   });
 });
 
-/**
- * DECISION 66, 2026-11-11. `dissident`, an IMPORTED card, was moved onto New
- * Vocab on the laptop; its values reached the tablet and the switch did not, so
- * the tablet showed its old `---` text. 17 template-less cards were in that state.
- */
 describe("an imported card's template travels (decision 66)", () => {
-  /** Two devices that both hold a second template, `vocab`, and have synced. */
   function pair(): { laptop: Db; phone: Db; sent: Record<string, string> } {
     const vocab = (db: Db): Db => {
       db.prepare(
@@ -359,8 +313,6 @@ describe("an imported card's template travels (decision 66)", () => {
 
   it("HEALS a card with no template here, whatever the clocks say — the dissident case", () => {
     const { laptop, phone } = pair();
-    // The 2026-11-11 state: values everywhere, the switch only on the laptop,
-    // and the phone's clock as new as the laptop's (or newer).
     laptop.prepare("UPDATE cards SET template_id = 'vocab', updated_at = ? WHERE id = 'imp0050'").run(NOW);
     phone.prepare("UPDATE cards SET template_id = NULL, updated_at = ? WHERE id = 'imp0050'").run(LATER);
     const report = mergeSync(phone, exportSync(laptop, NOW));
@@ -383,11 +335,9 @@ describe("an imported card's template travels (decision 66)", () => {
   it("NEVER REMOVES a template, even from a newer clock — a stale device cannot undo his switch", () => {
     const { laptop, phone } = pair();
     phone.prepare("UPDATE cards SET template_id = 'vocab', updated_at = ? WHERE id = 'imp0070'").run(NOW);
-    // The laptop never learned of it, and touched the card later (a pin).
     laptop.prepare("UPDATE cards SET template_id = NULL, pinned = 1, updated_at = ? WHERE id = 'imp0070'").run(LATER);
     mergeSync(phone, exportSync(laptop, LATER));
     expect(templateOf(phone, "imp0070")).toBe("vocab");
-    // The flags still moved by their own rule.
     expect(phone.prepare("SELECT pinned FROM cards WHERE id = 'imp0070'").get()).toEqual({ pinned: 1 });
   });
 

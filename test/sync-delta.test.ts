@@ -1,11 +1,3 @@
-/**
- * 差分の同期 — `src/sync/delta.ts`。2026-10-10。
- *
- * 守る性質は全体の同期と同じで、増やさない：採点は失われない（和集合）、状態は
- * 最後の採点が勝つ。加えて差分に固有の二つ：差分は「印より後」だけを運ぶ（小さい
- * ことが存在理由）、そして差分は採点以外を一切動かさない（旗・設定を空の配列で
- * 上書きしたら、それは差分ではなく破壊）。
- */
 import { describe, expect, it } from "vitest";
 
 import { MEMORY, openDatabase, type Db } from "../src/db/index.js";
@@ -82,7 +74,6 @@ describe("a delta carries only what came after the mark", () => {
     const tablet = device(40);
     for (let i = 0; i < 40; i += 1) grade(tablet, i, `2026-10-09T21:${String(i).padStart(2, "0")}:00.000Z`);
     const bytes = new TextEncoder().encode(JSON.stringify(exportDelta(tablet.db, 0))).length;
-    // 40 枚 ＝ 二分の窓より十分大きい。全体の payload は ~2 MB。
     expect(bytes).toBeLessThan(64 * 1024);
   });
 });

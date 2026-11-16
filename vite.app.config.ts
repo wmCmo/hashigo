@@ -1,27 +1,3 @@
-/**
- * The APP's bundler config — `app/`, the shipping shell.
- *
- * A second config rather than a second entry in `vite.config.ts`, and the reason
- * is `root`. That file has `root: "spike"`, so every URL the spike documents
- * (`/persist/`, `/blobstore/`, `/mock/`) is relative to it. Moving the root up to
- * the repo would change all of them and widen what `server.fs.allow` means. Two
- * roots, two ports, one shared set of hard-won settings — imported below rather
- * than copied, because a divergence between them is the kind of thing that only
- * shows up on the phone.
- *
- *   npm run app:dev -- --host ::           phone / tunnel: answers localhost too
- *   npm run app:dev -- --host 127.0.0.1    local only, nothing off this machine
- *
- * THE BIND ADDRESS IS A TRAP IN BOTH DIRECTIONS and it has cost a round trip:
- * binding one address family REFUSES the other, and on Windows `localhost`
- * resolves to `::1` FIRST. `--host 127.0.0.1` is fine for a local browser, but a
- * tunnel pointed at `localhost:5274` gets ECONNREFUSED on ::1 — PowerShell falls
- * back to IPv4 and succeeds, **ngrok does not and returns 502**.
- *
- * The three databases are served by MIDDLEWARE from `build/app/` rather than out
- * of a `public/` directory: they are ~74 MB, ~627 MB and ~9 MB, and copying them
- * into the build output on every `vite build` costs seconds and gains nothing.
- */
 import {
   appendFileSync,
   createReadStream,
@@ -43,33 +19,11 @@ import { generateOnDemand } from "./vite.generate.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 
-/** Tunnel hostnames Zach reviews from. NEVER `allowedHosts: true` — that is
- *  Vite's DNS-rebinding guard, and a wildcard hands any page he visits a route to
- *  this server, which serves a 72 MB database. These names are ephemeral (a free
- *  ngrok/cloudflared name is reassignable), so an entry is a convenience for a live
- *  tunnel, not a durable grant. Prune dead ones. */
 const ALLOWED_HOSTS = [
   "acids-viewed-sound-royal.trycloudflare.com",
   "crayfish-shorty-thinning.ngrok-free.dev",
 ];
 
-/**
- * `.tunnel-named` and `.tunnel-host` — gitignored, appended to the list above.
- *
- * `.tunnel-named` is the fixed hostname of a named tunnel, written once by hand.
- * `.tunnel-host` is whatever random name the last quick tunnel was given. Two files
- * because they are two different things; `scripts/phone.mjs` says what went wrong
- * when they were one.
- *
- * `npm run phone` writes it. A QUICK tunnel gets a new random name every run, so
- * without this every session means hand-editing this committed file and the diff
- * is noise nobody reads — which is how `allowedHosts: true` starts looking
- * reasonable. It stays an explicit list; only the source of one entry moved.
- *
- * Read with a try/catch rather than an `existsSync` guard: this file is parsed on
- * every Vite start, and a config that throws because an optional local file is
- * mid-write is a failure with no useful message.
- */
 function localTunnelHosts(): string[] {
   const hosts: string[] = [];
   for (const name of [".tunnel-named", ".tunnel-host"]) {
@@ -81,7 +35,6 @@ function localTunnelHosts(): string[] {
           .filter((line) => line !== "" && !line.startsWith("#")),
       );
     } catch {
-      /* optional */
     }
   }
   return hosts;
@@ -89,89 +42,23 @@ function localTunnelHosts(): string[] {
 
 const HOSTS = [...ALLOWED_HOSTS, ...localTunnelHosts()];
 
-/** `--out` of `scripts/app-bootstrap.ts`. */
 const ASSET_DIR = resolve(root, "build/app");
 
-/** URL → file. Exactly these four; nothing else on disk is reachable this way. */
 const ASSETS: ReadonlyMap<string, string> = new Map([
   ["/hashigo-app.db", resolve(ASSET_DIR, "hashigo-app.db")],
   ["/hashigo-app-gen.db", resolve(ASSET_DIR, "hashigo-app-gen.db")],
   ["/hashigo-app-fields.db", resolve(ASSET_DIR, "hashigo-app-fields.db")],
   ["/hashigo-app-blobs.db", resolve(ASSET_DIR, "hashigo-app-blobs.db")],
-  // The seed manifest: a few hundred bytes naming what the three files above hold,
-  // so a browser that already has a database can tell whether it is the CURRENT
-  // one without downloading 73 MB to find out. See `app/db.worker.ts`.
   ["/hashigo-app.json", resolve(ASSET_DIR, "hashigo-app.json")],
 ]);
 
-/**
- * A SEED FILE THIS PROCESS HAS NEVER HEARD OF.
- *
- * ─── THE TRAP THIS CLOSES, WHICH HAS BITTEN THREE TIMES ────────────────────
- *
- * `ASSETS` is built once, when this config is loaded. The bundle is read from
- * disk per request — so a running server happily serves a page that asks for a
- * seed file added after the process started, and answers it with the SPA
- * fallback: `index.html`, with a 200. Zach, 2026-09-16, on his phone:
- *
- *     /hashigo-app-gen.db returned 19114 bytes that are not a SQLite file
- *     (header "<!doctype html>")
- *
- * Same shape as the 2026-09-13 sync mailbox and the 2026-09-15 `/generate/`
- * refusal. The restart is a real answer and a bad one: it is only ever
- * discovered from the phone, after the download has failed.
- *
- * ─── WHY THIS IS NOT THE `[root]` MISTAKE ──────────────────────────────────
- *
- * `server.fs.allow` is narrowed on purpose — with `[root]` the `/@fs/` route
- * served `build/hashigo.db` (74 MB) and the 617.9 MiB blob store to anyone who
- * could reach it. This is not that, and the difference is the whole pattern:
- *
- *   · the name must match `hashigo-app*.db` or `hashigo-app*.json` EXACTLY —
- *     one segment, no slash, no dot-segment, so no traversal is expressible;
- *   · it is resolved inside `ASSET_DIR` and the result must still start with
- *     `ASSET_DIR`, checked after `resolve`, so a crafted name cannot escape;
- *   · `build/app` holds nothing but bootstrap output. The card database, the
- *     blob store and `.env` are not in it.
- *
- * So the reachable set is exactly what `scripts/app-bootstrap.ts` writes — which
- * is what `ASSETS` already enumerates, minus the requirement to restart.
- */
 export function seedFile(url: string): string | undefined {
   const name = url.startsWith("/") ? url.slice(1) : url;
   if (!/^hashigo-app[A-Za-z0-9-]*\.(db|json)$/.test(name)) return undefined;
   const file = resolve(ASSET_DIR, name);
-  // Belt and braces: the pattern already forbids a separator, and this proves it.
   return file.startsWith(ASSET_DIR) ? file : undefined;
 }
 
-/**
- * A MISSING BUILD ASSET IS A 404, NOT THE PAGE — Zach, 2026-09-26, sending a
- * screenshot of the app as bare black-on-white HTML: a giant unstyled ladder, the
- * boot sentence, and nothing running. *"is something wrong with the server or is
- * it my client"*.
- *
- * Both, and this is the server half. Vite's preview answers ANY unknown path
- * with the SPA fallback — `index.html`, status 200 — and that includes a hashed
- * asset that no longer exists: measured, `/assets/index-OLDHASH.css` came back
- * `200 text/html`. So a page from an earlier build asked for its stylesheet and
- * got a web page, which the browser silently ignores as CSS, and its module
- * script got HTML too, so the app never started. No error said so. It is the
- * same shape as the 2026-09-13 mailbox and the 2026-09-16 seed-file fallback,
- * one directory over.
- *
- * A 404 fails the way a missing file should: the service worker's network-first
- * fetch falls back to its cached copy, and anything else sees a real error.
- */
-/**
- * ONE LINE PER REQUEST, to `build/phone-requests.log` — preview only.
- *
- * Added 2026-09-26 when his phone rendered the app unstyled while every check
- * from the laptop (headers, types, the tailnet URL itself) came back right. The
- * laptop cannot see what the PHONE asked for and got; this can. Path, status,
- * content type, and whether a service worker made the request — no bodies, no
- * query strings, nothing from the mailbox payloads.
- */
 function requestLog(): Plugin {
   const file = resolve(root, "build/phone-requests.log");
   return {
@@ -185,22 +72,14 @@ function requestLog(): Plugin {
         const path = (request.url ?? "").split("?")[0];
         const ua = request.headers["user-agent"] ?? "";
         const who = /Android/.test(ua) ? "android" : /Windows/.test(ua) ? "windows" : "other";
-        // The CLIENT's tailnet address, which `tailscale serve` passes on — the
-        // socket peer is always its own 127.0.0.1 proxy. `100.x` is IPv4,
-        // `fd7a:…` is IPv6, and the two had different packet-size limits on the
-        // apartment wifi (2026-09-26), so which one a request rode matters.
         const via = request.headers["x-forwarded-for"] ?? "-";
         const write = (line: string): void => {
           try {
             appendFileSync(file, `${line}\n`);
           } catch {
-            /* a log must never break a request */
           }
         };
         const started = Date.now();
-        // A START line as well as a finish line: a request that stalls
-        // mid-response never finishes, and a log written only on finish cannot
-        // see the one request that matters.
         write([new Date(started).toISOString(), who, "start", request.method, path, via].join(" "));
         response.on("finish", () => {
           write(
@@ -224,16 +103,6 @@ function requestLog(): Plugin {
   };
 }
 
-/**
- * `/ping` — the smallest thing the phone can ask the laptop for. Plain text, no
- * app, no database, no service worker (it bypasses `/ping` too), no cache.
- *
- * Zach, 2026-09-26, when the phone could not reach the laptop on the apartment
- * wifi and every test ran through the whole app: *"can we simplify to see the
- * real problem? like we would test from the most basic case if it even works,
- * then we slowly build the layer on top"*. This is the bottom rung: if `/ping`
- * answers, the network, DNS and TLS are fine and anything wrong is above them.
- */
 function ping(): Plugin {
   const handler = (
     request: { url?: string | undefined; headers: Record<string, string | undefined> },
@@ -276,7 +145,6 @@ function missingAssetsAre404(): Plugin {
       return;
     }
     const name = path.slice("/assets/".length);
-    // One segment only, so nothing here can be walked outside the directory.
     if (name === "" || name.includes("/") || name.includes("\\") || name.includes("..")) {
       next();
       return;
@@ -292,23 +160,12 @@ function missingAssetsAre404(): Plugin {
   };
   return {
     name: "hashigo-missing-assets-are-404",
-    // Preview only: the dev server serves modules from source, not /assets/.
     configurePreviewServer(server) {
       server.middlewares.use(handler as never);
     },
   };
 }
 
-/**
- * KEEP RECENT BUILDS' ASSETS, and this is the client half of the same report.
- *
- * `emptyOutDir: true` deleted every hashed file on every build, and four builds
- * in one day meant any page opened before the last one — from the browser's own
- * cache, or the service worker's — referenced files that were gone. Now the
- * directory is not emptied, so an older page keeps working until it reloads, and
- * files older than `KEEP_DAYS` are pruned after each build so it does not grow
- * without bound. Every hashed file is small next to the 640 MB of audio.
- */
 const KEEP_DAYS = 14;
 
 function keepRecentAssets(): Plugin {
@@ -331,15 +188,6 @@ function keepRecentAssets(): Plugin {
   };
 }
 
-/**
- * Serve the bootstrap databases straight off disk, in dev and in preview.
- *
- * A missing file answers 404 **with the command that makes it**, because the
- * alternative is `fetch` failing inside a worker for no visible reason. And the
- * content type matters: a 200 carrying an HTML error body looks exactly like a
- * database to `importDb`, which then reports an unhelpful malformed-database — so
- * `app/db.worker.ts` checks the SQLite magic on arrival as well.
- */
 function serveAppDatabases(): Plugin {
   const handler = (
     request: { url?: string | undefined },
@@ -386,25 +234,6 @@ function serveAppDatabases(): Plugin {
   };
 }
 
-/**
- * Write the service worker's precache list, at build time, from what was
- * actually emitted.
- *
- * THIS IS NOT A CONVENIENCE. `app/public/sw.js` explains the failure it fixes:
- * runtime caching only ever stores what crossed the network, so an asset served
- * from the browser's own cache is invisible to the worker and is simply missing
- * when the network goes away. Measured — the shell and the CSS cached, the
- * wordmark font did not.
- *
- * The list cannot be authored by hand because Vite hashes every asset name, so
- * it is PREPENDED to the emitted `sw.js` rather than substituted into it: a
- * marker-replacement silently does nothing if someone edits the marker, whereas
- * a missing prepend fails loudly the first time a build is taken offline.
- *
- * `VERSION` carries a hash of the list, so a new build is a new cache and the
- * `activate` handler drops the old one. Without that the worker would keep
- * serving the previous release's assets for as long as they matched.
- */
 function serviceWorkerPrecache(): Plugin {
   return {
     name: "hashigo-sw-precache",
@@ -419,9 +248,6 @@ function serviceWorkerPrecache(): Plugin {
         );
       }
 
-      // Everything Vite emitted, plus the unhashed files the manifest names by
-      // absolute path. The databases are NOT here and must never be — they are
-      // ~297 MB served by middleware straight into OPFS.
       const emitted = Object.keys(bundle).map((name) => `/${name}`);
       const urls = [
         "/",
@@ -445,54 +271,14 @@ function serviceWorkerPrecache(): Plugin {
         `self.__HASHIGO_PRECACHE__ = ${JSON.stringify(unique)};\n\n`;
 
       writeFileSync(swFile, header + readFileSync(swFile, "utf8"));
-      // What a RUNNING app compares itself against (`app/update-check.ts`). Never
-      // precached and never stored by the worker — it must always be the live one.
       writeFileSync(resolve(dir, "version.json"), `${JSON.stringify(BUILD_INFO)}\n`);
       this.info?.(`sw.js precaches ${unique.length} URLs (cache hashigo-shell-${hash.toString(36)})`);
     },
   };
 }
 
-/**
- * Stage 11's transport — a MAILBOX, and deliberately nothing more.
- *
- * ─── WHY THE SERVER CANNOT BE A PEER ────────────────────────────────────────
- *
- * The obvious design is "the laptop is the hub and the phone syncs to it". It
- * does not work, and the reason is worth stating because it is easy to miss: the
- * laptop's database lives in the laptop BROWSER's OPFS. This Node process cannot
- * read it any more than it can read the phone's. There is no privileged device.
- *
- * So the server stores files and has no opinion. Each browser PUTs its own
- * payload and GETs the others'; every merge happens in a browser, against that
- * browser's own database, using `src/sync`'s rules. Nothing here parses a
- * payload beyond checking it is JSON.
- *
- * ─── AND THAT DECOUPLES THE TWO DEVICES IN TIME ─────────────────────────────
- *
- * Decision 33 said both devices must be on the tailnet at once. With a mailbox
- * they need not: the phone drops its payload when it can reach the laptop, and
- * the laptop picks it up whenever it next runs. They never have to be up
- * together — only each able to reach this server at some point. That is a
- * strictly weaker requirement than the decision recorded, and the decision is
- * amended rather than left to be discovered.
- *
- * ─── WHAT IS GUARDED, AND WHY EACH ──────────────────────────────────────────
- *
- * This writes files to disk from an HTTP body, on a server that `allowedHosts`
- * deliberately exposes to a tunnel. Three guards, none optional:
- *
- *   · the device id is matched against `^[a-z0-9][a-z0-9-]{5,63}$` and is the
- *     ONLY thing that reaches a path. No separators, no dots, so `..` and
- *     absolute paths cannot be spelled;
- *   · the body is capped and the cap is enforced WHILE READING, not after, so a
- *     large upload is dropped rather than buffered;
- *   · it is JSON-parsed before it is stored, so the mailbox cannot be used to
- *     drop arbitrary bytes onto the disk.
- */
 const SYNC_DIR = resolve(root, "build/sync");
 const SYNC_ID = /^[a-z0-9][a-z0-9-]{5,63}$/;
-/** A payload is card flags plus local reviews — ~300 KB today. 32 MB is slack. */
 const SYNC_MAX_BYTES = 32 * 1024 * 1024;
 
 function syncMailbox(): Plugin {
@@ -521,7 +307,6 @@ function syncMailbox(): Plugin {
     const rest = url.slice("/sync/".length).split("?")[0] ?? "";
     const method = (request.method ?? "GET").toUpperCase();
 
-    // GET /sync/ — the index. Who has left something, how big, and when.
     if (rest === "" && method === "GET") {
       mkdirSync(SYNC_DIR, { recursive: true });
       const peers = readdirSync(SYNC_DIR)
@@ -563,8 +348,6 @@ function syncMailbox(): Plugin {
       request.on("data", (chunk: Buffer) => {
         if (aborted) return;
         size += chunk.length;
-        // Enforced while reading: buffering first and checking after is how a
-        // size cap becomes a way to exhaust memory.
         if (size > SYNC_MAX_BYTES) {
           aborted = true;
           send(413, { error: `payload over ${SYNC_MAX_BYTES} bytes` });
@@ -602,22 +385,8 @@ function syncMailbox(): Plugin {
   };
 }
 
-/**
- * TWO BUILDS FROM ONE CONFIG (2026-09-26): the default one the laptop serves over
- * the tailnet, and `--mode cloud`, which Cloudflare serves (`cloud/app/`).
- *
- * The cloud build reads `.env.cloud`, which empties `VITE_MAILBOX_URL` and
- * `VITE_MAILBOX_TOKEN`: there the app, the mailbox and generation share ONE
- * origin, so sync and generate are same-origin requests authorised by the
- * unlock cookie — and no key is baked into a bundle anyone on the internet can
- * download. It builds into its own directory so the two never overwrite each other.
- */
 const CLOUD = process.argv.includes("--mode") && process.argv[process.argv.indexOf("--mode") + 1] === "cloud";
 
-/**
- * 起動画面と設定に出す版（`app/version.ts`）。package.json の版と、ビルドした commit。
- * git が無い・失敗したときは commit を空にする — 版が出ないよりまし。
- */
 function buildInfo(): { version: string; build: string } {
   const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { version: string };
   const git = (...args: string[]): string =>
@@ -625,7 +394,6 @@ function buildInfo(): { version: string; build: string } {
   let build = "";
   try {
     build = git("rev-parse", "--short", "HEAD");
-    // Tracked changes only: an untracked scratch file does not make the build differ.
     if (git("status", "--porcelain", "--untracked-files=no") !== "") build += "-dirty";
   } catch {
     build = "";
@@ -636,29 +404,7 @@ const BUILD_INFO = buildInfo();
 
 export default defineConfig({
   root: "app",
-  // `.env` lives at the REPO root, beside the API keys `vite.generate.ts` reads.
-  // Vite only ever hands the page variables prefixed `VITE_` — here the sync
-  // mailbox's address and key (`app/sync-client.ts`) — so the Anthropic and
-  // Google keys in the same file never reach the bundle.
   envDir: root,
-  /**
-   * `app/public/` — the PWA's three unhashable files.
-   *
-   * This was `false`, and the comment above explains why the two DATABASES are
-   * served by middleware instead of from here: they are ~73 MB and ~224 MB and
-   * copying them into the build output on every `vite build` costs seconds and
-   * gains nothing. That reasoning is untouched — they are still middleware.
-   *
-   * What lives here is the set of files whose URL is part of a CONTRACT and so
-   * cannot be hashed or rewritten:
-   *
-   *   sw.js                  must be served from the scope root at a stable
-   *                          path, or the service worker cannot claim `/`
-   *   manifest.webmanifest   Vite would happily hash this, but the icon paths
-   *                          INSIDE it are plain JSON that no bundler rewrites,
-   *                          so the whole set has to be copied verbatim
-   *   icons/*.png            referenced by that JSON, by absolute path
-   */
   publicDir: "public",
   plugins: [
     requestLog(),
@@ -670,62 +416,33 @@ export default defineConfig({
     generateOnDemand(),
     serviceWorkerPrecache(),
   ],
-  // The build's version, for `app/version.ts` — the only `define` here.
   define: {
     __APP_VERSION__: JSON.stringify(BUILD_INFO.version),
     __APP_BUILD__: JSON.stringify(BUILD_INFO.build),
   },
-  // NO SCHEMA `define` HERE ANY MORE. It injected `__SCHEMA_VERSION_FROM_NODE__`, parsed out
-  // of `src/schema/index.ts` with a regex, for a reader that does not exist: nothing
-  // in `app/` ever named the global, and `src/db/browser.ts` imports the real
-  // `SCHEMA_VERSION` rather than a copy. `vite.config.ts` keeps it — `spike/` does
-  // read it, and compares all three versions on the page.
   optimizeDeps: {
-    // `@sqlite.org/sqlite-wasm` locates its wasm with
-    // `new URL("sqlite3.wasm", import.meta.url)`, and esbuild pre-bundling
-    // rewrites that URL into `node_modules/.vite/deps/`, where the wasm is not.
-    // Excluding it is the whole fix; `vite build` emits the wasm as an asset and
-    // Rollup rewrites the URL itself.
     exclude: ["@sqlite.org/sqlite-wasm"],
   },
   worker: {
-    // `src/db/browser.ts` reaches sqlite-wasm through a dynamic `import()`.
     format: "es",
   },
   server: {
     allowedHosts: HOSTS,
-    // 5274, one above the spike's 5273, so both can run at once.
     port: 5274,
     strictPort: true,
     fs: {
-      // `app/` imports `src/`, which is above the Vite root, so this has to reach
-      // outside `app/`. It must NOT reach the whole repo: with `[root]`, Vite's
-      // `/@fs/<abs path>` route served the ENTIRE corpus — measured on the spike
-      // config 2026-08-22, `build/hashigo.db` came back 200 at 74,465,280 bytes
-      // and the blob store at 673,554,432. Harmless on localhost; not harmless
-      // behind the public tunnel `allowedHosts` above authorises.
       allow: [resolve(root, "app"), resolve(root, "src"), resolve(root, "node_modules")],
-      // Belt and braces: matched on the BASENAME, so it survives a later widening
-      // of `allow`. The two bootstrap databases are reachable only through the
-      // middleware above, which serves exactly two URLs.
       deny: [".env", ".env.*", "*.db", "*.db-wal", "*.db-shm", "*.pem", "*.key"],
     },
   },
   preview: {
-    // A separate server with a separate check — otherwise `app:preview` rejects
-    // the same tunnel `app:dev` accepts.
     allowedHosts: HOSTS,
     port: 4274,
     strictPort: true,
   },
   build: {
     outDir: CLOUD ? "../build/app-cloud-dist" : "../build/app-dist",
-    // FALSE since 2026-09-26 — see `keepRecentAssets`. A build that wiped the
-    // directory deleted the very files an already-open page still asks for.
     emptyOutDir: false,
-    // A readable stack beats a few KB. Sourcemaps stay OFF: Vite emits the client
-    // and worker chunks into one assets/ directory and their .map names collide,
-    // which prints a warning nobody should have to chase.
     minify: false,
     sourcemap: false,
     target: "es2022",

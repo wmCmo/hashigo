@@ -1,12 +1,3 @@
-/**
- * The database half of the laptop accent helper (`src/accent/fill.ts`), with
- * the helper's answers written by hand — the Python side is the batch pipeline's
- * own functions and is measured there.
- *
- * What must hold: only cards made in the app and only EMPTY fields are planned;
- * a guarded word gets no label; `読み` is written only when the two analysers'
- * readings agree; nothing he already typed is ever overwritten.
- */
 import { describe, expect, it } from "vitest";
 
 import { applyAccentFill, planAccentFill, type DeriveResult, type DerivedLine } from "../src/accent/fill.js";
@@ -87,7 +78,6 @@ describe("filling a card made in the app", () => {
     );
     expect(report).toMatchObject({ labels: 1, yomi: 1 });
     expect(valueOf(db, "made", "local-accent")).toBe("平板");
-    // UniDic's WRITTEN kana, not the spoken ホータイ.
     expect(valueOf(db, "made", "local-yomi")).toBe("ほうたい");
     db.close();
   });
@@ -125,19 +115,12 @@ describe("filling a card made in the app", () => {
   it("lets a hand adjudication beat the analyser — a word settled from jpdb", () => {
     const db = device();
     card(db, "made", "高め");
-    // OpenJTalk says 尾高; `DICTIONARY_ADJUDICATIONS` says 平板 (jpdb.io, 2026-10-25).
     applyAccentFill(db, planAccentFill(db), new Map([["高め", result(line("高め", "尾高", 3, "タカメ"), "タカメ", "タカメ")]]), []);
     expect(valueOf(db, "made", "local-accent")).toBe("平板");
     db.close();
   });
 });
 
-/**
- * Zach, 2026-11-11, over 安値 on the tablet: *"why am i not seeing ojad"*. The
- * example sentence was made where the card was first SHOWN — the tablet — so the
- * laptop's sweep found no sentence and skipped OJAD on every boot. The plan now
- * names such a card, so the page fetches the sentence and plans again.
- */
 describe("a card whose example sentence is not on this device", () => {
   function withSentence(): Db {
     const db = device();
@@ -147,7 +130,6 @@ describe("a card whose example sentence is not on this device", () => {
     field.run("rei", "例文", "ai", null, "d", 0, '{"ai-custom-prompt":"Use <<単語>> in a sentence"}');
     field.run("ojad", "OJAD", "plain", "rei", "e", 1, `{"${ROLE_KEY}":"ojad"}`);
     card(db, "made", "安値");
-    // 型 and 読み already there, so OJAD is the only thing this card could want.
     db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES ('made', 'local-accent', '中高 (2)')").run();
     db.prepare("INSERT INTO card_field_values (card_id, field_id, value) VALUES ('made', 'local-yomi', 'やすね')").run();
     return db;

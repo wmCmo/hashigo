@@ -22,34 +22,9 @@ import {
   promptsOnEntry,
 } from "../src/review/index.js";
 
-/**
- * `src/review` — the card mount, and the FIRST time `shadowingLoop` (the reveal
- * loop that actually ships) is driven over the real corpus.
- *
- * WHY THAT MATTERS. `spike/viewer/README.md` says it plainly: that harness
- * hand-rolls `revealSide()`/`armSide()` rather than importing `shadowingLoop`, so
- * its green no-autoplay panel is evidence about **Chromium**, not about the
- * shipping code. `test/reveal.test.ts` drives the loop but builds its renders by
- * hand. Nothing until now drove `loadCard -> render -> expand -> renderSides ->
- * audioController -> shadowingLoop` over real cards and then asked "did anything
- * play?".
- *
- * The controller's own `stats.requested` is the number to watch: it counts
- * `resolve` calls, so it is non-zero the moment anything tries to find a clip —
- * which is strictly earlier than anything being heard. Asserting on it rather
- * than on playback is the tighter test.
- */
-
 const DB = "build/hashigo.db";
 const HAS_CORPUS = existsSync(DB);
 
-/**
- * A stand-in for a real `<audio>`, so playback can be counted in Node.
- *
- * Built with `Object.create` over the render's own `MemoryElement`, so it keeps
- * the `RenderElement` behaviour the controller needs (`setAttribute`, for the
- * `data-audio-state` it writes) and adds only the media surface.
- */
 function recorder(): {
   plays: string[];
   playable: (mount: MediaMount<MemoryElement>) => PlayableMediaElement | null;
@@ -88,7 +63,6 @@ function openCorpus(): { db: ReturnType<typeof openDatabase>; store: BlobStore; 
 }
 
 describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
-  /** Cards that actually carry speech, so the audio assertions mean something. */
   function speechCards(db: ReturnType<typeof openDatabase>, limit: number): string[] {
     return (
       db
@@ -101,11 +75,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   }
 
   it("the LOOP's enter() plays NOTHING, on every side of every card, in either mode", () => {
-    // `loop.enter()` is the call every other flashcard renderer uses to start the
-    // audio; here it must not even RESOLVE a clip. Decision 29 did not soften
-    // this by one card: the mode-2 question is asked by `mounted.enter()`, which
-    // is a different method, and the two are tested apart on purpose. This one is
-    // mode-BLIND — the 120 cards below are a mix — and it stays at zero.
     const { db, store, close } = openCorpus();
     try {
       const ids = speechCards(db, 120);
@@ -127,7 +96,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
         mounted += 1;
         clips += card.clipCount;
 
-        // Enter EVERY side, in presentation order, exactly as a screen would.
         for (const side of card.loop.sides) side.enter();
 
         requested += card.audio.stats.requested;
@@ -136,17 +104,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       }
 
       expect(mounted).toBe(120);
-      // EXACT, not `> 100`. This assertion read `toBeGreaterThan(100)` until
-      // 2026-08-23, which passed at 120 clips and at 238 — it could not tell a
-      // corpus with a third of its audio missing from a whole one. See the
-      // `resolveGenerated` test below for what that hid.
-      //
-      // 238 -> 240 on 2026-09-12, and the +2 is the figure doing its job:
-      // `scripts/generate-examples.ts` filled the 67 missing `例文`, and 単語's
-      // `Audio` field reads the SENTENCE that `例文` generates. So a resolvable
-      // 例文 makes an Audio request buildable — for the two of those 67 whose
-      // sentence already had a matching speech blob. The other 65 have no clip
-      // because nothing has synthesised one; audio regeneration is deferred.
       expect(clips).toBe(240);
       // eslint-disable-next-line no-console
       console.log(
@@ -161,8 +118,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("and REVEAL is what plays — same cards, same loop, one call different", () => {
-    // The other half. A test that only proved silence would pass on a module that
-    // never plays anything at all, which is the failure this pairs against.
     const { db, store, close } = openCorpus();
     try {
       let revealedCards = 0;
@@ -196,20 +151,8 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       console.log(
         `reveal over 40 単語 cards: ${revealedCards} cards played · ${played} play() calls`,
       );
-      // 40 of 40 and 80 calls, not 39/39: with `resolveGenerated` on, most cards
-      // carry a SECOND clip (the 例文 sentence audio) and revealing both sides
-      // plays both. The one card that previously had nothing playable now does.
-      //
-      // **79 -> 80 on 2026-09-15, and the corpus moved rather than the code.**
-      // `scripts/fill-generations.ts` synthesised the 785 clips Mochi never made,
-      // so one card in this sample of 40 gained its second clip. A figure
-      // measured over the real corpus moves when the corpus does; what must not
-      // move is `bytesSeen === played` below, which is about the controller.
       expect(revealedCards).toBe(40);
       expect(played).toBe(80);
-      // Every play had a source assigned first — the controller never calls
-      // `play()` on a bare element, which in Chromium returns a promise that
-      // neither resolves nor rejects.
       expect(bytesSeen).toBe(played);
     } finally {
       close();
@@ -217,12 +160,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("resolveGenerated is ON by default, and OFF costs a third of the audio", () => {
-    // THE REGRESSION THIS FILE DID NOT CATCH, found by a peer review on
-    // 2026-08-23. `Audio` and `Translate` chain off `例文`, an `ai` field with
-    // zero stored values, so without a text resolver `fieldText` returns null and
-    // the chain dies at hop one — silently. Both arms are asserted, because a test
-    // on the default alone would still pass if the default were removed and the
-    // corpus happened to shrink for some other reason.
     const db = openDatabase(DB, { readOnly: true, applySchema: false });
     try {
       const ids = (
@@ -254,9 +191,8 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       const off = count(null);
       // eslint-disable-next-line no-console
       console.log(`resolveGenerated on: ${on} clip mounts · off: ${off}`);
-      expect(on).toBe(240); // see the note at the 240 above
+      expect(on).toBe(240);
       expect(off).toBe(120);
-      // The whole point: the default must be the ON number.
       expect(on).toBeGreaterThan(off);
     } finally {
       db.close();
@@ -264,8 +200,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("expands the generator fields, and reports zero divergence", () => {
-    // `divergent` is `expandGeneratorFields`'s own "one way this can go quietly
-    // wrong". Surfaced through the mount so a screen can assert on it.
     const { db, store, close } = openCorpus();
     try {
       let expanded = 0;
@@ -302,7 +236,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       });
       expect(fwd).not.toBeNull();
       expect(rev).not.toBeNull();
-      // Reverse permutes the side ORDER, never the authored indices.
       const order = (m: typeof fwd): number[] => m!.result.sides.map((s) => s.index);
       expect(order(fwd)).not.toEqual(order(rev));
       expect([...order(fwd)].sort()).toEqual([...order(rev)].sort());
@@ -313,9 +246,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
     }
   });
 
-  // ─── decision 29: the two modes ────────────────────────────────────────────
-
-  /** Card ids on 単語, split by the `Reading` boolean. */
   function byMode(
     db: ReturnType<typeof openDatabase>,
     reading: boolean,
@@ -336,8 +266,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   }
 
   it("MODE 1 (Reading = true) is exactly as hard as it ever was: entry plays NOTHING", () => {
-    // Through `mounted.enter()` — the mode-AWARE method, the one a screen calls.
-    // On a produce card it must be indistinguishable from `loop.enter()`.
     const { db, store, close } = openCorpus();
     try {
       const ids = byMode(db, true, 60);
@@ -378,14 +306,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("MODE 2 (Reading not true) ASKS on entry — and leaves every cloze masked", () => {
-    // The other exercise: the clip is the question and the kanji is the answer.
-    // *"if you hide it behind the cloze, and play しょうきゃく … it would force me
-    // to remember."*
-    //
-    // THE ASSERTION THAT MATTERS IS THE SECOND ONE. Playing on entry is easy to
-    // get right and easy to get right the WRONG way — `side.play()` also plays,
-    // and it unmasks, which would print the answer beside the question. So the
-    // masked-count is checked after the audio has been asked for.
     const { db, store, close } = openCorpus();
     try {
       const ids = byMode(db, false, 60);
@@ -429,13 +349,9 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
           `${promptedSides} prompted sides · ${maskedAfterPrompt} clozes STILL MASKED · ` +
           `${revealedAfterPrompt} sides wrongly revealed`,
       );
-      // Every one of the 60 asks, and exactly once: side 2 is the only side that
-      // both masks something and carries a clip.
       expect(asked).toBe(60);
       expect(promptedSides).toBe(60);
       expect(played).toBe(60);
-      // 単語 side 2 masks TWO clozes when `Reading` is false — `Reference` as text
-      // and the furigana — so 60 sides carry 120 masks, and all 120 survive.
       expect(maskedAfterPrompt).toBe(120);
       expect(revealedAfterPrompt).toBe(0);
     } finally {
@@ -444,10 +360,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("the visible sentence side is NOT asked, even in mode 2", () => {
-    // The trap one level down. An identify card has a sentence side too (`例文` +
-    // `Audio`), and NOTHING on it is masked — so playing it on entry hands him a
-    // pronunciation he has not produced, which is the autoplay defect again.
-    // `promptsOnEntry` requires a cloze on the side for exactly this reason.
     const { db, store, close } = openCorpus();
     try {
       let sentenceSidesWithAudio = 0;
@@ -456,7 +368,7 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
         if (card === null) continue;
         for (const side of card.loop.sides) card.enter(side.position);
         for (const side of card.loop.sides) {
-          if (side.trigger !== "audio") continue; // audio, nothing masked
+          if (side.trigger !== "audio") continue;
           sentenceSidesWithAudio += 1;
           expect(promptsOnEntry(card.mode.mode, side), `${cardId} side ${side.index}`).toBe(false);
           expect(
@@ -473,14 +385,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("数字 ASKS on entry — its clip is the question and a widget says so", () => {
-    // ZACH CAUGHT THIS, 2026-08-23, by asking why his 数字 deck looked reversed.
-    // His template is `<< Voice >>` + `<input value=<<NoComma>>>` / `---` /
-    // `<< Number >>`: hear a number, TYPE it, then see it. The clip never played,
-    // because the identify arm requires an `accent` field — a fact about 単語 and
-    // 言葉 encoded as if it were a rule.
-    //
-    // MEASURED BEFORE THE FIX: the question side rendered an empty input, no text
-    // and no sound. Ninety cards whose prompt was a blank screen.
     const { db, store, close } = openCorpus();
     try {
       const ids = (
@@ -491,8 +395,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
           )
           .all() as { id: string }[]
       ).map((r) => r.id);
-      // 78, not 90: twelve 数字 cards are ARCHIVED, and the queue excludes those
-      // (`src/scheduler/queue.ts`), so they are excluded here too.
       expect(ids).toHaveLength(78);
 
       let asked = 0;
@@ -509,9 +411,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
           playable: rec.playable,
         });
         if (card === null) continue;
-        // It is NOT in the pitch-accent drill and must not be dragged into it:
-        // 数字 declares no accent field, so the mode stays `produce`. The widget
-        // arm is what fires, and it is deliberately mode-blind.
         expect(card.mode.mode).toBe("produce");
         expect(card.mode.accentDrill).toBe(false);
 
@@ -520,7 +419,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
         card.enter(first.position);
         if (card.loop.log.some((e) => e.kind === "prompt")) asked += 1;
         played += rec.plays.length;
-        // And the ANSWER — the number, on the next side — is untouched by asking.
         for (const side of card.loop.sides) {
           if (side.position === first.position) continue;
           if (side.revealed) answerShown += 1;
@@ -535,7 +433,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       expect(asked).toBe(ids.length);
       expect(widgets).toBe(ids.length);
       expect(answerShown).toBe(0);
-      // The pairing: it really sounds, it is not merely "asked".
       expect(played).toBeGreaterThan(0);
     } finally {
       close();
@@ -543,10 +440,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("promptsOnEntry is mode-blind on the widget arm, and audio-gated on both", () => {
-    // The arm has no mode gate ON PURPOSE — 数字 is `produce` — so this states the
-    // contract directly rather than only through the corpus. A widget means
-    // "produce your answer here", so whatever sounds beside it is the question by
-    // construction, and there is nothing on the side that could be the answer.
     const { db, store, close } = openCorpus();
     try {
       const [cardId] = (
@@ -566,9 +459,7 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       const side = card.loop.sides.find((s) => s.audio.length > 0)!;
       expect(promptsOnEntry("produce", side, 1)).toBe(true);
       expect(promptsOnEntry("identify", side, 1)).toBe(true);
-      // No widget, no cloze, `produce` — the 敬語 / New Vocab shape, still silent.
       expect(promptsOnEntry("produce", side, 0)).toBe(false);
-      // And nothing plays where there is nothing to play.
       const silent = card.loop.sides.find((s) => s.audio.length === 0)!;
       expect(promptsOnEntry("identify", silent, 5)).toBe(false);
       card.dispose();
@@ -578,9 +469,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("the mode split over the whole corpus is 692 produce / 3,177 identify", () => {
-    // The two numbers decision 29 rests on, regenerated from the database rather
-    // than repeated. Everything outside the pitch-accent drill is `produce`,
-    // which is the mode that plays nothing on entry.
     const db = openDatabase(DB, { readOnly: true, applySchema: false });
     try {
       const ids = (
@@ -601,14 +489,9 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
           `accent drill ${tally.drill} · Reading flippable ${tally.flippable}`,
       );
       expect(tally.identify).toBe(3177);
-      // 3,478 単語 + 392 言葉 = 3,870 cards run the drill; 693 of them produce.
-      // 単語 gained one card in the 2026-09-05 export (群衆) and it is Reading=true.
       expect(tally.drill).toBe(3870);
       expect(tally.drill - tally.identify).toBe(693);
-      // 単語 declares the boolean; 言葉 does not, so its 392 are permanently
-      // identify and a toggle has nothing to write. 3,869 - 392 = 3,477.
       expect(tally.flippable).toBe(3478);
-      // Everything else — 漢字, New Vocab, 基本情報, 敬語 … — is produce.
       expect(tally.produce).toBe(ids.length - 3177);
     } finally {
       db.close();
@@ -616,10 +499,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("漢字's plain field named `Reading` does not decide anything — 1,662 cards", () => {
-    // The name collision that would have made this a one-liner and wrong. 漢字
-    // declares `Reading` as a PLAIN text field holding the actual reading (コウ on
-    // 36 cards, ショウ on 33). Only a boolean can be the switch, and 漢字 has no
-    // accent field either, so it is outside the drill twice over.
     const db = openDatabase(DB, { readOnly: true, applySchema: false });
     try {
       const ids = (
@@ -641,8 +520,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
         expect(mode.readingFieldId, `${id} exposed a plain field as the switch`).toBeNull();
         if ((loaded.values.get("atw8SiGn") ?? "") !== "") withText += 1;
       }
-      // Proof the field really is populated — otherwise this test would pass on
-      // an empty column and prove nothing about the collision.
       expect(withText).toBeGreaterThan(1000);
     } finally {
       db.close();
@@ -650,10 +527,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("敬語 and New Vocab never ask on entry — the word is VISIBLE beside the clip", () => {
-    // Measured, not assumed: 敬語 side 1 is `<<言葉>>` then `<speech>` and New
-    // Vocab side 1 is `<<Vocab>>` then `<<Pronunciation>>`. The head word is on
-    // screen and unmasked, so a clip on entry gives away a pronunciation he has
-    // not produced. 1,224 cards between them.
     const { db, store, close } = openCorpus();
     try {
       const ids = (
@@ -722,7 +595,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
         });
         if (card === null) continue;
         expect(card.mode.mode).toBe("identify");
-        // No `Reading` field on this template at all, so nothing to flip.
         expect(card.mode.readingFieldId).toBeNull();
         for (const side of card.loop.sides) card.enter(side.position);
         played += rec.plays.length;
@@ -730,8 +602,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
         if (asked.length === 0) silent.push(cardId);
         prompts += asked.length;
         for (const event of asked) {
-          // `{{<<言葉>>}}` — the head word IS the cloze here, unlike 単語 where the
-          // reading is. It must still be masked after the question.
           masked += event.side.clozes.filter((cloze) => !cloze.revealed).length;
         }
         card.dispose();
@@ -742,30 +612,10 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
           `${masked} clozes still masked · no question ${JSON.stringify(silent)} · ` +
           `outcomes ${JSON.stringify(Object.fromEntries(outcomes))}`,
       );
-      // 391, and the 392nd is NOT a defect in the mode logic — MEASURED, after a
-      // first guess that blamed the corpus's never-generated clips and was wrong.
-      // Card `0Weo2702` has an EMPTY head word, so `{{<<言葉>>}}` masks nothing and
-      // `<<Speech>>` has no text to speak: 0 clozes, 0 clips, trigger `none`.
-      // There is no question to ask, and `prompt()` returning false is the right
-      // answer rather than a miss.
       expect(prompts).toBe(391);
       expect(masked).toBe(391);
       expect(silent).toEqual(["0Weo2702"]);
 
-      // ── AND THE ONE THE SHELL STILL HAS TO HANDLE ──
-      // 390 of the 391 questions actually make a sound. The remainder asks into a
-      // clip the store cannot produce, and on an IDENTIFY card that is worse than
-      // it is on a produce card: silence there is not a missing extra, it is the
-      // question itself going missing, leaving a masked word, a `型` label and
-      // nothing to identify. Pinned so the shell's fallback has a number to aim
-      // at, and so this cannot drift unnoticed.
-      //
-      // **377 -> 390 on 2026-09-15, and this is the fix landing rather than a
-      // regression.** This assertion existed to count cards that ask a question
-      // into silence; `scripts/fill-generations.ts` synthesised the clips Mochi
-      // had never generated, so **13 of the 14 now sound**. The fallback still
-      // has to exist — one card remains, and a store can always be short of a
-      // payload — but the number it aims at is an order of magnitude smaller.
       expect(played).toBe(390);
       expect(prompts - played).toBe(1);
       expect(outcomes.get("playing")).toBe(390);
@@ -791,7 +641,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       card!.enter(side.position);
       card!.enter(side.position);
       expect(rec.plays).toHaveLength(1);
-      // `loop.enter` is still there and still silent — nothing was smuggled into it.
       const before = rec.plays.length;
       card!.loop.enter(side.position);
       expect(rec.plays.length).toBe(before);
@@ -802,14 +651,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("a REVERSE identify track is SILENT on entry — the clip is the answer there", () => {
-    // FOUND BY RUNNING THE APP, not by reasoning, and it is the reason
-    // `promptsOnEntry` asks about the SIDE rather than about the card.
-    //
-    // Reverse permutes the side ORDER, so on a reverse 単語 track the first side
-    // he sees is 意味 — a cloze and NO clip. The word's audio sits on a later
-    // side, where it is the ANSWER, and autoplaying it on entry would hand him
-    // the thing he is meant to produce. Forward and reverse are the SAME mode and
-    // the same card; only the order differs.
     const { db, store, close } = openCorpus();
     try {
       const ids = byMode(db, false, 40);
@@ -827,7 +668,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
           });
           if (card === null) continue;
           expect(card.mode.mode).toBe("identify");
-          // Only the FIRST side is entered — what a screen shows as the question.
           const first = card.result.sides.filter((side) => !side.empty)[0];
           if (first === undefined) continue;
           card.enter(first.position);
@@ -847,8 +687,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
         `direction: ${forwardAsked}/40 forward asked on entry · ${reverseSilent}/40 reverse silent`,
       );
       expect(reverseSilent).toBe(40);
-      // And the pairing, so this is not a test that would pass on a module that
-      // never asks at all: the same 40 cards, forward, all ask.
       expect(forwardAsked).toBe(40);
     } finally {
       close();
@@ -856,14 +694,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("REVERSE PERMUTES SIDES AND NOTHING ELSE — cloze order stays ascending inside each", () => {
-    // ZACH, 2026-09-12, spelling out the second half of his reveal order: *"for
-    // the reverse, the cloze are still in the same ascending order, just the side
-    // reverse."*
-    //
-    // `app/review-steps.ts` relies on that being free — it walks sides by display
-    // position and clozes by document order, and does nothing to either. "Free by
-    // construction" is how a property stops being true without anyone noticing,
-    // so it is measured here over real cards rather than asserted in a comment.
     const { db, store, close } = openCorpus();
     try {
       const ids = byMode(db, false, 40);
@@ -887,11 +717,9 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
         const reverse = shape("reverse");
         if (forward.order.length === 0) continue;
 
-        // The SAME sides, in a different order.
         expect(new Set(reverse.order), cardId).toEqual(new Set(forward.order));
         if (reverse.order.join() !== forward.order.join()) permuted += 1;
 
-        // And inside every side, on both directions, the clozes ascend.
         for (const perSide of [...forward.clozes, ...reverse.clozes]) {
           const ascending = [...perSide].sort((a, b) => a - b);
           expect(perSide, `${cardId} cloze order`).toEqual(ascending);
@@ -900,22 +728,13 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
       }
       // eslint-disable-next-line no-console
       console.log(`reverse: ${permuted}/40 cards permuted · ${sidesChecked} sides cloze-ordered`);
-      // A test where nothing was actually reversed would prove nothing.
       expect(permuted).toBeGreaterThan(0);
     } finally {
       close();
     }
   });
 
-  // ─── the process boundary the shell has ────────────────────────────────────
-
   it("PreparedCard survives a REAL structuredClone, over 300 cards", () => {
-    // The app shell puts the database in a worker (OPFS sync access handles are
-    // worker-only) and the DOM on the page, so a prepared card crosses
-    // `postMessage`. "It looks like plain data" is exactly how a function ends up
-    // in a payload and turns into a DataCloneError on the phone and never in the
-    // suite — so this uses the real `structuredClone`, not a JSON round-trip,
-    // because JSON silently DROPS a function where structuredClone throws.
     const db = openDatabase(DB, { readOnly: true, applySchema: false });
     try {
       const ids = (
@@ -935,14 +754,10 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
         const copy = structuredClone(prepared) as typeof prepared;
         cloned += 1;
         sides += copy.sides.length;
-        // The clone is EQUIVALENT, not merely cloneable — a payload that arrives
-        // structurally different renders a different card.
         expect(copy.cardId).toBe(prepared.cardId);
         expect(copy.mode).toEqual(prepared.mode);
         expect(copy.sides.length).toBe(prepared.sides.length);
         expect(copy.loaded.values).toEqual(prepared.loaded.values);
-        // `values` is a Map, which is why this is structuredClone and not JSON:
-        // JSON.stringify turns a Map into `{}` and loses every field value.
         expect(copy.loaded.values instanceof Map).toBe(true);
       }
       // eslint-disable-next-line no-console
@@ -955,9 +770,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 
   it("mountPrepared renders the same card mountCard does, and stays silent on entry", async () => {
-    // The split must be a split, not a rewrite: the two halves composed by hand
-    // have to equal the one-call form. Asserted on the numbers that matter —
-    // clips, sides, mode — and on the hard rule surviving the boundary.
     const { db, store, close } = openCorpus();
     try {
       for (const cardId of speechCards(db, 20)) {
@@ -968,7 +780,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
           store,
         });
         const prepared = prepareCard({ db, cardId })!;
-        // Deliberately through a CLONE and an ASYNC resolver — the shell's shape.
         const posted = structuredClone(prepared) as typeof prepared;
         const rec = recorder();
         const asked: string[] = [];
@@ -985,7 +796,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
         expect(halves.mode).toEqual(whole!.mode);
         expect(halves.expanded).toBe(whole!.expanded);
 
-        // The rule across the boundary: entering asks the worker for NOTHING.
         for (const side of halves.loop.sides) halves.loop.enter(side.position);
         expect(asked, `${cardId} fetched a payload on entry`).toEqual([]);
         await halves.audio.idle();
@@ -1026,18 +836,6 @@ describe.skipIf(!HAS_CORPUS)("mountCard over the real corpus", () => {
   });
 });
 
-/**
- * The text generators, filled — the half of "stage 9" that was never wired.
- *
- * Zach, 2026-09-12, from his phone: *"the sentence is literally not there"*. He
- * was right and the first diagnosis was wrong: the sentence WAS in the database,
- * which is not the same claim as "it renders". `src/render/nodes.ts` leaves an
- * `ai` slot empty by contract — its children are the PROMPT — and nothing had
- * ever written the output in, on any card.
- *
- * Measured before the fix, over 400 cards: 575 `ai` and 236 `translate` slots
- * empty, on 367 of them.
- */
 describe("text generators get filled", () => {
   it("fills the example sentence, and leaves audio alone", () => {
     if (!HAS_CORPUS) return;
@@ -1048,8 +846,6 @@ describe("text generators get filled", () => {
       expect(prepared).not.toBeNull();
       const card = mountPrepared(prepared!, { document, resolve: () => null });
 
-      // The slots the renderer left empty, and NEVER a speech mount: the filter
-      // is `media === null`, so this path cannot reach an audio element at all.
       expect(card.textSlots.length).toBeGreaterThan(0);
       expect(card.textSlots.every((s) => s.kind !== "speech")).toBe(true);
 
@@ -1065,7 +861,6 @@ describe("text generators get filled", () => {
       const filled = card.fillText(texts);
       expect(filled).toBeGreaterThan(0);
 
-      // The sentence is now IN the rendered tree, not merely resolvable.
       const rendered = JSON.stringify(card.result.root);
       expect(rendered).toContain("皇居は東京にある日本の皇室の居所です。");
       card.dispose();
@@ -1081,8 +876,6 @@ describe("text generators get filled", () => {
       const document = memoryDocument();
       const prepared = prepareCard({ db, cardId: "YH9TDoyg" });
       const card = mountPrepared(prepared!, { document, resolve: () => null });
-      // All nulls: a slot with nothing stored must stay `pending`, because
-      // "nothing generated" and "generated an empty string" are different facts.
       expect(card.fillText(card.textSlots.map(() => null))).toBe(0);
       card.dispose();
     } finally {
@@ -1091,30 +884,18 @@ describe("text generators get filled", () => {
   });
 });
 
-// ─── furigana: the reading, aligned, and only behind a mask ──────────────────
-
 describe("furigana fills", () => {
   it("unwraps Mochi's bracket annotation to a plain reading", () => {
-    // THE TRAP: a `furigana` generation does not hold a reading. It holds the
-    // INPUT with the annotation written into it. The first version of the fill
-    // appended this straight into the `<rt>` and the browser showed 野菜(やさい)
-    // sitting over 野菜.
     expect(readingOf("野菜(やさい)")).toBe("やさい");
     expect(readingOf("あり得(え)る")).toBe("える");
     expect(readingOf("見舞(みま)い")).toBe("みまい");
     expect(readingOf("お世話(せわ)")).toBe("せわ");
-    // Full-width brackets, which the corpus also uses.
     expect(readingOf("野菜（やさい）")).toBe("やさい");
-    // No annotation at all is an all-kana word: unchanged.
     expect(readingOf("ひとり")).toBe("ひとり");
     expect(readingOf("")).toBe("");
   });
 
   it.skipIf(!HAS_CORPUS)("aligns the reading to the KANJI RUN over the real corpus", () => {
-    // 1,034 of 3,242 furigana generations (31.9%) have a base mixing kanji and
-    // kana, so a single `<rt>` over the whole base would be visibly wrong on a
-    // third of them — る over る, めぐ over 巡. This is why `mountPrepared`
-    // renders through `furiganaSupport` rather than the core's one-`<rt>` shape.
     const { db, store, close } = openCorpus();
     try {
       const ids = (
@@ -1152,8 +933,6 @@ describe("furigana fills", () => {
           if (align === null) continue;
           filled += 1;
           if (align === "segmented") segmented += 1;
-          // Whatever the alignment, the `<rt>` must never contain a bracket —
-          // that would be the raw annotation leaking through.
           expect(ruby.textContent, cardId).not.toContain("(");
           expect(ruby.textContent, cardId).not.toContain("（");
         }
@@ -1169,16 +948,11 @@ describe("furigana fills", () => {
   });
 
   it.skipIf(!HAS_CORPUS)("NEVER OFFERS a furigana that is not behind a mask", () => {
-    // 42 of 6,754 mounts over the corpus sit outside a cloze, and every one is on
-    // a `produce` card — where the reading is the ANSWER he is asked to produce.
-    // The slot list must hold exactly the masked ones: a count, so the assertion
-    // fails if a bare one is ever added OR a masked one is ever dropped.
     const { db, store, close } = openCorpus();
     try {
       let masked = 0;
       let bare = 0;
       let offered = 0;
-      // `Reading = true` — the 692 produce cards, where the reading IS the answer.
       const ids = (
         db
           .prepare(
@@ -1190,9 +964,6 @@ describe("furigana fills", () => {
           )
           .all() as { id: string }[]
       ).map((row) => row.id);
-      // AND the cards that actually HAVE a bare one, by id — otherwise this test
-      // passes trivially on a sample where the guard is never reached. These are
-      // five of the 21 the corpus sweep found.
       ids.push("66APe4TF", "FbT06BiI", "I3DYYihl", "NzXtdG1C", "OglIuWhv");
       for (const cardId of ids) {
         const card = mountCard<MemoryElement>({
@@ -1214,10 +985,7 @@ describe("furigana fills", () => {
       // eslint-disable-next-line no-console
       console.log(`furigana on produce cards: ${masked} masked · ${bare} bare · ${offered} offered`);
       expect(masked).toBeGreaterThan(0);
-      // The guard was actually reached. Without this the count below is vacuous.
       expect(bare).toBeGreaterThan(0);
-      // EXACTLY the masked ones. Not "at most", which would pass on a module that
-      // offered nothing at all.
       expect(offered).toBe(masked);
     } finally {
       close();
@@ -1225,21 +993,7 @@ describe("furigana fills", () => {
   });
 });
 
-/**
- * `$…$` ON THE PATH THAT SHIPS.
- *
- * Zach, 2026-09-23: *"it looks like latex isn't rendering correctly (like on
- * 変動率 card)"*. `src/render/math.ts` had been complete and fully tested since
- * stage 4 — and `mathRenderers` was imported by `test/japanese-render.test.ts`
- * **and by nothing else**, so every one of those tests passed against a renderer
- * `mountPrepared` never installed. Same fault as furigana in decision 37 (c).
- *
- * These assert through `mountCard`, which is the thing the app calls. A test that
- * installs the renderer itself would pass today and would have passed all along,
- * which is exactly how this survived.
- */
 describe.skipIf(!HAS_CORPUS)("LaTeX reaches the shipping mount", () => {
-  /** Cards whose field values carry a `$…$` — 14 of them, all measured 2026-09-23. */
   function mathCards(db: ReturnType<typeof openDatabase>, limit = 20): string[] {
     return (
       db
@@ -1262,9 +1016,6 @@ describe.skipIf(!HAS_CORPUS)("LaTeX reaches the shipping mount", () => {
         const card = mountCard<MemoryElement>({ db, cardId, document: memoryDocument(), store });
         if (card === null) continue;
         subset += card.result.census.get("math:subset") ?? 0;
-        // THE ONE THAT MATTERS. `math:source` is the verbatim fallback — it is
-        // what the app did on every card before this was wired, so a non-zero
-        // count here is either a regression or a fragment outside the subset.
         source += card.result.census.get("math:source") ?? 0;
         card.dispose();
       }
@@ -1293,7 +1044,6 @@ describe.skipIf(!HAS_CORPUS)("LaTeX reaches the shipping mount", () => {
         .map((side) => side.element.textContent)
         .join(" ");
       expect(text).toContain("÷");
-      // The source must be GONE, not merely accompanied.
       expect(text).not.toContain("$");
       expect(text).not.toContain("\div");
       (card as NonNullable<typeof card>).dispose();
@@ -1302,8 +1052,6 @@ describe.skipIf(!HAS_CORPUS)("LaTeX reaches the shipping mount", () => {
     }
   });
 });
-
-// ─── stage G: the switch by role, and the default both halves read ───────────
 
 import { readingSwitch } from "../src/review/index.js";
 import { booleanValue } from "../src/template/resolve.js";
@@ -1361,17 +1109,6 @@ describe("booleanValue — the one rule the gate and the mode share", () => {
   });
 });
 
-/**
- * `cardGaps` — what the app's auto-fill asks of one card (`autoFill` in
- * `app/main.ts`).
- *
- * THE GAP IS MADE HERE, ON A COPY, not found in the corpus. The first version named
- * a real card whose clip Mochi never made (engulf, `1LnWMegi`) — and on 2026-11-02 the
- * laptop database was refilled from the cloud, its gaps went from 128 to 2, and the
- * test failed for a reason that had nothing to do with `cardGaps`. A complete card
- * (係数) with its head word changed renders requests nobody has generated, which is
- * the situation auto-fill exists for, and stays true whatever gets filled later.
- */
 describe.skipIf(!HAS_CORPUS)("cardGaps", () => {
   const withNewWord = (word: string) => {
     const dir = mkdtempSync(join(tmpdir(), "hashigo-gaps-"));
@@ -1408,7 +1145,7 @@ describe.skipIf(!HAS_CORPUS)("cardGaps", () => {
   it("is empty for a card whose generations all exist", () => {
     const db = openDatabase(DB, { readOnly: true, applySchema: false });
     try {
-      expect(cardGaps(db, "01HxiZut")).toEqual([]); // 係数
+      expect(cardGaps(db, "01HxiZut")).toEqual([]);
       expect(cardGaps(db, "no-such-card")).toEqual([]);
     } finally {
       db.close();
@@ -1422,7 +1159,6 @@ describe.skipIf(!HAS_CORPUS)("cardGaps", () => {
       const shipped = cardGaps(db, "01HxiZut");
       expect(shipped.length).toBeGreaterThan(0);
       expect(shipped.some((gap) => gap.kind === "furigana")).toBe(false);
-      // 単語 has a furigana mount on the head word, so asking for it does find one.
       expect(all.some((gap) => gap.kind === "furigana")).toBe(true);
     } finally {
       done();

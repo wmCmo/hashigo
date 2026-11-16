@@ -29,16 +29,6 @@ import {
   type MochiRecord,
 } from "../src/import/transit.js";
 
-/**
- * Stage 1 acceptance for the decoder and the structural mapping.
- *
- * The oracle is the real corpus, and the numbers asserted below are the ones in
- * CLAUDE.md: 7,716 cards, 11 template rows (10 distinct), 103,110 reviews split
- * 59,514 / 43,596 — the 2026-09-08 final import. The unit tests above them pin the
- * behaviour that the corpus exercises only once or twice — the "~`" escape, the
- * two instant encodings — where a regression would be silent.
- */
-
 const EXPORT_DIRS = ["exports/日本語", "exports/English", "exports/基本情報"] as const;
 const haveCorpus = EXPORT_DIRS.every((dir) => existsSync(join(dir, "data.json")));
 
@@ -69,8 +59,6 @@ describe("untransit", () => {
     expect(untransit("~~に越したことはない")).toBe("~に越したことはない");
     expect(untransit("~`INFORMAL`\ndie.")).toBe("`INFORMAL`\ndie.");
     expect(untransit("~^caret")).toBe("^caret");
-    // tools/mochi.py unescapes values but not keys, which leaves a
-    // component-cache key that no longer matches the text it caches.
     expect(untransit({ "~~に越したことはない {}": 1 })).toEqual({
       "~に越したことはない {}": 1,
     });
@@ -90,7 +78,6 @@ describe("untransit", () => {
 });
 
 describe("walkCards", () => {
-  /** A deck node with its own `cards`, reachable twice: the double-count trap. */
   const twiceReachable: MochiRecord = decodeExport(
     JSON.stringify({
       "~:version": 2,
@@ -180,7 +167,6 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     for (const root of roots) expect(root["version"]).toBe(MOCHI_FORMAT_VERSION);
   });
 
-  // ── THE PASS CONDITION ────────────────────────────────────────────────────
   it("decodes exactly 7,716 cards and 11 templates", () => {
     const cardsPerExport = roots.map((root) => walkCards(root).length);
     const templatesPerExport = roots.map((root) => (root["templates"] as unknown[]).length);
@@ -193,7 +179,6 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     expect(cardsPerExport).toEqual([5948, 1258, 510]);
     expect(mapped.cards.length).toBe(7716);
     expect(templateRows).toBe(11);
-    // 11 rows, 10 distinct: oiaISYb2 (単語) is in both 日本語 and 基本情報.
     expect(mapped.templates.length).toBe(10);
     expect(mapped.notes.templateIdCollisions).toEqual(["oiaISYb2"]);
     expect(mapped.notes.templateIdConflicts).toEqual([]);
@@ -245,30 +230,22 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     const perExport = roots.map((root) => walkDecks(root).length);
     console.log("decks per export      ", perExport, "total", mapped.decks.length);
     console.log("deck roots            ", deckRoots.map((row) => row.name));
-    // The walk still sees all 45 in the export; the mapper is what drops six.
     expect(perExport).toEqual([18, 4, 23]);
     expect(perExport.reduce((a, b) => a + b, 0)).toBe(45);
     expect(mapped.decks.length).toBe(39);
     expect(deckRoots.map((row) => row.name)).toEqual(["日本語", "English", "基本情報"]);
-    // …and asking for them back gives exactly 45 again, so the rule is a filter
-    // over the mapper's output and not a different walk.
     expect(mapExports(roots, { dropEmptyLeafDecks: false }).decks.length).toBe(45);
   });
 
   it("identifies exactly the six empty leaf decks SPEC drops", () => {
-    // Computed over the UNFILTERED mapping — the default output no longer
-    // contains them, so asking the filtered list which decks are empty leaves
-    // is a different (and empty) question.
     const unfiltered = mapExports(roots, { dropEmptyLeafDecks: false });
     const ids = new Set(emptyLeafDeckIds(unfiltered.decks, unfiltered.cards));
     const names = unfiltered.decks.filter((row) => ids.has(row.id)).map((row) => row.name);
     console.log("empty leaf decks      ", names);
     expect(names).toEqual(["副詞", "名詞", "形容動詞", "一段動詞", "形容詞", "五段動詞"]);
     expect(unfiltered.decks.length - names.length).toBe(39);
-    // The default drops them, and drops nothing else.
     expect(mapped.decks.length).toBe(39);
     expect(mapped.decks.filter((row) => ids.has(row.id))).toEqual([]);
-    // Not one card moves: the six hold none, which is the whole reason they go.
     expect(mapped.cards.length).toBe(unfiltered.cards.length);
     expect(mapped.cards.length).toBe(7_716);
   });
@@ -279,13 +256,10 @@ describe.runIf(haveCorpus)("the real corpus", () => {
       byType.set(field.type, (byType.get(field.type) ?? 0) + 1);
     }
     console.log("field types           ", Object.fromEntries([...byType].sort()));
-    // 49 rows over 11 template rows, of which oiaISYb2's 8 are counted once.
     expect(mapped.templateFields.length).toBe(41);
-    // 20 since 2026-11-05: Mochi's one `text` (Long text) field imports as plain.
     expect(byType.get("plain")).toBe(20);
     expect(byType.has("text")).toBe(false);
     expect(mapped.notes.unknownFieldTypes).toEqual([]);
-    // 例文: an ai field whose dependency is only inside its prompt.
     const reibun = mapped.templateFields.find(
       (field) => field.template_id === "oiaISYb2" && field.name === "例文",
     );
@@ -295,8 +269,6 @@ describe.runIf(haveCorpus)("the real corpus", () => {
   });
 
   it("emits a source field before the field that reads it", () => {
-    // template_fields carries a self-referential foreign key, so map order is
-    // not insertable: 単語's Speech precedes its source `name` in the export.
     const seen = new Set<string>();
     for (const field of mapped.templateFields) {
       if (field.source_field_id !== null) {
@@ -332,24 +304,12 @@ describe.runIf(haveCorpus)("the real corpus", () => {
       "| field values", mapped.cardFieldValues.length,
       "| cards with authored field text", authored.size,
     );
-    // 3,523 cards carry non-empty `content` in the export. 3,159 of them are
-    // TEMPLATED, and on a templated card the template decides every side — so
-    // that text has never been rendered by Mochi and is discarded on import
-    // (Zach's decision; see MappingNotes.staleContentCardIds). What is left is
-    // the 363 template-less cards, which really do author their sides here.
     expect(withContent).toBe(363);
     expect(mapped.notes.staleContentCardIds.length).toBe(3_160);
     expect(withContent + mapped.notes.staleContentCardIds.length).toBe(3_523);
-    // Discarding is not silent: every id is reported, the size is counted, and
-    // a sample carries the text itself.
-    // 79,175 CODE POINTS, matching tools/mochi.py. The naive `.length` says
-    // 79,307: one card (lWDwKxNL) writes U+1F347 GRAPES, which is a surrogate
-    // pair in UTF-16 and one character everywhere else.
     expect(mapped.notes.staleContentChars).toBe(79_306);
     expect(mapped.notes.staleContentSample.length).toBe(20);
     expect(new Set(mapped.notes.staleContentCardIds).size).toBe(3_160);
-    // Every discarded card is templated, and none of them lost anything else:
-    // the text is still in the export, and the card keeps its field values.
     const staleIds = new Set(mapped.notes.staleContentCardIds);
     expect(mapped.cards.filter((c) => staleIds.has(c.id) && c.template_id === null)).toEqual([]);
     expect(mapped.cards.filter((c) => staleIds.has(c.id) && c.content !== "").length).toBe(0);
@@ -357,25 +317,15 @@ describe.runIf(haveCorpus)("the real corpus", () => {
       expect(entry.content.length).toBeGreaterThan(0);
       expect(staleIds.has(entry.cardId)).toBe(true);
     }
-    // Keeping it is one option away, which is what makes the discard recoverable
-    // without going back to data.json.
     const kept = mapExports(roots, { dropEmptyLeafDecks: false });
     expect(kept.cards.filter((card) => card.content.trim() !== "").length).toBe(363);
     expect(mapped.cardFieldValues.length).toBe(22325);
     expect(authored.size).toBeGreaterThan(7000);
-    // cardText sees both surfaces; content alone sees almost nothing. 16 cards
-    // carry no authored text at all -- blank "Untitled card" stubs with no
-    // fields and no reviews. tools/mochi.py agrees on all three counts.
     const texts = roots.flatMap((root) => walkCards(root).map(({ card }) => cardText(card)));
     expect(texts.filter((text) => text.trim() !== "").length).toBe(7700);
   });
 
   it("unescapes the 28 field values tools/mochi.py corrupts", () => {
-    // 30 field values arrive Transit-escaped. 28 are dictionary glosses whose
-    // text begins with a markdown code span ("~`INFORMAL`\ndie."); 2 are the
-    // grammar patterns that genuinely begin with a tilde ("~に越したことはない",
-    // encoded "~~..."). Python unescapes only "~~", so it leaves all 30 with a
-    // leading "~" and silently corrupts the 28.
     const backtick = mapped.cardFieldValues.filter((row) => row.value.startsWith("`"));
     const tilde = mapped.cardFieldValues.filter((row) => row.value.startsWith("~"));
     console.log(
@@ -388,11 +338,6 @@ describe.runIf(haveCorpus)("the real corpus", () => {
   });
 
   it("keeps 143 field values whose field is not on the card's template", () => {
-    // 235, not 143: the old definition was guarded by `row.template_id &&`, so it
-    // could not see the 92 values on template-less cards — exactly the half a
-    // reader would not think to look for. Both breakouts are asserted, because a
-    // count with no basis is not a fact: 98 of the 235 are empty strings and are
-    // debris, while the 137 with text are the ones a person might want back.
     console.log(
       "orphan field values   ",
       mapped.notes.orphanFieldValues.length,
@@ -404,7 +349,6 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     expect(mapped.notes.orphanFieldValues.length).toBe(235);
     expect(mapped.notes.orphanFieldValuesWithText).toBe(137);
     expect(mapped.notes.orphanFieldValuesTemplateless).toBe(92);
-    // And the two halves partition the whole, so neither can drift alone.
     expect(
       mapped.notes.orphanFieldValues.filter((pair) => pair.includes("/")).length,
     ).toBe(235);
@@ -415,7 +359,6 @@ describe.runIf(haveCorpus)("the real corpus", () => {
     console.log("reverse forced to on  ", [...forced]);
     expect(forced.size).toBe(6);
 
-    // The invariant SPEC states: every card with reverse history resolves to on.
     const deckReverse = new Map(
       mapped.decks.map((row) => [row.id, row.reverse] as const),
     );
@@ -454,8 +397,6 @@ describe.runIf(haveCorpus)("the real corpus", () => {
       "| forced", forced.size,
     );
     expect(withHistory).toBe(3796);
-    // 3,782 inherit from 文法/言葉/漢字/単語, 8 carry review-reverse? true
-    // themselves, and 6 would have been lost without SPEC's enforcement rule.
     expect(inheriting).toBe(3782);
     expect(explicit).toBe(8);
     expect(inheriting + explicit + forced.size).toBe(withHistory);
@@ -473,7 +414,6 @@ describe.runIf(haveCorpus)("the real corpus", () => {
       (row) => !rfc3339Utc.test(row.created_at) || !rfc3339Utc.test(row.updated_at),
     );
     expect(bad).toEqual([]);
-    // 266 cards have no updated-at; they fall back to created_at.
     const same = mapped.cards.filter((row) => row.created_at === row.updated_at).length;
     console.log("cards created_at == updated_at", same);
     expect(same).toBeGreaterThanOrEqual(266);
@@ -493,9 +433,6 @@ describe.runIf(haveCorpus)("the real corpus", () => {
   });
 });
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
-/** The walk without the identity set — the bug this module exists to avoid. */
 function naiveWalkCount(node: MochiRecord): number {
   let total = 0;
   for (const deck of (node["decks"] as MochiRecord[] | undefined) ?? []) {

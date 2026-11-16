@@ -1,37 +1,3 @@
-/**
- * HASHIGO ON CLOUDFLARE — the whole app from one origin: its files, his seed
- * databases, the sync mailbox and generation.
- *
- * Zach, 2026-09-26: *"let's tackle those two while im reviewing"* — sync had
- * moved off the laptop, and the two things left on it were generation (moved in
- * `cloud/mailbox/src/generate.ts`) and APP UPDATES: a phone that cannot reach the
- * laptop, like his on the apartment wifi, never receives a new build. Serving
- * the app from here ends that.
- *
- * ─── ONE ORIGIN, AND WHY THAT DECIDES THE LOCK ──────────────────────────────
- *
- * The tailnet build carries the mailbox key in its bundle, which is fine only
- * because that bundle never leaves the tailnet. A bundle on the open internet
- * cannot hold a secret — anyone can download it. So this origin is locked with
- * a PASSPHRASE entered once per device (`/unlock`), answered with a signed,
- * HttpOnly cookie, and the app, the seed and every API route require that
- * cookie. Same origin means the browser sends it on every request by itself —
- * the page, the service worker and the database worker — with no key anywhere
- * in code.
- *
- * `/ping` and `/unlock` are the only open routes. The unlock page says nothing
- * about what is behind it.
- *
- * ─── THE SEED, FROM R2, AND THE ONE FILE TOO BIG TO UPLOAD WHOLE ────────────
- *
- * The four seed files (`build/app/`) live in R2, served under the same names the
- * laptop served them, so `app/db.worker.ts` fetches exactly what it always did.
- * `hashigo-app-blobs.db` is 674 MB and `wrangler r2 object put` stops at 300 MB,
- * so `scripts/cloud-seed-upload.ts` sends it through R2 MULTIPART (`multipart`
- * below), which R2 joins into one object. Every seed file is then served as a
- * single native stream the Worker never touches.
- */
-
 import { handle as mailbox, type Env as MailboxEnv } from "../../mailbox/src/mailbox.js";
 
 interface R2ObjectBodyLike {
@@ -66,18 +32,13 @@ interface AssetsLike {
 export interface AppEnv extends MailboxEnv {
   readonly SEED: R2Like;
   readonly ASSETS: AssetsLike;
-  /** SHA-256 hex of the unlock passphrase. The passphrase itself is nowhere here. */
   readonly UNLOCK_HASH: string;
-  /** HMAC key for the cookie. */
   readonly COOKIE_KEY: string;
 }
 
 const COOKIE = "hashigo_unlock";
 const COOKIE_DAYS = 400;
-/** The laptop's own pattern: one segment, no traversal expressible. */
 const SEED_NAME = /^\/(hashigo-app[a-z-]*\.(?:db|json))$/;
-
-// ─── the lock ────────────────────────────────────────────────────────────────
 
 function hex(bytes: ArrayBuffer): string {
   return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -163,20 +124,10 @@ async function unlock(request: Request, env: AppEnv): Promise<Response> {
   return new Response(null, { status: 303, headers: { Location: "/", "Set-Cookie": await makeCookie(env) } });
 }
 
-// ─── the seed ────────────────────────────────────────────────────────────────
-
 function seedType(name: string): string {
   return name.endsWith(".json") ? "application/json; charset=utf-8" : "application/vnd.sqlite3";
 }
 
-/**
- * One stored object, returned as R2 hands it over. The Worker never touches the
- * bytes, and that is load-bearing: on the free plan a request gets milliseconds
- * of CPU, and an earlier version that stitched the 674 MB audio store together
- * from parts was cut off after 108 MB, with no length header — measured
- * 2026-09-26. The store is now uploaded as ONE object through R2 multipart
- * (`/admin/multipart`, below), so every seed file is a single native stream.
- */
 async function seed(name: string, env: AppEnv): Promise<Response> {
   const object = await env.SEED.get(name);
   if (object === null) {
@@ -190,19 +141,6 @@ async function seed(name: string, env: AppEnv): Promise<Response> {
   });
 }
 
-// ─── uploading a seed file too big for `wrangler r2 object put` ─────────────
-
-/**
- * R2 multipart, driven from the laptop by `scripts/cloud-seed-upload.ts`.
- *
- * `wrangler r2 object put` stops at 300 MB and the audio store is 674 MB. R2
- * itself takes a file in parts and JOINS them into one object, which it can then
- * serve natively. Each part is one request body — under the free plan's 100 MB
- * request cap — streamed straight into R2, so no CPU is spent on the bytes here.
- *
- * Bearer token only (`MAILBOX_TOKEN`), never the cookie: this writes the seed
- * every device downloads, and it is a laptop-script route, not a page route.
- */
 async function multipart(request: Request, env: AppEnv, url: URL): Promise<Response> {
   const header = request.headers.get("Authorization") ?? "";
   if (env.MAILBOX_TOKEN === "" || header !== `Bearer ${env.MAILBOX_TOKEN}`) {
@@ -242,20 +180,6 @@ async function multipart(request: Request, env: AppEnv, url: URL): Promise<Respo
   return new Response("unknown action", { status: 404 });
 }
 
-// ─── routing ─────────────────────────────────────────────────────────────────
-
-/**
- * 鍵の外に置くもの — アプリとして入れるのに要るファイルだけ。
- *
- * 2026-09-27、Edge でも Samsung Internet でも「アプリとしてインストール」が出なかった。
- * ブラウザは manifest を Cookie なしで取りに来る（仕様で credentials は omit、
- * `crossorigin="use-credentials"` を付けない限り）ので、鍵の中にあると 401 が返り、
- * manifest のないページはインストールできない。アイコンも同じ。`sw.js` も外に
- * 出す — 更新確認で 401 を受けるとサービスワーカーが古いまま残る道がひとつ減る。
- *
- * どれも中身は汎用のコードと画像で、カードも復習履歴も含まない。種（R2）と
- * mailbox には届かない: ここは ASSETS だけを返す。
- */
 const PUBLIC_FILES = new Set(["/manifest.webmanifest", "/sw.js"]);
 const PUBLIC_DIRS = ["/icons/", "/brand/"];
 
@@ -273,8 +197,6 @@ export async function handleApp(request: Request, env: AppEnv): Promise<Response
   if (request.method === "GET" && isPublicAsset(url.pathname)) return env.ASSETS.fetch(request);
 
   if (!(await unlocked(request, env))) {
-    // A page navigation is sent to the lock; anything else is a plain 401, so a
-    // fetch from a locked device fails clearly instead of receiving a web page.
     const navigating = request.headers.get("Sec-Fetch-Mode") === "navigate" || request.headers.get("Accept")?.includes("text/html");
     if (navigating && request.method === "GET") return Response.redirect(new URL("/unlock", url).toString(), 303);
     return new Response(JSON.stringify({ error: "locked — open the app and enter the passphrase" }), {

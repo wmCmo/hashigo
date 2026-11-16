@@ -1,25 +1,3 @@
-/**
- * EVERY 常用漢字 AT ITS 漢検 LEVEL, AS ASSIGNED FROM FY2020 — decision 53's second tier.
- *
- * GENERATED, then committed: do not hand-edit a level. Source and verification,
- * 2026-10-21:
- *
- *   · The 日本漢字能力検定協会's own 級別漢字表, "2020年度～新配当対応版"
- *     (kanken.or.jp/kanken/outline/data/outline_degree_national_list20200217.pdf),
- *     parsed from its text layer.
- *   · Cross-checked against mimneko/kanji-data (CC0, 漢検漢字辞典漢字.csv): identical
- *     once the four variants below are folded.
- *   · Per-level counts equal the 協会's running totals (80 / 240 / 440 / 642 / 835 /
- *     1,026 / 1,339 / 1,623 / 1,951 / 2,136) — pinned by test/scheduler.test.ts.
- *   · All 57 kanji in the 2020 change list (alterclassofkanji2020.pdf) sit at their
- *     NEW level. Two open datasets that did not — davidluzgouveia/kanji-data and
- *     fosskers/kanji — are pre-2020 and were rejected for exactly that.
- *
- * Levels 10–5 are the 教育漢字 by school year; 4 / 3 / 準2 / 2 are the 協会's split of
- * the rest. 準1級 and 1級 lie outside 常用 and are not here.
- */
-
-/** Each level's kanji, in code-point order so a regenerated table diffs cleanly. */
 export const KANKEN_LEVELS: readonly (readonly [level: string, kanji: string])[] = [
   ["10", "一七三上下中九二五人休先入八六円出力十千口右名四土夕大天女子字学小山川左年手文日早月木本村林校森正気水火犬玉王生田男町白百目石空立竹糸耳花草虫見貝赤足車金雨青音"],
   ["9", "万丸交京今会体何作元兄光公内冬刀分切前北午半南原友古台合同回図国園地場声売夏外多夜太妹姉室家寺少岩工市帰広店弓引弟弱強当形後心思戸才教数新方明星春昼時晴曜書朝来東楽歌止歩母毎毛池汽活海点父牛理用画番直矢知社秋科答算米紙細組絵線羽考聞肉自船色茶行西親角言計記話語読谷買走近通週道遠里野長門間雪雲電頭顔風食首馬高魚鳥鳴麦黄黒"],
@@ -33,12 +11,6 @@ export const KANKEN_LEVELS: readonly (readonly [level: string, kanji: string])[]
   ["2", "串丼乞亀伎侶俺傲僅冥冶凄刹剝勃勾匂呂呪咽哺唄唾喉喩嗅嘲堆塞塡妖妬嫉宛尻崖嵐巾弄弥彙怨恣惧慄憧憬戚戴拉拭拳拶挨挫捉捗捻摯斑斬旦旺昧曖曽枕柵柿桁梗椅椎楷毀氾汎汰沃沙淫湧溺潰煎爪爽牙狙玩瑠璃璧瓦畏畿痕痩瘍眉睦瞭瞳稽窟箋箸籠綻緻罵羞羨肘股脇脊腎腫腺膝膳臆臼舷艶芯苛萎葛蓋蔑蔽藍藤虎虹蜂蜜袖裾訃詣詮誰諦諧謎貌貪貼賂賭踪蹴辣遜遡那酎醒采釜錦錮鍋鍵鎌闇隙韓頃須頓頰顎餅餌駒骸鬱鶴麓麺𠮟"],
 ];
 
-/**
- * THE FOUR CHARACTERS WITH TWO CODEPOINTS. The table above uses the 常用漢字表's
- * forms (𠮟 塡 頰 剝); the 協会's PDF and most typed Japanese use the other (叱 填 頬
- * 剥). Same characters, different code points, so a word typed either way must find
- * its level.
- */
 export const KANKEN_VARIANTS: Readonly<Record<string, string>> = {
   叱: "𠮟",
   填: "塡",
@@ -49,26 +21,10 @@ export const KANKEN_VARIANTS: Readonly<Record<string, string>> = {
 const LEVEL_OF = new Map<string, string>();
 for (const [level, kanji] of KANKEN_LEVELS) for (const ch of kanji) LEVEL_OF.set(ch, level);
 
-/** A kanji's 漢検 level ("10" … "2", "準2"), or null for anything outside 常用. */
 export function kankenLevel(ch: string): string | null {
   return LEVEL_OF.get(KANKEN_VARIANTS[ch] ?? ch) ?? null;
 }
 
-/**
- * WHICH LEVEL HE IS STUDYING FOR — a setting, because he will level up. Zach,
- * 2026-10-21: *"in future, how do change the target priority? because i will
- * level up"*.
- *
- * A target pulls forward the kanji that level ADDS and the level just below it,
- * which its test assumes: 準2級 means 3級 + 準2級. Most of his corpus is ≤4級
- * already, so "everything up to the target" would barely filter; the top two
- * levels are the gap. `off` turns the level tier off — `優先` works either way.
- *
- * Stored as `queue.exam-target` in `settings`, which syncs (decision 33), so
- * switching on one device switches the other. ABSENT MEANS 準2級, the target when
- * this shipped; an unusable value falls back to it too, for
- * `src/session/settings.ts`'s reason — a bad row must never stop a plan building.
- */
 export const EXAM_TARGET_KEY = "queue.exam-target";
 export const EXAM_TARGETS = ["off", "3", "準2", "2"] as const;
 export type ExamTarget = (typeof EXAM_TARGETS)[number];
@@ -81,17 +37,14 @@ const TARGET_LEVELS: Readonly<Record<ExamTarget, readonly string[]>> = {
   "2": ["準2", "2"],
 };
 
-/** The levels a target pulls forward. Empty for `off`. */
 export function examTierLevels(target: ExamTarget): ReadonlySet<string> {
   return new Set(TARGET_LEVELS[target]);
 }
 
-/** Is `value` one of the stored forms? */
 export function isExamTarget(value: string): value is ExamTarget {
   return (EXAM_TARGETS as readonly string[]).includes(value);
 }
 
-/** Does `word` contain a kanji at one of `levels`? */
 export function hasExamTierKanji(word: string, levels: ReadonlySet<string>): boolean {
   if (levels.size === 0) return false;
   for (const ch of word) {

@@ -1,61 +1,3 @@
-/**
- * REDO CLIPS THE WORKER MADE WRONG, AND RETIRE THE OLD ONES ON EVERY DEVICE.
- *
- * Zach, 2026-11-13. 数隻's word clip said かずせき — the automatic fill sent the
- * voice plain text, never the reading or the accent (decision 67) — and a Whisper
- * audit of the 191 cloud-made sentence clips found three misreads he confirmed by
- * ear: *"only 1, 2, 6 are wrong"* — 港 (こう for みなと), 日向 (ひゅうが for ひなた),
- * 何乗 (なんのり for なんじょう).
- *
- *     npx vite-node scripts/clip-redo.ts                          # dry: lists, makes nothing
- *     npx vite-node scripts/clip-redo.ts -- --words --apply       # every cloud word clip, from 読み + 型
- *     npx vite-node scripts/clip-redo.ts -- --sentences scripts/clip-redo-sentences.json --apply
- *     npx vite-node scripts/clip-redo.ts -- --say 遺品=イヒン --apply  # only these words, this kana
- *
- * ─── `--say`: WHEN GOOGLE MISREADS THE RIGHT NOTATION ───────────────────────
- *
- * Zach, 2026-11-13: *"i think 遺品 sound is wrong too"*. Its 読み いひん and 型 平板
- * were right and so was the request, `ph="^いひん"` — and Google's audio had no ひ
- * in it: 0.72 s of unbroken voicing where the sentence clip shows the fricative
- * as a 70-88% high-band burst. Measured on probes under throwaway keys: the same
- * request is byte-identical every time, the 尾高 form is byte-identical too, and
- * the KATAKANA reading `^イヒン` brings the ひ back (80-89% at 0.18-0.26 s), still
- * flat. So `--say word=kana` remakes only the named words with that kana as the
- * reading; the accent still comes from 型, and the mora count must match.
- *
- * ─── `--word`: A CLIP MOCHI MADE ─────────────────────────────────────────────
- *
- * Zach, 2026-11-14: *"図々しい audio is wrong"*. Its word clip was Mochi's Azure
- * Nanami clip, made from the plain text 図々しい, and the second ずう lasted 80 ms
- * (0.70-0.78 s) against 480 ms for the first: it said ずーずしい. The pitch was
- * right (中高 5) and the card had no 読み. `--word 図々しい` remakes that word's
- * head-word clip WHEREVER IT CAME FROM, including the imported corpus that the
- * rest of this script never touches, from 読み + 型. The old hash comes from the
- * merged database rather than the Worker's store. Give the card its 読み FIRST
- * (`sync-set.ts`): a word still waiting for one is left alone, because a retired
- * clip with no 読み leaves the card mute (`cardGaps` will not fill it).
- *
- * ─── HOW A REDO REACHES EVERY DEVICE ────────────────────────────────────────
- *
- * The in-app redo's own path, done in bulk:
- *   1. the Worker makes the clip again under the SAME key (`force`), with how to
- *      say it (`pronounce` for a word, `readings` for a sentence) and `replaces`
- *      the old clip's hash — overwriting what it serves;
- *   2. one small payload from this script's own slot carries ONLY the old hashes
- *      in `retiredClips`, which every merge takes as a union (`src/blobs/retire.ts`);
- *   3. each device retires the old clip, finds the gap, and its auto-fill fetches
- *      the new one from the Worker's cache — nothing synthesised twice.
- * A clip Google gives back byte-identical is NOT retired (the in-app redo's
- * `same` rule): retiring it would leave the card mute.
- *
- * ─── WHAT IT TOUCHES ────────────────────────────────────────────────────────
- *
- * Only clips the Worker made (the cloud store), never the imported corpus unless
- * `--word` names the word, and
- * for words only the head word's clip on a card with 型 that `wordPronunciation`
- * can say — a word still waiting for its 読み is listed and left alone. The
- * payload is self-checked against a fresh merge before anything is sent.
- */
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -71,7 +13,6 @@ import { ARCHIVE_VERSION } from "../src/backup/index.js";
 
 const SLOT = "dev-clip-redo";
 const apply = process.argv.includes("--apply");
-/** `--say 遺品=イヒン`, repeatable: these words only, spoken from this kana. */
 const say = new Map<string, string>();
 process.argv.forEach((arg, i) => {
   if (arg !== "--say") return;
@@ -82,14 +23,11 @@ process.argv.forEach((arg, i) => {
   }
   say.set(word.trim(), kana.trim());
 });
-/** `--word 図々しい`, repeatable: this word's clip even when Mochi made it. See the header. */
 const named = new Set(
   process.argv.flatMap((arg, i) => (arg === "--word" && process.argv[i + 1] ? [process.argv[i + 1]!.trim()] : [])),
 );
-/** With `--say` or `--word`, ONLY those words; `--words` alone means every cloud word clip. */
 const only = new Set([...say.keys(), ...named]);
 const doWords = process.argv.includes("--words") || only.size > 0;
-/** `--retire <sha256>`, repeatable: a retired clip the store no longer records. */
 const extraRetire = process.argv.flatMap((arg, i) =>
   arg === "--retire" && /^[0-9a-f]{64}$/.test(process.argv[i + 1] ?? "") ? [process.argv[i + 1] as string] : [],
 );
@@ -105,7 +43,6 @@ if (base === "" || token === "") {
   console.error("VITE_MAILBOX_URL and VITE_MAILBOX_TOKEN must be in .env");
   process.exit(2);
 }
-// A User-Agent, or Cloudflare answers 1010 to a script.
 const headers = { Authorization: `Bearer ${token}`, "User-Agent": "hashigo-clip-redo/1.0" };
 
 interface Stored {
@@ -115,7 +52,6 @@ interface Stored {
   readonly voice: string | null;
   readonly options: Record<string, string>;
   readonly audio?: string;
-  /** The hash of the clip this one replaced, when it was made by a redo. */
   readonly replaces?: string;
 }
 
@@ -135,7 +71,6 @@ async function payloadOf(path: string): Promise<unknown> {
 
 const sha = (b64: string): string => createHash("sha256").update(Buffer.from(b64, "base64")).digest("hex");
 
-// ── every device's view, merged into a scratch copy (read-only) ────────────
 const scratchDir = mkdtempSync(join(tmpdir(), "clip-redo-"));
 const scratch = join(scratchDir, "hashigo.db");
 copyFileSync("build/hashigo.db", scratch);
@@ -156,30 +91,18 @@ try {
   }
   console.log(`merged ${bases.length} device slot(s)`);
 
-  // ── what the Worker made ───────────────────────────────────────────────────
   const keys = (await json<{ keys: string[] }>("/generated/")).keys;
   const clips: Stored[] = [];
-  /** Every hash a redo replaced, and every hash still served as a clip. */
   const replacedInStore = new Set<string>();
   const live = new Set<string>();
   for (const key of keys) {
     const r = await json<Stored>(`/generated/${encodeURIComponent(key)}`).catch(() => null);
-    // `options.probe` marks a measurement made under a throwaway key (options are in
-    // the key and never reach Google): no card reads it, so it is never redone, and
-    // its audio does not count as served.
     if (r === null || r.options?.["probe"]) continue;
     if (typeof r.audio === "string") live.add(sha(r.audio));
     if (typeof r.replaces === "string") replacedInStore.add(r.replaces);
     if (r.kind === "speech" && (r.lang ?? "").startsWith("ja") && typeof r.audio === "string") clips.push(r);
   }
 
-  // ── what this slot must carry ──────────────────────────────────────────────
-  // 2026-11-13: the PUT below REPLACES the slot, and it used to carry only the run
-  // that made it — so the 遺品 run (one hash) erased the 161 the 11-12 run had
-  // retired, from the only slot that held them (no device re-shared them). Every
-  // send now carries the slot's old list, every hash the store says a redo
-  // replaced, and any `--retire`; minus anything still served, so a redo that gave
-  // the same bytes back can never mute a card.
   const own = (await payloadOf(`/sync/${SLOT}`)) as SyncPayload | null;
   const alreadySent = new Set(own?.retiredClips ?? []);
   const owed = (made: readonly string[]): string[] => {
@@ -195,7 +118,6 @@ try {
     readonly clip: Stored;
     readonly pronounce?: Pronunciation;
     readonly readings?: { base: string; alias: string }[];
-    /** The hash being replaced — the Worker's audio, or an imported blob (`--word`). */
     readonly old: string;
   }
   const jobs: Job[] = [];
@@ -205,10 +127,6 @@ try {
     for (const r of db.prepare("SELECT id, name FROM cards WHERE archived = 0").all() as { id: string; name: string }[]) {
       byName.set(r.name.trim(), [...(byName.get(r.name.trim()) ?? []), r.id]);
     }
-    // The Worker's word clips, then — for `--word` only — the head-word clip Mochi
-    // made, read from the merged database. A word that ALSO has a cloud clip is not
-    // handled here: a device prefers the card's own voice, so redoing one of the two
-    // would leave the other playing.
     const candidates: { clip: Stored; old: string }[] = clips.map((clip) => ({ clip, old: sha(clip.audio as string) }));
     const retiredNow = new Set(retiredHashes(db as never));
     for (const word of named) {
@@ -241,8 +159,6 @@ try {
       if (only.size > 0 && !only.has(clip.text.trim())) continue;
       const ids = byName.get(clip.text.trim());
       if (ids === undefined) continue;
-      // The same word on two cards with different 型 would be one clip with two
-      // answers — say so and leave it.
       const said = ids.map((id) => wordPronunciation(db as never, id, clip.text)).filter((w) => w !== null);
       if (said.length === 0) continue;
       if (said.some((w) => w.waiting)) {
@@ -258,12 +174,11 @@ try {
       const word = said[0] as { waiting: false; pronounce?: Pronunciation };
       if (word.pronounce === undefined) {
         unlabelled += 1;
-        continue; // no 型 to speak it with: the reading alone is not what this redo fixes
+        continue;
       }
       let pronounce = word.pronounce;
       const kana = say.get(clip.text.trim());
       if (kana !== undefined) {
-        // Same morae or the accent position would land somewhere else.
         if (!isKana(kana) || splitMoras(kana).length !== splitMoras(pronounce.reading).length) {
           console.log(`  --say ${clip.text}=${kana}: not kana, or not ${splitMoras(pronounce.reading).length} morae like ${pronounce.reading} — left`);
           continue;
@@ -298,7 +213,6 @@ try {
     process.exit(0);
   }
 
-  // ── 1. the Worker makes each again, under the same key ─────────────────────
   const retire: string[] = [];
   let same = 0;
   let failed = 0;
@@ -341,7 +255,6 @@ try {
     process.exit(failed > 0 ? 1 : 0);
   }
 
-  // ── 2. one payload that says only "these clips are retired" ────────────────
   const now = new Date().toISOString();
   const payload: SyncPayload = {
     syncVersion: SYNC_VERSION,
@@ -361,11 +274,9 @@ try {
     },
     cardFlags: [],
     deckFlags: [],
-    // No `voicesCarried`, no `templatesCarried`: this payload says nothing about either.
     retiredClips,
   };
 
-  // ── self-check: merged into a fresh copy, it retires exactly these ─────────
   const checkFile = join(scratchDir, "check.db");
   copyFileSync(scratch, checkFile);
   const check = openDatabase(checkFile, { applySchema: false });

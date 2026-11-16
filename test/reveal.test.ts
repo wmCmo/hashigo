@@ -1,48 +1,3 @@
-/**
- * Stage 4 acceptance for the SHADOWING LOOP — `src/render/reveal.ts` and
- * `src/render/audio.ts`.
- *
- * SPEC, "Read this before building the renderer or the review UI": the sides of
- * 単語 and 漢字 are a produce-then-verify drill for 高低アクセント, and the
- * ordering carries the pedagogy. He looks at the kanji, recalls whether each mora
- * is high or low, says it aloud, and ONLY THEN reveals the reading and hears the
- * clip. So:
- *
- *   ** AUDIO MUST NEVER FIRE BECAUSE A SIDE APPEARED. **
- *
- * That is pinned five ways here, because it is a correctness requirement and a
- * test that does not pin it is inadequate:
- *
- *   1. Rendering a card and ENTERING every side of it requests no bytes, mints no
- *      object URL and calls `play()` zero times (§3).
- *   2. Revealing requests exactly one clip, attaches it and plays it (§3).
- *   3. Over ALL 7,716 real cards, entering every side of every card with a
- *      resolver that THROWS if it is called — 27,352 sides, zero calls (§10).
- *   4. The armed media element's own play affordance reveals; nothing else does,
- *      and it fires once (§5).
- *   5. Neither module can express autoplay: source checks for the attribute, for
- *      a direct `src` assignment, and for a `play()` whose reason is not one of
- *      the three this file names (§9).
- *
- * ── DECISION 29 (2026-08-23): THE RULE IS ABOUT `enter()`, NOT ABOUT SILENCE ──
- *
- * On the 3,177 cards where `Reading` is not true the clip is the QUESTION and the
- * kanji is the answer, so it fires when the side appears. **None of the five
- * above was relaxed by one card**, because none of them was ever about silence —
- * they are about `enter()` and about the port being unreachable except through a
- * named reason. §3b tests the new reason, `prompt()`, and the assertion that
- * matters there is that it unmasks NOTHING: it plays the question and leaves the
- * answer hidden, which is the entire difference from `play()`.
- *
- * WHICH MODE A CARD IS IN IS NOT DECIDED HERE, and §9 asserts this file never
- * mentions `Reading`. `src/review/mode.ts` owns that, and `test/review.test.ts`
- * measures both modes over the real corpus.
- *
- * And the leak the third required test is about: a review session mints one
- * object URL per clip and MUST revoke every one of them. 40 cards, 40 claims,
- * 40 revocations, `live === 0` (§3).
- */
-
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -89,33 +44,14 @@ import {
   type ShadowingLoop,
 } from "../src/render/reveal.js";
 
-// ─── 1. the ports really are the DOM ─────────────────────────────────────────
-
-/**
- * Type-only, in the manner of `test/db-contract.types.ts`: no runtime value, and
- * the assignment IS the assertion. If either port is widened past what a browser
- * provides, `npm run typecheck` stops compiling — which is the moment to find out.
- */
 export const audioElementSatisfiesPort: PlayableMediaElement =
   null as unknown as HTMLAudioElement;
 export const videoElementSatisfiesPort: PlayableMediaElement =
   null as unknown as HTMLVideoElement;
 export const htmlElementIsActivatable: ActivationTarget = null as unknown as HTMLElement;
-/** And the real controller is what the loop's port describes — no adapter. */
 export const controllerSatisfiesRevealAudio: RevealAudio<MemoryElement> =
   null as unknown as AudioController<MemoryElement>;
 
-// ─── 2. the doubles ──────────────────────────────────────────────────────────
-
-/**
- * A memory element that can be listened to.
- *
- * The same reasoning as `src/render/dom.ts`: no jsdom, because the rule is that
- * the thing tested is the thing that ships and a second DOM implementation is not
- * it. `LiveElement` adds only `addEventListener`/`removeEventListener`, which is
- * exactly the `ActivationTarget` port, and `FakeMedia` adds exactly the
- * `PlayableMediaElement` port — both pinned against the real DOM in §1.
- */
 class LiveElement extends MemoryElement {
   readonly listeners = new Map<string, Set<(event: unknown) => void>>();
 
@@ -133,7 +69,6 @@ class LiveElement extends MemoryElement {
     for (const listener of [...(this.listeners.get(type) ?? [])]) listener(event);
   }
 
-  /** Listener count, so "unbound after one shot" is observable. */
   count(type: string): number {
     return this.listeners.get(type)?.size ?? 0;
   }
@@ -145,10 +80,8 @@ class FakeMedia extends LiveElement {
   loads = 0;
   currentTime = 0;
   #paused = true;
-  /** Set to make `play()` reject, the way an autoplay policy does. */
   rejectPlay: string | null = null;
 
-  /** Reflected onto the attribute, as a real media element reflects `src`. */
   get src(): string {
     return this.getAttribute("src") ?? "";
   }
@@ -165,7 +98,6 @@ class FakeMedia extends LiveElement {
     this.plays += 1;
     if (this.rejectPlay !== null) return Promise.reject(new Error(this.rejectPlay));
     this.#paused = false;
-    // A real element fires `play` here, which is what the loop arms against.
     this.dispatch("play");
     return Promise.resolve();
   }
@@ -180,7 +112,6 @@ class FakeMedia extends LiveElement {
   }
 }
 
-/** A document whose `<audio>`/`<video>` can be played and whose spans can be tapped. */
 function liveDocument(): RenderDocument<MemoryElement> {
   return {
     createElement: (tag) =>
@@ -189,7 +120,6 @@ function liveDocument(): RenderDocument<MemoryElement> {
   };
 }
 
-/** A payload with a real 64-hex address, so `assertAddress` is satisfied. */
 function payloadFor(seed: string, bytes = 64): BlobPayload {
   let hash = "";
   for (let index = 0; hash.length < 64; index += 1) {
@@ -208,7 +138,6 @@ function hashCode(text: string): number {
   return value;
 }
 
-/** A `URL.createObjectURL` stand-in that records everything. Node has none. */
 function urlRecorder(): {
   readonly minted: string[];
   readonly revoked: string[];
@@ -245,12 +174,6 @@ interface Harness {
   cloze(index: number): LiveElement;
 }
 
-/**
- * Render authored card text and wire the whole loop over it.
- *
- * `store` maps an address to bytes; an address that is absent is a MISSING BLOB,
- * which is one of the cases the task names.
- */
 function harness(
   text: string,
   options: { readonly store?: ReadonlyMap<string, BlobPayload>; readonly armMedia?: boolean } = {},
@@ -297,7 +220,6 @@ function harness(
   };
 }
 
-/** The store key the harness files bytes under. Mirrors what stage 9 will do. */
 function addressKey(address: AudioAddress): string {
   return address.origin === "attachment"
     ? `attachment:${address.key}`
@@ -305,23 +227,17 @@ function addressKey(address: AudioAddress): string {
 }
 
 const AUDIO_ATTACHMENT = "![Copilot_Audio_20260122_194103.mp3](uVQp0iMb.mp3)";
-/** 単語 side 2 in miniature: the reading clozed, and the clip that verifies it. */
 const SHADOWING_SIDE = `{{あらかた}}\n${AUDIO_ATTACHMENT}`;
 const CLIP = payloadFor("uVQp0iMb.mp3");
 const STORE = new Map<string, BlobPayload>([["attachment:uVQp0iMb.mp3", CLIP]]);
 
-// ─── 3. THE THREE REQUIRED TESTS ─────────────────────────────────────────────
-
 describe("the hard rule: audio fires on reveal, never on side entry", () => {
   it("requests NO audio when a side is rendered and entered", () => {
     const h = harness(SHADOWING_SIDE, { store: STORE });
-    // Rendering alone.
     expect(h.requests).toEqual([]);
     expect(h.urls.minted).toEqual([]);
     expect(h.media().plays).toBe(0);
 
-    // And entering every side — which is where every other flashcard renderer
-    // starts the clip, and where doing so would delete the exercise.
     for (const side of h.loop.sides) h.loop.enter(side.position);
     expect(h.loop.sides.map((side) => side.entered)).toEqual([true]);
     expect(h.requests).toEqual([]);
@@ -330,13 +246,11 @@ describe("the hard rule: audio fires on reveal, never on side entry", () => {
     expect(h.media().plays).toBe(0);
     expect(h.media().hasAttribute("src")).toBe(false);
     expect(h.media().getAttribute(AUDIO_DATA.state)).toBe("idle");
-    // The element the renderer built is untouched: still silent, still sourceless.
     expect(serialise(h.media())).toBe(
       '<audio class="hashigo-audio" data-media-kind="audio" data-media-ref="uVQp0iMb.mp3"' +
         ' data-media-key="uVQp0iMb.mp3" controls="" preload="none"' +
         ' aria-label="Copilot_Audio_20260122_194103.mp3" data-audio-state="idle"></audio>',
     );
-    // Every `enter` in the log carries zero audio mounts, by construction.
     expect(h.events.map((event) => [event.kind, event.audio])).toEqual([["enter", 0]]);
   });
 
@@ -348,10 +262,8 @@ describe("the hard rule: audio fires on reveal, never on side entry", () => {
     expect(h.loop.side(0)?.reveal("cloze")).toBe(true);
     await h.audio.idle();
 
-    // Exactly one request, for exactly the attachment the card names.
     expect(h.requests).toEqual([{ origin: "attachment", key: "uVQp0iMb.mp3" }]);
     expect(h.audio.stats.requested).toBe(1);
-    // One object URL, on the element, and playing.
     expect(h.urls.minted).toHaveLength(1);
     expect(h.media().src).toBe(h.urls.minted[0]);
     expect(h.media().plays).toBe(1);
@@ -360,7 +272,6 @@ describe("the hard rule: audio fires on reveal, never on side entry", () => {
     expect(h.outcomes.map((outcome) => outcome.kind)).toEqual(["playing"]);
     expect(h.outcomes[0]?.reason).toBe("reveal");
     expect(h.outcomes[0]?.hash).toBe(CLIP.hash);
-    // And the reading is on screen — the DOM changed before the sound started.
     expect(h.result.clozes[0]?.revealed).toBe(true);
     expect(h.cloze(0).getAttribute(REVEAL_ATTRIBUTES.expanded)).toBe("true");
   });
@@ -378,20 +289,14 @@ describe("the hard rule: audio fires on reveal, never on side entry", () => {
     expect(h.urls.revoked).toEqual([url]);
     expect(h.scope.live).toBe(0);
     expect(h.scope.liveBytes).toBe(0);
-    // Cleared BEFORE revoking (url.ts rule 3): an element left holding a revoked
-    // URL fails its next load() with an error that never mentions revocation.
     expect(h.media().hasAttribute("src")).toBe(false);
     expect(h.media().pauses).toBeGreaterThan(0);
     expect(h.media().loads).toBe(1);
-    // Idempotent: a second dispose revokes nothing twice.
     h.loop.dispose();
     expect(h.urls.revoked).toEqual([url]);
   });
 
   it("holds nothing after a 40-card session — one URL per clip, all of them released", async () => {
-    // Zach reviews ~69 cards a day on a phone at 60,551 B per clip average. A
-    // controller that leaked one URL per clip would pin megabytes for the life of
-    // the tab, which is the bug `src/blobs/url.ts` is shaped to prevent.
     const urls = urlRecorder();
     let live = 0;
     let peak = 0;
@@ -423,26 +328,19 @@ describe("the hard rule: audio fires on reveal, never on side entry", () => {
   });
 });
 
-// ─── 3b. decision 29: prompt() plays the QUESTION, and unmasks nothing ───────
-
 describe("prompt(): the mode-2 question", () => {
   it("plays without unmasking, which is the whole difference from play()", async () => {
     const h = harness(SHADOWING_SIDE, { store: STORE });
     const side = h.loop.enter(0)!;
-    // Entering is still silent. `prompt()` is a separate, deliberate call.
     expect(h.requests).toEqual([]);
     expect(side.revealed).toBe(false);
 
     expect(side.prompt()).toBe(true);
     await h.audio.idle();
 
-    // It played…
     expect(h.media().plays).toBe(1);
     expect(h.requests).toHaveLength(1);
     expect(h.outcomes.map((o) => o.reason)).toEqual(["prompt"]);
-    // …and the answer is STILL HIDDEN. On an identify card the cloze holds the
-    // kanji he is meant to name, so unmasking here would print the answer beside
-    // the question. `play()` does unmask, deliberately; this must not.
     expect(side.revealed).toBe(false);
     expect(h.result.clozes.every((cloze) => !cloze.revealed)).toBe(true);
     expect(h.events.map((e) => e.kind)).toEqual(["enter", "prompt"]);
@@ -461,9 +359,6 @@ describe("prompt(): the mode-2 question", () => {
   });
 
   it("returns false where there is no question to ask", () => {
-    // A side with no clip. `prompt()` reporting false is what lets a screen tell
-    // "asked" from "nothing to ask" — 1 of the 392 言葉 cards has an empty head
-    // word and reaches exactly this.
     const h = harness("{{あらかた}}");
     const side = h.loop.enter(0)!;
     expect(side.prompt()).toBe(false);
@@ -473,19 +368,12 @@ describe("prompt(): the mode-2 question", () => {
   });
 
   it("reveal({silent}) unmasks and sounds NOTHING", async () => {
-    // Added for the shell, and it is the SAFE direction — less audio, never more.
-    // A screen that shows the whole card after the answer unmasks several sides at
-    // once, and `audioController.play()` defers extras only WITHIN one call: three
-    // reveals start three clips. Measured on 単語, whose word clip and
-    // example-sentence clip both fired over the top of each other.
     const h = harness(SHADOWING_SIDE, { store: STORE });
     const side = h.loop.enter(0)!;
     expect(side.reveal("caller", { silent: true })).toBe(true);
     await h.audio.idle();
-    // Unmasked…
     expect(side.revealed).toBe(true);
     expect(h.result.clozes.every((cloze) => cloze.revealed)).toBe(true);
-    // …and silent, all the way down: no resolve, no object URL, no play().
     expect(h.requests).toEqual([]);
     expect(h.urls.minted).toEqual([]);
     expect(h.media().plays).toBe(0);
@@ -503,7 +391,6 @@ describe("prompt(): the mode-2 question", () => {
   });
 
   it("a reveal AFTER a prompt still works, and is what compares", async () => {
-    // The mode-2 loop end to end: hear it, name it, then reveal to check.
     const h = harness(SHADOWING_SIDE, { store: STORE });
     const side = h.loop.enter(0)!;
     side.prompt();
@@ -511,28 +398,16 @@ describe("prompt(): the mode-2 question", () => {
     expect(side.reveal("caller")).toBe(true);
     await h.audio.idle();
     expect(side.revealed).toBe(true);
-    // Two sounds: the question and the comparison. The second reuses the lease
-    // rather than minting a second object URL.
     expect(h.media().plays).toBe(2);
     expect(h.urls.minted).toHaveLength(1);
     h.loop.dispose();
   });
 });
 
-// ─── 4. clozes on a side reveal TOGETHER ─────────────────────────────────────
-
 describe("cloze grouping", () => {
-  /**
-   * 単語 side 2 in the shape the template writes it: the READING as text, then the
-   * KANJI with the reading as ruby. Both clozed, and they are two facts rather
-   * than one — which is what Zach's 2026-09-12 ordering turns into two steps.
-   */
   const TWO_CLOZES = "{{あらかた}}\n{{<furigana>粗方</furigana>}}";
 
   it("reveals ONE cloze per tap, in document order, and never crosses the side", () => {
-    // ZACH, 2026-09-12: *"the correct order should be, each cloze in that slide,
-    // once every clozes are shown, the next side and so on"*. This test used to
-    // assert the opposite — one tap, whole side — and the reversal is his.
     const h = harness(`${TWO_CLOZES}\n---\n{{意味}}`);
     expect(h.result.clozes).toHaveLength(3);
     expect(h.loop.sides.map((side) => side.clozes.length)).toEqual([2, 1]);
@@ -542,23 +417,18 @@ describe("cloze grouping", () => {
     expect(h.result.clozes.map((mount) => mount.revealed)).toEqual([true, false, false]);
     expect(h.loop.sides.map((side) => side.revealed)).toEqual([false, false]);
     expect(h.loop.sides[0]?.masked).toBe(1);
-    // A partial move is a `step`, not a `reveal`: the side is not finished.
     expect(h.events.filter((event) => event.kind === "step")).toHaveLength(1);
     expect(h.events.filter((event) => event.kind === "reveal")).toHaveLength(0);
 
     h.cloze(1).dispatch("click");
 
     expect(h.result.clozes.map((mount) => mount.revealed)).toEqual([true, true, false]);
-    // NOW the side is revealed — and the cloze on the NEXT side is untouched.
     expect(h.loop.sides.map((side) => side.revealed)).toEqual([true, false]);
     expect(h.events.filter((event) => event.kind === "reveal")).toHaveLength(1);
-    // The count on that one event is the whole act, not the last step of it.
     expect(h.events.find((event) => event.kind === "reveal")?.clozes).toBe(2);
   });
 
   it("steps in order from revealNext(), and sounds the clip only on the LAST one", async () => {
-    // The stepped path must not move the clip earlier than the one-shot path did.
-    // On a mode-1 card that would be the hard rule failing by a different door.
     const h = harness(`{{あらかた}}\n{{<furigana>粗方</furigana>}}\n![clip](uVQp0iMb.mp3)`, {
       store: STORE,
     });
@@ -577,16 +447,11 @@ describe("cloze grouping", () => {
     expect(h.media().plays).toBe(1);
     expect(h.outcomes[0]?.reason).toBe("reveal");
 
-    // Nothing left to step.
     expect(side?.revealNext()).toBe(false);
     expect(h.media().plays).toBe(1);
   });
 
   it("counts a cloze revealed by ANY route, including result.revealAll()", () => {
-    // The loop no longer PULLS the side, but it still has to NOTICE: a cloze
-    // unmasked by a route the loop did not drive must still finish the side when
-    // it is the last one, or a visibly-open side stays `revealed === false` and
-    // its clip never sounds.
     const direct = harness(TWO_CLOZES);
     direct.result.clozes[1]?.reveal();
     expect(direct.loop.sides[0]?.revealed).toBe(false);
@@ -612,7 +477,6 @@ describe("cloze grouping", () => {
     expect(h.loop.sides[0]?.revealed).toBe(false);
     h.cloze(0).dispatch("keydown", { key: " ", preventDefault: () => (prevented += 1) });
     expect(h.loop.sides[0]?.revealed).toBe(true);
-    // Space must not also scroll the card out from under the answer.
     expect(prevented).toBe(1);
     expect(h.cloze(0).getAttribute(REVEAL_ATTRIBUTES.expanded)).toBe("true");
   });
@@ -625,8 +489,6 @@ describe("cloze grouping", () => {
     expect(h.result.clozes[0]?.revealed).toBe(false);
     expect(h.media().paused).toBe(true);
     expect(h.cloze(0).getAttribute(REVEAL_ATTRIBUTES.expanded)).toBe("false");
-    // Concealing does not revoke: the clip is still attached and re-revealing
-    // restarts it without a second object URL.
     expect(h.scope.live).toBe(1);
 
     h.loop.side(0)?.reveal();
@@ -646,14 +508,7 @@ describe("cloze grouping", () => {
   });
 });
 
-// ─── 5. a side with audio and no cloze ───────────────────────────────────────
-
 describe("a side with audio but no cloze", () => {
-  /**
-   * 91 of 91 audio-bearing sides in the corpus today, and still the majority once
-   * stage 9 fills the typed `speech` fields (§10). Nothing is hidden, so there is
-   * no reveal to hang playback on: the trigger is a deliberate gesture.
-   */
   const AUDIO_ALONE = `例文を読んでください。\n${AUDIO_ATTACHMENT}`;
 
   it("classifies the side and still plays nothing on entry", () => {
@@ -675,9 +530,6 @@ describe("a side with audio but no cloze", () => {
   });
 
   it("plays on the element's own play affordance, exactly once, then unbinds", async () => {
-    // The renderer leaves media elements with NO `src`, so the native controls are
-    // dead until something attaches bytes. Arming is what makes the first tap
-    // work; after it, the element holds a real `src` and its controls work alone.
     const h = harness(AUDIO_ALONE, { store: STORE });
     h.loop.enter(0);
     expect(h.media().count("click")).toBe(1);
@@ -689,8 +541,6 @@ describe("a side with audio but no cloze", () => {
     expect(h.loop.side(0)?.revealed).toBe(true);
     expect(h.events.find((event) => event.kind === "reveal")?.cause).toBe("gesture");
     expect(h.media().plays).toBe(1);
-    // One shot: our own `element.play()` fires a `play` event, and re-entering
-    // would ask for the clip a second time.
     expect(h.media().count("click")).toBe(0);
     expect(h.media().count("play")).toBe(0);
     expect(h.audio.stats.requested).toBe(1);
@@ -698,11 +548,6 @@ describe("a side with audio but no cloze", () => {
   });
 
   it("stops interpreting gestures once the element has a source", async () => {
-    // THE BUG THIS GATE EXISTS FOR. `audio.play()` assigns a source and calls
-    // `element.play()`; the platform then fires a `play` event, and a handler that
-    // read that as a gesture asked for the clip a second time. After the attach
-    // the element owns its own interactions — a tap on the seek bar is not a
-    // request to restart the clip — so the listeners come off.
     const h = harness(AUDIO_ALONE, { store: STORE });
     h.loop.side(0)?.reveal("caller");
     await h.audio.idle();
@@ -716,8 +561,6 @@ describe("a side with audio but no cloze", () => {
   });
 
   it("stays tappable when the clip was missing, because nothing got attached", async () => {
-    // A one-shot latch would have burned the retry here, and a clip stage 9 has
-    // not generated yet is exactly the case that matters.
     const h = harness(AUDIO_ALONE);
     h.media().dispatch("click");
     await h.audio.idle();
@@ -746,26 +589,16 @@ describe("a side with audio but no cloze", () => {
     const h = harness("![a](a.mp3)\n![b](b.mp3)", { store });
     h.loop.side(0)?.reveal();
     await h.audio.idle();
-    // Two clips at once is noise, and sequencing needs `ended`, which never fires
-    // for a clip the listener skipped.
-    //
-    // `deferred` lands FIRST because it is a decision, not an observation: the
-    // second clip is deferred synchronously, while `playing` waits for the
-    // platform's `play()` promise to settle. The SOUND still starts synchronously
-    // — `plays` below is what proves that.
     expect(h.outcomes.map((outcome) => outcome.kind)).toEqual(["deferred", "playing"]);
     expect(h.media(0).plays).toBe(1);
     expect(h.media(1).plays).toBe(0);
     expect(h.urls.minted).toHaveLength(1);
-    // The deferred one is still one tap away, because it is still armed.
     h.media(1).dispatch("click");
     await h.audio.idle();
     expect(h.media(1).plays).toBe(1);
     expect(h.urls.minted).toHaveLength(2);
   });
 });
-
-// ─── 6. replaying deliberately ───────────────────────────────────────────────
 
 describe("replaying deliberately", () => {
   it("restarts from the top and mints no second object URL", async () => {
@@ -789,24 +622,11 @@ describe("replaying deliberately", () => {
   });
 
   it("REPLAY BEFORE THE REVEAL ASKS AGAIN — it does not answer", async () => {
-    // THIS TEST USED TO ASSERT THE OPPOSITE, and the reversal is a bug fix.
-    //
-    // It was written before decision 29 existed, and its stated reason was that
-    // otherwise "there would be a second route to sound that left the side's
-    // clozes masked". `prompt()` is now exactly that route, on purpose, on 3,177
-    // cards where the clip IS the question.
-    //
-    // What the old contract cost, measured in the browser 2026-09-12: on a mode-2
-    // card the round replay button — which decision 29 deliberately makes live
-    // BEFORE the reveal so he can hear the question again — unmasked both clozes.
-    // `data-state` still read `prompt` and the kanji was on screen. Zach would
-    // have met it the first time he tapped replay on a listening card.
     const h = harness(SHADOWING_SIDE, { store: STORE });
     h.loop.side(0)?.replay();
     await h.audio.idle();
 
     expect(h.media().plays).toBe(1);
-    // Sound, and NOTHING unmasked. The question was repeated, not answered.
     expect(h.loop.side(0)?.revealed).toBe(false);
     expect(h.result.clozes[0]?.revealed).toBe(false);
     expect(h.cloze(0).getAttribute(REVEAL_ATTRIBUTES.expanded)).toBe("false");
@@ -815,8 +635,6 @@ describe("replaying deliberately", () => {
   });
 
   it("still replays normally once the side IS revealed", async () => {
-    // `unmask: false` may only bite while something is masked. After the reveal
-    // there is nothing left to protect and this is the ordinary re-listen.
     const h = harness(SHADOWING_SIDE, { store: STORE });
     h.loop.side(0)?.reveal();
     await h.audio.idle();
@@ -829,9 +647,6 @@ describe("replaying deliberately", () => {
   });
 
   it("a deliberate tap on the clip ITSELF still unmasks, which is a different act", () => {
-    // The armed native control routes here. Tapping a clip is "show me"; tapping
-    // `replay` is "again". Only the caller knows which one happened, so only the
-    // caller passes the flag — `play()` keeps unmasking by default.
     const h = harness(SHADOWING_SIDE, { store: STORE });
     const clip = h.result.media[0] as MediaMount<MemoryElement>;
     expect(h.loop.side(0)?.play(clip)).toBe(true);
@@ -843,9 +658,6 @@ describe("replaying deliberately", () => {
     const h = harness(SHADOWING_SIDE, { store: STORE });
     h.loop.side(0)?.reveal();
     await h.audio.idle();
-    // Somebody released the URL out from under the element — the cap does exactly
-    // this. `attachMedia` throws on a revoked lease, so the controller must claim
-    // again rather than hand a dead URL to an element.
     h.scope.release(CLIP.hash);
     await h.audio.replay(h.result.media[0] as MediaMount<MemoryElement>);
     expect(h.urls.minted).toHaveLength(2);
@@ -854,14 +666,9 @@ describe("replaying deliberately", () => {
   });
 });
 
-// ─── 7. a card whose audio blob is missing ───────────────────────────────────
-
 describe("a missing blob", () => {
   it("reveals anyway, plays nothing, and mints nothing", async () => {
-    // A clip that is not in the store must never stop him seeing the reading he
-    // just produced. This is the case that decides whether the reveal depends on
-    // the audio or the audio on the reveal.
-    const h = harness(SHADOWING_SIDE); // empty store
+    const h = harness(SHADOWING_SIDE);
     h.loop.enter(0);
     expect(h.loop.side(0)?.reveal("cloze")).toBe(true);
     await h.audio.idle();
@@ -876,14 +683,11 @@ describe("a missing blob", () => {
     expect(h.media().plays).toBe(0);
     expect(h.media().hasAttribute("src")).toBe(false);
     expect(h.media().getAttribute(AUDIO_DATA.state)).toBe("missing");
-    // And nothing to release.
     h.loop.dispose();
     expect(h.urls.revoked).toEqual([]);
   });
 
   it("reports an unaddressable reference instead of asking the store", () => {
-    // `![x](https://example.test/a.mp3)` is refused by the sanitiser, so there is
-    // no media mount at all; a `file`-kind reference is a mount with no key.
     const h = harness("![x](audio.weird)");
     expect(h.result.media.map((mount) => mount.kind)).toEqual(["file"]);
     expect(h.audio.tracks).toEqual([]);
@@ -898,7 +702,6 @@ describe("a missing blob", () => {
     await h.audio.idle();
     expect(h.outcomes.map((outcome) => outcome.kind)).toEqual(["blocked"]);
     expect(h.media().getAttribute(AUDIO_DATA.state)).toBe("blocked");
-    // The reveal still stands, and the clip is attached for a manual retry.
     expect(h.result.clozes[0]?.revealed).toBe(true);
     expect(h.media().src).toBe(h.urls.minted[0]);
   });
@@ -919,8 +722,6 @@ describe("a missing blob", () => {
   });
 });
 
-// ─── 8. addressing: the corpus's audio is 94/95 GENERATED ────────────────────
-
 describe("addressing", () => {
   it("addresses an attachment by ref_key and a generator slot by its request", async () => {
     const attachment = harness(AUDIO_ATTACHMENT);
@@ -928,13 +729,7 @@ describe("addressing", () => {
       { origin: "attachment", key: "uVQp0iMb.mp3" },
     ]);
 
-    // 94 of the corpus's 95 audio elements are this shape: an inline <speech>
-    // whose bytes are addressed by generation identity, not by a filename. A
-    // controller that only understood attachments would find one clip in 7,716
-    // cards.
     const generated = harness('<speech lang="jp">言葉</speech>');
-    // `audioAddress` is the same answer computed directly from the render, which
-    // is what stage 9 will call when it wants to know what to generate.
     expect(generated.audio.tracks[0]?.address).toEqual(
       audioAddress(generated.result, generated.result.media[0] as MediaMount<MemoryElement>),
     );
@@ -943,7 +738,6 @@ describe("addressing", () => {
     if (address?.origin !== "generator") throw new Error("unreachable");
     expect(address.request.kind).toBe("speech");
     expect(address.request.text).toBe("言葉");
-    // Normalised to BCP-47 by the template layer; never Mochi's inline `jp`.
     expect(address.request.lang).toBe("ja-JP");
 
     const payload = payloadFor("tts");
@@ -964,7 +758,6 @@ describe("addressing", () => {
     await h.audio.idle();
     expect(h.media(0).plays).toBe(1);
     expect(h.media(1).plays).toBe(1);
-    // One address, one URL, one copy of the bytes — and one revocation.
     expect(h.urls.minted).toHaveLength(1);
     expect(h.scope.stats.reused).toBe(1);
     h.loop.dispose();
@@ -983,8 +776,6 @@ describe("addressing", () => {
   });
 
   it("changes nothing in a serialised render when binding is off", () => {
-    // The precompute path (`serialise`) must come out byte-identical, so `role`,
-    // `tabindex` and `aria-expanded` are only added where something can be tapped.
     const plain = renderSides(parseContent("{{答え}}"), { document: memoryDocument() });
     const before = serialise(plain.root);
     shadowingLoop(plain, { bindClozes: false, armMedia: false });
@@ -992,11 +783,8 @@ describe("addressing", () => {
   });
 });
 
-// ─── 9. neither module can express autoplay ───────────────────────────────────
-
 const SRC_RENDER = resolve(import.meta.dirname, "..", "src", "render");
 
-/** Crude but sufficient for two files we own: drop block and line comments. */
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 }
@@ -1008,61 +796,34 @@ describe("source discipline", () => {
       expect(code, `${name} mentions autoplay`).not.toContain("autoplay");
       expect(code, `${name} sets a src attribute`).not.toMatch(/setAttribute\(\s*["']src["']/);
       expect(code, `${name} uses innerHTML`).not.toContain("innerHTML");
-      // Bytes reach an element only through `attachMedia`, which owns the
-      // clear-then-revoke ordering. A second path would be a second leak.
       expect(code, `${name} assigns element.src`).not.toMatch(/\.src\s*=[^=]/);
     }
   });
 
   it("starts playback from exactly four NAMED places, and none of them is `enter`", () => {
     const reveal = stripComments(readFileSync(resolve(SRC_RENDER, "reveal.ts"), "utf8"));
-    // `reveal.ts` may only ask the port, and only with a reason it names at the
-    // call site. Counting the calls alone was the old assertion and it was too
-    // weak the moment decision 29 added a third: a fourth could have arrived as
-    // `audio.play(media, reason)` with `reason` computed anywhere. So the reasons
-    // are read out of the source, and the SET is what is pinned.
-    //
-    // **FOUR since 2026-09-12, and the fourth is `settle`** — Zach's stepped
-    // reveal moved "this side is now fully unmasked" out of `reveal()`, because
-    // a side can reach that state one cloze at a time. It asks with `"reveal"`,
-    // which is the honest reason: the answer is complete and this is the
-    // comparison. The set of reasons is therefore UNCHANGED, which is the
-    // property that matters — no new way to ask, one new caller of an old one.
     const asks = [...reveal.matchAll(/audio(?:\?)?\.play\(\s*\[?[^,)]*\]?\s*,\s*(.*?)\)/g)];
     expect(asks).toHaveLength(4);
     const reasons = asks.map((match) => (match[1] ?? "").trim());
-    // `play()`'s is a conditional over two literals; the other two are literals.
     expect(reasons).toContain('"reveal"');
     expect(reasons).toContain('"prompt"');
     expect(reasons.some((reason) => reason.includes('"replay"'))).toBe(true);
-    // Every reason is spelled out here. A computed one — a variable, a lookup —
-    // means the caller chose it, which is the one thing this file must not allow.
     for (const reason of reasons) {
       expect(reason, `computed play reason: ${reason}`).toMatch(/^["'?:\s\w]+$/);
     }
 
-    // `enter()` is the method that must stay empty of it, and decision 29 did not
-    // touch that. `prompt()` exists precisely so `enter()` did not have to change.
     const enter = /enter\(\): void \{([\s\S]*?)\n      \},/.exec(reveal)?.[1] ?? "MISSING";
     expect(enter).not.toBe("MISSING");
     expect(enter).not.toContain("play");
     expect(enter).not.toContain("prompt");
-    // It may MENTION audio — it logs `audio: 0` so the trail proves the zero — but
-    // it may not reach the port.
     expect(enter).not.toMatch(/audio\s*[?.[]/);
 
-    // And the loop still does not know what decides the mode. The moment
-    // `Reading` appears here, the invariant stops being checkable by reading one
-    // method — which is the whole reason the policy sits in `src/review`.
     expect(reveal, "reveal.ts must not know about Reading").not.toMatch(/\bReading\b/);
 
-    // `audio.ts` touches the element's own play() in one helper, `start()`.
     const audio = stripComments(readFileSync(resolve(SRC_RENDER, "audio.ts"), "utf8"));
     expect([...audio.matchAll(/element\.play\(/g)]).toHaveLength(1);
   });
 });
-
-// ─── 10. the real corpus ─────────────────────────────────────────────────────
 
 const EXPORT_NAMES = ["日本語", "English", "基本情報"] as const;
 const EXPORT_DIRS = EXPORT_NAMES.map((name) => resolve(import.meta.dirname, "..", "exports", name));
@@ -1075,15 +836,6 @@ interface CorpusCard {
   readonly values: Record<string, string>;
 }
 
-/**
- * Memoised, and that is not premature: `loadExport` decodes a 21 MB transit
- * document, and this file reads the corpus from three tests. FIVE test files now
- * sweep the corpus in parallel workers — template, render, japanese-render,
- * reveal, search — under `vitest.config.ts`'s `testTimeout: 120_000` and
- * `maxWorkers: 6`, both of which are there because that parallelism broke the
- * defaults. Every avoidable second here is one another file does not have to
- * survive.
- */
 let corpus: { cards: CorpusCard[]; templates: Map<string, TemplateInput> } | null = null;
 
 function readCorpus(): { cards: CorpusCard[]; templates: Map<string, TemplateInput> } {
@@ -1133,16 +885,6 @@ function bump(counts: Map<string, number>, key: string): void {
   counts.set(key, (counts.get(key) ?? 0) + 1);
 }
 
-/**
- * Bucket every side of every card by what is on it.
- *
- * `fillSpeechFields` is the PROJECTION: every audio field in every template is a
- * typed `speech` field whose stored value is empty on all 7,716 cards (Mochi kept
- * the 624.6 MiB in `component-cache`, addressed by generation identity, not in
- * `fields`). Filling them with an attachment reference is what the corpus looks
- * like once stage 9 lands, and it is the only way to measure the distribution the
- * trigger has to serve in the long run rather than guessing at it.
- */
 function census(
   cards: readonly CorpusCard[],
   templates: ReadonlyMap<string, TemplateInput>,
@@ -1227,14 +969,9 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
       ].join("\n"),
     );
 
-    // THE FINDING THAT DECIDED THE FALLBACK TRIGGER. Not one audio-bearing side
-    // in the corpus has a cloze on it, so "audio with no cloze" is not an edge
-    // case to fall back to — it is the only case the corpus exercises, and it
-    // stays the majority even once the typed `speech` fields are generated.
     expect(now.sides.get("audio+cloze") ?? 0).toBe(0);
     expect(now.sides.get("audio-alone")).toBe(91);
     expect(now.cardsWithAudio).toBe(86);
-    // 94 generator slots and exactly one authored attachment.
     expect(object(now.origins)).toEqual({ attachment: 1, generator: 94 });
     expect(later.sides.get("audio+cloze") ?? 0).toBeGreaterThan(0);
     expect(later.sides.get("audio-alone") ?? 0).toBeGreaterThan(
@@ -1245,14 +982,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
   it(
     "enters every side of every card in silence, then reveals it and hears exactly one clip",
     async () => {
-      // THE STRONGEST FORM OF THE HARD RULE, and the two halves have to be one
-      // sweep to be worth anything: the same 7,716 cards and 27,352 sides are
-      // ENTERED first, with a resolver and a URL minter that record a violation if
-      // anything so much as asks for bytes, and only then REVEALED — at which
-      // point exactly one clip per audio side plays and every object URL comes
-      // back. Split across two tests, each half could have passed for the wrong
-      // reason (silence because nothing was wired; playback because entry had
-      // already attached it).
       const { cards, templates } = readCorpus();
       const violations: string[] = [];
       const urls = urlRecorder();
@@ -1276,7 +1005,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
           },
           revokeObjectURL: urls.options.revokeObjectURL,
         });
-        // The REAL controller is the port, so this is not a test against a stub.
         const audio = audioController(result, {
           scope,
           resolve: (address) => {
@@ -1287,7 +1015,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
         });
         const loop = shadowingLoop(result, { audio });
 
-        // ── entering ──
         for (const side of loop.sides) {
           loop.enter(side.position);
           entered += 1;
@@ -1303,7 +1030,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
           violations.push(`${card.id}: ${JSON.stringify(idle)}`);
         }
 
-        // ── revealing ──
         entering = false;
         for (const side of loop.sides) {
           if (side.audio.length === 0) continue;
@@ -1331,8 +1057,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
       expect(entered).toBe(27355);
       expect(armed).toBe(95);
       expect(revealed).toBe(91);
-      // One clip per audio side: 4 second clips on 4 sides were deferred, not
-      // started, because two at once is noise.
       expect(played).toBe(91);
       expect(outcomes.get("deferred")).toBe(4);
       expect(urls.minted).toHaveLength(91);

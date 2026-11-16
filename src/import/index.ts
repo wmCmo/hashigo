@@ -1,73 +1,3 @@
-/**
- * Stage 1 — the importer. One or more extracted `.mochi` exports into one
- * Hashigo database, in the only order the foreign keys accept, idempotently.
- *
- * The parts each own one slice of the export and are separately tested:
- * `transit.ts` (decode + deduped walk), `entities.ts` (decks, templates,
- * fields, cards, field values), `reviews.ts` (tracks + the review log),
- * `tags.ts`, `links.ts`, `blobs.ts`. This file is the only thing that knows the
- * order they have to run in, and the only thing that writes the structural
- * rows.
- *
- * DEPENDENCY ORDER, and why it is not the obvious one
- *
- *   templates -> template_fields -> decks -> cards -> card_field_values
- *             -> card_tracks/reviews -> tags -> card_tags -> card_links -> blobs
- *
- * Templates come before decks, not after, because `decks.default_template_id`
- * is a foreign key to `templates`. Within a template, fields must be inserted
- * sources-first: `template_fields` carries the self-referential foreign key
- * (template_id, source_field_id) -> (template_id, id), and 単語's `Speech`
- * really does precede its source in the export's field map. `mapExports`
- * already emits them topologically ordered; this file must not re-sort them.
- * Decks are emitted parents-before-children for the same reason.
- *
- * IDEMPOTENCE is not "no crash on the second run", it is "the second run
- * changes nothing". Every structural write is an upsert whose DO UPDATE carries
- * a WHERE that fires only when a column actually differs, so a re-import of an
- * unchanged export reports `unchanged` for every row and writes zero pages —
- * which also means `updated_at` does not drift on rows nobody edited. The
- * downstream modules are idempotent in their own ways: `reviews` keys on
- * `import_key` and does nothing on conflict, `tags` upserts and ORs the manual
- * flag, `links` replaces each card's rows wholesale, `blobs` is
- * content-addressed with a unique index on the reference scope.
- *
- * CONVERGENCE, one step beyond idempotence: re-importing an export in which a
- * field was *deleted* must not leave the old value behind. Field values are
- * therefore pruned to what the export currently holds, per imported card. The
- * links importer does the same thing by deleting each card's rows first.
- *
- * SEARCH TEXT is written here and nowhere else in the importer, in a pass after
- * both cards and field values are in place — it is derived from all of them at
- * once, so it cannot be written row by row. The transform itself is
- * `renderPlainTextParts` in src/text/, which is the single definition of it and
- * the same function the `@` picker and the reviewer will call; this file must
- * not grow its own copy of that logic.
- *
- * LINKS ARE EXTRACTED FROM THE RAW EXPORT, not from the rows just written, and
- * that matters because `entities.ts` discards stale pre-template `content`.
- * 889 of the 8,744 wiki-links live in exactly that discarded text. They are
- * KEPT — dropping them would lose 10% of the graph and leave 25 target cards
- * with no inbound edge at all, which is a bigger loss than the discard itself
- * and is not what was decided.
- *
- * The consequence is honest but needs saying: those 889 rows are no longer
- * derivable from the stored text. Anything that rebuilds `card_links` from
- * `cards.content` + `card_field_values` — the editor at stage 10, or a repair
- * task — will delete them unless it is told not to. If that is not what Zach
- * wants, the fix is to migrate the links (or the text) rather than to let a
- * rebuild quietly prune them. Asserted in test/roundtrip.test.ts so a change
- * here is deliberate.
- *
- * WHAT THIS FILE DELIBERATELY DOES NOT DO
- *
- *   * Invent timestamps. Decks, templates and fields carry none in the export,
- *     so their `created_at`/`updated_at` come from the column defaults; cards
- *     carry both and keep them.
- *   * Assign review times. Every one of the 103,110 imported reviews is
- *     date-only and lands with `time_unknown = 1`. See `reviews.ts`.
- */
-
 import { basename } from "node:path";
 
 import { checkIntegrity, type Db } from "../db/index.js";
@@ -97,29 +27,13 @@ import { type ImportTagsResult, type MochiTaggedCard, importTags } from "./tags.
 import { type MochiRecord, asText, loadExport, walkCards, walkDecks } from "./transit.js";
 
 export interface ImportSource {
-  /**
-   * The extracted export directory. It is both where `data.json` was read from
-   * and where the flat media files live, so `blobs.ts` needs it by name.
-   */
   readonly dir: string;
-  /** The decoded `data.json`. */
   readonly root: MochiRecord;
 }
 
 export interface ImportOptions extends MapOptions, PlanOptions {
-  /**
-   * Media and cached generations. `false` skips them entirely — useful when
-   * only the review history is wanted, and the difference between a 3-second
-   * import and hashing 657 MB. Default: import with `store: "path"`.
-   */
   readonly blobs?: false | ImportBlobsOptions;
-  /**
-   * Run `PRAGMA integrity_check` and `foreign_key_check` at the end. Default
-   * true: a foreign key violation after an import is a failed import, and it is
-   * cheap to find out now rather than at stage 5.
-   */
   readonly verify?: boolean;
-  /** Called after each phase, for a CLI progress line. */
   readonly onPhase?: (phase: ImportPhase, detail: string) => void;
 }
 
@@ -133,7 +47,6 @@ export type ImportPhase =
   | "blobs"
   | "verify";
 
-/** Insert / update / no-op counts for one upserted table. */
 export interface WriteCounts {
   readonly inserted: number;
   readonly updated: number;
@@ -146,48 +59,27 @@ export interface StructureCounts {
   readonly decks: WriteCounts;
   readonly cards: WriteCounts;
   readonly cardFieldValues: WriteCounts;
-  /** Stale values pruned because the export no longer carries that field. */
   readonly fieldValuesRemoved: number;
-  /**
-   * Deck ids the export contains but the database does not — by default the six
-   * empty leaf decks, and empty when `dropEmptyLeafDecks: false` asks to keep
-   * them. Measured as the difference between the walk and the rows, so it
-   * reports what was actually lost rather than what a rule says should have
-   * been.
-   */
   readonly emptyLeafDecksDropped: readonly string[];
-  /**
-   * Cards whose `search_text` this import wrote or changed. Zero on a re-import
-   * of an unchanged export, like every other count here.
-   */
   readonly searchTextWritten: number;
 }
 
 export interface ImportReport {
-  /** Basenames of the imported export directories, in the order given. */
   readonly sources: readonly string[];
   readonly structure: StructureCounts;
   readonly reviews: ImportReviewsResult;
   readonly tags: ImportTagsResult;
   readonly links: ImportLinksResult;
-  /** Null when `blobs: false`. */
   readonly blobs: BlobImportReport | null;
   readonly notes: MappingNotes;
-  /** Empty when healthy. Non-empty is a failed import, not a warning. */
   readonly integrity: readonly string[];
   readonly elapsedMs: number;
 }
 
-/** Read and decode one extracted export directory. */
 export function readSource(dir: string): ImportSource {
   return { dir, root: loadExport(dir) };
 }
 
-/**
- * Import every export directory in `dirs`. Convenience over `importExports`;
- * the split exists so the browser build, which has no `node:fs`, can decode
- * with `decodeExport` and call `importExports` directly.
- */
 export function importExportDirs(
   db: Db,
   dirs: readonly string[],
@@ -197,13 +89,6 @@ export function importExportDirs(
   return importExports(db, dirs.map(readSource), options);
 }
 
-/**
- * Import decoded exports into `db`. All of them at once rather than one at a
- * time, because cross-export identity is real: `oiaISYb2` (単語) is defined in
- * both 日本語 and 基本情報, and a wiki-link in one export can name a card in
- * another. Importing together is what makes the template a single row and the
- * link resolve.
- */
 export function importExports(
   db: Db,
   sources: readonly ImportSource[],
@@ -213,9 +98,6 @@ export function importExports(
   const phase = options.onPhase ?? ((): void => {});
 
   if (options.reverseDefault !== undefined) {
-    // views.sql resolves `inherit` against settings['reverse.default'], so the
-    // mapper's fallback and the view's must be the same value or the database
-    // disagrees with the rows just written into it.
     db.prepare(
       `INSERT INTO settings (key, value) VALUES (?, ?)
        ON CONFLICT (key) DO UPDATE SET value = excluded.value,
@@ -232,16 +114,10 @@ export function importExports(
       `${mapped.cards.length} cards, ${mapped.cardFieldValues.length} field values`,
   );
 
-  // One walk, reused by every module below. Each takes the raw decoded card
-  // record under a different structural type; they read disjoint keys.
   const cards = sources.flatMap((source) =>
     walkCards(source.root).map((walked) => walked.card),
   );
 
-  // Which decks the mapper dropped, by difference rather than by recomputing
-  // the rule: `mapExports` has already filtered its output, so re-running
-  // `emptyLeafDeckIds` over the filtered list answers a different question and
-  // (measured on 日本語) returns none of the six it actually removed.
   const walkedDeckIds = new Set(
     roots.flatMap((root) => walkDecks(root)).map((walked) => asText(walked.deck["id"])),
   );
@@ -259,9 +135,6 @@ export function importExports(
       ? {}
       : { tzOffsetMinutes: options.tzOffsetMinutes }),
     ...(options.timeKnown === undefined ? {} : { timeKnown: options.timeKnown }),
-    // No `decks`/`deckReverse`: the deck rows are already written, so
-    // `deck_reverse_resolved` is read out of the database and the importer
-    // cannot disagree with the view the app will use.
   });
   phase(
     "reviews",
@@ -317,8 +190,6 @@ export function importExports(
   };
 }
 
-// ─── the structural half ─────────────────────────────────────────────────────
-
 const UPSERT_TEMPLATE = `
 INSERT INTO templates (id, name, content, reverse_permutation, pos)
 VALUES (?, ?, ?, ?, ?)
@@ -370,13 +241,6 @@ ON CONFLICT (id) DO UPDATE SET
     OR decks.archived            IS NOT excluded.archived
     OR decks.pos                 IS NOT excluded.pos`;
 
-/**
- * `cards.seq` is the FTS docid and must survive a re-import, so the conflict
- * target is the unique `id`, never the primary key. `reverse` is written from
- * the mapper, which applies SPEC's do-not-orphan rule to the same six cards
- * `importReviews` would force — so the two agree and neither flip-flops the
- * column on alternate runs.
- */
 const UPSERT_CARD = `
 INSERT INTO cards (id, deck_id, template_id, name, content, reverse, pinned,
                    archived, needs_rereview, pos, created_at, updated_at)
@@ -411,25 +275,9 @@ VALUES (?, ?, ?)
 ON CONFLICT (card_id, field_id) DO UPDATE SET value = excluded.value
  WHERE card_field_values.value IS NOT excluded.value`;
 
-/**
- * `search_text` is DERIVED, never authored, so it is written by its own
- * statement rather than as a column of UPSERT_CARD: it depends on the card's
- * field values, which are not written until after every card row exists.
- *
- * The guard is what keeps a re-import writing zero pages. It also matters more
- * here than elsewhere — `search_text` is in the `cards_fts_au` trigger's
- * UPDATE OF list, so an unguarded write would rebuild all 7,716 FTS rows on
- * every run. `IS NOT` rather than `<>` because NULL means "not maintained" and
- * has to compare as a real value.
- */
 const UPDATE_SEARCH_TEXT = `
 UPDATE cards SET search_text = ? WHERE id = ? AND search_text IS NOT ?`;
 
-/**
- * Write decks, templates, fields, cards and field values in one transaction: a
- * half-written card tree is not a state this function can produce, and the FTS
- * triggers fire per row either way.
- */
 function writeStructure(
   db: Db,
   mapped: MappedExport,
@@ -472,8 +320,6 @@ function writeStructure(
       templates.count(existed, changes);
     }
 
-    // Emitted sources-first by `orderTemplateFields`; re-sorting here would
-    // reintroduce the FOREIGN KEY failure it exists to prevent.
     for (const row of mapped.templateFields) {
       const existed = fieldExists.get(row.template_id, row.id) === 1;
       const changes = upsertField.run(
@@ -488,7 +334,6 @@ function writeStructure(
       templateFields.count(existed, changes);
     }
 
-    // Parents before children, from `orderDecks`.
     for (const row of mapped.decks) {
       const existed = deckExists.get(row.id) === 1;
       const changes = upsertDeck.run(
@@ -545,34 +390,6 @@ function writeStructure(
   };
 }
 
-/**
- * Populate `cards.search_text` — the rendered, searchable form of everything
- * authored on a card.
- *
- * Runs last, and inside the same transaction, because it reads the whole card:
- * `content` plus every field value. Both are in `mapped`, so this needs no
- * query — the rows about to be in the database and the rows just written are
- * the same rows.
- *
- * The transform is NOT implemented here. `renderPlainTextParts` in src/text/ is
- * the single definition of it (wiki-link syntax reduced to its display text,
- * zero-width and bidi marks removed, NFC), and the reviewer and the `@` picker
- * call the same function. A second copy of that logic in the importer is how
- * the index and the query box drift apart — the symptom being a card you can
- * read but cannot find.
- *
- * NO `resolveName` IS PASSED, so a bare `[[card-id]]` contributes nothing to
- * the indexed body rather than contributing the target card's name. That is
- * deliberate: resolving would make one card's search text depend on another
- * card's name, so renaming a card would silently stale every search_text
- * pointing at it, and nothing in the schema or the editor owns that
- * invalidation. 54 links corpus-wide are affected and every one of them is on a
- * card with other text. Revisit when the editor exists to maintain it.
- *
- * Field values are concatenated in the export's own order, which is the order
- * `mapExports` emits them in. Order only affects where line breaks fall in the
- * indexed body, never which cards match.
- */
 function writeSearchText(db: Db, mapped: MappedExport): number {
   const update = db.prepare(UPDATE_SEARCH_TEXT);
 
@@ -591,24 +408,6 @@ function writeSearchText(db: Db, mapped: MappedExport): number {
   return written;
 }
 
-/**
- * Delete values for imported cards whose field the export no longer carries.
- *
- * Without this, re-importing an export in which a field was deleted leaves the
- * old value in the database and in the FTS body forever — the card would keep
- * matching text it no longer contains. Scoped to the cards in this import, so
- * it can never touch a card that came from an export not being re-read.
- *
- * LOCALLY DEFINED FIELDS ARE EXEMPT (`template_fields.local = 1`). A field Mochi
- * DELETED and a field Mochi NEVER HAD look identical from here — both are absent
- * from the export — and they want opposite treatment. Conflating them threw away
- * all 3,454 materialised `型` labels on the first re-import after that field
- * existed. Measured, not predicted; the importer printed the count.
- *
- * It matters because re-importing is not a one-off: Zach still reviews ~100
- * cards a day in Mochi, so every fresh export brings history worth having, and
- * anything that needs manual repair afterwards needs it forever.
- */
 function pruneFieldValues(db: Db, values: readonly CardFieldValueRow[]): number {
   db.exec(
     `CREATE TEMP TABLE IF NOT EXISTS import_field_keys
@@ -657,8 +456,6 @@ function counter(): Counter {
 function describe(counts: WriteCounts): string {
   return `+${counts.inserted} ~${counts.updated} =${counts.unchanged}`;
 }
-
-// ─── the module's public surface ──────────────────────────────────────────────
 
 export {
   type CardFieldValueRow,

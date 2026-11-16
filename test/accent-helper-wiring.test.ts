@@ -1,13 +1,3 @@
-/**
- * THE ACCENT HELPER'S TWO HALVES AGREE — decision 56.
- *
- * The helper is Python (`tools/accent_helper.py`) and the app that asks it is
- * TypeScript (`app/accent-helper.ts`), so they cannot share a constant: the port
- * and the allowed origins are written once in each. Read both and require them to
- * match, so moving the app (a new Worker name, a new dev port) cannot leave the
- * helper refusing it — which would look exactly like "the helper is not running":
- * no error on screen, just no reading and no 型.
- */
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";

@@ -1,40 +1,8 @@
-/**
- * Stage 2 — every user-visible string on the dashboard, in one place, per locale.
- *
- * ENGLISH IS THE DEFAULT, JAPANESE IS KEPT. Zach's decision: the page is his and
- * he reads English faster, but the Japanese is not deleted — keeping both is what
- * makes the extraction PROVABLE. `test/dashboard.test.ts` renders with `ja` and
- * compares byte-for-byte against `test/fixtures/dashboard/ja.golden.html`, which
- * was captured from the pre-extraction renderer. So "no string was mangled on the
- * way into this table" is an assertion rather than a hope, over all 460,400 bytes.
- *
- * WHAT IS NOT IN HERE, deliberately: deck, template and field names. `単語`,
- * `漢字`, `例文`, `意味` are IDENTIFIERS — the user authored them and they name
- * rows in his database. Translating them would make the page disagree with the
- * app, so they pass through untouched in both locales. Same for `Dialect/Kansai`
- * and every other tag path.
- *
- * WHY SO MANY ARE FUNCTIONS. Most of this page is not labels, it is sentences
- * with figures in them, and a sentence is not a template with holes: Japanese puts
- * the counter after the number (`${n}回`) and English puts a word before it
- * (`${n} reviews`), and the two languages order clauses differently. A label table
- * of fragments would produce English that reads like glued Japanese. So anything
- * carrying a figure is a function taking the figures and returning the whole
- * sentence, and each locale writes its own.
- *
- * ONE CLASS OF STRING STAYS ENGLISH IN BOTH: the `<span class="latin">` subtitles
- * that already sat beside the Japanese headings (`activity · reviews per day`).
- * Under `en` those become the heading itself and the subtitle is dropped rather
- * than duplicated — which is why `section()` takes both and each locale decides.
- */
-
-/** Which of the two the page is being rendered in. */
 export type Locale = "en" | "ja";
 
 export interface Labels {
   readonly locale: Locale;
 
-  // ── chrome ────────────────────────────────────────────────────────────────
   readonly pageTitle: string;
   readonly h1: string;
   readonly eyebrow: string;
@@ -46,25 +14,11 @@ export interface Labels {
   readonly metaTimezone: string;
   readonly metaTimezoneValue: string;
   readonly noData: string;
-  /** A section heading. The Latin subtitle is dropped when it IS the heading. */
   section(ja: string, latin: string): string;
-  /**
-   * The two headings `section()` cannot serve, because their Latin subtitle is
-   * itself part Japanese — `retention vs interval — Mochi にはないタイル`. Under
-   * `en` that would leave Japanese in an English heading, so each locale writes
-   * the whole thing.
-   */
   readonly headingIntervalRetention: string;
   readonly headingDeckRetention: string;
-  /**
-   * A `DateWindow`'s name. Its `label` is authored Japanese (`2026年`) and its
-   * `id` is the bare year, so each locale picks rather than formatting — this is
-   * the only figure that reaches the page from `metrics.ts` rather than from here,
-   * and left alone it put `2026年` inside an English heading.
-   */
   windowLabel(id: string, label: string): string;
 
-  // ── tiles ─────────────────────────────────────────────────────────────────
   readonly tileReviews: string;
   readonly tileRetention: string;
   readonly tileStudyTime: string;
@@ -86,12 +40,10 @@ export interface Labels {
   readonly tilePerDaySub: string;
   tilePerReviewSub(mean: string): string;
 
-  // ── totals section ────────────────────────────────────────────────────────
   totalsDef(from: string, to: string, days: string, untimed: string): string;
   totalsRead(target: string, delta: string): string;
   totalsClock(unknown: string): string;
 
-  // ── activity heatmap ──────────────────────────────────────────────────────
   readonly weekdays: readonly (readonly [number, string])[];
   month(m: number): string;
   heatDay(date: string, reviews: string, retention: string, minutes: string): string;
@@ -106,10 +58,8 @@ export interface Labels {
   activityRead(activeDays: string, elapsedDays: string, share: string): string;
   readonly yearsTableSummary: string;
   readonly yearsTableHead: readonly string[];
-  /** The year as a table CELL. Japanese appends the counter; English does not. */
   yearRow(year: string): string;
 
-  // ── cards studied / cumulative ────────────────────────────────────────────
   cumulativeAria(first: string, last: string, cards: string): string;
   cumulativeCap(cards: string): string;
   monthlyTip(month: string, cards: string, fresh: string, reviews: string): string;
@@ -120,7 +70,6 @@ export interface Labels {
   readonly monthsTableSummary: string;
   readonly monthsTableHead: readonly string[];
 
-  // ── retention vs interval ─────────────────────────────────────────────────
   targetLine(target: string): string;
   readonly noObservation: string;
   bucketElapsedTip(label: string, retention: string, reviews: string, lapses: string): string;
@@ -132,12 +81,6 @@ export interface Labels {
   intervalDef(target: string): string;
   readonly intervalVolumeHeading: string;
   intervalLegend(target: string): string;
-  /**
-   * Takes STRUCTURE, not pre-built phrases. The "no bucket is below target" case
-   * and the "only these N bands" case are different sentences in each language,
-   * and building them at the call site would have hard-coded Japanese grammar
-   * into a locale-neutral file.
-   */
   intervalRead(
     target: string,
     below: readonly string[],
@@ -170,7 +113,6 @@ export interface Labels {
   readonly bucketsTableSummary: string;
   readonly bucketsTableHead: readonly string[];
 
-  // ── deck retention ────────────────────────────────────────────────────────
   readonly forward: string;
   readonly reverse: string;
   deckDotTip(path: string, name: string, value: string, reviews: string, small: boolean): string;
@@ -181,7 +123,6 @@ export interface Labels {
   readonly decksTableSummary: string;
   readonly decksTableHead: readonly string[];
 
-  // ── deck progress ─────────────────────────────────────────────────────────
   readonly progressNew: string;
   readonly progressYoung: string;
   readonly progressMature: string;
@@ -192,7 +133,6 @@ export interface Labels {
   readonly progressTableSummary: string;
   readonly progressTableHead: readonly string[];
 
-  // ── forecast ──────────────────────────────────────────────────────────────
   forecastTip(date: string, tracks: string): string;
   forecastAria(asOf: string, days: string, backlog: string): string;
   forecastDef(asOf: string, days: string, total: string, perDay: string, backlog: string, overdue: string, fresh: string): string;
@@ -200,27 +140,11 @@ export interface Labels {
   forecastTableSummary(days: string): string;
   readonly forecastTableHead: readonly string[];
 
-  // ── Mochi reconciliation ──────────────────────────────────────────────────
   readonly match: string;
   mochiDef(first: string, last: string): string;
   readonly mochiTableHead: readonly string[];
-  /**
-   * The reconciliation rows' names and notes, keyed by `MochiReference.key`.
-   *
-   * These used to live as Japanese literals in `metrics.ts`, which made them the
-   * one class of UI text the locale could not reach — the English page carried
-   * `定着率` and `下の注記を参照` in its own table. The FIGURES stay in metrics.ts
-   * (they are the reference data, and it has exactly one home, deliberately);
-   * only the words moved.
-   */
   mochiRowLabel(key: string): string;
   mochiRowNote(key: string): string;
-  /**
-   * `unexplained` is the SHARE the leading hypothesis fails to account for, or
-   * null when there is nothing to account for. Passed as a figure rather than as
-   * a finished clause — the clause was being written in Japanese at the call site,
-   * which put one language's grammar inside a locale-neutral renderer.
-   */
   mochiRead(
     gap: string,
     fewer: string,
@@ -231,14 +155,11 @@ export interface Labels {
     unexplained: string | null,
   ): string;
 
-  // ── glossary and footer ───────────────────────────────────────────────────
   readonly glossaryHeading: string;
   readonly glossary: readonly (readonly [string, string])[];
   readonly aboutHeading: string;
   about(activeDays: string): string;
 }
-
-// ─── Japanese: the strings exactly as the page shipped them ──────────────────
 
 export const JA: Labels = {
   locale: "ja",
@@ -522,14 +443,6 @@ export const JA: Labels = {
     `選び、data-viz バリデータを通してある。`,
 };
 
-// ─── English: the default ────────────────────────────────────────────────────
-//
-// Not a gloss of the Japanese. Where the Japanese sentence is built around a
-// counter or a topic marker the English is rewritten to read as English, and the
-// technical vocabulary is the one BACKTEST.md and the module docs already use
-// (elapsed / scheduled / retention / lapse / track) so the page and the repo say
-// the same words for the same things.
-
 export const EN: Labels = {
   locale: "en",
 
@@ -548,7 +461,6 @@ export const EN: Labels = {
   metaTimezone: "timezone",
   metaTimezoneValue: "dates cut by each review's own tz_offset, not by UTC",
   noData: "no data",
-  // Under `en` the Latin subtitle IS the heading, so it is not repeated.
   section: (_ja, latin) => latin,
   headingIntervalRetention: 'retention vs interval <span class="latin">a tile Mochi lacks</span>',
   headingDeckRetention: 'retention by deck <span class="latin">a tile Mochi lacks</span>',
@@ -841,5 +753,4 @@ export const EN: Labels = {
     `data-viz validator.`,
 };
 
-/** By locale, for a CLI flag or a test to pick from. */
 export const LOCALES: Readonly<Record<Locale, Labels>> = { en: EN, ja: JA };

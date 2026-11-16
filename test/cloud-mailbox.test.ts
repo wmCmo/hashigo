@@ -5,16 +5,6 @@ import { describe, expect, it } from "vitest";
 
 import { handle, type Env, type KvLike } from "../cloud/mailbox/src/mailbox.js";
 
-/**
- * The Cloudflare mailbox, over an in-memory KV — proven before it is deployed.
- *
- * The property that matters is that it is a DROP-IN for `syncMailbox()` in
- * `vite.app.config.ts`: same routes, same shapes, same refusals, so
- * `app/sync-client.ts` cannot tell which one it is talking to. The one thing it
- * adds — a token — is tested for both arms, because a mailbox on the open
- * internet that lets a wrong token through is his whole review history public.
- */
-
 function memoryKv(): KvLike & { readonly data: Map<string, { value: string; metadata?: unknown }> } {
   const data = new Map<string, { value: string; metadata?: unknown }>();
   return {
@@ -194,8 +184,6 @@ describe("CORS, because the app is served from the laptop and this from workers.
   });
 });
 
-// ─── /generate/ on the Worker ────────────────────────────────────────────────
-
 import { generate, parse, probeEffort, textProvider, textProviders } from "../cloud/mailbox/src/generate.js";
 
 describe("generation on the Worker answers like the laptop, and keeps what it makes", () => {
@@ -218,7 +206,7 @@ describe("generation on the Worker answers like the laptop, and keeps what it ma
 
     const [, again] = await generate(request as never, e, { synthesise: countedSpeech });
     expect(again).toMatchObject({ cached: true });
-    expect(calls).toBe(1); // the second press billed nothing
+    expect(calls).toBe(1);
   });
 
   it("an AZURE voice Mochi stored is spoken in the language's fill voice, and the record says who spoke", async () => {
@@ -261,8 +249,6 @@ describe("generation on the Worker answers like the laptop, and keeps what it ma
   });
 
   it("serves a cached text cleaned of echoed control tags, and repairs the record", async () => {
-    // 左遷, 2026-10-21: the leak was cached, so every later press — including
-    // the editor's forced one — would have handed the tags back.
     let asked = 0;
     const leaked = "<thinking_mode>auto</thinking_mode>\n\n<reasoning_effort>medium</reasoning_effort>👔📉🏢";
     const e = { ...env(), ANTHROPIC_API_KEY: "a" };
@@ -271,11 +257,9 @@ describe("generation on the Worker answers like the laptop, and keeps what it ma
       return leaked;
     };
     const request = parse({ kind: "ai", text: "Describe a word 左遷 using emojis only", lang: null, voice: null, options: {} });
-    // Since 2026-11-06 a fresh line is cleaned BEFORE it is cached…
     await generate(request as never, e, { generateText: write });
     const [key] = [...e.MAILBOX.data.keys()] as [string];
     expect(JSON.parse(e.MAILBOX.data.get(key)?.value as string).output).toBe("👔📉🏢");
-    // …so the OLD Worker's record is planted by hand, exactly as it stored it.
     const record = JSON.parse(e.MAILBOX.data.get(key)?.value as string) as Record<string, unknown>;
     e.MAILBOX.data.set(key, { ...e.MAILBOX.data.get(key), value: JSON.stringify({ ...record, output: leaked }) } as never);
     const [, served] = await generate(request as never, e, { generateText: write });
@@ -296,15 +280,9 @@ describe("generation on the Worker answers like the laptop, and keeps what it ma
   });
 });
 
-/**
- * 2026-11-10: the Gemini key on the Worker IS the switch — `textProvider`.
- * Gemini wins when both keys are there; removing it puts Anthropic back.
- */
 describe("which provider writes the text", () => {
   const ask = parse({ kind: "ai", text: "Example sentence using 朗報 in Japanese (Don't translate)", lang: null, voice: null, options: {} });
 
-  // Decision 69, 2026-11-15: Sonnet first. Zach: "I cannot risk memorizing weird
-  // sentence using weird particles."
   it("is Claude Sonnet when both keys are on the Worker", async () => {
     let chosen: Record<string, unknown> = {};
     const write = async (_d: unknown, options: Record<string, unknown>): Promise<string> => {
@@ -336,10 +314,6 @@ describe("which provider writes the text", () => {
   });
 });
 
-/**
- * 2026-11-15: a benchmark probe may ask Claude for a higher effort and is told
- * its token counts; a card's request never is, whatever its options say.
- */
 describe("a benchmark probe", () => {
   const both = () => ({ ...env(), ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" });
   const ask = (options: Record<string, string>) =>
@@ -377,10 +351,6 @@ describe("a benchmark probe", () => {
   });
 });
 
-/**
- * 2026-11-15, decision 70: a sentence without the card's word gets one more try
- * from the same model, then the next provider.
- */
 describe("a sentence that leaves out the card's word", () => {
   const ask = parse({ kind: "ai", text: "Example sentence using 鯨 in Japanese (Don't translate)", lang: null, voice: null, options: {} });
   const both = () => ({ ...env(), ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" });
@@ -424,10 +394,6 @@ describe("a sentence that leaves out the card's word", () => {
   });
 });
 
-/**
- * 2026-11-15, decision 69: Sonnet first. Gemini stays behind it, free, so an
- * Anthropic outage or overload still gets a line (`textProviders`).
- */
 describe("when Sonnet fails, Gemini answers", () => {
   const ask = parse({ kind: "ai", text: "Example sentence using 均衡 in Japanese (Don't translate)", lang: null, voice: null, options: {} });
   const both = () => ({ ...env(), ANTHROPIC_API_KEY: "a", GEMINI_API_KEY: "g" });
@@ -497,7 +463,7 @@ describe("a REDO on the Worker makes a new clip, with the card's reading", () =>
     );
     expect(status).toBe(200);
     expect(redone).toMatchObject({ cached: false });
-    expect(seen).toHaveLength(2); // the redo reached the voice; the repeat did not
+    expect(seen).toHaveLength(2);
     expect(seen[1]).toMatchObject({ readings: [{ base: "日向", alias: "ひなた" }] });
     const record = JSON.parse([...e.MAILBOX.data.values()][0]?.value ?? "{}") as { replaces?: string };
     expect(record.replaces).toBe(old);
@@ -509,11 +475,6 @@ describe("a REDO on the Worker makes a new clip, with the card's reading", () =>
   });
 });
 
-/**
- * 差分 — 2026-10-10。タブレットを閉じた直後の最後の採点が届くように、全体
- * （~2 MB）ではなく数 KB の差分を `keepalive` で送る。ここは積んで、見せて、
- * 全体が覆ったら捨てる。印の意味は知らない — 比べるだけ。
- */
 describe("deltas: small sends that survive closing the page", () => {
   const ID = "dev-3909a81f98a9";
   const delta = (mark: number): string =>
@@ -530,7 +491,6 @@ describe("deltas: small sends that survive closing the page", () => {
     const list = (await (await handle(request("GET", "/sync/"), e)).json()) as {
       peers: { deviceId: string; delta?: { sha?: string }; noPayload?: boolean }[];
     };
-    // ONE peer, not two — the delta key must not show up as a device of its own.
     expect(list.peers).toHaveLength(1);
     expect(list.peers[0]?.deviceId).toBe(ID);
     expect(list.peers[0]?.delta?.sha).toBe(got.headers.get("X-Payload-Sha"));
@@ -545,8 +505,6 @@ describe("deltas: small sends that survive closing the page", () => {
   });
 
   it("stacks an EDIT delta that shares the last grade delta's mark — decision 64", async () => {
-    // A card made with no grade after it carries the mark of the last grade send.
-    // Deduped on the mark, the mailbox answered "duplicate" and the card was lost.
     const e = env();
     await handle(request("POST", `/sync/${ID}/delta`, { body: delta(5) }), e);
     const edit = JSON.stringify({
@@ -637,11 +595,6 @@ describe("an emoji line on the Worker is emoji (2026-11-06)", () => {
   });
 });
 
-/**
- * Decision 67, 2026-11-13: 数隻 said かずせき, and *"it wouldn't know the accent
- * between 塔 and 問う"*. A head word's clip carries its 読み + 型 accent to the
- * voice — and the stored key does not change, so no existing clip looks missing.
- */
 describe("a word clip is spoken from its reading and accent", () => {
   const word = { kind: "speech", text: "とう", lang: "ja-JP", voice: "ja-JP-Neural2-C", options: {} };
 

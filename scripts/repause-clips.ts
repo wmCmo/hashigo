@@ -1,40 +1,3 @@
-/**
- * RE-SPEAK THE CLIPS THIS PROJECT MADE BEFORE IT KNEW ABOUT `、`.
- *
- * Zach, 2026-09-16: *"i think the generated audio was speaking without pausing
- * on comma or natural pausing section"*. `src/accent/speech.ts` now spells a
- * sentence's written pauses as `<break>` — measured there — but the clips the
- * 2026-09-16 fill already made were synthesised straight through. This replaces
- * exactly those.
- *
- *     npx vite-node scripts/repause-clips.ts -- --dry      # says what it would do
- *     npx vite-node scripts/repause-clips.ts -- --apply    # does it
- *
- * ─── WHY THIS IS A REPLACE AND NOT AN INSERT ────────────────────────────────
- *
- * The identity is `(kind, sourceText, voice, lang, options)` and none of those
- * change — the text is the same text and Neural2-C is still the voice. Only the
- * BYTES change, and `blobs.hash` is the sha256 of the bytes and the primary key.
- * So a plain re-synthesis writes a SECOND row under the same identity, and
- * `lookupGeneration` then has two answers to one question.
- *
- * That is the trap `respeak-cli` and the 2026-09-16 fill both hit from the other
- * side (63 generations lost to a hash collision, "3,850 clips made, zero
- * failures reported, 161 cards mute"). So the old row and its payload go, in the
- * same transaction that writes the new ones — and the `--dry` run does the real
- * synthesis accounting without touching the database.
- *
- * ─── WHAT IT WILL NOT TOUCH ─────────────────────────────────────────────────
- *
- * Anything Mochi made. Every clip in the export is Azure — `ja-JP-NanamiNeural`,
- * `en-US-AIGenerate1Neural` — and this selects on `voice = FILL_VOICE`, which
- * only this project ever writes. Zach has deferred regenerating the CORPUS five
- * times and that decision is untouched: the 136 clips this selects were made
- * TODAY, by us, and are the only ones that were ever spoken straight through.
- *
- * It also skips anything `pausedSsml` declines, so a word that merely happens to
- * be filed under the fill voice is left exactly as it is.
- */
 import { existsSync } from "node:fs";
 
 import { pausedSsml, synthesise } from "../src/accent/speech.js";
@@ -89,8 +52,6 @@ async function main(): Promise<number> {
     )
     .all(FILL_VOICE) as Clip[];
 
-  // The selection is `pausedSsml`'s own answer, not a second regex — a rule
-  // stated twice is a rule that drifts, and this one decides what gets re-spoken.
   const targets = rows.filter((row) => pausedSsml(row.source_text) !== null).slice(0, limit);
 
   const characters = targets.reduce((n, row) => n + row.source_text.length, 0);
@@ -117,23 +78,6 @@ async function main(): Promise<number> {
         lang: row.lang,
         options: JSON.parse(row.options) as Record<string, string>,
       };
-      // THE OLD ROW GOES FIRST, or the identity briefly has two answers and a
-      // crash in between leaves it that way. The payload goes with it: nothing
-      // else can reference a generation blob (no `blob_refs` row, refcount 1),
-      // so leaving it is an orphan the sweep would collect anyway.
-      //
-      // REFCOUNT TO ZERO BEFORE THE DELETE, and the schema is why: the trigger
-      // `blobs_no_delete_while_referenced` aborts any DELETE at `refcount > 0`,
-      // and `storeGeneratedSpeech` writes every clip at 1. The first run of this
-      // script hit that on all 137 and reported `0 replaced · 137 failed` — the
-      // database defending itself, correctly, and nothing was written.
-      //
-      // BOTH STATEMENTS ARE INSIDE THE TRANSACTION, which is the whole safety
-      // argument: a delete that aborts rolls the zeroed refcount back with it.
-      // Doing it the other way round once left a legitimate row sitting at 0
-      // after its delete failed — one `sweepUnreferenced` from being collected.
-      // The `blobs are immutable` trigger does not name `refcount`, so this is
-      // the one column an UPDATE may touch.
       const fresh = db.transaction(() => {
         const written = storeGeneratedSpeech(db, store, descriptor, bytes);
         if (written === row.hash) return false;

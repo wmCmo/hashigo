@@ -1,34 +1,3 @@
-/**
- * Stage 1 CLI — import extracted `.mochi` exports into a Hashigo database.
- *
- *   npm run import -- exports/日本語 exports/English exports/基本情報
- *   npm run import -- --db build/hashigo.db --no-blobs exports/English
- *   npm run import -- --json exports/日本語 > report.json
- *
- * Flags
- *   --db <file>              Database file. Default build/hashigo.db.
- *                            ":memory:" imports and throws it away, which is a
- *                            useful way to check an export decodes cleanly.
- *   --inline-blobs           Store media bytes IN the database. 657 MB of mp3,
- *                            so the default records the file path instead.
- *   --no-blobs               Skip media and cached generations entirely.
- *   --no-text-generations    Media only; do not import the cached ai /
- *                            translate / furigana text.
- *   --keep-empty-leaf-decks  Keep 副詞, 名詞, 形容動詞, 一段動詞, 形容詞, 五段動詞.
- *                            They are DROPPED by default (SPEC "Settled"), so
- *                            45 decks become 39. They hold no cards and no
- *                            children, so nothing else moves either way.
- *   --reverse-default on|off Where the three-state `inherit` bottoms out.
- *                            Written to `settings` so views.sql agrees.
- *   --json                   Emit the report as JSON on stdout and nothing else.
- *   --quiet                  No progress lines.
- *
- * Re-running is safe: every write is an upsert and the second run reports
- * `unchanged` for every row. Console note — this machine's console is cp932, so
- * Japanese deck names print through Node's UTF-16 console writer, not the code
- * page; do not pipe this through a tool that re-encodes stdout.
- */
-
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -150,7 +119,6 @@ function main(): void {
   }
 }
 
-/** What is actually in the database now, read back out of it rather than counted. */
 function summarise(db: Db, report: ImportReport): string {
   const rows = (sql: string): number => db.prepare(sql).pluck().get() as number;
   const lines = [
@@ -169,7 +137,6 @@ function summarise(db: Db, report: ImportReport): string {
     row("card tags", rows("SELECT count(*) FROM card_tags")),
     row("wiki-links", rows("SELECT count(*) FROM card_links")),
     row("  unresolved", rows("SELECT count(*) FROM card_links_resolved WHERE resolved = 0")),
-    // Real links into text this import discarded. See ImportLinksResult.
     row(
       "  in discarded content",
       rows("SELECT count(*) FROM card_links_resolved WHERE text_present = 0"),
@@ -192,8 +159,6 @@ function summarise(db: Db, report: ImportReport): string {
       `retention ${totals["retention_pct"]}%  (${totals["lapses"]} lapses)`,
       `study     ${totals["hours"]} h over ${totals["study_days"]} days, ` +
         `${totals["first_review_date"]} to ${totals["last_review_date"]}`,
-      // SPEC: "Imported history must be flagged time-unknown, not silently
-      // assigned midnight." Say so every run rather than hiding it in a column.
       `clock     ${totals["reviews_time_unknown"]} of ${totals["reviews"]} reviews are ` +
         `date-only (Mochi stored no time of day)`,
     );
@@ -210,8 +175,6 @@ function summarise(db: Db, report: ImportReport): string {
   if (report.structure.emptyLeafDecksDropped.length > 0) {
     lines.push(`dropped ${report.structure.emptyLeafDecksDropped.length} empty leaf deck(s)`);
   }
-  // Discarded rather than imported, so it is said out loud on every run. The
-  // ids are in the JSON report and the text itself is still in the export.
   if (report.notes.staleContentCardIds.length > 0) {
     lines.push(
       `discarded stale pre-template content on ${report.notes.staleContentCardIds.length} ` +
@@ -223,9 +186,6 @@ function summarise(db: Db, report: ImportReport): string {
   if (report.structure.fieldValuesRemoved > 0) {
     lines.push(`pruned ${report.structure.fieldValuesRemoved} field value(s) the export no longer has`);
   }
-  // IMPORTED, not discarded — but nothing renders them, so saying it out loud is
-  // the whole point. Both breakouts, because "235 orphans" and "137 orphans with
-  // text" answer different questions and only the second is lost authoring.
   if (report.notes.orphanFieldValues.length > 0) {
     lines.push(
       `${report.notes.orphanFieldValues.length} field value(s) no template field claims — ` +

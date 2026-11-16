@@ -46,46 +46,6 @@ import {
   type TemplateInput,
 } from "../src/template/resolve.js";
 
-/**
- * Stage 3 acceptance. SPEC's "Two syntax surfaces" section is the criteria.
- *
- * 1. GOLDEN, surface 2. All eleven real template rows — extracted into
- *    test/fixtures/templates/manifest.json by extract.ts, so this half runs
- *    without the 657 MB of gitignored exports — parse with ZERO unknown
- *    constructs, declare the side counts SPEC states (単語 and 漢字 four,
- *    言葉 / 文法 / New Vocab three), and reproduce every figure in SPEC's
- *    surface-2 table. Their ASTs are pinned in parsed.golden.json.
- *
- * 2. CENSUS, surface 1. The content and every field value of all 7,716 cards
- *    parse with zero failures and zero unknowns, and the construct counts derived
- *    FROM THE AST match the figures `tools/mochi.py` measures independently with
- *    regexes.
- *
- * 3. THE THREE TRAPS, asserted individually rather than assumed to be covered by
- *    the totals — a parser can hit every count and still nest wrongly.
- *
- * SIX PLACES SPEC'S TABLE AND THE AST DISAGREE. Each is a counting artifact of
- * the regexes SPEC was measured with, each is reconciled below in the test rather
- * than rounded away, and each names the card that causes it.
- *
- *   ordered list  4,318 not 4,314. 20 cards separate numbered senses with a BARE
- *                 `\r` pasted from a dictionary. CommonMark and JavaScript's /m
- *                 treat that as a line ending; Python's re.M does not.
- *   cloze         1,086 not 1,087. Card fQGztahq writes `{{国際連合}}` INSIDE a
- *                 code span, where a cloze is not a cloze.
- *   **bold**      314 not 315. Card gN7K9IpR's `[[**enactment**|zeeUDLTL]]` puts
- *                 the bold in a wiki-link's cached display text, which is a TEXT
- *                 column in the schema, not markup.
- *   wiki-link     8,690 exactly — plus 46 `[[card-id]]` with no display text and
- *                 8 `[[|card-id]]` with an empty one. All 54 are real links whose
- *                 targets resolve, and `src/import/links.ts` writes rows for
- *                 none of them, because its regex requires a non-empty display.
- *   `<speech>`    appears twice in the templates (Polysemy, 敬語). SPEC's
- *                 surface-2 table has no row for it at all.
- *   `<span style>` 1 element on 1 card, not 2. SPEC's "2" counts the open and
- *                 close tags.
- */
-
 const EXPORT_NAMES = ["日本語", "English", "基本情報"] as const;
 const EXPORT_DIRS = EXPORT_NAMES.map((name) => resolve(import.meta.dirname, "..", "exports", name));
 const HAVE_EXPORTS = EXPORT_DIRS.every((dir) => existsSync(join(dir, "data.json")));
@@ -121,14 +81,12 @@ interface Manifest {
 
 const manifest = JSON.parse(readFileSync(resolve(FIXTURES, "manifest.json"), "utf8")) as Manifest;
 
-/** The manifest row for a template, by name. Both 単語 rows are identical. */
 function template(name: string): ManifestTemplate {
   const row = manifest.templates.find((entry) => entry.name === name);
   if (row === undefined) throw new Error(`no template named ${name} in the manifest`);
   return row;
 }
 
-/** A manifest row as resolver input. */
 function asInput(row: ManifestTemplate, reversePermutation: readonly number[] | null = null): TemplateInput {
   return {
     id: row.id,
@@ -141,8 +99,6 @@ function asInput(row: ManifestTemplate, reversePermutation: readonly number[] | 
     reversePermutation,
   };
 }
-
-// ─── AST search helpers ──────────────────────────────────────────────────────
 
 function nodesIn<K extends Node["kind"]>(
   root: Iterable<Node>,
@@ -164,8 +120,6 @@ function childrenKinds(node: Node): string[] {
   const kids = "children" in node ? (node.children as readonly Node[]) : [];
   return kids.map((child) => child.kind);
 }
-
-// ─── surface 2: the eleven real templates ────────────────────────────────────
 
 describe("surface 2 — the eleven real template bodies", () => {
   it("is the whole corpus of templates: 11 rows, 10 distinct ids, 単語 twice", () => {
@@ -204,10 +158,8 @@ describe("surface 2 — the eleven real template bodies", () => {
       "基本情報/基本情報": 2,
       "基本情報/単語": 4,
     });
-    // A body with n sides holds n-1 separators. SPEC's surface-2 table: `---` 19.
     const separators = Object.values(sides).reduce((total, count) => total + count - 1, 0);
     expect(separators).toBe(19);
-    // And parseTemplate returns one Side per declared side.
     for (const row of manifest.templates) {
       expect(parseTemplate(row.content)).toHaveLength(row.sides);
     }
@@ -217,9 +169,6 @@ describe("surface 2 — the eleven real template bodies", () => {
     const tally = new Map<string, number>();
     for (const row of manifest.templates) mergeCensus(tally, census(parseTemplate(row.content)));
 
-    // `<<Field>>` 73 is the count of ALL `<<…>>` tokens: 65 plain plus the four
-    // section markers and their four closes. The plain 65 land in three places,
-    // and two of them are not nodes at all — that is parser trap 3.
     const sigils = new Map<string, number>();
     for (const row of manifest.templates) {
       for (const token of maskFields(row.content).tokens) {
@@ -233,23 +182,21 @@ describe("surface 2 — the eleven real template bodies", () => {
       (tally.get("field") ?? 0) + (tally.get("field:href") ?? 0) + (tally.get("field:attribute") ?? 0),
     ).toBe(65);
     expect(tally.get("field")).toBe(53);
-    expect(tally.get("field:href")).toBe(11); // `[Jisho](…/<<Kanji>>)` — trap 3
-    expect(tally.get("field:attribute")).toBe(1); // `<input value=<<NoComma>>>` — trap 3
+    expect(tally.get("field:href")).toBe(11);
+    expect(tally.get("field:attribute")).toBe(1);
 
-    expect(tally.get("link")).toBe(11); // SPEC: `[text](url)` 11
-    expect(tally.get("cloze")).toBe(8); // SPEC: `{{…}}` 8
-    expect(tally.get("quoteLine")).toBe(6); // SPEC: `>` 6
-    expect(tally.get("element:ai")).toBe(5); // SPEC: `<ai>` 5
-    expect(tally.get("heading:4")).toBe(5); // SPEC: `#### ` 5
-    expect(tally.get("hrule:___")).toBe(4); // SPEC: `___` 4
-    expect(tally.get("section")).toBe(4); // `<<#F>>` 2 + `<<^F>>` 2, closes consumed
-    expect(tally.get("element:furigana")).toBe(3); // SPEC: `<furigana>` 3
-    expect(tally.get("element:draw")).toBe(1); // SPEC: `<draw />` 1
-    expect(tally.get("element:input")).toBe(1); // SPEC: `<input>` 1
-    // Never `---`: side separators are structure, consumed before block parsing.
+    expect(tally.get("link")).toBe(11);
+    expect(tally.get("cloze")).toBe(8);
+    expect(tally.get("quoteLine")).toBe(6);
+    expect(tally.get("element:ai")).toBe(5);
+    expect(tally.get("heading:4")).toBe(5);
+    expect(tally.get("hrule:___")).toBe(4);
+    expect(tally.get("section")).toBe(4);
+    expect(tally.get("element:furigana")).toBe(3);
+    expect(tally.get("element:draw")).toBe(1);
+    expect(tally.get("element:input")).toBe(1);
     expect(tally.get("hrule:---")).toBeUndefined();
 
-    // SPEC's surface-2 table has no row for <speech>, and the templates use it.
     expect(tally.get("element:speech")).toBe(2);
     const withSpeech = manifest.templates
       .filter((row) => (census(parseTemplate(row.content)).get("element:speech") ?? 0) > 0)
@@ -270,16 +217,12 @@ describe("surface 2 — the eleven real template bodies", () => {
   });
 });
 
-// ─── the three parser traps ──────────────────────────────────────────────────
-
 describe("parser trap 1 — `---` separates sides, `___` is a rule inside one", () => {
   it("splits 言葉 on `---` only, keeping its `___` as a rule on side 1", () => {
     const sides = parseTemplate(template("言葉").content);
     expect(sides).toHaveLength(3);
-    // `{{<<言葉>>}}` / `___` / `<<Speech>>`
     expect(sides[0]?.blocks.map((block) => block.kind)).toEqual(["paragraph", "hrule", "paragraph"]);
     expect(nodesIn(sides[0]?.blocks ?? [], "hrule")).toEqual([{ kind: "hrule", marker: "___" }]);
-    // and no side carries a `---` rule
     for (const side of sides) {
       for (const rule of nodesIn(side.blocks, "hrule")) {
         expect(rule).toEqual({ kind: "hrule", marker: "___" });
@@ -295,13 +238,12 @@ describe("parser trap 1 — `---` separates sides, `___` is a rule inside one", 
   });
 
   it("keeps a `---` that arrives inside a field value as a rule, not a new side", () => {
-    // Card EPp9rse6 writes a four-step answer into 基本情報's `Cue` field.
     const row = template("基本情報");
     const rendered = resolveCard(
       { id: "EPp9rse6", values: { name: "one\n---\ntwo\n---\nthree" } },
       asInput(row),
     );
-    expect(rendered.sides).toHaveLength(2); // the template's two sides, unchanged
+    expect(rendered.sides).toHaveLength(2);
     expect(nodesIn(rendered.sides[0]?.blocks ?? [], "hrule")).toEqual([
       { kind: "hrule", marker: "---" },
       { kind: "hrule", marker: "---" },
@@ -314,8 +256,6 @@ describe("parser trap 2 — constructs nest and resolve inside-out", () => {
   it("nests cloze over furigana over field in 単語, in that order", () => {
     const sides = parseTemplate(template("単語").content);
     const clozes = nodesIn(sides[1]?.blocks ?? [], "cloze");
-    // side 2 holds `{{<<Reference>>}}` inside the inverted section and
-    // `{{<furigana><< 単語 >></furigana>}}` outside it.
     expect(clozes).toHaveLength(2);
     const ruby = clozes.filter((node) => childrenKinds(node)[0] === "element");
     const furigana = only(nodesIn(ruby, "element"), "one <furigana>");
@@ -335,7 +275,6 @@ describe("parser trap 2 — constructs nest and resolve inside-out", () => {
   });
 
   it("keeps a code span verbatim, so `<component/>` is not an element", () => {
-    // Card 1wt8AuiS, 基本情報/第3章.
     const blocks = parseFieldValue("{{空要素（例：`<component/>`）}}");
     const cloze = only(nodesIn(blocks, "cloze"), "one cloze");
     expect(nodesIn([cloze], "element")).toEqual([]);
@@ -385,8 +324,6 @@ describe("parser trap 3 — fields inside unquoted attributes and URLs", () => {
   });
 });
 
-// ─── surface 1 edge cases the corpus forced ──────────────────────────────────
-
 describe("surface 1 details the corpus forced", () => {
   it("requires a space after `#`, so `#DaysOfMonth` stays text", () => {
     expect(nodesIn(parseFieldValue("#DaysOfMonth"), "heading")).toEqual([]);
@@ -395,7 +332,6 @@ describe("surface 1 details the corpus forced", () => {
   });
 
   it("treats a bare `\\r` as a line ending, so numbered senses stay one list", () => {
-    // Card vxhfRHeV: `1. …\r\n\r2. …\r\r\n3. …`
     const blocks = parseFieldValue("1. one\r\n\r2. two\r\r\n3. three");
     const list = only(nodesIn(blocks, "list"), "one list");
     expect(list.items).toHaveLength(3);
@@ -403,20 +339,14 @@ describe("surface 1 details the corpus forced", () => {
   });
 
   it("applies the intraword `_` rule to Japanese, not only to ASCII", () => {
-    // JavaScript's `\w` is [A-Za-z0-9_], so an ASCII-only flanking test forbids
-    // `a_b_c` from emphasising while emphasising `路_線_図` — in a corpus that is
-    // 7,716 mostly-Japanese cards, that is the wrong way round.
     const emphasis = (source: string): number => nodesIn(parseFieldValue(source), "emphasis").length;
     expect(emphasis("a_b_c")).toBe(0);
     expect(emphasis("路_線_図")).toBe(0);
     expect(emphasis("これは_強調_です")).toBe(0);
     expect(emphasis("音声_20260122_01.mp3")).toBe(0);
     expect(plainText(parseFieldValue("路_線_図"))).toBe("路_線_図");
-    // A `_` that is not intraword still emphasises, in either script — this is
-    // the shape of both `_` uses in the corpus (`_Leo_.`, `_108 times…_`).
     expect(emphasis("word _Leo_.")).toBe(1);
     expect(emphasis("これは _強調_ です")).toBe(1);
-    // `*` is unchanged: it has no intraword rule in either script.
     expect(emphasis("路*線*図")).toBe(1);
   });
 
@@ -430,7 +360,6 @@ describe("surface 1 details the corpus forced", () => {
   });
 
   it("degrades an unclosed construct to literal text instead of throwing", () => {
-    // Card 2KtTkHOX ends `…to get [[stout`.
     for (const source of ["to get [[stout", "{{unclosed", "`unclosed", "$unclosed", "**unclosed"]) {
       const blocks = parseFieldValue(source);
       expect(nodesIn(blocks, "unknown"), source).toEqual([]);
@@ -439,7 +368,6 @@ describe("surface 1 details the corpus forced", () => {
   });
 
   it("parses a pipe table whose cells hold clozes", () => {
-    // Card ucxaOAxb, 基本情報/第11章.
     const blocks = parseFieldValue("|a|b|\n|---|---|\n|{{共通鍵}}|x|");
     const table = only(nodesIn(blocks, "table"), "one table");
     expect(table.header).toHaveLength(2);
@@ -448,18 +376,15 @@ describe("surface 1 details the corpus forced", () => {
   });
 
   it("keeps display maths inline so it can live inside a cloze", () => {
-    // Card cUIwCikM: `{{$$(I + D - 1)\times　P$$}}`.
     const blocks = parseFieldValue("{{$$(I + D - 1)\\times　P$$}}\n$I$: {{命令数}}");
     const cloze = nodesIn(blocks, "cloze");
     expect(cloze).toHaveLength(2);
     const maths = nodesIn(blocks, "math");
     expect(maths.map((node) => node.display)).toEqual([true, false]);
-    // LaTeX bodies are verbatim: no escape processing inside maths.
     expect(maths[0]?.text).toBe("(I + D - 1)\\times　P");
   });
 
   it("has a sanitiser policy for the one raw `<span style>` in the corpus", () => {
-    // Card QnHb5aT2.
     const span = only(
       nodesIn(parseFieldValue('x <span style="color:yellow">policy</span>'), "element"),
       "one element",
@@ -477,26 +402,22 @@ describe("surface 1 details the corpus forced", () => {
   });
 
   it("names an unknown tag rather than dropping or trusting it", () => {
-    // Both tags are reported and the children still parse, so nothing is lost.
     const blocks = parseFieldValue("<marquee>x</marquee>");
     expect(nodesIn(blocks, "unknown")).toEqual([
       { kind: "unknown", reason: "unknown-element", text: "<marquee>" },
       { kind: "unknown", reason: "mismatched-close", text: "</marquee>" },
     ]);
     expect(plainText(blocks)).toBe("x");
-    // A `<` that is not a tag is just text — this is why the corpus has 0 unknowns.
     expect(nodesIn(parseFieldValue("1 < 2 > 3"), "unknown")).toEqual([]);
   });
 
   it("normalises Mochi's `lang=\"jp\"`, including the one corrupted spelling", () => {
     expect(normaliseLanguageTag("jp")).toBe("ja-JP");
-    expect(normaliseLanguageTag("่jp")).toBe("ja-JP"); // one <speech lang="่jp">
+    expect(normaliseLanguageTag("่jp")).toBe("ja-JP");
     expect(normaliseLanguageTag("ja-JP")).toBe("ja-JP");
     expect(normaliseLanguageTag("en")).toBe("en");
   });
 });
-
-// ─── the resolver ────────────────────────────────────────────────────────────
 
 describe("the resolver", () => {
   const 単語 = () => asInput(template("単語"));
@@ -512,10 +433,8 @@ describe("the resolver", () => {
     const rendered = resolveCard({ values: { ...VALUES, "4Oge7w2M": "false" } }, 単語());
     expect(rendered.source).toBe("template");
     expect(rendered.sides).toHaveLength(4);
-    // Side 1 is the whole `<<#Reading>>…<</Reading>>` section, so it vanishes.
     expect(isSideEmpty(rendered.sides[0] as Side)).toBe(true);
     expect(rendered.warnings).toContainEqual({ kind: "empty-side", detail: "0" });
-    // Side 2 keeps the inverted section's cloze plus the ruby cloze.
     expect(nodesIn(rendered.sides[1]?.blocks ?? [], "cloze")).toHaveLength(2);
     expect(plainText(rendered.sides[1]?.blocks ?? [])).toContain("気に入る");
   });
@@ -524,7 +443,6 @@ describe("the resolver", () => {
     const rendered = resolveCard({ values: { ...VALUES, "4Oge7w2M": "true" } }, 単語());
     expect(isSideEmpty(rendered.sides[0] as Side)).toBe(false);
     expect(plainText(rendered.sides[0]?.blocks ?? [])).toContain("気に入る");
-    // The inverted section is gone, so side 2 has one cloze, not two.
     expect(nodesIn(rendered.sides[1]?.blocks ?? [], "cloze")).toHaveLength(1);
   });
 
@@ -557,7 +475,6 @@ describe("the resolver", () => {
     expect(nodesIn(rendered.sides[0]?.blocks ?? [], "field")).toEqual([
       { kind: "field", name: "Nope" },
     ]);
-    // Not re-lexed as a `<Nope>` tag, which is what echoing the text would do.
     expect(nodesIn(rendered.sides[0]?.blocks ?? [], "unknown")).toEqual([]);
     expect(rendered.warnings).toContainEqual({ kind: "unknown-field", detail: "Nope" });
   });
@@ -572,7 +489,6 @@ describe("the resolver", () => {
   });
 
   it("takes sides from `content` when there is no template", () => {
-    // Card 7U1FyQB6, 漢字/部首 — a template-less four-side card.
     const rendered = resolveCard({
       content: '新\n---\n<draw height="200px"/>\n---\nシン\n---\nnew',
     });
@@ -636,8 +552,6 @@ describe("direction — reverse is a declared permutation, default reversed", ()
     expect(plainText(reverse.sides[0]?.blocks ?? [])).toContain("to like");
   });
 });
-
-// ─── the real corpus ─────────────────────────────────────────────────────────
 
 interface CorpusCard {
   readonly id: string;
@@ -708,7 +622,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     }
 
     const counts = Object.fromEntries([...tally].sort()) as Record<string, number>;
-    // `---` is structure, so it is counted as sides gained rather than as nodes.
     const sideBreaks = contentSides - cards.length;
     console.log(
       `surface 1 over ${cards.length} cards / ${values} field values` +
@@ -722,7 +635,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     expect(failures).toEqual([]);
     expect(unknowns).toEqual([]);
 
-    // SPEC's surface-1 table, exactly as measured by tools/mochi.py.
     expect(counts["wikiLink"]).toBe(8690);
     expect(sideBreaks + (counts["hrule:---"] ?? 0)).toBe(1694);
     expect(counts["hrule:___"]).toBe(255);
@@ -734,38 +646,30 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     expect(counts["element:image"]).toBe(8);
     expect(counts["element"]).toBe(287 + 124 + 106 + 19 + 8 + 2 + 1);
     expect((counts["math:inline"] ?? 0) + (counts["math:display"] ?? 0)).toBe(29);
-    // "Blockquote, headings, bullets 76"
     expect((counts["quoteLine"] ?? 0) + (counts["heading"] ?? 0) + (counts["listItem:unordered"] ?? 0)).toBe(76);
     expect(counts["quoteLine"]).toBe(45);
     expect(counts["heading"]).toBe(15);
     expect(counts["listItem:unordered"]).toBe(16);
-    // Long tail: images, tables, <draw>, italic.
     expect(counts["image"]).toBe(7);
     expect(counts["table"]).toBe(1);
     expect(counts["element:draw"]).toBe(2);
     expect((counts["emphasis:*"] ?? 0) + (counts["emphasis:_"] ?? 0)).toBe(3);
-    expect(counts["element:span"]).toBe(1); // SPEC's "2 cards" is 2 tags on 1 card
+    expect(counts["element:span"]).toBe(1);
 
-    // The three reconciliations, derived rather than asserted away.
     expect(counts["listItem:ordered"]).toBe(4318);
-    // SPEC's 4,314 is 4,318 minus the items that begin on a line a BARE \r
-    // opened. Counted here from the raw source, not by subtracting 4 from the
-    // number above — that would assert nothing.
     let afterBareCR = 0;
     for (const card of cards) {
       for (const source of [card.content, ...Object.values(card.values)]) {
         afterBareCR += [...source.matchAll(/\r(?!\n)[ \t]*\d{1,9}\.[ \t]/g)].length;
       }
     }
-    expect(afterBareCR).toBe(4); // Python's re.M does not end a line at a bare \r
+    expect(afterBareCR).toBe(4);
     expect(counts["listItem:ordered"]! - afterBareCR).toBe(4314);
     expect(counts["cloze"]).toBe(1079);
     expect(counts["strong:**"]).toBe(312);
     expect(counts["wikiLink:bare"]).toBe(46);
     expect(counts["wikiLink:emptyDisplay"]).toBe(8);
 
-    // The missing cloze is inside a code span; the missing bold is inside a
-    // wiki-link's display text. Both are found here, not hand-waved.
     let clozeInCode = 0;
     let boldInDisplay = 0;
     for (const card of cards) {
@@ -821,7 +725,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
       for (const unknown of collectUnknowns(rendered.sides)) {
         unknowns.push(`${card.id}: ${unknown.reason} ${JSON.stringify(unknown.text)}`);
       }
-      // Reverse must be the same sides in the opposite order, always.
       const reverse = renderCard({ id: card.id, content: card.content, values: card.values }, input, "reverse");
       const indices = reverse.sides.map((side) => side.index);
       if (indices.join() !== [...indices].sort((a, b) => b - a).join()) reverseMismatch += 1;
@@ -837,9 +740,7 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     expect(unknowns).toEqual([]);
     expect(reverseMismatch).toBe(0);
     expect(bySource.template + bySource.content).toBe(7716);
-    // Every card with a template resolves through it; the rest use their content.
     expect(bySource.content).toBe(cards.filter((card) => card.templateId === "").length);
-    // SPEC: 3,160 templated cards still carry stale authored content.
     expect(warnings.get("content-ignored")).toBe(3160);
     expect(warnings.get("side-break-in-value")).toBe(1);
     expect(warnings.get("stray-section-marker")).toBeUndefined();
@@ -860,8 +761,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
         }
       }
     }
-    // SPEC: 例文's `source` is null because its dependency is only in the prompt.
-    // Four, not five: `oiaISYb2` is one template defined in two exports.
     expect(found.sort()).toEqual([
       "Polysemy/Example -> 言葉",
       "Synonym/Synonyms -> Word",
@@ -870,8 +769,6 @@ describe.skipIf(!HAVE_EXPORTS)("the real corpus (exports/)", () => {
     ]);
   });
 });
-
-// ─── walkers ─────────────────────────────────────────────────────────────────
 
 describe("AST helpers", () => {
   it("walks every node exactly once, parents first", () => {

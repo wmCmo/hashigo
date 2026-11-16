@@ -1,149 +1,9 @@
-/**
- * The local archive — everything in this database that `exports/` cannot rebuild.
- *
- * DECISION 17 is why this exists, and decision 16 is why it is urgent. Today every
- * review is reconstructible from `exports/`, so losing the database costs fifteen
- * seconds. After decision 16's ONE final import, `exports/` stops receiving his
- * history: from the first local grade onward the app's own database is the ONLY
- * copy, and OPFS is browser-owned storage that a "clear site data" takes with it.
- *
- * ─── WHAT IT BACKS UP, AND WHY NOT THE WHOLE FILE ────────────────────────────
- *
- * Not the database file. The archive is exactly the rows that exist nowhere else:
- *
- *   * `reviews` where `source = 'local'` — grades made in Hashigo. THE thing.
- *   * the scheduling state of any track that has one — `due_at`, `scheduled_days`,
- *     `reps`, `lapses`, `last_reviewed_at`, `scheduler`, `scheduler_state`.
- *   * `template_fields` — ALL of them, and their `card_field_values` for the
- *     `local = 1` ones. Decision 9's locally-authored fields (`読み`, `かな主流`,
- *     `型`) were always in here because Mochi never had them; the Mochi-owned ones
- *     joined when the app grew a template editor, for the reason under
- *     "TEMPLATES" below — a renamed field and an edited body have to come back
- *     together or the body's markers name a field that no longer exists.
- *   * `settings`.
- *   * **`cards.archived` and `cards.pinned`, wherever either is 1** — see below.
- *   * **`templates.name` and `templates.content`** — see "TEMPLATES", below.
- *   * **Cards where `local = 1`**, with their field values and their tracks — see
- *     "LOCALLY-CREATED CARDS", below.
- *
- * ─── WHY COLLECTION STATE IS IN HERE, AND WAS NOT ───────────────────────────
- *
- * It looks like something `exports/` rebuilds, and for `archived` it half does:
- * the importer writes `archived = excluded.archived` from the export. That is
- * precisely the problem. **Mochi has no deck-level archive at all**
- * (`src/import/entities.ts`), so the deck Zach archived in Hashigo — his #8, the
- * 数字 deck — arrives back UNARCHIVED after decision 16's one final import, and
- * `pinned` comes back 0 on every card because his export carries none.
- *
- * So these two columns are the one kind of state that is authored HERE, looks
- * imported, and is silently overwritten by the import. Everything else in this
- * file is either obviously local (a grade) or obviously Mochi's (a card).
- *
- * Only the non-default rows are stored — 234 archived and 0 pinned today — so this
- * costs the archive a few kilobytes rather than a row per card. Restoring is
- * therefore additive: it sets the flags it holds and never clears one it does not,
- * which is the right direction for a backup (see `applyLocalArchive`).
- *
- * ─── TEMPLATES, FOR THE SAME REASON AND WITH A SHARPER EDGE ─────────────────
- *
- * `templates.content` is a Mochi column and `UPSERT_TEMPLATE` writes it from the
- * export, so an edited body does not survive decision 16's final import. That was
- * true before the app could edit one and it was already costing something:
- * `scripts/accent-field-apply.ts` writes decision 20's `型` gating INTO the body,
- * which is why re-running it is a documented step of the rebuild chore. Now that
- * the app has a template editor (his #11) it is a hole he can fall into by typing.
- *
- * **The field rows come with it, all of them, and that is not optional.** Renaming
- * a field rewrites the body's `<<Field>>` markers in the same transaction, because
- * the resolver binds by name. Archiving the body without the field NAMES would
- * restore a body whose markers point at names the fields no longer carry — every
- * one of them resolving to an empty string, silently. The two halves are one fact.
- *
- * `local` is carried per row rather than assumed, because it decides whether
- * `pruneFieldValues` deletes a field's values on the next import. An archive
- * written before this change has no `local` on its rows and every row in it was
- * `local = 1` by construction, so absent reads as `true` — the old file restores
- * exactly as it always did.
- *
- * 10 templates and 49 fields: the whole addition is a few kilobytes.
- *
- * ─── LOCALLY-CREATED CARDS ──────────────────────────────────────────────────
- *
- * "Cards rebuild from `exports/`" is true of 7,716 cards and false of any card he
- * writes in the app — and the app has been able to write them since 2026-08-26.
- * Until schema v9 there was no way to tell the two apart, because a created card is
- * otherwise an ordinary row, so this file archived NO cards and a card he made was
- * protected by nothing at all. `cards.local` is decision 9's rule for fields
- * applied to the card itself.
- *
- * Its `card_field_values` come too, all of them — the `local = 1` restriction on
- * values is about a MOCHI card's Mochi-owned fields, which the export holds. A
- * created card's values are in no export at all.
- *
- * Its tracks come as `trackState` like any other, but the SELECT there wants
- * scheduler state or a local review, and a card created five minutes ago has
- * neither. So a fresh track is archived explicitly: without it a restored card
- * comes back with no track and is never scheduled — present, and permanently
- * invisible, which is the worst of the three possible outcomes.
- *
- * Decks are NOT archived with it. A card whose deck is gone is reported as an
- * orphan and skipped, exactly as one whose template is gone; inventing a deck on
- * restore would put his cards somewhere he did not choose.
- *
- * Everything else — decks, templates, tags, links and the 103,110 IMPORTED reviews
- * — rebuilds from `exports/` in about fifteen seconds, and the blobs are content-addressed and
- * re-fetchable. Backing them up would turn a ~330 KB archive into 690 MB and make
- * the one-tap export something he would not tap.
- *
- * **READ "IMPORTED" STRICTLY — decision 41 narrowed what that word covers.** The
- * 2026-09-08 import was the last one, so `exports/` regenerates the history up to
- * that date and NOTHING after it. Every review Hashigo has graded since exists in
- * this archive, in decision 33's sync payloads, and in the device's OPFS, and
- * nowhere else. The scope above is unchanged and still correct — local reviews were
- * always archived — but the sentence used to read as "reviews are regenerable", and
- * that is now true only of the imported ones.
- *
- * A file-level copy was the other option and is worse for the case that matters: a
- * binary SQLite file is only restorable into the schema version it came from, and
- * `applySchema` refuses any version but its own, so a schema bump would strand
- * every backup taken before it. This archive is rows plus stable keys, so it
- * survives a bump — which is the whole point of a backup.
- *
- * ─── THE KEY IS `(card_id, kind)`, NEVER `track_id` ──────────────────────────
- *
- * The single thing that would make this silently useless. `card_tracks.id` is
- * `INTEGER PRIMARY KEY` — a rowid alias assigned at insert time — so it is a
- * property of one build of one database, not an identity. A rebuild is
- * `rm build/hashigo.db` and a re-import, and the ids it hands out are whatever the
- * insert order gives. They would very probably come out identical, which is worse
- * than if they obviously did not: an archive keyed on them would restore cleanly
- * and attach a review to the wrong card the first time anything changed.
- *
- * So every row here carries `cardId` and `kind`, and `applyLocalArchive` resolves
- * them against `card_tracks` at apply time. `(card_id, kind)` is UNIQUE — it is the
- * conflict target `src/import/reviews.ts` already upserts on.
- *
- * ─── APPLYING IS IDEMPOTENT ──────────────────────────────────────────────────
- *
- * `reviews` is append-only with a BEFORE UPDATE trigger, so a re-apply cannot
- * update; it inserts what is missing and skips what is there, matched on
- * `(track, reviewed_at, source)`. Everything else upserts. Run it twice and the
- * second run reports every row as skipped — the same shape as
- * `scripts/reading-apply.ts`, which says "ALREADY APPLIED".
- *
- * BROWSER-PORTABLE: `SqliteHandle`, no `node:` import, so the one-tap export runs
- * in the OPFS worker. Turning the archive into a downloadable file is the shell's
- * job — this module returns data, not a Blob.
- */
-
 import type { SqliteHandle } from "../db/browser.js";
 import { refreshSearchText } from "../generate/search-text.js";
 import { refreshCardTags } from "../cards/tags.js";
 
-/** Bumped only for a change no reader could otherwise survive. */
 export const ARCHIVE_VERSION = 1;
 
-/** The stable identity of a track: its card, and which direction. */
 export interface TrackKey {
   readonly cardId: string;
   readonly kind: string;
@@ -181,44 +41,11 @@ export interface ArchivedField {
   readonly type: string;
   readonly sourceFieldId: string | null;
   readonly options: string | null;
-  /**
-   * A FRACTIONAL INDEX, and therefore TEXT — `'ab'`, `'ac'`. Mochi orders fields
-   * with sortable strings so an insert between two neighbours needs no renumber.
-   * `Number(pos)` gives NaN, which would restore every field with a null order;
-   * this was caught by reading the real rows rather than the column list.
-   */
   readonly pos: string;
-  /**
-   * OPTIONAL, and absent means `true`.
-   *
-   * Every row in an archive written before templates were carried was `local = 1`
-   * by construction (the SELECT had `WHERE local = 1`), so defaulting to true makes
-   * an old file restore exactly as it used to. It matters because `local` is what
-   * stops `pruneFieldValues` deleting the field's values on the next import.
-   */
   readonly local?: boolean;
-  /**
-   * `template_fields.updated_at`, so a MERGE can tell whose settings are newer.
-   *
-   * OPTIONAL for `ArchivedTemplate.updatedAt`'s reason: an older archive is still
-   * a good archive. Added 2026-09-25 when a field's options became editable —
-   * `UPSERT_FIELD` used to overwrite a field wholesale and stamp `now`, so every
-   * device's field clocks read "last synced" and a voice set on the laptop would
-   * have been taken back by whichever peer merged last.
-   */
   readonly updatedAt?: string;
 }
 
-/**
- * One template's editable surface.
- *
- * `reverse_permutation` and `pos` are deliberately absent: neither is reachable
- * from the editor, so archiving them would claim a scope the backup does not have.
- */
-/**
- * One card that exists only here. The columns a create or a duplicate can set;
- * `search_text` is derived and `pos` is ordering the app does not expose.
- */
 export interface ArchivedCard {
   readonly id: string;
   readonly deckId: string;
@@ -229,7 +56,6 @@ export interface ArchivedCard {
   readonly voice: string | null;
   readonly archived: boolean;
   readonly pinned: boolean;
-  /** `kind` for each of its tracks, so a restored card is scheduled. */
   readonly tracks: readonly string[];
 }
 
@@ -237,18 +63,6 @@ export interface ArchivedTemplate {
   readonly id: string;
   readonly name: string;
   readonly content: string;
-  /**
-   * `templates.updated_at`, so a MERGE can tell whose body is newer.
-   *
-   * OPTIONAL, and it has to be: archives written before this existed are still
-   * good archives, and `ARCHIVE_VERSION` is bumped "only for a change no reader
-   * could otherwise survive". A reader survives this one — see `mergeSync`,
-   * which reads absent as "unknown clock" and then declines to overwrite a local
-   * body rather than clobbering it.
-   *
-   * A RESTORE ignores this. There the archive is the only truth and wholesale is
-   * correct; it is only when two live devices disagree that a clock is needed.
-   */
   readonly updatedAt?: string;
 }
 
@@ -263,13 +77,6 @@ export interface ArchivedSetting {
   readonly value: string;
 }
 
-/**
- * One card's collection state. Only rows where at least one flag is 1 are stored.
- *
- * Keyed on `cards.id`, which is the Mochi card id and therefore stable across a
- * rebuild — the same property that makes `(card_id, kind)` safe for tracks, and
- * for the same reason: it is an identity, not a rowid.
- */
 export interface ArchivedCardState {
   readonly cardId: string;
   readonly archived: boolean;
@@ -278,72 +85,38 @@ export interface ArchivedCardState {
 
 export interface LocalArchive {
   readonly archiveVersion: number;
-  /** `PRAGMA user_version` of the database it came from. Read, not imported. */
   readonly schemaVersion: number;
   readonly createdAt: string;
   readonly reviews: readonly ArchivedReview[];
   readonly trackState: readonly ArchivedTrackState[];
   readonly localFields: readonly ArchivedField[];
-  /** OPTIONAL for the same reason `cardState` is — an older archive predates it. */
   readonly templates?: readonly ArchivedTemplate[];
-  /** Cards created in the app. Optional; absent means "none recorded". */
   readonly localCards?: readonly ArchivedCard[];
   readonly fieldValues: readonly ArchivedFieldValue[];
   readonly settings: readonly ArchivedSetting[];
-  /**
-   * OPTIONAL, and it stays optional. An archive written before this field existed
-   * is still a good archive — absent means "no collection state recorded", which
-   * is a complete and correct reading. `ARCHIVE_VERSION` says it is bumped "only
-   * for a change no reader could otherwise survive", and a reader survives this
-   * one by defaulting to `[]`. Bumping would have rejected every backup he has
-   * already taken, at the moment those files are the only copy.
-   */
   readonly cardState?: readonly ArchivedCardState[];
-  /**
-   * Self-describing counts, so a truncated or hand-edited file is detectable
-   * before it is applied. `verifyLocalArchive` checks them.
-   */
   readonly counts: Readonly<Record<string, number>>;
 }
 
 export interface ApplyReport {
   readonly reviewsInserted: number;
   readonly reviewsSkipped: number;
-  /** Rows whose `(card_id, kind)` is not in this database at all. */
   readonly reviewsOrphaned: number;
   readonly trackStateApplied: number;
   readonly trackStateOrphaned: number;
   readonly fieldsUpserted: number;
-  /** Fields whose TEMPLATE no longer exists here. */
   readonly fieldsOrphaned: number;
   readonly fieldValuesUpserted: number;
-  /**
-   * Values whose CARD no longer exists here.
-   *
-   * This one is why the orphan checks are not decoration. `card_field_values` has
-   * a foreign key to `cards`, so before this existed a restore into a database
-   * rebuilt from a newer export threw `FOREIGN KEY constraint failed` and aborted
-   * the WHOLE archive — at the one moment the backup is the only copy. Found by
-   * the orphan test, not by reasoning.
-   */
   readonly fieldValuesOrphaned: number;
   readonly settingsUpserted: number;
   readonly localCardsInserted: number;
   readonly localCardsSkipped: number;
-  /** Cards whose DECK is not in this database. Restoring would invent one. */
   readonly localCardsOrphaned: number;
   readonly templatesApplied: number;
-  /** Of those applied, how many this database did not have and so were made. */
   readonly templatesInserted: number;
-  /**
-   * Templates the archive holds that this database still does not have. Zero
-   * since templates are inserted; kept so a report reads the same shape.
-   */
   readonly templatesOrphaned: number;
   readonly cardStateApplied: number;
-  /** Cards the archive marks that this database no longer has. */
   readonly cardStateOrphaned: number;
-  /** True when nothing needed doing — the "ALREADY APPLIED" shape. */
   readonly noop: boolean;
 }
 
@@ -356,13 +129,6 @@ SELECT t.card_id AS card_id, t.kind AS kind, r.reviewed_at, r.tz_offset_minutes,
  WHERE r.source = 'local'
  ORDER BY t.card_id, t.kind, r.reviewed_at`;
 
-/**
- * Tracks worth restoring: any with scheduler state, or any the app has graded.
- *
- * A track whose state is entirely Mochi's is left out on purpose — the importer
- * writes it back from the export, so archiving it would be storing a copy of
- * something `exports/` already holds.
- */
 const SELECT_TRACK_STATE = `
 SELECT t.card_id AS card_id, t.kind AS kind, t.due_at, t.scheduled_days, t.reps,
        t.lapses, t.last_reviewed_at, t.scheduler, t.scheduler_state
@@ -371,13 +137,6 @@ SELECT t.card_id AS card_id, t.kind AS kind, t.due_at, t.scheduled_days, t.reps,
     OR EXISTS (SELECT 1 FROM reviews r WHERE r.track_id = t.id AND r.source = 'local')
  ORDER BY t.card_id, t.kind`;
 
-/**
- * ALL fields, not only `local = 1`.
- *
- * The `WHERE local = 1` this replaces was right while the only fields authored here
- * were ones Mochi never had. Once a template's body and its field names can both be
- * edited in the app, they have to be archived as one thing — see "TEMPLATES" above.
- */
 const SELECT_FIELDS = `
 SELECT template_id, id, name, type, source_field_id, options, pos, local, updated_at
   FROM template_fields ORDER BY template_id, pos, id`;
@@ -393,22 +152,6 @@ SELECT t.card_id, t.kind
   FROM card_tracks t JOIN cards c ON c.id = t.card_id
  WHERE c.local = 1 ORDER BY t.card_id, t.kind`;
 
-/**
- * EVERY VALUE, ON EVERY CARD — since 2026-10-24.
- *
- * It used to be two narrower sources: the values of locally-authored fields, and
- * every value of a card made here, on the ground that "a Mochi field's values are
- * in the export". That stopped being true twice. Decision 41 retired the export as
- * a source, and sync is built on this archive — so an edit to `意味`, `単語`,
- * `Reference` or `Reading` on any of the ~7,700 IMPORTED cards never left the
- * device it was made on. Found by comparing every device's upload: the payloads
- * carried `型`, `OJAD`, `優先`, `読み`, `かな主流` for imported cards and nothing
- * else. Flipping `Reading` from the review screen — decision 29's audit loop —
- * stayed on whichever device he flipped it on.
- *
- * Measured: 29,893 values, 2.7 MB raw, 661 KB gzipped. Which side wins is the
- * card clock's job in `src/sync/merge.ts`, not this file's.
- */
 const SELECT_ALL_VALUES = `
 SELECT v.card_id, v.field_id, v.value
   FROM card_field_values v
@@ -416,10 +159,6 @@ SELECT v.card_id, v.field_id, v.value
 
 const SELECT_SETTINGS = `SELECT key, value FROM settings ORDER BY key`;
 
-/**
- * Non-default rows only. `cards_pinned` is a partial index and `archived` is 234
- * of 7,716, so this reads the exceptions rather than the collection.
- */
 const SELECT_CARD_STATE = `
 SELECT id AS card_id, archived, pinned
   FROM cards WHERE archived = 1 OR pinned = 1
@@ -432,16 +171,6 @@ function userVersion(db: SqliteHandle): number {
   return row?.user_version ?? 0;
 }
 
-/**
- * Read everything `exports/` cannot rebuild.
- *
- * `now` is a parameter because this module has no clock of its own: the browser
- * and a CLI disagree about how to spell one, and a test wants a fixed value.
- */
-/**
- * 一行を archive の形に。`src/sync/delta.ts` も同じ関数を使う — 差分と全体で
- * review の書き方が分かれたら、片方だけが正しい、が起きる。
- */
 export function archivedReview(r: Record<string, unknown>): ArchivedReview {
   return {
     cardId: String(r["card_id"]),
@@ -462,7 +191,6 @@ export function archivedReview(r: Record<string, unknown>): ArchivedReview {
   };
 }
 
-/** `archivedReview` と同じ理由で共有。 */
 export function archivedTrackState(r: Record<string, unknown>): ArchivedTrackState {
   return {
     cardId: String(r["card_id"]),
@@ -591,13 +319,6 @@ export class ArchiveError extends Error {
   }
 }
 
-/**
- * Check an archive before applying it.
- *
- * Cheap, and it is the difference between "this file is truncated" and a partial
- * restore that looks like it worked. Throws rather than returning a boolean: there
- * is nothing a caller can usefully do with a broken archive but stop.
- */
 export function verifyLocalArchive(archive: LocalArchive): void {
   if (archive.archiveVersion !== ARCHIVE_VERSION) {
     throw new ArchiveError(
@@ -612,8 +333,6 @@ export function verifyLocalArchive(archive: LocalArchive): void {
     templates: (archive.templates ?? []).length,
     fieldValues: archive.fieldValues.length,
     settings: archive.settings.length,
-    // `?? []` and not `?.length ?? 0`: an OLD archive has no `cardState` key in
-    // `counts` either, so the loop below never asks about it. A NEW one has both.
     cardState: (archive.cardState ?? []).length,
   };
   for (const [name, expected] of Object.entries(archive.counts)) {
@@ -627,13 +346,6 @@ export function verifyLocalArchive(archive: LocalArchive): void {
 
 const TRACK_ID = `SELECT id FROM card_tracks WHERE card_id = ? AND kind = ?`;
 
-/**
- * Existence probes for the two foreign keys an archive can outlive.
- *
- * Mochi deletes cards — 8,958 tombstones in this corpus — and a template can go
- * too, so an archive taken before a re-import can legitimately reference rows that
- * are no longer here. Reported, never fatal.
- */
 const CARD_EXISTS = `SELECT 1 FROM cards WHERE id = ? LIMIT 1`;
 const TEMPLATE_EXISTS = `SELECT 1 FROM templates WHERE id = ? LIMIT 1`;
 
@@ -653,14 +365,6 @@ UPDATE card_tracks
        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
  WHERE id = ?`;
 
-/**
- * `local` is a PARAMETER now, not the literal 1.
- *
- * It used to be hard-coded because the SELECT only ever produced local rows. With
- * every field archived, writing 1 for all of them would mark Mochi's fields as
- * locally-authored and stop `pruneFieldValues` ever cleaning up a field Mochi
- * genuinely deleted — turning a backup into a slow leak.
- */
 const UPSERT_FIELD = `
 INSERT INTO template_fields
   (template_id, id, name, type, source_field_id, options, pos, local, updated_at)
@@ -673,53 +377,23 @@ ON CONFLICT (template_id, id) DO UPDATE SET
 
 const DECK_EXISTS = `SELECT 1 FROM decks WHERE id = ? LIMIT 1`;
 
-/**
- * `INSERT OR IGNORE`, deliberately, and it is the difference between a backup and
- * an overwrite.
- *
- * A card id is unique, so a card that is already here is the SAME card — restoring
- * over it would replace whatever he has done to it since the backup with the older
- * copy. Skipped and counted instead. The archive is a floor, not a snapshot to
- * revert to; every other write in this file has the same shape for the same reason.
- */
 const INSERT_LOCAL_CARD = `
 INSERT OR IGNORE INTO cards
   (id, deck_id, template_id, name, content, reverse, voice, archived, pinned, local)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`;
 
-/**
- * A track per kind the archive recorded.
- *
- * Unscheduled — `due_at` NULL is a NEW card, which is what a restored card should
- * be if its schedule was never backed up. When the archive DOES carry state for it,
- * `trackState` runs after this and is the last word.
- */
 const INSERT_LOCAL_TRACK = `
 INSERT OR IGNORE INTO card_tracks
   (card_id, kind, dormant, needs_rereview, due_at, scheduled_days, reps, lapses,
    last_reviewed_at, scheduler, scheduler_state)
 VALUES (?, ?, 0, 0, NULL, NULL, 0, 0, NULL, NULL, NULL)`;
 
-/**
- * The archived CLOCK is preserved when the archive carries one.
- *
- * It used to stamp `now` unconditionally, which broke two things at once. A
- * restore stopped round-tripping — export, apply, export again was no longer
- * byte-identical, and `test/backup.test.ts` says that property out loud. And it
- * made the template clock meaningless the moment it was used: after any merge
- * every device would believe its own body was the newest, whoever had actually
- * written it, so the LWW rule in `src/sync/merge.ts` would decide by accident.
- *
- * `COALESCE` keeps the old behaviour for an archive written before the clock
- * existed, where `now` is the only answer available.
- */
 const UPDATE_TEMPLATE = `
 UPDATE templates
    SET name = ?, content = ?,
        updated_at = COALESCE(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
  WHERE id = ?`;
 
-/** A template made on another device. Its body is written by `UPDATE_TEMPLATE`. */
 const INSERT_TEMPLATE = `
 INSERT INTO templates (id, name, content, updated_at)
 VALUES (?, ?, '', COALESCE(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')))`;
@@ -734,40 +408,12 @@ INSERT INTO settings (key, value) VALUES (?, ?)
 ON CONFLICT (key) DO UPDATE SET
   value = excluded.value, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`;
 
-/**
- * ADDITIVE, on purpose: it sets the flags the archive holds and clears nothing.
- *
- * The archive stores only non-default rows, so "absent" means "was 0 when the
- * backup was taken" — and clearing on that basis would make a restore UNDO an
- * archive he made after the backup. A backup that removes work is worse than one
- * that misses some, so the omission is the safe direction and the only one.
- */
 const UPDATE_CARD_STATE = `
 UPDATE cards
    SET archived = max(archived, ?), pinned = max(pinned, ?),
        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
  WHERE id = ?`;
 
-/**
- * Restore an archive into a database, idempotently.
- *
- * ORDER MATTERS: fields before their values (a value with no field is pruned by
- * `pruneFieldValues`), and reviews before track state (so the state is the last
- * word rather than something a review insert could be thought to have moved).
- *
- * **A MISSING ROW NEVER ABORTS THE RESTORE.** Anything whose card, track or
- * template is no longer here is counted into the report and skipped: restoring into
- * a database rebuilt from a newer export can legitimately meet a card Mochi has
- * since deleted, and this corpus carries 8,958 tombstones, so it will happen. A
- * non-zero `*Orphaned` is the signal to look, not a failure.
- *
- * This is not theoretical tidiness. `card_field_values` has a foreign key to
- * `cards`, so before the guard existed a single deleted card made the whole apply
- * throw `FOREIGN KEY constraint failed` — losing the rest of the archive at exactly
- * the moment it is the only copy. The orphan test found it; reasoning had not.
- *
- * The caller owns the transaction.
- */
 export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): ApplyReport {
   verifyLocalArchive(archive);
 
@@ -780,14 +426,6 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
   const cardExists = db.prepare(CARD_EXISTS);
   const templateExists = db.prepare(TEMPLATE_EXISTS);
 
-  // A TEMPLATE THIS DATABASE HAS NEVER HAD is made, before its fields. Until
-  // 2026-10-30 it was counted orphaned and skipped — right while every template
-  // came from Mochi and both devices held the same ten, wrong the moment the app
-  // could make one: a template made on the laptop never reached the phone, and
-  // every card on it arrived as a card with no fields. It is inserted with an
-  // EMPTY body here and given its body by the loop below, after the fields, so
-  // the order that keeps a restored body's `<<Field>>` markers resolvable holds
-  // for a new template too.
   let templatesInserted = 0;
   const insertTemplate = db.prepare(INSERT_TEMPLATE);
   for (const t of archive.templates ?? []) {
@@ -804,7 +442,6 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
       fieldsOrphaned += 1;
       continue;
     }
-    // `?? true` is the old-archive default — see `ArchivedField.local`.
     upsertField.run(
       f.templateId,
       f.id,
@@ -819,11 +456,6 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
     fieldsUpserted += 1;
   }
 
-  // AFTER the fields, and that order is load-bearing: a restored body's `<<Field>>`
-  // markers name fields by NAME, so the names have to be back before the body that
-  // uses them. Both are in the caller's one transaction either way, but the order
-  // is what makes an interrupted restore leave the readable half rather than a body
-  // whose markers resolve to nothing.
   let templatesApplied = 0;
   let templatesOrphaned = 0;
   const updateTemplate = db.prepare(UPDATE_TEMPLATE);
@@ -836,11 +468,6 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
     templatesApplied += 1;
   }
 
-  // BEFORE the field values and before the reviews: both have foreign keys to
-  // `cards`, so a restored card has to exist before anything can point at it.
-  // Without this ordering every value and every review on a created card would be
-  // counted as an orphan and skipped — a restore that reports success and drops the
-  // card's entire contents.
   let localCardsInserted = 0;
   let localCardsSkipped = 0;
   let localCardsOrphaned = 0;
@@ -848,8 +475,6 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
   const insertCard = db.prepare(INSERT_LOCAL_CARD);
   const insertTrack = db.prepare(INSERT_LOCAL_TRACK);
   for (const card of archive.localCards ?? []) {
-    // The deck is NOT restored with the card — inventing one would put his cards
-    // somewhere he did not choose. Reported, never fatal.
     if (deckExists.get(card.deckId) === undefined) {
       localCardsOrphaned += 1;
       continue;
@@ -874,25 +499,17 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
   let fieldValuesUpserted = 0;
   let fieldValuesOrphaned = 0;
   const upsertValue = db.prepare(UPSERT_VALUE);
-  // Every card whose text this apply may have changed. A sync and a restore both
-  // arrive through here, and the index view prefers `cards.search_text` over the
-  // live fields — so without the refresh below, an edit made on the laptop would
-  // land on the phone findable only by its OLD text. `src/generate/search-text.ts`.
   const retextCards = new Set<string>();
   for (const v of archive.fieldValues) {
     if (cardExists.get(v.cardId) === undefined) {
       fieldValuesOrphaned += 1;
       continue;
     }
-    // Only a card whose text MOVED is re-indexed. Since the archive carries every
-    // value (2026-10-24) an unconditional add would rebuild the search text of the
-    // whole collection on every merge, on his phone.
     const result = upsertValue.run(v.cardId, v.fieldId, v.value) as { changes?: number };
     fieldValuesUpserted += 1;
     if (Number(result.changes ?? 0) > 0) retextCards.add(v.cardId);
   }
   refreshSearchText(db, retextCards);
-  // Tags are not in the payload; the text is. Each device derives them (`src/cards/tags.ts`).
   refreshCardTags(db, retextCards);
 
   let reviewsInserted = 0;
@@ -988,8 +605,6 @@ export function applyLocalArchive(db: SqliteHandle, archive: LocalArchive): Appl
     templatesOrphaned,
     cardStateApplied,
     cardStateOrphaned,
-    // The honest reading of "nothing to do": no review was added. Upserts always
-    // run, so counting them would make `noop` permanently false.
     noop: reviewsInserted === 0,
   };
 }

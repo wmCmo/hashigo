@@ -1,24 +1,3 @@
-/**
- * THROWAWAY (spike harness). Turns the Node blob store into one file a browser
- * can stream, so the page can WRITE the real corpus rather than a synthetic one.
- *
- *   node spike/blobstore/make-pack.mjs [--store build/hashigo.db.blobs.db]
- *
- * Why a pack at all: the page has to get 624.6 MiB of real mp3 into the browser
- * before it can measure writing them, and 10,816 separate fetches would measure
- * the dev server rather than the store. One streamed response, parsed into
- * payloads as it arrives, keeps peak memory at a chunk rather than at the corpus.
- *
- * Layout, little-endian:
- *
- *   "HSGPACK1"              8 bytes
- *   headerLength            uint32
- *   header                  UTF-8 JSON: { count, totalBytes, entries: [[hash, size], …] }
- *   payloads                concatenated, in `entries` order
- *
- * The hashes are in the header, so the page can verify every payload it writes
- * against the address it was filed under without trusting this script.
- */
 import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
