@@ -24,7 +24,7 @@ seed). `app/README.md` is the entry point for the app; `src/*/README.md` for eac
 - **There is no status file.** `NEXT.md` was retired on 2026-10-30: it was edited three
   times in October against ~100 commits, and was wrong the one time it was needed. What
   landed is `git log`; what is settled is below and in DECISIONS.md. **[RELEASE.md](RELEASE.md)**
-  holds the version, the beta criteria and the publishing gates. The cloud runbook is [cloud/README.md](cloud/README.md). The
+  holds the version rules. The cloud runbook is [cloud/README.md](cloud/README.md). The
   old file is `notes/archive/NEXT-retired-2026-10-30.md`, verbatim.
 - **[SPEC.html](SPEC.html) is the design document** (draft 8, figures measured from
   `exports/`). Published copy:
@@ -102,7 +102,8 @@ npm run release -- patch                  # decision 59: EVERY deploy is a relea
                         # `-- minor "what he can now do"` for a milestone. Then push the
                         # commit AND the tag: git push origin HEAD:main; git push origin vX.Y.Z
 npm run app:build:cloud                   # then, in cloud/app/: npx wrangler@4 deploy
-                        # Refuses unless HEAD is the tagged release. Deploy when Zach asks.
+                        # Refuses unless HEAD is the tagged release. Deploy without
+                        # asking when the work is done (decision 72).
                         # Confirm via Settings → versions (`app v0.6.0 · <commit>`). A
                         # running app picks a deploy up on its own (`app/update-check.ts`).
 npm run accent:helper                     # decision 56's helper on 127.0.0.1:47474
@@ -265,9 +266,9 @@ give an honest opinion — and when he decides differently, record the new decis
     accent he had wrong and promotes the card. Tests pin BOTH arms; never weaken mode 1.
 30. **A PREVIEW is not a review: all sides at once, no masks, no grading, nothing plays by
     itself.**
-31. **PROCEED WITHOUT ASKING.** Ask only when the answer cannot be derived from his
-    template, a measurement or a decision here. Still his: taste about the screen he lives
-    in, and anything that changes what he is DRILLED on.
+31. **Act on what he meant, without asking.** Ask only when his words don't answer it —
+    and read them for what they mean, not their literal minimum: follow a request to the
+    next morning, the next device, the next review.
 32. **Superseded by 57 for the look.** What stands: the replay button stays round (the hand
     wins), the Japanese typeface is his choice, and the app icon is ink on `--card`.
 33. **Sync is device-to-device through a MAILBOX; two merge rules are not last-write-wins.**
@@ -379,6 +380,11 @@ give an honest opinion — and when he decides differently, record the new decis
     it (23:59:59.999), so the card's history and next interval read as that day. The done screen
     of the whole plan switches it off, and the next sitting is the new day — counted only from
     that moment (`session.late-night-ended`), so its ten new cards and its bar start fresh.
+72. **Agents DEPLOY their own finished work without asking**, in the same run as the commit:
+    gates green, `npm run release -- patch`, push the commit and tag, build, deploy, check
+    the version answers. He sends a request and puts the phone away; when he looks again it
+    is live. A running app offers the update rather than reloading under a card
+    (`app/update-check.ts`). Amends 59, extends 24.
 
 ## The template answers most questions about the screen
 

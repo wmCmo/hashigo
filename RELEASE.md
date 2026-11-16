@@ -19,12 +19,16 @@ passes, update the page too.
      anything in `app/`, `src/` or `cloud/` that repairs something, whether he hit it,
      an audit found it, or it is the look (a spacing or colour fix counts).
    - **Not counted:** new features, docs, the landing page, and tooling in `scripts/`.
-   - **A fix restarts the week.** The last one is `69826f5` (2026-11-16, decision 71's
-     day-after fix for late night), so the first possible pass is the week of 11-17 to
-     11-23.
+   - **A fix restarts the week.** Nobody tracks it by hand: the routine reads `git log`.
+   - **The window checked is the seven days before the check day**: 11-17 to 11-23 for
+     the 11-24 check. A fix inside it means "not yet".
    - Checked **2026-11-24** by a scheduled routine (`trig_01QTk6bozJ3LZu3kf1UFphUx`,
      a fresh session at 10:17 JST). If a fix landed in the week, it reports "not
      yet" and the date the next clean week would end.
+   - **This gate is his milestone, not a cost on agents' work.** A fix is never delayed,
+     batched or weighed against it, and a reply about a fix doesn't mention it. Only the
+     routine above reports on it (2026-11-16, after one late-night session raised it six
+     times and asked him to choose between his night and the gate).
 2. **A friend starts from an empty database without help.** Not yet possible: the app
    assumes his imported corpus and sits behind his passphrase. **Work on it starts only
    after gate 1 passes** — Zach, 2026-11-05: *"that would be after 1 month of stable

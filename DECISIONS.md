@@ -308,20 +308,24 @@ words, the reason, and the measurement that settled it.
    review screen's progressive sides (showing every side at once leaks the answer: 単語's
    side 3 is the unclozed example sentence). `e` edits from both modes: *"whether the card
    is in the review mode or the pop up mode, you can press `e` for edit"*.
-31. **PROCEED WITHOUT ASKING.** Zach, 2026-08-23:
+31. **Act on what he meant, without asking. Ask only when his words don't answer it.**
+   Zach, 2026-08-23:
 
    > why do you have to wait for my goal every time, waiting for my go and asking me
    > wastes more token than proceeding on your own
 
-   Extends decision 24 from committing to deciding. The line:
+   Extends decision 24 from committing to deciding. Amended 2026-11-16 (his *"that sounds
+   good"* to this wording): the old line kept "anything that changes WHAT HE IS DRILLED ON"
+   for him, and on the night of decision 71 that exception made an agent ask whether
+   late-night grades count for the 15th or the 16th — when *"as if it's still during the
+   day"* had already said. The same night it built the literal minimum twice (grades at
+   their real time; the next day's ten new cards used up). His words: *"you know what i
+   wanted but you didn't do it?"*
 
-   ```plaintext
-   ACT      anything derivable from his TEMPLATE, from a MEASUREMENT, or from a
-            decision already in this file. Implementation, structure, naming, tests,
-            fixes to defects, and how a settled decision gets built.
-   ASK      taste about the screen he lives in, and anything that changes WHAT HE IS
-            DRILLED ON — because that is his study, not the app's behaviour.
-   ```
+   So: read a request for what it is FOR, and follow it past the obvious case — the next
+   morning, the next device, the next review. When his words, his template, a measurement
+   and the decisions here all leave it open, ask; otherwise decide, build, and say what
+   you decided.
 
    An agent that asks has not reduced the risk of being wrong; it has moved the work of
    being right onto him, and charged him for the move.
@@ -950,6 +954,21 @@ words, the reason, and the measurement that settled it.
      new day's ten and start its bar part-full. Switching off past midnight now stores the
      moment (`session.late-night-ended`), and that day counts only grades after it. His words
      on finding it: *"you know what i wanted but you didn't do it?"*
+
+72. **Agents DEPLOY their own finished work without asking.** 2026-11-16. Amends 59 (which
+    left the deploy to his word) and extends 24 (commit and push) one step further.
+   * His words, the night after late night (71) was built and released but sat undeployed
+     while he was out: *"i was on my bike, riding to the onsen already, i spoke in via mic,
+     sent, and closed my phone, hoping that it would deploy before i even reach onsen, i went
+     into the onsen, spent time there, coming back, and was shock..."*. Even asking up front
+     would have failed: he was not looking at the phone.
+   * The run: gates green, `npm run release -- patch` (or `minor`, decision 65), push the
+     commit and the tag, `npm run app:build:cloud`, `npx wrangler@4 deploy` in `cloud/app/`,
+     then read the live version file to confirm. Report it as live, not as waiting.
+   * Why it is safe to do unasked: the release gate refuses an untagged or dirty build, and a
+     running app never reloads under a card he is halfway through — it offers a bar
+     (`app/update-check.ts`); away five minutes, it reloads into the boot screen's sync.
+   * Not deployed: work he said to hold, and a run that ends with gates red.
 
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 
