@@ -1,7 +1,7 @@
 # Release — the version, and the gates before Hashigo opens to other people
 
-Moved out of `NEXT.md` on 2026-10-30, when that file was retired (it is at
-`notes/archive/NEXT-retired-2026-10-30.md`). This is the ONE place a version
+Moved out of `NEXT.md` on 2026-10-30, when that file was retired (it is in git
+history, `notes/archive/`). This is the ONE place a version
 decision or a gate result is recorded. Status otherwise lives in git, the code and
 `DECISIONS.md` — not in a hand-kept status file, which is what `NEXT.md` became.
 

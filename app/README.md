@@ -133,7 +133,7 @@ to review is the wrong shape.
 
 `http://192.168.x.x:4274` is **not a secure context**, and `navigator.storage` is
 absent on one — no OPFS, no persistence, no app. His own handset, 2026-08-20,
-`notes/archive/PHONE-TEST.md`: *"Route B (LAN IP) cannot work at all"*. The tunnel is
+(the phone test, in git history): *"Route B (LAN IP) cannot work at all"*. The tunnel is
 not a convenience here; it is the only route that runs the app.
 
 ### Two traps this command already handles
@@ -684,7 +684,7 @@ An 8x wasm penalty over roughly fourteen full passes of 102,020 rows. **The cost
 matters is not the wait**: sqlite-wasm is synchronous and there is one worker, so for
 that whole time nothing can grade, load a card or save a field. A control that
 silently freezes grading for a minute and a half is worse than one that says so, so it
-asks first and quotes the last measured run. `notes/archive/NEXT-retired-2026-10-30.md` carries where the time goes and
+asks first and quotes the last measured run. The retired NEXT.md (git history) carries where the time goes and
 why a cache is the wrong repair.
 
 It renders in an `<iframe srcdoc sandbox="">`: the dashboard is a complete document

@@ -527,7 +527,7 @@ function resolvePayloadStore(db: Db, options: ImportBlobsOptions): ResolvedStore
       `storeRoot opens the legacy one-file-per-payload store. The default is a ` +
         `SQLite blob database, which measured tens of times faster to write on ` +
         `OPFS (32x-65x across the runs that measured both); see ` +
-        `notes/archive/browser-feasibility.md §4 and spike/blobstore/README.md.`,
+        `spike/blobstore/README.md.`,
     );
     return {
       store: requested,

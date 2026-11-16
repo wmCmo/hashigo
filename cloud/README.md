@@ -5,7 +5,7 @@
 `app/` bundles `mailbox/`'s handler, so both serve the same routes over the same KV.
 
 Moved here word for word from `NEXT.md` on 2026-10-30, when that file was retired
-(it is at `notes/archive/NEXT-retired-2026-10-30.md`).
+(it is in git history, `notes/archive/`).
 
 **Why:** his apartment wifi drops every Tailscale tunnel packet over ~1,208 bytes (measured
 with DF pings; small `/ping` answered, TLS handshakes and assets vanished). Windows will not

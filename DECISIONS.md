@@ -6,9 +6,8 @@ words, the reason, and the measurement that settled it.
 
 > [!IMPORTANT]
 > **Consolidated 2026-11-11.** The previous text — every derivation, "found on the way"
-> story, measurement log and long table — is kept word for word in
-> [notes/archive/DECISIONS-before-consolidation-2026-11-11.md](notes/archive/DECISIONS-before-consolidation-2026-11-11.md),
-> under the same numbers. If a comment cites "DECISIONS.md N" for a detail that is not
+> story, measurement log and long table — is kept word for word in git history
+> (`notes/archive/`, removed 2026-11-16; `git show 75cd2fb:notes/archive/`), under the same numbers. If a comment cites "DECISIONS.md N" for a detail that is not
 > here, it is there. Nothing was deleted from the record; superseded decisions keep
 > their number here as a pointer to the one that replaced them.
 
