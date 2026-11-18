@@ -4741,6 +4741,9 @@ input[data-answer="incorrect"] {
 .layer-glance .layer-body > .gcard-op {
   margin-top: var(--space-3);
 }
+.settings-state > .settings-offline {
+  margin-top: var(--space-5);
+}
 .focuschip {
   min-height: 32px;
   padding: 0 var(--space-3);

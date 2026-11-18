@@ -146,12 +146,13 @@ export function setOfflineFiller(filler: OfflineFiller): void {
 
 function offlineButton(): HTMLElement {
   const wrap = document.createElement("div");
+  wrap.className = "settings-offline";
   const button = document.createElement("button");
   button.type = "button";
   button.className = "gcard-op offline-fill";
   button.textContent = "fill generated parts for offline";
   const line = document.createElement("p");
-  line.className = "settings-line";
+  line.className = "settings-note";
   line.textContent =
     "makes every missing sentence, translation and clip on cards due or new in the next 3 days, so they play without a connection";
   offlineLine = line;
