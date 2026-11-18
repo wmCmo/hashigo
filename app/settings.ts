@@ -134,6 +134,58 @@ const SETTING_ROWS: readonly SettingRow[] = [
   },
 ];
 
+type OfflineFiller = (progress: (line: string) => void) => Promise<void>;
+let offlineFiller: OfflineFiller | null = null;
+let offlineRun: Promise<void> | null = null;
+let offlineLine: HTMLElement | null = null;
+let offlineLast = "";
+
+export function setOfflineFiller(filler: OfflineFiller): void {
+  offlineFiller = filler;
+}
+
+function offlineButton(): HTMLElement {
+  const wrap = document.createElement("div");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "gcard-op offline-fill";
+  button.textContent = "fill generated parts for offline";
+  const line = document.createElement("p");
+  line.className = "settings-line";
+  line.textContent =
+    "makes every missing sentence, translation and clip on cards due or new in the next 3 days, so they play without a connection";
+  offlineLine = line;
+  const start = (): void => {
+    if (offlineFiller === null) return;
+    button.disabled = true;
+    button.textContent = "filling…";
+    offlineRun ??= offlineFiller((text) => {
+      offlineLast = text;
+      if (offlineLine !== null) offlineLine.textContent = text;
+    })
+      .catch((cause: unknown) => {
+        offlineLast = (cause as Error).message;
+        if (offlineLine !== null) offlineLine.textContent = offlineLast;
+        say(`could not fill for offline: ${(cause as Error).message}`, true);
+      })
+      .finally(() => {
+        offlineRun = null;
+        for (const each of document.querySelectorAll<HTMLButtonElement>(".offline-fill")) {
+          each.disabled = false;
+          each.textContent = "fill generated parts for offline";
+        }
+      });
+  };
+  button.addEventListener("click", start);
+  if (offlineRun !== null) {
+    button.disabled = true;
+    button.textContent = "filling…";
+    line.textContent = offlineLast;
+  }
+  wrap.append(button, line);
+  return wrap;
+}
+
 export async function openSettings(): Promise<void> {
   const root = document.createElement("div");
   root.className = "layer layer-edit layer-settings";
@@ -432,5 +484,6 @@ function settingsState(reply: ReplyFor["settings"]): HTMLElement {
   backup.textContent = "export a backup";
   backup.addEventListener("click", () => void exportBackup());
   box.appendChild(backup);
+  box.appendChild(offlineButton());
   return box;
 }

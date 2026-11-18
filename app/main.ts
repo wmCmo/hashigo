@@ -92,6 +92,7 @@ import {
 } from "./review-boundary.js";
 import { toggleCloze } from "./cloze-toggle.js";
 import { fieldKind } from "../src/fields/index.js";
+import { setOfflineFiller } from "./settings.js";
 import { exampleSentencePrompt, isEnglishSentenceField } from "./example-sentence.js";
 import { revealScroll } from "./review-scroll.js";
 import { revealSteps, type RevealStep } from "./review-steps.js";
@@ -1265,9 +1266,7 @@ function autoFill(cardId: string, options: { readonly force?: boolean } = {}): P
   return run;
 }
 
-async function fillGaps(cardId: string): Promise<boolean> {
-  autoFilling.add(cardId);
-  autoFillTried.add(cardId);
+async function makeCardGaps(cardId: string): Promise<{ made: number; failure: string | null }> {
   let made = 0;
   try {
     for (let pass = 0; pass < 3; pass += 1) {
@@ -1276,10 +1275,7 @@ async function fillGaps(cardId: string): Promise<boolean> {
       let progress = 0;
       for (const gap of reply.gaps) {
         const result = await generateGap(gap);
-        if ("failure" in result) {
-          say(`could not fill this card's generated parts: ${result.failure}`, true);
-          return false;
-        }
+        if ("failure" in result) return { made, failure: result.failure };
         if ("text" in result) {
           await ask<"storeGeneration">({ kind: "storeGeneration", cardId, slot: gap, text: result.text });
         } else {
@@ -1290,13 +1286,27 @@ async function fillGaps(cardId: string): Promise<boolean> {
           });
         }
         progress += 1;
+        made += 1;
       }
-      made += progress;
       if (progress === 0) break;
     }
   } catch (cause) {
-    say(`could not fill this card's generated parts: ${(cause as Error).message}`, true);
-    return false;
+    return { made, failure: (cause as Error).message };
+  }
+  return { made, failure: null };
+}
+
+async function fillGaps(cardId: string): Promise<boolean> {
+  autoFilling.add(cardId);
+  autoFillTried.add(cardId);
+  let made = 0;
+  try {
+    const result = await makeCardGaps(cardId);
+    made = result.made;
+    if (result.failure !== null) {
+      say(`could not fill this card's generated parts: ${result.failure}`, true);
+      return false;
+    }
   } finally {
     autoFilling.delete(cardId);
     if (made > 0) await redrawFilled(cardId, made);
@@ -1304,6 +1314,53 @@ async function fillGaps(cardId: string): Promise<boolean> {
   }
   return true;
 }
+
+const OFFLINE_DAYS = 3;
+const OFFLINE_WORKERS = 3;
+const OFFLINE_GIVE_UP_AFTER = 5;
+
+async function fillUpcoming(progress: (line: string) => void): Promise<void> {
+  const { cardIds } = await ask<"upcomingCards">({ kind: "upcomingCards", days: OFFLINE_DAYS });
+  let next = 0;
+  let done = 0;
+  let made = 0;
+  let failed = 0;
+  let failingInARow = 0;
+  let lastFailure = "";
+  const report = (): void =>
+    progress(`${done.toLocaleString()} of ${cardIds.length.toLocaleString()} cards checked · ${made.toLocaleString()} parts made` +
+      (failed > 0 ? ` · ${failed} cards failed` : ""));
+  report();
+  const worker = async (): Promise<void> => {
+    while (next < cardIds.length && failingInARow < OFFLINE_GIVE_UP_AFTER) {
+      const cardId = cardIds[next++]!;
+      const running = autoFillRuns.get(cardId);
+      if (running !== undefined) await running;
+      const result = await makeCardGaps(cardId);
+      made += result.made;
+      if (result.failure === null) {
+        failingInARow = 0;
+        autoFillTried.add(cardId);
+      } else {
+        failed += 1;
+        failingInARow += 1;
+        lastFailure = result.failure;
+      }
+      if (result.made > 0 && mounted?.cardId === cardId) await remountAfterEdit(cardId);
+      done += 1;
+      report();
+    }
+  };
+  await Promise.all(Array.from({ length: OFFLINE_WORKERS }, worker));
+  if (failingInARow >= OFFLINE_GIVE_UP_AFTER) {
+    throw new Error(`stopped after ${done} of ${cardIds.length} cards: ${lastFailure}`);
+  }
+  const summary =
+    `ready for offline: ${cardIds.length.toLocaleString()} cards due or new in the next ${OFFLINE_DAYS} days, ` +
+    `${made.toLocaleString()} parts made` + (failed > 0 ? `, ${failed} cards failed (${lastFailure})` : "");
+  progress(summary);
+}
+setOfflineFiller(fillUpcoming);
 
 async function generateGap(gap: {
   readonly kind: string;

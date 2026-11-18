@@ -45,6 +45,7 @@ import { ACCENT_FIELD_TYPE, READING_FIELD, cardGaps, prepareCard, readingSwitch,
 import {
   buildSession,
   readSessionSettings,
+  upcomingCardIds,
   writeSetting,
   type AnswerResult,
   type ReviewSession,
@@ -113,6 +114,7 @@ import type {
   RedoInfoRequest,
   PronunciationRequest,
   CardGapsRequest,
+  UpcomingCardsRequest,
   RecordFoundInRequest,
   FieldOutputsRequest,
   VoiceRequest,
@@ -1529,6 +1531,10 @@ function cardGapsFor(request: CardGapsRequest): void {
   post({ kind: "cardGaps", id: request.id, local, gaps: cardGaps(db, request.cardId) });
 }
 
+function upcomingCardsFor(request: UpcomingCardsRequest): void {
+  post({ kind: "upcomingCards", id: request.id, cardIds: upcomingCardIds(requireCards(), { days: request.days }) });
+}
+
 function recordFoundInFor(request: RecordFoundInRequest): void {
   const db = requireCards();
   const outcome = recordFoundIn(db, request.cardId, { cardId: request.sourceCardId, sentence: request.sentence });
@@ -2279,6 +2285,7 @@ const LINK_SAFE: ReadonlySet<string> = new Set([
   "redoInfo",
   "pronunciation",
   "cardGaps",
+  "upcomingCards",
   "fieldOutputs",
   "accentPlan",
   "decks",
@@ -2369,6 +2376,9 @@ self.onmessage = (event: MessageEvent<AppRequest>): void => {
           break;
         case "cardGaps":
           cardGapsFor(request);
+          break;
+        case "upcomingCards":
+          upcomingCardsFor(request);
           break;
         case "recordFoundIn":
           recordFoundInFor(request);

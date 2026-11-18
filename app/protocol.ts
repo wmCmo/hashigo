@@ -560,6 +560,18 @@ export interface PronunciationMessage {
   readonly pronounce: Pronunciation | null;
 }
 
+export interface UpcomingCardsRequest {
+  readonly kind: "upcomingCards";
+  readonly id: number;
+  readonly days: number;
+}
+
+export interface UpcomingCardsMessage {
+  readonly kind: "upcomingCards";
+  readonly id: number;
+  readonly cardIds: readonly string[];
+}
+
 export interface CardGapsRequest {
   readonly kind: "cardGaps";
   readonly id: number;
@@ -730,6 +742,7 @@ export type AppRequest =
   | RedoInfoRequest
   | PronunciationRequest
   | CardGapsRequest
+  | UpcomingCardsRequest
   | RecordFoundInRequest
   | FieldOutputsRequest
   | AccentPlanRequest
@@ -898,6 +911,7 @@ export type AppMessage =
   | CardGapsMessage
   | RecordFoundInMessage
   | FieldOutputsMessage
+  | UpcomingCardsMessage
   | AccentPlanMessage
   | AccentFillMessage
   | ResetMessage
@@ -948,6 +962,7 @@ export interface ReplyFor {
   readonly redoInfo: RedoInfoMessage;
   readonly pronunciation: PronunciationMessage;
   readonly cardGaps: CardGapsMessage;
+  readonly upcomingCards: UpcomingCardsMessage;
   readonly recordFoundIn: RecordFoundInMessage;
   readonly fieldOutputs: FieldOutputsMessage;
   readonly accentPlan: AccentPlanMessage;

@@ -6,6 +6,7 @@ export {
   SessionCompleteError,
   buildSession,
   newTracksStartedOn,
+  upcomingCardIds,
   interleaveTracks,
   type AnswerResult,
   type InterleavePolicy,

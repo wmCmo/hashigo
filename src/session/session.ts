@@ -330,3 +330,17 @@ export function buildSession(db: SqliteHandle, options: SessionOptions = {}): Re
   );
   return new ReviewSession(db, plan, localDate(now), kept !== null, since);
 }
+
+export function upcomingCardIds(
+  db: SqliteHandle,
+  options: { readonly days: number; readonly now?: Date },
+): string[] {
+  const at = options.now ?? new Date();
+  const ahead = nowInHostOffset(new Date(at.getTime() + options.days * 86_400_000));
+  const newLimit = readSessionSettings(db).newLimit * (options.days + 1);
+  const tracks = [
+    ...dueTracks(db, { now: ahead }),
+    ...(newLimit <= 0 ? [] : newTracks(db, { now: ahead, limit: newLimit })),
+  ];
+  return [...new Set(tracks.map((track) => track.cardId))];
+}

@@ -974,6 +974,13 @@ words, the reason, and the measurement that settled it.
      running app never reloads under a card he is halfway through — it offers a bar
      (`app/update-check.ts`); away five minutes, it reloads into the boot screen's sync.
    * Not deployed: work he said to hold, and a run that ends with gates red.
+73. **Settings has "fill generated parts for offline": the next 3 days' cards, made now.**
+    2026-11-18. Extends 62, which only makes a card's missing parts when it is shown — so
+    offline, an unfilled card stays unfilled. Zach, before a 2-hour flight: *"i want a
+    button to like, fill all generated field value on my phone so that i can press it
+    tonight"*. It covers every card due within 3 days plus `new.limit × 4` new cards
+    (`upcomingCardIds`), three cards at a time through the same `cardGaps` path as 62, and
+    stops after 5 failing cards in a row (offline). It never redoes an existing part.
 
 ## Ratified 2026-08-22 — small calls an agent had made without authority
 

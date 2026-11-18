@@ -11,6 +11,7 @@ import {
   SessionCompleteError,
   buildSession,
   interleaveTracks,
+  upcomingCardIds,
   type SessionItem,
 } from "../src/session/index.js";
 
@@ -692,5 +693,21 @@ describe("the day's tally, not the session's", () => {
     } finally {
       db.close();
     }
+  });
+});
+
+describe("upcomingCardIds — what 'fill generated parts for offline' covers", () => {
+  it("takes cards due within the window, not after it", () => {
+    const { db } = fixture(3, 0);
+    expect(upcomingCardIds(db, { days: 3, now: new Date("2026-08-04T12:00:00+09:00") })).toHaveLength(3);
+    expect(upcomingCardIds(db, { days: 3, now: new Date("2026-08-01T12:00:00+09:00") })).toEqual([]);
+  });
+
+  it("takes as many new cards as the days ahead can introduce, and no card twice", () => {
+    const { db } = fixture(2, 100);
+    const ids = upcomingCardIds(db, { days: 3, now: new Date("2026-08-04T12:00:00+09:00") });
+    expect(ids.filter((id) => id.startsWith("new"))).toHaveLength(DEFAULT_NEW_LIMIT * 4);
+    expect(ids.filter((id) => id.startsWith("due"))).toHaveLength(2);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
